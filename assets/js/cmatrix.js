@@ -1,4 +1,4 @@
-// 基于 Canvas 的数码雨实现 - 视觉优化版本
+// 基于 Canvas 的故事文字雨实现 - 简化优化版本
 const canvas = document.getElementById('matrixCanvas');
 const ctx = canvas.getContext('2d');
 // 设置 Canvas 尺寸为窗口大小
@@ -40,219 +40,161 @@ const textSegments = [
     "然后带着一种奇怪的语调，'告诫'你身体有任何异常都要优先报告给她。",
     "你当然答应了她，作为感谢，你请她享用了一顿简单却美味的夜宵。"
 ];
-// 故事雨滴数据结构
-const fontSize = 20; // 稍微增大字体，提高可读性
-let columns = 0;
-let drops = []; // 每个雨滴对象：{text: 当前段落, position: 当前位置, speed: 下落速度, offset: 段落中的偏移量, brightness: 亮度}
-// 状态控制
+// 雨滴结构
+const fontSize = 16; // 减小字体，增加可读性
+let drops = [];
+let activeDrops = 10; // 最终保留10条文字雨
+// 动画状态
 let startTime = Date.now();
-let isInitialEffectActive = true; // 初始效果激活标志
-let initialEffectDuration = 5000; // 初始效果持续5秒
-// 更新列数和雨滴数组
-function updateColumns() {
-    columns = Math.floor(canvas.width / fontSize);
+let initialPhase = true; // 初始密集阶段
+let transitionDuration = 8000; // 8秒过渡时间
+// 创建新的雨滴
+function createDrop() {
+    // 随机选择一个段落
+    const segmentIndex = Math.floor(Math.random() * textSegments.length);
+    const segment = textSegments[segmentIndex];
+    
+    // 随机选择段落的起始位置
+    const startPos = Math.floor(Math.random() * Math.max(1, segment.length - 30));
+    
+    return {
+        text: segment,
+        x: Math.random() * canvas.width,
+        y: -Math.random() * canvas.height * 2, // 从上方开始
+        speed: 0.8 + Math.random() * 0.8, // 中等速度
+        offset: startPos,
+        color: `hsl(${150 + Math.random() * 30}, 100%, 70%)`, // 青绿色调
+        opacity: 0.9 + Math.random() * 0.1,
+        targetY: canvas.height + 100 // 目标位置
+    };
+}
+// 初始化雨滴
+function initDrops() {
     drops = [];
     
-    // 为每一列初始化一个故事雨滴
-    for (let i = 0; i < columns; i++) {
-        // 随机选择一个段落
-        const segmentIndex = Math.floor(Math.random() * textSegments.length);
-        const segmentText = textSegments[segmentIndex];
-        
-        // 在段落中随机选择一个起始位置
-        const offset = Math.floor(Math.random() * Math.max(1, segmentText.length - 10));
-        
-        drops.push({
-            segment: segmentText,
-            position: -Math.floor(Math.random() * 50), // 从画布上方开始，位置更分散
-            speed: 0.3 + Math.random() * 0.3, // 更慢的速度
-            offset: offset,
-            colorIndex: i % 3,
-            brightness: 1.0, // 初始亮度
-            isInitial: true // 标记为初始效果的一部分
-        });
+    // 初始创建大量雨滴（约80个）
+    const initialDrops = Math.min(80, Math.floor(canvas.width / fontSize) * 3);
+    for (let i = 0; i < initialDrops; i++) {
+        drops.push(createDrop());
     }
 }
-// 计算初始效果阶段的亮度
-function calculateInitialBrightness(elapsedTime) {
-    if (elapsedTime > initialEffectDuration) {
-        isInitialEffectActive = false;
-        return 1.0; // 恢复正常亮度
+// 更新雨滴数量 - 从密集逐渐减少到10条
+function updateDropCount() {
+    const elapsedTime = Date.now() - startTime;
+    
+    if (initialPhase && elapsedTime > transitionDuration) {
+        initialPhase = false;
     }
     
-    // 初始效果：开始亮，然后逐渐变暗到正常水平
-    const progress = elapsedTime / initialEffectDuration;
-    return 1.0 - (progress * 0.3); // 亮度从1.0逐渐降到0.7
-}
-// 计算背景透明度
-function calculateBackgroundAlpha(elapsedTime) {
-    if (elapsedTime > initialEffectDuration) {
-        return 0.15; // 正常雨滴效果背景透明度
+    if (initialPhase) {
+        // 在过渡期间，线性减少雨滴数量
+        const progress = elapsedTime / transitionDuration;
+        const currentDrops = Math.max(activeDrops, Math.floor(drops.length * (1 - progress * 0.9)));
+        
+        // 逐渐移除雨滴
+        if (drops.length > currentDrops) {
+            drops.splice(currentDrops);
+        }
+    } else {
+        // 稳定阶段，确保有10个雨滴
+        while (drops.length < activeDrops) {
+            drops.push(createDrop());
+        }
+        
+        // 移除多余的雨滴
+        if (drops.length > activeDrops) {
+            drops.splice(activeDrops);
+        }
     }
-    
-    // 初始效果阶段背景透明度从0增加到0.15
-    const progress = elapsedTime / initialEffectDuration;
-    return Math.min(0.15, progress * 0.15);
 }
 // 绘制函数
-function drawMatrix() {
-    const currentTime = Date.now();
-    const elapsedTime = currentTime - startTime;
-    
-    // 计算当前背景透明度
-    const bgAlpha = calculateBackgroundAlpha(elapsedTime);
-    
-    // 应用背景（控制拖影效果）
-    ctx.fillStyle = `rgba(10, 10, 18, ${bgAlpha})`;
+function draw() {
+    // 使用非常浅的背景覆盖，几乎看不到重影
+    ctx.fillStyle = 'rgba(10, 10, 18, 0.02)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    // 计算初始效果阶段的亮度
-    const initialBrightness = calculateInitialBrightness(elapsedTime);
+    
+    // 更新雨滴数量
+    updateDropCount();
     
     // 设置字体
-    ctx.font = `bold ${fontSize}px 'Microsoft YaHei', 'SimSun', sans-serif`;
+    ctx.font = `${fontSize}px 'Microsoft YaHei', 'SimSun', sans-serif`;
     
-    // 为每一列绘制故事字符
+    // 绘制每个雨滴
     for (let i = 0; i < drops.length; i++) {
         const drop = drops[i];
-        const x = i * fontSize;
-        const y = drop.position * fontSize;
         
-        // 只绘制在画布内的字符
-        if (y >= -fontSize && y <= canvas.height + fontSize) {
-            // 从段落中获取当前字符
-            const charIndex = Math.floor(drop.offset) % drop.segment.length;
-            const text = drop.segment.charAt(charIndex);
-            
-            // 跳过空白字符
-            if (text === ' ' || text === '') {
-                drop.offset += drop.speed * 0.3; // 空白字符偏移量增加更慢
-                continue;
-            }
-            
-            // 根据段落位置和颜色索引调整颜色
-            let brightness = drop.brightness;
-            if (isInitialEffectActive && drop.isInitial) {
-                brightness = initialBrightness;
-            }
-            
-            const hue = 150 + (drop.colorIndex * 10) + (charIndex / drop.segment.length * 5);
-            ctx.fillStyle = `hsl(${hue}, 100%, ${70 * brightness}%)`;
-            
-            // 绘制字符
-            ctx.fillText(text, x, y);
-            
-            // 更新偏移量，确保字符按顺序显示（更慢的速度）
-            drop.offset += drop.speed * 0.3;
-            
-            // 如果段落显示完毕，重置到开头
-            if (drop.offset >= drop.segment.length) {
-                drop.offset = 0;
-            }
+        // 雨滴当前位置
+        const currentY = drop.y;
+        
+        // 绘制一行文字（从偏移位置开始取10-20个字符）
+        const charsToShow = 15 + Math.floor(Math.random() * 10);
+        let displayText = "";
+        
+        // 从当前偏移位置开始取字符
+        for (let j = 0; j < charsToShow; j++) {
+            const charIndex = (drop.offset + j) % drop.text.length;
+            displayText += drop.text.charAt(charIndex);
         }
         
-        // 更新位置
-        drop.position += drop.speed;
+        // 设置颜色和透明度
+        ctx.fillStyle = drop.color;
+        ctx.globalAlpha = drop.opacity;
         
-        // 如果雨滴超出画布底部，重置为新的故事段落
-        if (drop.position * fontSize > canvas.height + 50) {
-            const segmentIndex = Math.floor(Math.random() * textSegments.length);
-            const segmentText = textSegments[segmentIndex];
-            
-            // 重置雨滴
-            drop.segment = segmentText;
-            drop.position = -Math.floor(Math.random() * 30);
-            drop.offset = Math.floor(Math.random() * Math.max(1, segmentText.length - 10));
-            drop.speed = 0.3 + Math.random() * 0.3;
-            drop.isInitial = false; // 重置后不再是初始效果的一部分
+        // 绘制文字
+        ctx.fillText(displayText, drop.x, currentY);
+        
+        // 更新雨滴位置
+        drop.y += drop.speed;
+        drop.offset += 0.3; // 缓慢移动文字偏移
+        
+        // 如果雨滴完全移出屏幕，重置它
+        if (drop.y > drop.targetY) {
+            // 重新创建雨滴
+            Object.assign(drop, createDrop());
         }
     }
     
-    // 初始效果：额外添加大量文字
-    if (isInitialEffectActive) {
-        // 添加额外文字以增强初始效果
-        const extraDensity = Math.floor(columns * 2); // 额外文字密度
-        const segmentIndex = Math.floor(Math.random() * textSegments.length);
-        const segmentText = textSegments[segmentIndex];
-        
-        ctx.fillStyle = `hsl(160, 100%, ${85 * initialBrightness}%)`; // 更亮的颜色
-        
-        for (let j = 0; j < extraDensity; j++) {
-            const x = Math.random() * canvas.width;
-            const y = Math.random() * canvas.height;
-            
-            // 随机选择字符
-            const charIndex = Math.floor(Math.random() * segmentText.length);
-            const text = segmentText.charAt(charIndex);
-            
-            // 随机字体大小
-            const randomFontSize = fontSize + Math.random() * 8;
-            ctx.font = `bold ${randomFontSize}px 'Microsoft YaHei', 'SimSun', sans-serif`;
-            
-            // 随机透明度
-            ctx.globalAlpha = Math.random() * 0.5 * initialBrightness;
-            
-            ctx.fillText(text, x, y);
-        }
-        
-        // 恢复全局透明度
-        ctx.globalAlpha = 1.0;
-    }
+    // 重置全局透明度
+    ctx.globalAlpha = 1.0;
 }
 // 动画循环
-let matrixInterval;
+let animationId;
 let lastTime = 0;
-const fps = 24; // 降低帧率，减少视觉压力
-const interval = 1000 / fps;
-function startMatrix(timestamp) {
+const fps = 30;
+const frameInterval = 1000 / fps;
+function animate(timestamp) {
     // 控制帧率
-    if (timestamp - lastTime >= interval) {
-        drawMatrix();
+    if (timestamp - lastTime >= frameInterval) {
+        draw();
         lastTime = timestamp;
     }
     
-    matrixInterval = requestAnimationFrame(startMatrix);
+    animationId = requestAnimationFrame(animate);
 }
-function stopMatrix() {
-    if (matrixInterval) {
-        cancelAnimationFrame(matrixInterval);
-        matrixInterval = null;
-    }
-}
-// 初始化
-function initMatrix() {
-    // 重置时间
+// 初始化并开始动画
+function init() {
     startTime = Date.now();
-    isInitialEffectActive = true;
-    
-    // 更新列数并初始化雨滴
-    updateColumns();
-    
-    // 监听窗口大小变化
-    window.addEventListener('resize', () => {
-        updateColumns();
-    });
-    
-    // 启动数码雨
-    startMatrix();
+    initialPhase = true;
+    initDrops();
+    animate(0);
 }
-// 暴露控制函数给主脚本
-window.matrix = { 
-    start: initMatrix, 
-    stop: stopMatrix,
-    getCurrentSegment: (columnIndex) => {
-        if (columnIndex >= 0 && columnIndex < drops.length) {
-            return drops[columnIndex].segment;
+// 窗口大小变化时重新初始化
+window.addEventListener('resize', () => {
+    resizeCanvas();
+    initDrops();
+});
+// 暴露控制函数
+window.matrix = {
+    start: init,
+    stop: () => {
+        if (animationId) {
+            cancelAnimationFrame(animationId);
         }
-        return null;
-    },
-    resetInitialEffect: () => {
-        startTime = Date.now();
-        isInitialEffectActive = true;
     }
 };
 // 页面加载完成后初始化
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initMatrix);
+    document.addEventListener('DOMContentLoaded', init);
 } else {
-    initMatrix();
+    init();
 }
