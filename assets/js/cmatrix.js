@@ -1,5 +1,7 @@
+// 基于 Canvas 的数码雨实现 - 故事连贯性优化版本
 const canvas = document.getElementById('matrixCanvas');
 const ctx = canvas.getContext('2d');
+
 // 设置 Canvas 尺寸为窗口大小
 function resizeCanvas() {
     canvas.width = window.innerWidth;
@@ -7,7 +9,8 @@ function resizeCanvas() {
 }
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
-// 将长文本分割成多个段落，每个段落作为一个独立的字符集
+
+// 故事文本 - 保持原有分段结构
 const textSegments = [
     "你受伤了。在你翻阅文件的时候，纸张以一个极为刁钻的角度划破了你的皮肤。",
     "这并没有什么大不了的，你甚至没有察觉到这一点。直到Mon3tr端着一沓材料进来。",
@@ -39,80 +42,96 @@ const textSegments = [
     "然后带着一种奇怪的语调，'告诫'你身体有任何异常都要优先报告给她。",
     "你当然答应了她，作为感谢，你请她享用了一顿简单却美味的夜宵。"
 ];
-// 缓存当前激活的字符集
-let charArray = [];
-let activeSegmentIndex = 0;
-// 初始化当前字符集
-function initCurrentChars() {
-    // 开始时使用第一个段落
-    updateCurrentChars();
-}
-// 更新当前字符集
-function updateCurrentChars() {
-    // 循环使用段落
-    activeSegmentIndex = (activeSegmentIndex + 1) % textSegments.length;
-    
-    // 从当前段落中获取字符集
-    const currentText = textSegments[activeSegmentIndex];
-    
-    // 创建一个去重后的字符集合，避免重复字符占用内存
-    const charSet = new Set();
-    
-    // 添加当前段落的字符
-    for (let char of currentText) {
-        charSet.add(char);
-    }
-    
-    // 转换为数组
-    charArray = Array.from(charSet);
-    
-    // 每10秒切换一次字符集（可调整）
-    setTimeout(updateCurrentChars, 10000);
-}
-// 计算列数 (根据字体大小)
+
+// 故事雨滴数据结构
 const fontSize = 18;
 let columns = 0;
-let drops = [];
+let drops = []; // 每个雨滴对象：{text: 当前段落, position: 当前位置, speed: 下落速度, offset: 段落中的偏移量}
+
 // 更新列数和雨滴数组
 function updateColumns() {
     columns = Math.floor(canvas.width / fontSize);
-    drops = new Array(columns).fill(1);
+    drops = [];
+    
+    // 为每一列初始化一个故事雨滴
+    for (let i = 0; i < columns; i++) {
+        // 随机选择一个段落
+        const segmentIndex = Math.floor(Math.random() * textSegments.length);
+        const segmentText = textSegments[segmentIndex];
+        
+        // 在段落中随机选择一个起始位置
+        const offset = Math.floor(Math.random() * Math.max(1, segmentText.length - 10));
+        
+        drops.push({
+            segment: segmentText,
+            position: -Math.floor(Math.random() * 20), // 从画布上方开始
+            speed: 0.5 + Math.random() * 0.5, // 随机速度
+            offset: offset,
+            colorIndex: i % 3 // 用于颜色变化
+        });
+    }
 }
+
 // 绘制函数
 function drawMatrix() {
     // 半透明黑色覆盖，形成拖尾效果
-    ctx.fillStyle = 'rgba(10, 10, 18, 0.05)';
+    ctx.fillStyle = 'rgba(10, 10, 18, 0.1)'; // 增加透明度，让文字更清晰
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    // 设置字体和颜色 (酸性青绿色)
-    ctx.font = `bold ${fontSize}px 'Courier New', monospace, 'Microsoft YaHei', 'SimSun'`;
+
+    // 设置字体
+    ctx.font = `bold ${fontSize}px 'Microsoft YaHei', 'SimSun', sans-serif`; // 优化中文字体显示
     
-    // 为每一列绘制字符
+    // 为每一列绘制故事字符
     for (let i = 0; i < drops.length; i++) {
-        // 随机选择字符（仅在字符集非空时）
-        if (charArray.length > 0) {
-            const text = charArray[Math.floor(Math.random() * charArray.length)];
+        const drop = drops[i];
+        const x = i * fontSize;
+        const y = drop.position * fontSize;
+        
+        // 只绘制在画布内的字符
+        if (y >= 0 && y <= canvas.height) {
+            // 从段落中获取当前字符
+            const charIndex = Math.floor(drop.offset) % drop.segment.length;
+            const text = drop.segment.charAt(charIndex);
             
-            // 根据列的位置调整颜色
-            const hue = 150 + (i / drops.length) * 30; // 青绿色范围
-            ctx.fillStyle = `hsl(${hue}, 100%, 70%)`;
+            // 根据段落位置和颜色索引调整颜色，使相邻段落颜色相近
+            const hue = 150 + (drop.colorIndex * 10) + (charIndex / drop.segment.length * 5);
+            ctx.fillStyle = `hsl(${hue}, 100%, ${70 + Math.sin(Date.now() * 0.001) * 10}%)`;
             
             // 绘制字符
-            const x = i * fontSize;
-            const y = drops[i] * fontSize;
             ctx.fillText(text, x, y);
-            // 随机重置雨滴，并让雨滴下落
-            if (y > canvas.height && Math.random() > 0.975) {
-                drops[i] = 0;
+            
+            // 更新偏移量，确保字符按顺序显示
+            drop.offset += drop.speed * 0.5;
+            
+            // 如果段落显示完毕，重置到开头
+            if (drop.offset >= drop.segment.length) {
+                drop.offset = 0;
             }
-            drops[i]++;
+        }
+        
+        // 更新位置
+        drop.position += drop.speed;
+        
+        // 如果雨滴超出画布底部，重置为新的故事段落
+        if (drop.position * fontSize > canvas.height + 50) {
+            const segmentIndex = Math.floor(Math.random() * textSegments.length);
+            const segmentText = textSegments[segmentIndex];
+            
+            // 确保重置时显示段落的开头部分，保持故事连贯性
+            drop.segment = segmentText;
+            drop.position = -Math.floor(Math.random() * 20);
+            drop.offset = 0;
+            drop.speed = 0.5 + Math.random() * 0.5;
         }
     }
 }
+
 // 动画循环
 let matrixInterval;
 let lastTime = 0;
-const fps = 30; // 目标帧率
-const interval = 1000 / fps; // 每帧的时间间隔(毫秒)
+const fps = 30;
+const interval = 1000 / fps;
+
 function startMatrix(timestamp) {
     // 控制帧率
     if (timestamp - lastTime >= interval) {
@@ -120,21 +139,19 @@ function startMatrix(timestamp) {
         lastTime = timestamp;
     }
     
-    // 使用requestAnimationFrame替代setInterval，更高效
     matrixInterval = requestAnimationFrame(startMatrix);
 }
+
 function stopMatrix() {
     if (matrixInterval) {
         cancelAnimationFrame(matrixInterval);
         matrixInterval = null;
     }
 }
+
 // 初始化
 function initMatrix() {
-    // 初始化字符集
-    initCurrentChars();
-    
-    // 更新列数
+    // 更新列数并初始化雨滴
     updateColumns();
     
     // 监听窗口大小变化
@@ -145,13 +162,19 @@ function initMatrix() {
     // 启动数码雨
     startMatrix();
 }
+
 // 暴露控制函数给主脚本
 window.matrix = { 
     start: initMatrix, 
     stop: stopMatrix,
-    updateChars: updateCurrentChars,
-    getCurrentSegment: () => textSegments[activeSegmentIndex]
+    getCurrentSegment: (columnIndex) => {
+        if (columnIndex >= 0 && columnIndex < drops.length) {
+            return drops[columnIndex].segment;
+        }
+        return null;
+    }
 };
+
 // 页面加载完成后初始化
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initMatrix);
