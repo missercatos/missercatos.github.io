@@ -1,7 +1,6 @@
-// 基于 Canvas 的数码雨实现 - 故事连贯性优化版本
+// 基于 Canvas 的数码雨实现 - 视觉优化版本
 const canvas = document.getElementById('matrixCanvas');
 const ctx = canvas.getContext('2d');
-
 // 设置 Canvas 尺寸为窗口大小
 function resizeCanvas() {
     canvas.width = window.innerWidth;
@@ -9,7 +8,6 @@ function resizeCanvas() {
 }
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
-
 // 故事文本 - 保持原有分段结构
 const textSegments = [
     "你受伤了。在你翻阅文件的时候，纸张以一个极为刁钻的角度划破了你的皮肤。",
@@ -42,12 +40,14 @@ const textSegments = [
     "然后带着一种奇怪的语调，'告诫'你身体有任何异常都要优先报告给她。",
     "你当然答应了她，作为感谢，你请她享用了一顿简单却美味的夜宵。"
 ];
-
 // 故事雨滴数据结构
-const fontSize = 18;
+const fontSize = 20; // 稍微增大字体，提高可读性
 let columns = 0;
-let drops = []; // 每个雨滴对象：{text: 当前段落, position: 当前位置, speed: 下落速度, offset: 段落中的偏移量}
-
+let drops = []; // 每个雨滴对象：{text: 当前段落, position: 当前位置, speed: 下落速度, offset: 段落中的偏移量, brightness: 亮度}
+// 状态控制
+let startTime = Date.now();
+let isInitialEffectActive = true; // 初始效果激活标志
+let initialEffectDuration = 5000; // 初始效果持续5秒
 // 更新列数和雨滴数组
 function updateColumns() {
     columns = Math.floor(canvas.width / fontSize);
@@ -64,22 +64,52 @@ function updateColumns() {
         
         drops.push({
             segment: segmentText,
-            position: -Math.floor(Math.random() * 20), // 从画布上方开始
-            speed: 0.5 + Math.random() * 0.5, // 随机速度
+            position: -Math.floor(Math.random() * 50), // 从画布上方开始，位置更分散
+            speed: 0.3 + Math.random() * 0.3, // 更慢的速度
             offset: offset,
-            colorIndex: i % 3 // 用于颜色变化
+            colorIndex: i % 3,
+            brightness: 1.0, // 初始亮度
+            isInitial: true // 标记为初始效果的一部分
         });
     }
 }
-
+// 计算初始效果阶段的亮度
+function calculateInitialBrightness(elapsedTime) {
+    if (elapsedTime > initialEffectDuration) {
+        isInitialEffectActive = false;
+        return 1.0; // 恢复正常亮度
+    }
+    
+    // 初始效果：开始亮，然后逐渐变暗到正常水平
+    const progress = elapsedTime / initialEffectDuration;
+    return 1.0 - (progress * 0.3); // 亮度从1.0逐渐降到0.7
+}
+// 计算背景透明度
+function calculateBackgroundAlpha(elapsedTime) {
+    if (elapsedTime > initialEffectDuration) {
+        return 0.15; // 正常雨滴效果背景透明度
+    }
+    
+    // 初始效果阶段背景透明度从0增加到0.15
+    const progress = elapsedTime / initialEffectDuration;
+    return Math.min(0.15, progress * 0.15);
+}
 // 绘制函数
 function drawMatrix() {
-    // 半透明黑色覆盖，形成拖尾效果
-    ctx.fillStyle = 'rgba(10, 10, 18, 0.1)'; // 增加透明度，让文字更清晰
+    const currentTime = Date.now();
+    const elapsedTime = currentTime - startTime;
+    
+    // 计算当前背景透明度
+    const bgAlpha = calculateBackgroundAlpha(elapsedTime);
+    
+    // 应用背景（控制拖影效果）
+    ctx.fillStyle = `rgba(10, 10, 18, ${bgAlpha})`;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-
+    // 计算初始效果阶段的亮度
+    const initialBrightness = calculateInitialBrightness(elapsedTime);
+    
     // 设置字体
-    ctx.font = `bold ${fontSize}px 'Microsoft YaHei', 'SimSun', sans-serif`; // 优化中文字体显示
+    ctx.font = `bold ${fontSize}px 'Microsoft YaHei', 'SimSun', sans-serif`;
     
     // 为每一列绘制故事字符
     for (let i = 0; i < drops.length; i++) {
@@ -88,20 +118,31 @@ function drawMatrix() {
         const y = drop.position * fontSize;
         
         // 只绘制在画布内的字符
-        if (y >= 0 && y <= canvas.height) {
+        if (y >= -fontSize && y <= canvas.height + fontSize) {
             // 从段落中获取当前字符
             const charIndex = Math.floor(drop.offset) % drop.segment.length;
             const text = drop.segment.charAt(charIndex);
             
-            // 根据段落位置和颜色索引调整颜色，使相邻段落颜色相近
+            // 跳过空白字符
+            if (text === ' ' || text === '') {
+                drop.offset += drop.speed * 0.3; // 空白字符偏移量增加更慢
+                continue;
+            }
+            
+            // 根据段落位置和颜色索引调整颜色
+            let brightness = drop.brightness;
+            if (isInitialEffectActive && drop.isInitial) {
+                brightness = initialBrightness;
+            }
+            
             const hue = 150 + (drop.colorIndex * 10) + (charIndex / drop.segment.length * 5);
-            ctx.fillStyle = `hsl(${hue}, 100%, ${70 + Math.sin(Date.now() * 0.001) * 10}%)`;
+            ctx.fillStyle = `hsl(${hue}, 100%, ${70 * brightness}%)`;
             
             // 绘制字符
             ctx.fillText(text, x, y);
             
-            // 更新偏移量，确保字符按顺序显示
-            drop.offset += drop.speed * 0.5;
+            // 更新偏移量，确保字符按顺序显示（更慢的速度）
+            drop.offset += drop.speed * 0.3;
             
             // 如果段落显示完毕，重置到开头
             if (drop.offset >= drop.segment.length) {
@@ -117,21 +158,51 @@ function drawMatrix() {
             const segmentIndex = Math.floor(Math.random() * textSegments.length);
             const segmentText = textSegments[segmentIndex];
             
-            // 确保重置时显示段落的开头部分，保持故事连贯性
+            // 重置雨滴
             drop.segment = segmentText;
-            drop.position = -Math.floor(Math.random() * 20);
-            drop.offset = 0;
-            drop.speed = 0.5 + Math.random() * 0.5;
+            drop.position = -Math.floor(Math.random() * 30);
+            drop.offset = Math.floor(Math.random() * Math.max(1, segmentText.length - 10));
+            drop.speed = 0.3 + Math.random() * 0.3;
+            drop.isInitial = false; // 重置后不再是初始效果的一部分
         }
     }
+    
+    // 初始效果：额外添加大量文字
+    if (isInitialEffectActive) {
+        // 添加额外文字以增强初始效果
+        const extraDensity = Math.floor(columns * 2); // 额外文字密度
+        const segmentIndex = Math.floor(Math.random() * textSegments.length);
+        const segmentText = textSegments[segmentIndex];
+        
+        ctx.fillStyle = `hsl(160, 100%, ${85 * initialBrightness}%)`; // 更亮的颜色
+        
+        for (let j = 0; j < extraDensity; j++) {
+            const x = Math.random() * canvas.width;
+            const y = Math.random() * canvas.height;
+            
+            // 随机选择字符
+            const charIndex = Math.floor(Math.random() * segmentText.length);
+            const text = segmentText.charAt(charIndex);
+            
+            // 随机字体大小
+            const randomFontSize = fontSize + Math.random() * 8;
+            ctx.font = `bold ${randomFontSize}px 'Microsoft YaHei', 'SimSun', sans-serif`;
+            
+            // 随机透明度
+            ctx.globalAlpha = Math.random() * 0.5 * initialBrightness;
+            
+            ctx.fillText(text, x, y);
+        }
+        
+        // 恢复全局透明度
+        ctx.globalAlpha = 1.0;
+    }
 }
-
 // 动画循环
 let matrixInterval;
 let lastTime = 0;
-const fps = 30;
+const fps = 24; // 降低帧率，减少视觉压力
 const interval = 1000 / fps;
-
 function startMatrix(timestamp) {
     // 控制帧率
     if (timestamp - lastTime >= interval) {
@@ -141,16 +212,18 @@ function startMatrix(timestamp) {
     
     matrixInterval = requestAnimationFrame(startMatrix);
 }
-
 function stopMatrix() {
     if (matrixInterval) {
         cancelAnimationFrame(matrixInterval);
         matrixInterval = null;
     }
 }
-
 // 初始化
 function initMatrix() {
+    // 重置时间
+    startTime = Date.now();
+    isInitialEffectActive = true;
+    
     // 更新列数并初始化雨滴
     updateColumns();
     
@@ -162,7 +235,6 @@ function initMatrix() {
     // 启动数码雨
     startMatrix();
 }
-
 // 暴露控制函数给主脚本
 window.matrix = { 
     start: initMatrix, 
@@ -172,9 +244,12 @@ window.matrix = {
             return drops[columnIndex].segment;
         }
         return null;
+    },
+    resetInitialEffect: () => {
+        startTime = Date.now();
+        isInitialEffectActive = true;
     }
 };
-
 // 页面加载完成后初始化
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initMatrix);
