@@ -7,9 +7,9 @@ window.musicPlayer = (function() {
 
     // 播放列表 (路径指向 assets/music/)
     const playlist = [
-        { title: "乐典一", src: "assets/music/track1.mp3" },
-        { title: "乐典二", src: "assets/music/track2.mp3" },
-        { title: "乐典三", src: "assets/music/track3.mp3" }
+        { title: "不存在的乐园", src: "assets/music/track1.mp3" },
+        { title: "生息", src: "assets/music/track2.mp3" },
+        { title: "走过漫漫时空", src: "assets/music/track3.mp3" }
     ];
     let currentTrackIndex = 0;
     let isMuted = false;
@@ -19,8 +19,8 @@ window.musicPlayer = (function() {
         currentTrackIndex = index;
         const track = playlist[currentTrackIndex];
         player.src = track.src;
-        nowPlayingEl.textContent = `正在播放: ${track.title}`;
-        player.play().catch(e => console.log("自动播放被阻止，等待用户交互"));
+        nowPlayingEl.textContent = ` ${track.title}`;
+        player.play().catch(e => console.log("终止"));
         updatePlayButton(true);
     }
 
