@@ -43,8 +43,6 @@ const textSegments = [
     "你当然答应了她，作为感谢，你请她享用了一顿简单却美味的夜宵。"
 ];
 
-// 特殊符号集，增加酸性艺术感
-const specialChars = "◇◆";
 
 // 缓存当前激活的字符集
 let currentChars = "";
@@ -83,7 +81,7 @@ function updateCurrentChars() {
     
     // 如果字符集太小，添加一些默认字符
     if (charArray.length < 50) {
-        const defaultChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        const defaultChars = "◇";
         for (let char of defaultChars) {
             charSet.add(char);
         }
