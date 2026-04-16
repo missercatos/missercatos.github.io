@@ -7,9 +7,9 @@ window.musicPlayer = (function() {
 
     // 播放列表 (路径指向 assets/music/)
     const playlist = [
-        { title: "曲目一", src: "assets/music/track1.mp3" },
-        { title: "曲目二", src: "assets/music/track2.mp3" },
-        { title: "曲目三", src: "assets/music/track3.mp3" }
+        { title: "乐典一", src: "assets/music/track1.mp3" },
+        { title: "乐典二", src: "assets/music/track2.mp3" },
+        { title: "乐典三", src: "assets/music/track3.mp3" }
     ];
     let currentTrackIndex = 0;
     let isMuted = false;
@@ -42,11 +42,11 @@ window.musicPlayer = (function() {
     function toggleMute() {
         isMuted = !isMuted;
         player.muted = isMuted;
-        muteBtn.textContent = isMuted ? "🔇" : "🔊";
+        muteBtn.textContent = isMuted ? "◇" : "◆";
     }
 
     function updatePlayButton(isPlaying) {
-        playPauseBtn.textContent = isPlaying ? "⏸️" : "▶️";
+        playPauseBtn.textContent = isPlaying ? "⏸" : "▶";
     }
 
     // 绑定事件
