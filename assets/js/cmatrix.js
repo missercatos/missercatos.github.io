@@ -44,7 +44,7 @@ const textSegments = [
 ];
 
 // 特殊符号集，增加酸性艺术感
-const specialChars = "*@!#itsaf>?+_=-09sasdqw}ssd{dda_+00129qd4dqwd79sdadsdqwe121ad";
+const specialChars = "◇◆";
 
 // 缓存当前激活的字符集
 let currentChars = "";
