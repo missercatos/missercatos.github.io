@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Miser | 个人宇宙</title>
+    <link rel="stylesheet" href="assets/css/style.css">
+    <link rel="icon" href="assets/img/avatar.png">
+</head>
+<body class="preload"> <!-- preload 类用于防止加载时闪烁 -->
+
+    <!-- 全屏数码雨 Canvas -->
+    <canvas id="matrixCanvas"></canvas>
+
+    <!-- 主内容容器 (毛玻璃效果) -->
+    <main id="mainContent" class="hidden">
+        <!-- 右上角音乐控制 -->
+        <div class="music-control">
+            <button id="playPauseBtn" aria-label="播放/暂停">▶️</button>
+            <button id="nextTrackBtn" aria-label="下一首">⏭️</button>
+            <button id="muteBtn" aria-label="静音/取消静音">🔊</button>
+            <span id="nowPlaying">未播放</span>
+        </div>
+
+        <!-- 导航栏 -->
+        <nav class="acid-nav">
+            <a href="index.html" class="nav-logo">MISER</a>
+            <div class="nav-links">
+                <a href="index.html" class="nav-link polygon-shape">主页</a>
+                <a href="projects.html" class="nav-link polygon-shape">作品</a>
+                <a href="about.html" class="nav-link polygon-shape">学习</a>
+                <a href="music.html" class="nav-link polygon-shape">音乐</a>
+                <a href="game.html" class="nav-link polygon-shape">游戏</a>
+            </div>
+        </nav>
+
+        <!-- 英雄区域 -->
+        <header class="hero">
+            <div class="avatar-container polygon-shape-rotate">
+                <img src="assets/img/avatar.png" alt="Miser 的头像" class="avatar">
+            </div>
+            <h1 class="acid-title glitch" data-text="MISER的个人网站">MISER的个人网站</h1>
+            <p class="hero-subtitle">// 代码如诗，艺术如风 //</p>
+            <button class="cta-button polygon-shape">探索我的世界</button>
+        </header>
+
+        <!-- 履历部分 (内容从 resume.json 动态加载) -->
+        <section id="resume" class="resume-section">
+            <h2 class="section-title">个人轨迹</h2>
+            <div id="resumeTimeline" class="timeline">
+                <!-- 时间线内容将由JS从 _data/resume.json 加载并生成 -->
+                <p class="loading">正在加载履历...</p>
+            </div>
+        </section>
+
+        <footer>
+            <!-- 页脚内容 -->
+        </footer>
+    </main>
+
+    <!-- 隐藏的音频播放器 -->
+    <audio id="bgmPlayer" loop preload="auto">
+        <!-- 音源由JS动态设置 -->
+    </audio>
+
+    <!-- 脚本引入 -->
+    <script src="assets/js/cmatrix.js"></script>
+    <script src="assets/js/musicPlayer.js"></script>
+    <script src="assets/js/main.js"></script>
+</body>
+</html>
+
