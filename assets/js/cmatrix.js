@@ -11,7 +11,7 @@ window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
 // 数码雨字符集 (可以加入一些特殊符号增加酸性感)
-const chars = "01アイウエオカキクケコ≒≡≡≡≡≒≒≒≒≒";
+const chars = "0101010101010101010101010101010101010101010101010101010101010101101010101010110";
 const charArray = chars.split("");
 
 // 计算列数 (根据字体大小)
