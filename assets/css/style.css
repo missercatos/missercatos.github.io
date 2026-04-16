@@ -1,0 +1,194 @@
+/* 基础重置与酸性艺术风变量 */
+:root {
+    --acid-primary: #00ff9d; /* 青绿 */
+    --acid-secondary: #00ccff; /* 亮蓝 */
+    --acid-bg: #0a0a12; /* 深空灰 */
+    --acid-surface: rgba(255, 255, 255, 0.05); /* 半透明白 */
+    --acid-text: #e0e0ff;
+    --acid-border: rgba(0, 255, 157, 0.3);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    background: var(--acid-bg);
+    color: var(--acid-text);
+    min-height: 100vh;
+    overflow-x: hidden;
+}
+
+body.preload #mainContent {
+    opacity: 0;
+}
+
+/* Canvas 数码雨全屏固定 */
+#matrixCanvas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1; /* 作为背景 */
+    pointer-events: none;
+}
+
+/* 主内容 - 毛玻璃效果 */
+#mainContent {
+    position: relative;
+    min-height: 100vh;
+    backdrop-filter: blur(15px) saturate(180%); /* 毛玻璃关键效果 */
+    -webkit-backdrop-filter: blur(15px) saturate(180%);
+    background-color: var(--acid-surface);
+    border: 1px solid var(--acid-border);
+    box-shadow: 
+        inset 0 0 50px rgba(0, 255, 157, 0.1),
+        0 20px 60px rgba(0, 0, 0, 0.5);
+    transition: opacity 1.5s ease-out;
+    padding: 2rem;
+    opacity: 1; /* JS 会控制显示 */
+}
+
+/* 多边形艺术类 */
+.polygon-shape {
+    clip-path: polygon(
+        10% 0%, 90% 0%, 100% 50%, 
+        90% 100%, 10% 100%, 0% 50%
+    ); /* 六边形 */
+    background: linear-gradient(135deg, 
+        transparent 20%, 
+        var(--acid-primary) 80%
+    );
+    border: none;
+    transition: all 0.3s ease;
+}
+
+.polygon-shape:hover {
+    clip-path: polygon(
+        0% 20%, 60% 20%, 60% 0%, 
+        100% 50%, 60% 100%, 60% 80%, 
+        0% 80%
+    ); /* 悬停时变形 */
+    background: linear-gradient(135deg, 
+        var(--acid-primary), 
+        var(--acid-secondary)
+    );
+}
+
+/* 导航栏酸性风格 */
+.acid-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem 0;
+    border-bottom: 2px solid;
+    border-image: linear-gradient(90deg, 
+        transparent, 
+        var(--acid-primary), 
+        transparent
+    ) 1;
+}
+
+.nav-logo {
+    font-size: 2.5rem;
+    font-weight: 900;
+    background: linear-gradient(90deg, 
+        var(--acid-primary), 
+        var(--acid-secondary)
+    );
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-decoration: none;
+    letter-spacing: 2px;
+}
+
+/* 故障文字效果 */
+.glitch {
+    position: relative;
+    animation: glitch-skew 4s infinite linear alternate-reverse;
+}
+.glitch::before, .glitch::after {
+    content: attr(data-text);
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+.glitch::before {
+    animation: glitch-anim 5s infinite linear alternate-reverse;
+    color: #ff00ff;
+    z-index: -1;
+}
+.glitch::after {
+    animation: glitch-anim2 3s infinite linear alternate-reverse;
+    color: #00ffff;
+    z-index: -2;
+}
+@keyframes glitch-anim { /* ... 关键帧代码 ... */ }
+
+/* 音乐控制栏 */
+.music-control {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 10px 15px;
+    border-radius: 30px;
+    backdrop-filter: blur(10px);
+}
+.music-control button {
+    background: none;
+    border: 1px solid var(--acid-primary);
+    color: var(--acid-primary);
+    border-radius: 50%;
+    width: 36px;
+    height: 36px;
+    cursor: pointer;
+    font-size: 1.1rem;
+    transition: all 0.2s;
+}
+
+/* 英雄区域 */
+.hero {
+    text-align: center;
+    padding: 8rem 2rem;
+}
+.avatar {
+    width: 180px;
+    height: 180px;
+    object-fit: cover;
+    border-radius: 50%;
+    border: 4px solid var(--acid-primary);
+    box-shadow: 0 0 40px var(--acid-primary);
+}
+.acid-title {
+    font-size: 4.5rem;
+    margin: 2rem 0;
+    text-transform: uppercase;
+}
+
+/* 履历时间线 */
+.timeline {
+    position: relative;
+    max-width: 900px;
+    margin: 4rem auto;
+}
+.timeline::before { /* 时间轴线 */ }
+.timeline-item {
+    background: rgba(10, 10, 18, 0.8);
+    border-left: 5px solid var(--acid-primary);
+    padding: 1.5rem;
+    margin: 2rem 0;
+    border-radius: 0 10px 10px 0;
+    position: relative;
+}
+.timeline-item::before { /* 时间点 */ }
