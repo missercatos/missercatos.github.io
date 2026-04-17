@@ -205,6 +205,16 @@ body.preload #mainContent {
     padding: 10px 15px;
     border-radius: 30px;
     backdrop-filter: blur(10px);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.5s ease, visibility 0.5s;
+}
+
+body:not(.preload) .music-control {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
 }
 
 .music-control button {
