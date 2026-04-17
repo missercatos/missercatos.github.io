@@ -12,7 +12,9 @@ document.addEventListener('DOMContentLoaded', function() {
         body.classList.remove('preload');
         
         // 开始播放BGM
-        window.musicPlayer.play();
+        if (window.musicPlayer && window.musicPlayer.play) {
+            window.musicPlayer.play();
+        }
         
         // 移除事件监听器，防止重复触发
         window.removeEventListener('click', revealContent);
@@ -26,35 +28,91 @@ document.addEventListener('DOMContentLoaded', function() {
     window.addEventListener('click', revealContent);
     window.addEventListener('keydown', revealContent);
 
-    // 2. 动态加载履历数据 (从 _data/resume.json)
-    // 注意：main.js在assets/js目录中，resume.json在根目录的_data目录
-    // 所以路径应该是：../../_data/resume.json
-    fetch('_data/resume.json')  // 修改为正确路径
-        .then(response => {
-            if (!response.ok) throw new Error('履历数据加载失败');
-            return response.json();
-        })
-        .then(data => {
-            const timelineEl = document.getElementById('resumeTimeline');
-            timelineEl.innerHTML = ''; // 清除加载中文字
+    // 2. 履历数据已硬编码在HTML中，无需动态加载
+
+    // 3. SPA路由 - 拦截导航链接点击
+    function setupSPARouting() {
+        // 拦截所有站内链接点击
+        document.addEventListener('click', function(e) {
+            const link = e.target.closest('a');
+            if (!link) return;
             
-            data.forEach(item => {
-                const itemEl = document.createElement('div');
-                itemEl.className = 'timeline-item polygon-shape';
-                
-                // 根据您提供的JSON数据结构创建HTML
-                itemEl.innerHTML = `
-                    <div class="timeline-year">${item.year}</div>
-                    <div class="timeline-content">
-                        <p>${item.description}</p>
-                        ${item.tags ? `<div class="tags">${item.tags.map(tag => `<span class="tag">${tag}</span>`).join('')}</div>` : ''}
-                    </div>
-                `;
-                timelineEl.appendChild(itemEl);
-            });
-        })
-        .catch(error => {
-            console.error('加载简历数据时出错:', error);
-            document.getElementById('resumeTimeline').innerHTML = '<p class="error">这里的主人被虚空吞噬</p>';
+            const href = link.getAttribute('href');
+            // 只处理.html链接且不是外部链接
+            if (href && href.endsWith('.html') && !href.startsWith('http')) {
+                e.preventDefault();
+                navigateTo(href);
+                return false;
+            }
         });
-});
+
+        // 监听浏览器前进/后退
+        window.addEventListener('popstate', function(e) {
+            if (e.state && e.state.page) {
+                loadPage(e.state.page, false);
+            }
+        });
+    }
+
+    // 导航到页面
+    function navigateTo(url) {
+        // 更新浏览器历史
+        history.pushState({ page: url }, '', url);
+        // 加载页面
+        loadPage(url, true);
+    }
+
+    // 加载页面内容
+    function loadPage(url, updateTitle = true) {
+        // 显示加载状态
+        mainContent.classList.add('hidden');
+        
+        // 如果是首页，直接显示现有内容
+        if (url === 'index.html' || url === '/' || url === '') {
+            setTimeout(() => {
+                mainContent.classList.remove('hidden');
+                if (updateTitle) document.title = 'Misser-catos';
+            }, 100);
+            return;
+        }
+        
+        // 获取页面内容
+        fetch(url)
+            .then(response => {
+                if (!response.ok) throw new Error('页面加载失败');
+                return response.text();
+            })
+            .then(html => {
+                // 从响应中提取主要内容
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                const newMainContent = doc.getElementById('mainContent');
+                
+                if (newMainContent) {
+                    // 替换当前内容
+                    mainContent.innerHTML = newMainContent.innerHTML;
+                    
+                    // 更新页面标题
+                    if (updateTitle) {
+                        const newTitle = doc.querySelector('title');
+                        if (newTitle) document.title = newTitle.textContent;
+                    }
+                    
+                    // 音乐控制按钮保持不变，无需重新绑定
+                    
+                    // 显示内容
+                    setTimeout(() => {
+                        mainContent.classList.remove('hidden');
+                    }, 100);
+                }
+            })
+            .catch(error => {
+                console.error('加载页面失败:', error);
+                mainContent.innerHTML = '<div class="content-placeholder"><p class="placeholder-text">页面加载失败</p><p class="placeholder-subtext">' + error.message + '</p></div>';
+                mainContent.classList.remove('hidden');
+            });
+    }
+
+    // 初始化SPA路由
+    setupSPARouting();
+}
