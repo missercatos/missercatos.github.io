@@ -8,7 +8,7 @@ window.musicPlayer = (function() {
     // 播放列表 (路径指向 assets/music/)
     const playlist = [
         { title: "不存在的乐园", src: "assets/music/track1.mp3" },
-        { title: "生息", src: "assets/music/track2.mp3" },
+        { title: "****生息****", src: "assets/music/track2.mp3" },
         { title: "走过漫漫时空", src: "assets/music/track3.mp3" }
     ];
     let currentTrackIndex = 0;
