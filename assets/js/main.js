@@ -27,7 +27,9 @@ document.addEventListener('DOMContentLoaded', function() {
     window.addEventListener('keydown', revealContent);
 
     // 2. 动态加载履历数据 (从 _data/resume.json)
-    fetch('_data/resume.json')
+    // 注意：main.js在assets/js目录中，resume.json在根目录的_data目录
+    // 所以路径应该是：../../_data/resume.json
+    fetch('_data/resume.json')  // 修改为正确路径
         .then(response => {
             if (!response.ok) throw new Error('履历数据加载失败');
             return response.json();
@@ -39,17 +41,20 @@ document.addEventListener('DOMContentLoaded', function() {
             data.forEach(item => {
                 const itemEl = document.createElement('div');
                 itemEl.className = 'timeline-item polygon-shape';
+                
+                // 根据您提供的JSON数据结构创建HTML
                 itemEl.innerHTML = `
-                    <h3>${item.year} - ${item.title}</h3>
-                    <p><strong>${item.company}</strong></p>
-                    <p>${item.description}</p>
-                    ${item.tags ? `<div class="tags">${item.tags.map(tag => `<span class="tag">${tag}</span>`).join('')}</div>` : ''}
+                    <div class="timeline-year">${item.year}</div>
+                    <div class="timeline-content">
+                        <p>${item.description}</p>
+                        ${item.tags ? `<div class="tags">${item.tags.map(tag => `<span class="tag">${tag}</span>`).join('')}</div>` : ''}
+                    </div>
                 `;
                 timelineEl.appendChild(itemEl);
             });
         })
         .catch(error => {
-            console.error(error);
-            document.getElementById('resumeTimeline').innerHTML = '<p class="error">履历加载失败，请稍后刷新。</p>';
+            console.error('加载简历数据时出错:', error);
+            document.getElementById('resumeTimeline').innerHTML = '<p class="error">这里的主人被虚空吞噬</p>';
         });
 });
