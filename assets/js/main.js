@@ -115,4 +115,4 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // 初始化SPA路由
     setupSPARouting();
-}
+});
