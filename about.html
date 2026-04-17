@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>学习 - Misser-catos</title>
+    <link rel="stylesheet" href="assets/css/style.css">
+    <link rel="icon" href="assets/img/avatar.png">
+    <!-- 引入Font Awesome图标库 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="preload">
+
+    <!-- 全屏数码雨 Canvas -->
+    <canvas id="matrixCanvas"></canvas>
+
+    <!-- 右上角音乐控制 -->
+    <div class="music-control">
+        <button id="playPauseBtn" aria-label="播放/暂停">⏸/▶</button>
+        <button id="nextTrackBtn" aria-label="下一首">▽</button>
+        <button id="muteBtn" aria-label="静音/取消静音">◆</button>
+        <span id="nowPlaying">未播放</span>
+    </div>
+
+    <!-- 主内容容器 (毛玻璃效果) -->
+    <main id="mainContent" class="hidden">
+        <!-- 导航栏 - 简化版，只保留Logo -->
+        <nav class="acid-nav">
+            <a href="index.html" class="nav-logo">MISSER</a>
+        </nav>
+
+        <!-- 英雄区域 -->
+        <header class="hero">
+            <div class="avatar-container polygon-shape-rotate">
+                <img src="assets/img/avatar.jpg" alt="Miser 的头像" class="avatar">
+            </div>
+            
+            <!-- 头像下方的社交链接 -->
+            <div class="social-icons">
+                <a href="https://github.com/missercatos?tab=repositories" target="_blank" class="social-icon polygon-shape" title="GitHub">
+                    <i class="fab fa-github"></i>
+                </a>
+                <a href="https://space.bilibili.com/1783752730" target="_blank" class="social-icon polygon-shape" title="哔哩哔哩">
+                    <i class="fab fa-bilibili"></i>
+                </a>
+            </div>
+            
+            <h1 class="acid-title glitch" data-text="学习">学习</h1>
+            
+            <!-- 网站功能链接（原导航链接移到此处） -->
+            <div class="function-links">
+                <a href="projects.html" class="func-link polygon-shape">作品</a>
+                <a href="music.html" class="func-link polygon-shape">音乐</a>
+                <a href="game.html" class="func-link polygon-shape">游戏</a>
+                <a href="about.html" class="func-link polygon-shape">学习</a>
+            </div>
+        </header>
+
+        <!-- 学习内容 -->
+        <section class="content-section">
+            <h2 class="section-title">学习笔记</h2>
+            <div class="content-placeholder">
+                <p class="placeholder-text">暂时还没有完成</p>
+                <p class="placeholder-subtext">这里将会分享我的学习笔记和技术总结</p>
+            </div>
+        </section>
+
+        <footer>
+            <!-- 页脚内容 -->
+        </footer>
+    </main>
+
+    <!-- 隐藏的音频播放器 -->
+    <audio id="bgmPlayer" loop preload="auto">
+        <!-- 音源由JS动态设置 -->
+    </audio>
+
+    <!-- 脚本引入 -->
+    <script src="assets/js/cmatrix.js"></script>
+    <script src="assets/js/musicPlayer.js"></script>
+    <script src="assets/js/main.js"></script>
+</body>
+</html>
