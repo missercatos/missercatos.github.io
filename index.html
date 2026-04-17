@@ -14,16 +14,16 @@
     <!-- 全屏数码雨 Canvas -->
     <canvas id="matrixCanvas"></canvas>
 
+    <!-- 右上角音乐控制 -->
+    <div class="music-control">
+        <button id="playPauseBtn" aria-label="播放/暂停">⏸/▶</button>
+        <button id="nextTrackBtn" aria-label="下一首">▽</button>
+        <button id="muteBtn" aria-label="静音/取消静音">◆</button>
+        <span id="nowPlaying">未播放</span>
+    </div>
+
     <!-- 主内容容器 (毛玻璃效果) -->
     <main id="mainContent" class="hidden">
-        <!-- 右上角音乐控制 -->
-        <div class="music-control">
-            <button id="playPauseBtn" aria-label="播放/暂停">⏸/▶</button>
-            <button id="nextTrackBtn" aria-label="下一首">▽</button>
-            <button id="muteBtn" aria-label="静音/取消静音">◆</button>
-            <span id="nowPlaying">未播放</span>
-        </div>
-
         <!-- 导航栏 - 简化版，只保留Logo -->
         <nav class="acid-nav">
             <a href="index.html" class="nav-logo">MISSER</a>
@@ -56,12 +56,61 @@
             </div>
         </header>
 
-        <!-- 履历部分 (内容从 resume.json 动态加载) -->
+        <!-- 履历部分 -->
         <section id="resume" class="resume-section">
             <h2 class="section-title">个人轨迹</h2>
             <div id="resumeTimeline" class="timeline">
-                <!-- 时间线内容将由JS从 _data/resume.json 加载并生成 -->
-                <p class="loading">正在加载履历...</p>
+                <div class="timeline-item polygon-shape">
+                    <div class="timeline-year">2025.12</div>
+                    <div class="timeline-content">
+                        <p>开始研究制作个人游戏，以视觉小说入手，使用repay引擎</p>
+                        <div class="tags">
+                            <span class="tag">glagame</span>
+                            <span class="tag">repay</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="timeline-item polygon-shape">
+                    <div class="timeline-year">2026.1</div>
+                    <div class="timeline-content">
+                        <p>更换系统为archlinux，从此走上自由的linux使用阶段</p>
+                        <div class="tags">
+                            <span class="tag">linux</span>
+                            <span class="tag">arch</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="timeline-item polygon-shape">
+                    <div class="timeline-year">2026.3</div>
+                    <div class="timeline-content">
+                        <p>自学cpp，在有c语言的基础上感觉两周入门了</p>
+                        <div class="tags">
+                            <span class="tag">c</span>
+                            <span class="tag">cpp</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="timeline-item polygon-shape">
+                    <div class="timeline-year">2026.3</div>
+                    <div class="timeline-content">
+                        <p>决定预备参加ICPC算法竞赛，自学数论和数据结构</p>
+                        <div class="tags">
+                            <span class="tag">竞赛</span>
+                            <span class="tag">ICPC</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="timeline-item polygon-shape">
+                    <div class="timeline-year">2026.4</div>
+                    <div class="timeline-content">
+                        <p>购买域名并创建个人网站，准备记录自己的计算机研学生涯</p>
+                        <div class="tags">
+                            <span class="tag">网站</span>
+                            <span class="tag">web</span>
+                            <span class="tag">cat-os</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -81,4 +130,3 @@
     <script src="assets/js/main.js"></script>
 </body>
 </html>
-
