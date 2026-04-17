@@ -8,6 +8,10 @@
     --acid-border: rgba(0, 255, 157, 0.3);
 }
 
+html {
+    height: 100%;
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -41,6 +45,7 @@ body.preload #mainContent {
 #mainContent {
     position: relative;
     min-height: 100vh;
+    height: auto;
     backdrop-filter: blur(15px) saturate(180%); /* 毛玻璃关键效果 */
     -webkit-backdrop-filter: blur(15px) saturate(180%);
     background-color: var(--acid-surface);
@@ -386,6 +391,15 @@ body.preload #mainContent {
     margin-left: 5%;
 }
 
+.timeline-item.polygon-shape {
+    transition: none;
+}
+
+.timeline-item.polygon-shape:hover {
+    clip-path: polygon(10% 0%, 90% 0%, 100% 50%, 90% 100%, 10% 100%, 0% 50%);
+    background: linear-gradient(135deg, transparent 20%, var(--acid-primary) 80%);
+}
+
 .timeline-item:nth-child(even) {
     margin-left: 50%;
     border-left: none;
@@ -409,6 +423,29 @@ body.preload #mainContent {
     left: auto;
     right: -10px;
     background: var(--acid-secondary);
+}
+
+.timeline-year {
+    font-size: 1.3rem;
+    font-weight: bold;
+    color: var(--acid-primary);
+    margin-bottom: 0.5rem;
+}
+
+.tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+.tag {
+    background: rgba(0, 255, 157, 0.1);
+    border: 1px solid var(--acid-primary);
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    color: var(--acid-primary);
 }
 
 .loading {
@@ -557,4 +594,34 @@ body.loaded #mainContent {
         opacity: 1;
         transform: translateY(0);
     }
+}
+
+/* 内容区域样式 */
+.content-section {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 3rem 0;
+    text-align: center;
+}
+
+.content-placeholder {
+    background: rgba(10, 10, 18, 0.6);
+    border: 1px solid var(--acid-border);
+    border-radius: 10px;
+    padding: 4rem 2rem;
+    margin-top: 2rem;
+    backdrop-filter: blur(5px);
+}
+
+.placeholder-text {
+    font-size: 2rem;
+    color: var(--acid-primary);
+    margin-bottom: 1rem;
+    font-weight: bold;
+}
+
+.placeholder-subtext {
+    font-size: 1.2rem;
+    color: var(--acid-text);
+    opacity: 0.8;
 }
