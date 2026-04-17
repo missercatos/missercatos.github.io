@@ -1,21 +1,19 @@
 backend:
   name: github
-  repo: 你的用户名/你的用户名.github.io # 你的仓库
-  branch: main # 分支
+  repo: 你的用户名/你的用户名.github.io # 请替换为您的实际GitHub用户名和仓库名
+  branch: main # 分支名称
 
-media_folder: "assets/img" # 上传的图片保存到哪里
-public_folder: "/assets/img" # 前端访问图片的路径
+media_folder: "img" # 上传的图片保存到img文件夹
+public_folder: "/img" # 前端访问图片的路径（相对于根目录）
 
 collections:
   - name: "resume"
     label: "个人履历"
-    folder: "_data"
+    folder: "data" # 将数据文件存储在data文件夹
     path: "{{year}}-{{month}}-{{day}}-{{slug}}"
     slug: "{{year}}-{{month}}-{{day}}"
     create: true
     fields:
       - { label: "年份/时间", name: "year", widget: "string" }
-      - { label: "职位/标题", name: "title", widget: "string" }
-      - { label: "公司/组织", name: "company", widget: "string" }
       - { label: "描述", name: "description", widget: "text" }
       - { label: "技能标签", name: "tags", widget: "list", default: ["示例"] }
