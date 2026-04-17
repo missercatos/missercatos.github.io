@@ -1,16 +1,27 @@
 [
     {
-        "year": "2023 - 至今",
-        "title": "全栈开发工程师",
-        "company": "某科技公司",
-        "description": "负责核心业务系统后端API设计与开发，使用Node.js与Python。主导前端架构重构，引入Vue3提升用户体验。",
-        "tags": ["Node.js", "Vue", "云原生"]
+        "year": "2025.12",
+        "description": "开始研究制作个人游戏，以视觉小说入手，使用repay引擎",
+        "tags": ["glagame", "repay"]
     },
     {
-        "year": "2021 - 2023",
-        "title": "后端开发",
-        "company": "某初创企业",
-        "description": "参与微服务架构设计，负责用户服务与支付模块。优化数据库查询，使接口响应速度提升40%。",
-        "tags": ["Golang", "MySQL", "Redis"]
+        "year": "2026.1",
+        "description": "更换系统为archlinux，从此走上自由的linux使用阶段",
+        "tags": ["linux", "arch"]
+    },
+    {
+        "year": "2026.3",
+        "description": "自学cpp，在有c语言的基础上感觉两周入门了",
+        "tags": ["c", "cpp"]
+    },
+    {
+        "year": "2026.3",
+        "description": "决定预备参加ICPC算法竞赛，自学数论和数据结构",
+        "tags": ["竞赛","ICPC"]
+    },
+    {
+        "year": "2026.4",
+        "description": "购买域名并创建个人网站，准备记录自己的计算机研学生涯",
+        "tags": ["网站", "web", "cat-os"]
     }
 ]
