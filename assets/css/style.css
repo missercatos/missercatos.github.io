@@ -635,3 +635,188 @@ body.loaded #mainContent {
     color: var(--acid-text);
     opacity: 0.8;
 }
+
+/* 点赞功能样式 */
+.like-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 2rem 0;
+    gap: 1rem;
+}
+
+.like-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 12px 24px;
+    background: rgba(255, 0, 255, 0.2);
+    color: #f0f;
+    border: 1px solid rgba(255, 0, 255, 0.3);
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+    font-size: 1.1rem;
+    transition: all 0.3s ease;
+    clip-path: polygon(
+        10% 0%, 90% 0%, 100% 50%, 
+        90% 100%, 10% 100%, 0% 50%
+    );
+}
+
+.like-button:hover {
+    background: rgba(255, 0, 255, 0.4);
+    transform: translateY(-3px);
+    box-shadow: 0 0 20px rgba(255, 0, 255, 0.5);
+}
+
+.like-button.liked {
+    background: rgba(255, 0, 255, 0.6);
+    color: #fff;
+    border-color: #f0f;
+}
+
+.like-count {
+    font-size: 1rem;
+    color: var(--acid-text);
+    opacity: 0.9;
+}
+
+.like-count #likeCount {
+    color: var(--acid-primary);
+    font-weight: bold;
+}
+
+/* 作品页面样式 */
+.projects-list {
+    display: flex;
+    flex-direction: column;
+    gap: 3rem;
+    margin-top: 2rem;
+}
+
+.project-card {
+    position: relative;
+    background: rgba(10, 10, 18, 0.6);
+    border: 1px solid var(--acid-border);
+    border-radius: 15px;
+    padding: 2rem;
+    backdrop-filter: blur(10px);
+    transition: all 0.3s ease;
+}
+
+.project-card:hover {
+    border-color: var(--acid-primary);
+    box-shadow: 0 0 30px rgba(0, 255, 157, 0.2);
+    transform: translateY(-5px);
+}
+
+.project-number {
+    position: absolute;
+    top: -15px;
+    left: 20px;
+    background: var(--acid-primary);
+    color: var(--acid-bg);
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+    font-size: 1.2rem;
+    padding: 5px 15px;
+    border-radius: 20px;
+    border: 2px solid var(--acid-border);
+}
+
+.project-image {
+    margin-bottom: 1.5rem;
+    text-align: center;
+}
+
+.project-screenshot {
+    max-width: 100%;
+    height: auto;
+    border-radius: 10px;
+    border: 1px solid rgba(0, 255, 157, 0.3);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+}
+
+.image-caption {
+    margin-top: 0.5rem;
+    font-size: 0.9rem;
+    color: var(--acid-text);
+    opacity: 0.8;
+    font-style: italic;
+}
+
+.project-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+}
+
+.project-table th,
+.project-table td {
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 1px solid rgba(0, 255, 157, 0.1);
+}
+
+.project-table th {
+    width: 120px;
+    color: var(--acid-primary);
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.project-table td {
+    color: var(--acid-text);
+}
+
+.project-table tr:last-child th,
+.project-table tr:last-child td {
+    border-bottom: none;
+}
+
+.project-table a {
+    color: var(--acid-secondary);
+    text-decoration: none;
+    transition: color 0.3s ease;
+}
+
+.project-table a:hover {
+    color: var(--acid-primary);
+    text-decoration: underline;
+}
+
+.project-table code {
+    background: rgba(0, 255, 157, 0.1);
+    color: var(--acid-primary);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+    border: 1px solid rgba(0, 255, 157, 0.2);
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+    .project-card {
+        padding: 1.5rem;
+    }
+    
+    .project-table th,
+    .project-table td {
+        padding: 8px 10px;
+        font-size: 0.9rem;
+    }
+    
+    .project-table th {
+        width: 100px;
+    }
+    
+    .project-number {
+        font-size: 1rem;
+        padding: 4px 12px;
+    }
+}

@@ -72,6 +72,8 @@ document.addEventListener('DOMContentLoaded', function() {
             setTimeout(() => {
                 mainContent.classList.remove('hidden');
                 if (updateTitle) document.title = 'Misser-catos';
+                // 初始化点赞按钮
+                setupLikeButton();
             }, 100);
             return;
         }
@@ -103,6 +105,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     // 显示内容
                     setTimeout(() => {
                         mainContent.classList.remove('hidden');
+                        // 重新初始化点赞按钮
+                        setupLikeButton();
                     }, 100);
                 }
             })
@@ -115,4 +119,54 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // 初始化SPA路由
     setupSPARouting();
+    
+    // 初始化点赞功能
+    setupLikeButton();
 });
+
+// 点赞功能
+function setupLikeButton() {
+    const likeButton = document.getElementById('likeButton');
+    const likeCountEl = document.getElementById('likeCount');
+    
+    if (!likeButton || !likeCountEl) {
+        return; // 当前页面没有点赞按钮
+    }
+    
+    // 从localStorage获取点赞数，默认为0
+    let likeCount = parseInt(localStorage.getItem('siteLikes')) || 0;
+    let liked = localStorage.getItem('userLiked') === 'true';
+    
+    // 更新显示
+    likeCountEl.textContent = likeCount;
+    if (liked) {
+        likeButton.classList.add('liked');
+        likeButton.innerHTML = '<i class="fas fa-heart"></i> 已点赞';
+        likeButton.disabled = true;
+    }
+    
+    // 点赞按钮点击事件
+    likeButton.addEventListener('click', function() {
+        if (liked) return;
+        
+        // 增加点赞数
+        likeCount++;
+        liked = true;
+        
+        // 更新localStorage
+        localStorage.setItem('siteLikes', likeCount);
+        localStorage.setItem('userLiked', 'true');
+        
+        // 更新UI
+        likeCountEl.textContent = likeCount;
+        likeButton.classList.add('liked');
+        likeButton.innerHTML = '<i class="fas fa-heart"></i> 已点赞';
+        likeButton.disabled = true;
+        
+        // 添加动画效果
+        likeButton.style.transform = 'scale(1.2)';
+        setTimeout(() => {
+            likeButton.style.transform = '';
+        }, 300);
+    });
+}
