@@ -799,6 +799,98 @@ body.loaded #mainContent {
     border: 1px solid rgba(0, 255, 157, 0.2);
 }
 
+/* 文件下载区域 */
+.downloads-section {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem 0;
+}
+
+.downloads-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.download-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem;
+    background: rgba(10, 10, 18, 0.8);
+    border-left: 5px solid var(--acid-primary);
+    border-radius: 0 10px 10px 0;
+    transition: all 0.3s ease;
+}
+
+.download-item:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 20px rgba(0, 255, 157, 0.2);
+}
+
+.download-info {
+    flex: 1;
+}
+
+.download-title {
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
+    color: var(--acid-primary);
+}
+
+.download-description {
+    color: var(--acid-text);
+    opacity: 0.8;
+    margin-bottom: 0.5rem;
+    font-size: 0.95rem;
+}
+
+.download-meta {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.85rem;
+}
+
+.file-type, .file-size {
+    background: rgba(0, 255, 157, 0.1);
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    color: var(--acid-primary);
+}
+
+.download-button {
+    padding: 0.75rem 1.5rem;
+    background: linear-gradient(135deg, var(--acid-primary), var(--acid-secondary));
+    color: var(--acid-bg);
+    text-decoration: none;
+    font-weight: bold;
+    transition: all 0.3s ease;
+    border: none;
+    cursor: pointer;
+}
+
+.download-button:hover {
+    background: linear-gradient(135deg, var(--acid-secondary), var(--acid-primary));
+    transform: scale(1.05);
+}
+
+.download-note {
+    text-align: center;
+    margin-top: 2rem;
+    color: var(--acid-text);
+    opacity: 0.7;
+    font-style: italic;
+}
+
+.loading {
+    text-align: center;
+    padding: 2rem;
+    color: var(--acid-primary);
+    font-size: 1.2rem;
+}
+
 /* 响应式调整 */
 @media (max-width: 768px) {
     .project-card {
@@ -818,5 +910,15 @@ body.loaded #mainContent {
     .project-number {
         font-size: 1rem;
         padding: 4px 12px;
+    }
+    
+    .download-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+    
+    .download-button {
+        align-self: flex-end;
     }
 }

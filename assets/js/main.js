@@ -74,6 +74,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (updateTitle) document.title = 'Misser-catos';
                 // 初始化点赞按钮
                 setupLikeButton();
+                // 加载下载文件列表
+                loadDownloads();
             }, 100);
             return;
         }
@@ -107,6 +109,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         mainContent.classList.remove('hidden');
                         // 重新初始化点赞按钮
                         setupLikeButton();
+                        // 加载下载文件列表
+                        loadDownloads();
                     }, 100);
                 }
             })
@@ -122,6 +126,8 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // 初始化点赞功能
     setupLikeButton();
+    // 加载下载文件列表
+    loadDownloads();
 });
 
 // 点赞功能
@@ -169,4 +175,55 @@ function setupLikeButton() {
             likeButton.style.transform = '';
         }, 300);
     });
+}
+
+// 加载下载文件列表
+function loadDownloads() {
+    const downloadsList = document.getElementById('downloadsList');
+    if (!downloadsList) {
+        return; // 当前页面没有下载区域
+    }
+    
+    // 显示加载状态
+    downloadsList.innerHTML = '<div class="loading">加载文件中...</div>';
+    
+    // 从JSON文件加载数据
+    fetch('data/downloads.json')
+        .then(response => {
+            if (!response.ok) throw new Error('无法加载文件列表');
+            return response.json();
+        })
+        .then(files => {
+            if (files.length === 0) {
+                downloadsList.innerHTML = '<div class="loading">暂无文件可下载</div>';
+                return;
+            }
+            
+            // 清空容器
+            downloadsList.innerHTML = '';
+            
+            // 为每个文件创建下载项
+            files.forEach(file => {
+                const item = document.createElement('div');
+                item.className = 'download-item polygon-shape';
+                item.innerHTML = `
+                    <div class="download-info">
+                        <h3 class="download-title">${file.title}</h3>
+                        <p class="download-description">${file.description}</p>
+                        <div class="download-meta">
+                            <span class="file-type">${file.type}</span>
+                            <span class="file-size">${file.size}</span>
+                        </div>
+                    </div>
+                    <a href="${file.path}" download class="download-button polygon-shape">
+                        <i class="fas fa-download"></i> 下载
+                    </a>
+                `;
+                downloadsList.appendChild(item);
+            });
+        })
+        .catch(error => {
+            console.error('加载下载文件列表失败:', error);
+            downloadsList.innerHTML = '<div class="loading">加载失败，请刷新页面</div>';
+        });
 }

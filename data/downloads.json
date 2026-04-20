@@ -1,0 +1,26 @@
+[
+    {
+        "name": "example1.txt",
+        "title": "示例文件 1",
+        "description": "这是一个示例文本文件，包含测试内容。",
+        "type": "TXT",
+        "size": "1.2 KB",
+        "path": "downloads/example1.txt"
+    },
+    {
+        "name": "example2.txt",
+        "title": "示例文件 2",
+        "description": "另一个示例文本文件，包含更多信息。",
+        "type": "TXT",
+        "size": "1.5 KB",
+        "path": "downloads/example2.txt"
+    },
+    {
+        "name": "sample.pdf",
+        "title": "示例 PDF 文档",
+        "description": "一个模拟的PDF文件，可用于测试下载功能。",
+        "type": "PDF",
+        "size": "2.0 KB",
+        "path": "downloads/sample.pdf"
+    }
+]
