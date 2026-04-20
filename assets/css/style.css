@@ -891,6 +891,32 @@ body.loaded #mainContent {
     font-size: 1.2rem;
 }
 
+/* 下载区域覆盖多边形样式为矩形 */
+.downloads-section .polygon-shape {
+    clip-path: none !important;
+    border-radius: 8px;
+}
+
+.downloads-section .download-item.polygon-shape {
+    background: rgba(10, 10, 18, 0.8);
+}
+
+.downloads-section .download-button.polygon-shape {
+    background: linear-gradient(135deg, var(--acid-primary), var(--acid-secondary));
+}
+
+.downloads-section .polygon-shape:hover {
+    clip-path: none !important;
+}
+
+.downloads-section .download-item.polygon-shape:hover {
+    background: rgba(10, 10, 18, 0.9);
+}
+
+.downloads-section .download-button.polygon-shape:hover {
+    background: linear-gradient(135deg, var(--acid-secondary), var(--acid-primary));
+}
+
 /* 响应式调整 */
 @media (max-width: 768px) {
     .project-card {

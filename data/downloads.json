@@ -22,5 +22,13 @@
         "type": "PDF",
         "size": "2.0 KB",
         "path": "downloads/sample.pdf"
+    },
+    {
+        "name": "1.py",
+        "title": "Python神经网络实现",
+        "description": "使用NumPy实现的双层反向传播神经网络，解决XOR问题。",
+        "type": "PY",
+        "size": "2.7 KB",
+        "path": "downloads/1.py"
     }
 ]
