@@ -128,7 +128,69 @@ document.addEventListener('DOMContentLoaded', function() {
     setupLikeButton();
     // 加载下载文件列表
     loadDownloads();
+    
+    // 图片点击放大功能
+    setupImageZoom();
 });
+
+// 图片放大功能
+function setupImageZoom() {
+    // 创建lightbox元素
+    const lightbox = document.createElement('div');
+    lightbox.id = 'imageLightbox';
+    lightbox.className = 'lightbox hidden';
+    lightbox.innerHTML = `
+        <div class="lightbox-content">
+            <span class="lightbox-close">&times;</span>
+            <img class="lightbox-image" src="" alt="放大图片">
+            <div class="lightbox-caption"></div>
+        </div>
+    `;
+    document.body.appendChild(lightbox);
+    
+    // 获取所有可点击放大的图片
+    const zoomImages = document.querySelectorAll('img[data-fullsize]');
+    
+    zoomImages.forEach(img => {
+        img.style.cursor = 'zoom-in';
+        img.addEventListener('click', function() {
+            const fullSizeSrc = this.getAttribute('data-fullsize');
+            const caption = this.nextElementSibling ? this.nextElementSibling.textContent : '';
+            
+            const lightboxImg = lightbox.querySelector('.lightbox-image');
+            const lightboxCaption = lightbox.querySelector('.lightbox-caption');
+            
+            lightboxImg.src = fullSizeSrc;
+            lightboxCaption.textContent = caption;
+            
+            lightbox.classList.remove('hidden');
+            document.body.style.overflow = 'hidden'; // 防止滚动
+        });
+    });
+    
+    // 关闭lightbox
+    const closeBtn = lightbox.querySelector('.lightbox-close');
+    closeBtn.addEventListener('click', function() {
+        lightbox.classList.add('hidden');
+        document.body.style.overflow = '';
+    });
+    
+    // 点击背景关闭
+    lightbox.addEventListener('click', function(e) {
+        if (e.target === lightbox) {
+            lightbox.classList.add('hidden');
+            document.body.style.overflow = '';
+        }
+    });
+    
+    // ESC键关闭
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && !lightbox.classList.contains('hidden')) {
+            lightbox.classList.add('hidden');
+            document.body.style.overflow = '';
+        }
+    });
+}
 
 // 点赞功能
 function setupLikeButton() {

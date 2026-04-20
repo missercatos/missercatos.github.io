@@ -917,6 +917,68 @@ body.loaded #mainContent {
     background: linear-gradient(135deg, var(--acid-secondary), var(--acid-primary));
 }
 
+/* 图片放大lightbox样式 */
+.lightbox {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.9);
+    z-index: 1000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    backdrop-filter: blur(10px);
+}
+
+.lightbox.hidden {
+    display: none;
+}
+
+.lightbox-content {
+    position: relative;
+    max-width: 90%;
+    max-height: 90%;
+    display: flex;
+    flex-direction: column;
+}
+
+.lightbox-image {
+    max-width: 100%;
+    max-height: 80vh;
+    border-radius: 10px;
+    border: 2px solid var(--acid-primary);
+    box-shadow: 0 0 30px rgba(0, 255, 157, 0.3);
+}
+
+.lightbox-close {
+    position: absolute;
+    top: -40px;
+    right: -10px;
+    color: white;
+    font-size: 40px;
+    cursor: pointer;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: color 0.3s ease;
+}
+
+.lightbox-close:hover {
+    color: var(--acid-primary);
+}
+
+.lightbox-caption {
+    color: white;
+    text-align: center;
+    margin-top: 15px;
+    font-size: 1.1rem;
+    opacity: 0.8;
+}
+
 /* 响应式调整 */
 @media (max-width: 768px) {
     .project-card {
