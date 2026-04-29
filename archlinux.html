@@ -757,9 +757,9 @@
                     </ul>
                 </div>
                 <div class="step-image-area" data-fullsize="assets/img/archlinux/step-gdisk.png">
-                    <img src="assets/img/archlinux/step-lasblk.png" alt="步骤3演示图片" data-zoomable>
+                    <img src="assets/img/archlinux/step-lasblk.png" alt="" data-zoomable>
                     <div>lsblk打开硬盘配置</div>
-                    <img src="assets/img/archlinux/step-gdisk.png" alt="步骤3演示图片" data-zoomable>
+                    <img src="assets/img/archlinux/step-gdisk.png" alt="" data-zoomable>
                     <div>gdisk /dev/你的硬盘（lsblk上面最后一行是disk的)分配空间</div>
                 </div>
             </article>
@@ -772,9 +772,9 @@
                 <div>对照你的分区名字输入相对应的指令，不要直接照抄，要把sdXn切换为你从树状图看到的</div>
                     格式化分区并挂载。通常将根分区格式化为 <code>ext4</code>，使用 <code>mkfs.f -F 32 /dev/sdXn</code> 格式化引导分区（空间小的那部分，一般是512M，记得把sdXn换成你的） <code>mkfs.ext4 /dev/sdXn</code>格式化主空间（大的那个），然后用 <code>mount /dev/sdXn /mnt</code> 命令将主分区挂载到 <code>/mnt</code><code>用</code><code>mkdir /mnt/boot && mount /dev/sdXn /mnt/boot</code> <code>创建并把跟分区挂载到boot</code>
                 </div>
-                    <img src="assets/img/archlinux/step4.png" alt="步骤4演示图片" data-zoomable>
+                    <img src="assets/img/archlinux/step4.png" alt="" data-zoomable>
                       <div>lsblk再一次检查分区是否正确,然后格式化分区</div>
-                    <img src="assets/img/archlinux/step4-1.png" alt="步骤4演示图片" data-zoomable>
+                    <img src="assets/img/archlinux/step4-1.png" alt="" data-zoomable>
                       <div>将分区挂载</div>
             </article>
 
@@ -786,9 +786,9 @@
             <code>安装基本系统和基本工具。也可以可以切换内核，比如linux-zen内核（性能更强，耗电更大）使用pacstrap /mnt base linux-zen linux-firmware sudo vim 进行安装</code>
                 </div>
                 <div class="step-image-area" data-fullsize="assets/img/archlinux/step5.png">
-                    <img src="assets/img/archlinux/step5.png" alt="步骤5演示图片" data-zoomable>
+                    <img src="assets/img/archlinux/step5.png" alt="" data-zoomable>
                      <div>安装基本系统和基本工具</div>
-                    <img src="assets/img/archlinux/step5.png" alt="步骤5演示图片" data-zoomable>
+                    <img src="assets/img/archlinux/step5.png" alt="" data-zoomable>
                      <div>安装过程大概这样</div>
                 </div>
             </article>
@@ -805,7 +805,7 @@
                     现在你已经在新的 Arch Linux 系统中了，接下来进行系统配置。
                 </div>
                 <div class="step-image-area" data-fullsize="assets/img/archlinux/step6.png">
-                    <img src="assets/img/archlinux/step6.png" alt="步骤6演示图片" data-zoomable>
+                    <img src="assets/img/archlinux/step6.png" alt="" data-zoomable>
                      <div>进入新系统环境的指令</div>
                 </div>
             </article>
@@ -832,9 +832,9 @@
                     这条命令确保系统时间和硬件时间一致，双系统时尤为重要，可以避免 Windows 和 Linux 时间不同步的问题。
                 </div>
                 <div class="step-image-area" data-fullsize="assets/img/archlinux/step7.png">
-                    <img src="assets/img/archlinux/step7.png" alt="步骤7演示图片" data-zoomable>
+                    <img src="assets/img/archlinux/step7.png" alt="" data-zoomable>
                      <div>设置时区为上海</div>
-                    <img src="assets/img/archlinux/step7.png" alt="步骤7演示图片" data-zoomable>
+                    <img src="assets/img/archlinux/step7.png" alt="" data-zoomable>
                      <div>确保时间和硬件时间一致，不制作双系统也建议做一下</div>
                 </div>
             </article>
@@ -860,11 +860,11 @@
                     建议默认使用英文，避免 TTY 下中文乱码问题。桌面环境安装后再设置为中文即可。
                 </div>
                 <div class="step-image-area" data-fullsize="assets/img/archlinux/step8.png">
-                    <img src="assets/img/archlinux/step8.png" alt="步骤8演示图片" data-zoomable>
+                    <img src="assets/img/archlinux/step8.png" alt="" data-zoomable>
                      <div>使用vim进入文件</div>
-                    <img src="assets/img/archlinux/step8-1.png" alt="步骤8演示图片" data-zoomable>
+                    <img src="assets/img/archlinux/step8-1.png" alt="" data-zoomable>
                      <div>指令模式快捷找到需要修改的段落位置</div>
-                    <img src="assets/img/archlinux/step8-2.png" alt="步骤8演示图片" data-zoomable>
+                    <img src="assets/img/archlinux/step8-2.png" alt="" data-zoomable>
                      <div>wq退出vim编辑器</div>
                 </div>
             </article>
@@ -888,13 +888,13 @@
 </pre>
                 </div>
                 <div class="step-image-area" data-fullsize="assets/img/archlinux/step9.png">
-                    <img src="assets/img/archlinux/step9.png" alt="步骤9演示图片" data-zoomable>
+                    <img src="assets/img/archlinux/step9.png" alt="" data-zoomable>
                      <div>设定默认语言</div>
-                    <img src="assets/img/archlinux/step9-1.png" alt="步骤9演示图片" data-zoomable>
+                    <img src="assets/img/archlinux/step9-1.png" alt="" data-zoomable>
                      <div>设定计算机名字</div>
-                    <img src="assets/img/archlinux/step9-2.png" alt="步骤9演示图片" data-zoomable>
+                    <img src="assets/img/archlinux/step9-2.png" alt="" data-zoomable>
                      <div>增加环境</div>
-                    <img src="assets/img/archlinux/step9-3.png" alt="步骤9演示图片" data-zoomable>
+                    <img src="assets/img/archlinux/step9-3.png" alt="" data-zoomable>
                      <div>设定管理员密码，需要输入两次</div>
                 </div>
             </article>
@@ -922,9 +922,9 @@
                     这样 wheel 组的用户就可以使用 sudo 了。
                 </div>
                 <div class="step-image-area" data-fullsize="assets/img/archlinux/step10.png">
-                    <img src="assets/img/archlinux/step10.png" alt="步骤10演示图片" data-zoomable>
+                    <img src="assets/img/archlinux/step10.png" alt="" data-zoomable>
                      <div>新建用户</div>
-                    <img src="assets/img/archlinux/step10-1.png" alt="步骤10演示图片" data-zoomable>
+                    <img src="assets/img/archlinux/step10-1.png" alt="" data-zoomable>
                      <div>为用户设置密码</div> 
                 </div>
             </article>
