@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>诸君聚集之地</title>
+    <link rel="stylesheet" href="assets/css/style.css">
+    <link rel="icon" href="assets/img/avatar.png">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { background: #000000 !important; }
+        #matrixCanvas { z-index: 0; }
+        .us-wrapper { position: relative; z-index: 1; }
+    </style>
+</head>
+<body class="us-page">
+
+    <canvas id="matrixCanvas"></canvas>
+
+    <!-- 左上角点赞 + 跳转留言板 -->
+    <div class="top-left-actions">
+        <div class="mini-like-container">
+            <button id="likeButton" class="mini-like-btn" title="点赞">
+                <i class="fas fa-heart"></i> <span id="likeCount">0</span>
+            </button>
+        </div>
+        <a href="us.html" class="mini-us-btn" title="留言板">
+            <i class="fas fa-comment-dots"></i>
+        </a>
+    </div>
+
+    <div class="us-wrapper">
+        <nav class="us-nav">
+            <a href="index.html" class="us-nav-logo">诸君聚集之地</a>
+        </nav>
+
+        <div class="us-container">
+            <div class="message-input-area">
+                <textarea id="msgContent" placeholder="留下你的话语…"></textarea>
+                <div class="message-input-row">
+                    <input type="text" id="msgAuthor" placeholder="你的名字（选填）" maxlength="20">
+                    <button class="btn-submit-msg" id="btnSubmitMsg">发送</button>
+                </div>
+            </div>
+
+            <div class="message-list" id="messageList">
+                <div class="empty-messages">尚无留言，来写下第一条吧</div>
+            </div>
+
+            <div class="pagination" id="pagination">
+                <button class="page-btn" id="prevPage">&#8249; 上一页</button>
+                <span class="page-info" id="pageInfo">第 1 / 1 页</span>
+                <button class="page-btn" id="nextPage">下一页 &#8250;</button>
+            </div>
+        </div>
+
+        <div class="signatures">
+            <div class="signature-line">Where thoughts gather</div>
+            <div class="signature-line">Whispers in the digital rain</div>
+            <div class="signature-line">Echoes of the void</div>
+            <div class="signature-line">In lumine tuo videbimus lumen</div>
+        </div>
+    </div>
+
+    <script src="assets/js/cmatrix.js"></script>
+    <script>
+(function() {
+    const PER_PAGE = 10;
+
+    function getMessages() {
+        try {
+            return JSON.parse(localStorage.getItem('usMessages')) || [];
+        } catch(e) { return []; }
+    }
+
+    function saveMessages(msgs) {
+        localStorage.setItem('usMessages', JSON.stringify(msgs));
+    }
+
+    function getCurrentPage() {
+        return parseInt(localStorage.getItem('usCurrentPage')) || 1;
+    }
+
+    function setCurrentPage(p) {
+        localStorage.setItem('usCurrentPage', p);
+    }
+
+    function getLikedSet() {
+        try {
+            return JSON.parse(localStorage.getItem('usLikedMessages')) || {};
+        } catch(e) { return {}; }
+    }
+
+    function saveLikedSet(obj) {
+        localStorage.setItem('usLikedMessages', JSON.stringify(obj));
+    }
+
+    function escHtml(str) {
+        var div = document.createElement('div');
+        div.appendChild(document.createTextNode(str));
+        return div.innerHTML;
+    }
+
+    function formatTime(ts) {
+        var d = new Date(ts);
+        var pad = function(n) { return String(n).padStart(2, '0'); };
+        return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    }
+
+    function render() {
+        var msgs = getMessages();
+        var page = getCurrentPage();
+        var liked = getLikedSet();
+        var totalPages = Math.max(1, Math.ceil(msgs.length / PER_PAGE));
+        var validPage = Math.min(page, totalPages);
+        if (validPage !== page) setCurrentPage(validPage);
+        var start = (validPage - 1) * PER_PAGE;
+        var pageMsgs = msgs.slice(start, start + PER_PAGE);
+
+        var list = document.getElementById('messageList');
+        if (pageMsgs.length === 0) {
+            list.innerHTML = '<div class="empty-messages">尚无留言，来写下第一条吧</div>';
+        } else {
+            var html = '';
+            for (var i = 0; i < pageMsgs.length; i++) {
+                var m = pageMsgs[i];
+                var isLiked = liked[m.id] || false;
+                var likedClass = isLiked ? ' liked' : '';
+                html += '<div class="message-item">' +
+                    '<div class="message-header">' +
+                        '<span class="message-author">' + escHtml(m.author || '匿名') + '</span>' +
+                        '<span class="message-time">' + formatTime(m.time) + '</span>' +
+                    '</div>' +
+                    '<div class="message-text">' + escHtml(m.text) + '</div>' +
+                    '<div class="message-footer">' +
+                        '<button class="btn-like-msg' + likedClass + '" data-id="' + m.id + '">' +
+                            '<i class="fas fa-heart"></i> ' + (m.likes || 0) +
+                        '</button>' +
+                    '</div>' +
+                '</div>';
+            }
+            list.innerHTML = html;
+        }
+
+        document.getElementById('pageInfo').textContent = '第 ' + validPage + ' / ' + totalPages + ' 页';
+        document.getElementById('prevPage').disabled = validPage <= 1;
+        document.getElementById('nextPage').disabled = validPage >= totalPages;
+
+        var btns = document.querySelectorAll('.btn-like-msg');
+        for (var i = 0; i < btns.length; i++) {
+            btns[i].addEventListener('click', function() {
+                var id = this.getAttribute('data-id');
+                var liked = getLikedSet();
+                if (liked[id]) return;
+                liked[id] = true;
+                saveLikedSet(liked);
+                var msgs = getMessages();
+                for (var j = 0; j < msgs.length; j++) {
+                    if (msgs[j].id === id) {
+                        msgs[j].likes = (msgs[j].likes || 0) + 1;
+                        break;
+                    }
+                }
+                saveMessages(msgs);
+                render();
+            });
+        }
+    }
+
+    document.getElementById('btnSubmitMsg').addEventListener('click', function() {
+        var text = document.getElementById('msgContent').value.trim();
+        if (!text) { alert('请填写留言内容'); return; }
+        var author = document.getElementById('msgAuthor').value.trim() || '匿名';
+        var msgs = getMessages();
+        msgs.unshift({
+            id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+            author: author,
+            text: text,
+            time: Date.now(),
+            likes: 0
+        });
+        saveMessages(msgs);
+        document.getElementById('msgContent').value = '';
+        setCurrentPage(1);
+        render();
+    });
+
+    document.getElementById('prevPage').addEventListener('click', function() {
+        var p = getCurrentPage();
+        if (p > 1) setCurrentPage(p - 1);
+        render();
+    });
+
+    document.getElementById('nextPage').addEventListener('click', function() {
+        var msgs = getMessages();
+        var totalPages = Math.max(1, Math.ceil(msgs.length / PER_PAGE));
+        var p = getCurrentPage();
+        if (p < totalPages) setCurrentPage(p + 1);
+        render();
+    });
+
+    render();
+
+    // 初始化点赞按钮
+    (function initLikeButton() {
+        var likeButton = document.getElementById('likeButton');
+        var likeCountEl = document.getElementById('likeCount');
+        if (!likeButton || !likeCountEl) return;
+        var likeCount = parseInt(localStorage.getItem('siteLikes')) || 0;
+        var liked = localStorage.getItem('userLiked') === 'true';
+        likeCountEl.textContent = likeCount;
+        if (liked) {
+            likeButton.classList.add('liked');
+            likeButton.disabled = true;
+        }
+        likeButton.addEventListener('click', function() {
+            if (liked) return;
+            likeCount++;
+            liked = true;
+            localStorage.setItem('siteLikes', likeCount);
+            localStorage.setItem('userLiked', 'true');
+            likeCountEl.textContent = likeCount;
+            likeButton.classList.add('liked');
+            likeButton.disabled = true;
+            likeButton.style.transform = 'scale(1.3)';
+            setTimeout(function() {
+                likeButton.style.transform = '';
+            }, 300);
+        });
+    })();
+})();
+    </script>
+</body>
+</html>

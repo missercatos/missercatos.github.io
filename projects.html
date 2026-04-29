@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>作品 - Misser-catos</title>
+    <link rel="stylesheet" href="assets/css/style.css">
+    <link rel="icon" href="assets/img/avatar.png">
+    <!-- 引入Font Awesome图标库 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="preload">
+
+    <!-- 全屏数码雨 Canvas -->
+    <canvas id="matrixCanvas"></canvas>
+
+    <!-- 右上角音乐控制 -->
+    <div class="music-control">
+        <button id="playPauseBtn" aria-label="播放/暂停">⏸/▶</button>
+        <button id="nextTrackBtn" aria-label="下一首">▽</button>
+        <button id="muteBtn" aria-label="静音/取消静音">◆</button>
+        <span id="nowPlaying">未播放</span>
+    </div>
+
+    <!-- 左上角点赞 + 跳转留言板 -->
+    <div class="top-left-actions">
+        <div class="mini-like-container">
+            <button id="likeButton" class="mini-like-btn" title="点赞">
+                <i class="fas fa-heart"></i> <span id="likeCount">0</span>
+            </button>
+        </div>
+        <a href="us.html" class="mini-us-btn" title="留言板">
+            <i class="fas fa-comment-dots"></i>
+        </a>
+    </div>
+
+    <!-- 主内容容器 (毛玻璃效果) -->
+    <main id="mainContent" class="hidden">
+        <!-- 导航栏 - 简化版，只保留Logo -->
+        <nav class="acid-nav">
+            <a href="index.html" class="nav-logo">MISSER</a>
+        </nav>
+
+        <!-- 英雄区域 -->
+        <header class="hero">
+            <div class="avatar-container polygon-shape-rotate">
+                <img src="assets/img/avatar.jpg" alt="Miser 的头像" class="avatar">
+            </div>
+            
+            <!-- 头像下方的社交链接 -->
+            <div class="social-icons">
+                <a href="https://github.com/missercatos?tab=repositories" target="_blank" class="social-icon polygon-shape" title="GitHub">
+                    <i class="fab fa-github"></i>
+                </a>
+                <a href="https://space.bilibili.com/1783752730" target="_blank" class="social-icon polygon-shape" title="哔哩哔哩">
+                    <i class="fab fa-bilibili"></i>
+                </a>
+            </div>
+            
+            <h1 class="acid-title glitch" data-text="作品">作品</h1>
+            
+            <!-- 网站功能链接（原导航链接移到此处） -->
+            <div class="function-links">
+                <a href="projects.html" class="func-link polygon-shape"><i class="fas fa-code"></i> Projects</a>
+                <a href="music.html" class="func-link polygon-shape"><i class="fas fa-music"></i> Music</a>
+                <a href="game.html" class="func-link polygon-shape"><i class="fas fa-gamepad"></i> Game</a>
+                <a href="about.html" class="func-link polygon-shape"><i class="fas fa-book"></i> Learning</a>
+            </div>
+        </header>
+
+        <!-- 作品内容 -->
+        <section class="content-section">
+            <h2 class="section-title">作品展示</h2>
+            <div class="projects-list">
+                <!-- 怪物播放器项目 -->
+                <div class="project-card">
+                    <span class="project-number">001</span>
+                    <div class="project-image">
+                        <!-- 在此处存放项目的.png图片 -->
+                        <img src="assets/img/projects/monster-player.png" alt="怪物播放器截图" class="project-screenshot">
+                        <p class="image-caption">怪物播放器界面截图</p>
+                    </div>
+                    <table class="project-table">
+                        <tr>
+                            <th>项目名称</th>
+                            <td>怪物播放器</td>
+                        </tr>
+                        <tr>
+                            <th>项目介绍</th>
+                            <td>专门播放塞壬唱片的终端流媒体播放器</td>
+                        </tr>
+                        <tr>
+                            <th>项目地址</th>
+                            <td><a href="https://github.com/missercatos/monster-player" target="_blank">https://github.com/missercatos/monster-player</a></td>
+                        </tr>
+                        <tr>
+                            <th>下载方式</th>
+                            <td>目前仅支持linux下载：<code>git clone https://github.com/missercatos/monster-player.git && cd ~/monster-player.git && sudo ./make-si</code></td>
+                        </tr>
+                    </table>
+                </div>
+                <!-- 可以继续添加更多项目 -->
+                <div class="project-card">
+                    <span class="project-number">002</span>
+                    <div class="project-image">
+                        <img src="assets/img/projects/screenshot.png" alt="项目截图" class="project-screenshot">
+                        <p class="image-caption">项目界面截图</p>
+                    </div>
+                    <table class="project-table">
+                        <tr>
+                            <th>项目名称</th>
+                            <td>ARKVim</td>
+                        </tr>
+                        <tr>
+                            <th>项目介绍</th>
+                            <td>基于lazyvim进行改造的nvim集成项目，支持vibecoding</td>
+                        </tr>
+                        <tr>
+                            <th>项目地址</th>
+                            <td><a href="https://github.com/missercatos/ARKVim" target="_blank">https://github.com/missercatos/ARKVim</a></td>
+                        </tr>
+                        <tr>
+                            <th>下载方式</th>
+                            <td>详见项目地址，目前仅支持克隆安装</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <footer>
+            <!-- 页脚内容 -->
+        </footer>
+    </main>
+
+    <!-- 隐藏的音频播放器 -->
+    <audio id="bgmPlayer" loop preload="auto">
+        <!-- 音源由JS动态设置 -->
+    </audio>
+
+    <!-- 脚本引入 -->
+    <script src="assets/js/cmatrix.js"></script>
+    <script src="assets/js/musicPlayer.js"></script>
+    <script src="assets/js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>学习 - Misser-catos</title>
+    <link rel="stylesheet" href="assets/css/style.css">
+    <link rel="icon" href="assets/img/avatar.png">
+    <!-- 引入Font Awesome图标库 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="preload">
+
+    <!-- 全屏数码雨 Canvas -->
+    <canvas id="matrixCanvas"></canvas>
+
+    <!-- 右上角音乐控制 -->
+    <div class="music-control">
+        <button id="playPauseBtn" aria-label="播放/暂停">⏸/▶</button>
+        <button id="nextTrackBtn" aria-label="下一首">▽</button>
+        <button id="muteBtn" aria-label="静音/取消静音">◆</button>
+        <span id="nowPlaying">未播放</span>
+    </div>
+
+    <!-- 左上角点赞 + 跳转留言板 -->
+    <div class="top-left-actions">
+        <div class="mini-like-container">
+            <button id="likeButton" class="mini-like-btn" title="点赞">
+                <i class="fas fa-heart"></i> <span id="likeCount">0</span>
+            </button>
+        </div>
+        <a href="us.html" class="mini-us-btn" title="留言板">
+            <i class="fas fa-comment-dots"></i>
+        </a>
+    </div>
+
+    <!-- 主内容容器 (毛玻璃效果) -->
+    <main id="mainContent" class="hidden">
+        <!-- 导航栏 - 简化版，只保留Logo -->
+        <nav class="acid-nav">
+            <a href="index.html" class="nav-logo">MISSER</a>
+        </nav>
+
+        <!-- 英雄区域 -->
+        <header class="hero">
+            <div class="avatar-container polygon-shape-rotate">
+                <img src="assets/img/avatar.jpg" alt="Miser 的头像" class="avatar">
+            </div>
+            
+            <!-- 头像下方的社交链接 -->
+            <div class="social-icons">
+                <a href="https://github.com/missercatos?tab=repositories" target="_blank" class="social-icon polygon-shape" title="GitHub">
+                    <i class="fab fa-github"></i>
+                </a>
+                <a href="https://space.bilibili.com/1783752730" target="_blank" class="social-icon polygon-shape" title="哔哩哔哩">
+                    <i class="fab fa-bilibili"></i>
+                </a>
+            </div>
+            
+            <h1 class="acid-title glitch" data-text="学习">学习</h1>
+            
+            <!-- 网站功能链接（原导航链接移到此处） -->
+            <div class="function-links">
+                <a href="projects.html" class="func-link polygon-shape"><i class="fas fa-code"></i> Projects</a>
+                <a href="music.html" class="func-link polygon-shape"><i class="fas fa-music"></i> Music</a>
+                <a href="game.html" class="func-link polygon-shape"><i class="fas fa-gamepad"></i> Game</a>
+                <a href="about.html" class="func-link polygon-shape"><i class="fas fa-book"></i> Learning</a>
+            </div>
+
+            <!-- Arch Linux 学习入口 -->
+            <div class="arch-entry">
+                <a href="archlinux.html" class="arch-circle-btn" title="进入Arch Linux学习页面">
+                    <span class="arch-logo-text">Arch</span>
+                </a>
+                <div class="arch-entry-desc">
+                    <!-- ★ 用户自行填写此处文字说明 ★ -->
+                    点击进入 Arch Linux 安装与使用教程
+                </div>
+            </div>
+        </header>
+
+        <!-- 学习内容 -->
+        <section class="content-section">
+            <h2 class="section-title">学习资料</h2>
+            <div class="projects-list">
+                <!-- 学习资料卡片 001 -->
+                <div class="project-card">
+                    <span class="project-number">001</span>
+                    <div class="project-image">
+                        <!-- 点击可放大的图片 -->
+                        <img src="assets/img/about/p1003.png" alt="P1003铺地毯解题思路" class="project-screenshot" id="p1003-img" data-fullsize="assets/img/about/p1003.png">
+                        <p class="image-caption">洛谷P1003 铺地毯 - 解题思路图</p>
+                    </div>
+                    <table class="project-table">
+                        <tr>
+                            <th>题目</th>
+                            <td>洛谷P1003 铺地毯</td>
+                        </tr>
+                        <tr>
+                            <th>描述</th>
+                            <td>C++解题代码与详细思路分析，包含时间复杂度和空间复杂度说明</td>
+                        </tr>
+                        <tr>
+                            <th>图片下载</th>
+                            <td><a href="assets/img/about/p1003.png" download="p1003解题思路.png">点击下载PNG图片</a></td>
+                        </tr>
+                        <tr>
+                            <th>源码下载</th>
+                            <td><a href="learning/txt/p1003.txt" download="p1003铺地毯.cpp.txt">点击下载TXT文件</a></td>
+                        </tr>
+                        <tr>
+                            <th>PPT下载</th>
+                            <td><a href="learning/ppt/p1003.pptx" download="p1003铺地毯.pptx">点击下载PPTX文件</a>（即将上线）</td>
+                        </tr>
+                    </table>
+                </div>
+                <div class="project-card">
+                    <span class="project-number">0002</span>
+                    <div class="project-image">
+                        <!-- 点击可放大的图片 -->
+                        <img src="assets/img/about/fstream.png" alt="cpp文件合流实例" class="project-screenshot" id="fstream-img" data-fullsize="assets/img/about/fstream.png">
+                        <img src="assets/img/about/fstream1.png" alt="cpp文件合流实例" class="project-screenshot" id="fstream-img" data-fullsize="assets/img/about/fstream1.png">
+                        <p class="image-caption">cpp文件合流实例图</p>
+                    </div>
+                    <table class="project-table">
+                        <tr>
+                            <th>知识点</th>
+                            <td>文件合流</td>
+                        </tr>
+                        <tr>
+                            <th>描述</th>
+                            <td>我对文件合流知识点的总结,这是在我有学习cpp文件合流基础上的总结，建议学习之后再看看，或者当作系统学习前的预习资料</td>
+                        </tr>
+                        <tr>
+                            <th>图片下载</th>
+                            <td><a href="assets/img/about/fstream.png" download="文件合流知识.png">点击下载PNG图片</a></td>
+                        </tr>
+                        <tr>
+                            <th>源码下载</th>
+                            <td><a href="learning/txt/fstream.cpp" download="fstream.cpp">点击下载TXT文件</a></td>
+                        </tr>
+                        <tr>
+                            <th>PPT下载</th>
+                            <td><a href="learning/ppt/" download="">点击下载PPTX文件</a>（即将上线）</td>
+                        </tr>
+                        <tr>
+                            <th>学习网站地址</th>
+                              <th><a href="https://www.runoob.com/cplusplus/cpp-files-streams.html" target="_blank" class="social-icon polygon-shape" title="runoob"></td>
+                                <i>R</i>
+                              </a>
+                        </tr>
+    
+                    </table>
+                </div>
+ 
+                <!-- 可以继续添加更多学习资料卡片 -->
+            </div>
+        </section>
+
+        <footer>
+            <!-- 页脚内容 -->
+        </footer>
+    </main>
+
+    <!-- 隐藏的音频播放器 -->
+    <audio id="bgmPlayer" loop preload="auto">
+        <!-- 音源由JS动态设置 -->
+    </audio>
+
+    <!-- 脚本引入 -->
+    <script src="assets/js/cmatrix.js"></script>
+    <script src="assets/js/musicPlayer.js"></script>
+    <script src="assets/js/main.js"></script>
+</body>
+</html>

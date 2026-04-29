@@ -1,0 +1,1311 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arch学习 - Misser-catos</title>
+    <link rel="icon" href="assets/img/avatar.png">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --arch-blue: #1793d1;
+            --arch-blue-dark: #0c5e8a;
+            --arch-blue-light: #7ec8e3;
+            --arch-bg: #f0f8ff;
+            --arch-white: #ffffff;
+            --arch-text: #1a2a3a;
+            --arch-text-light: #4a5a6a;
+            --arch-border: #b8d4e8;
+            --arch-shadow: 0 4px 20px rgba(23, 147, 209, 0.15);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', 'Helvetica Neue', sans-serif;
+            background: var(--arch-bg);
+            color: var(--arch-text);
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* ========== 背景 Canvas ========== */
+        #bgCanvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        /* ========== 主容器 ========== */
+        .arch-main {
+            position: relative;
+            z-index: 1;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 0 1.5rem 3rem;
+        }
+
+        /* ========== 头部 ========== */
+        .arch-header {
+            text-align: center;
+            padding: 2.5rem 0 1.5rem;
+            position: relative;
+        }
+
+        .arch-title {
+            font-size: 3.2rem;
+            font-weight: 900;
+            color: var(--arch-blue-dark);
+            letter-spacing: 4px;
+            margin-bottom: 0.8rem;
+            text-shadow: 0 2px 8px rgba(23, 147, 209, 0.2);
+        }
+
+        .arch-header-links {
+            display: flex;
+            justify-content: center;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .arch-header-links a {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            text-decoration: none;
+            color: var(--arch-blue);
+            font-size: 0.95rem;
+            font-weight: 600;
+            padding: 0.5rem 1.2rem;
+            border: 2px solid var(--arch-blue);
+            border-radius: 25px;
+            transition: all 0.3s ease;
+            background: var(--arch-white);
+        }
+
+        .arch-header-links a:hover {
+            background: var(--arch-blue);
+            color: var(--arch-white);
+            box-shadow: var(--arch-shadow);
+        }
+
+        /* ========== 音乐控制 - 右上角蓝色圆圈 ========== */
+        .arch-music-control {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+
+        #archPlayPauseBtn {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: 2px solid var(--arch-blue);
+            background: var(--arch-white);
+            color: var(--arch-blue);
+            font-size: 1.2rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 12px rgba(23, 147, 209, 0.2);
+        }
+
+        #archPlayPauseBtn:hover {
+            background: var(--arch-blue);
+            color: var(--arch-white);
+            transform: scale(1.08);
+        }
+
+        #archPlayPauseBtn.playing {
+            background: var(--arch-blue);
+            color: var(--arch-white);
+        }
+
+        /* ========== 浮动小白板 ========== */
+        .arch-whiteboard-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2000;
+            background: rgba(0, 0, 0, 0.45);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: opacity 0.4s ease;
+        }
+
+        .arch-whiteboard-overlay.dismissed {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .arch-whiteboard {
+            background: var(--arch-white);
+            border: 3px solid var(--arch-blue);
+            border-radius: 16px;
+            padding: 2rem 2.5rem;
+            max-width: 560px;
+            width: 90%;
+            box-shadow: 0 10px 40px rgba(23, 147, 209, 0.3);
+            text-align: center;
+            cursor: default;
+            position: relative;
+        }
+
+        .arch-whiteboard::before {
+            content: '✦ Arch Linux 学习指南 ✦';
+            display: block;
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--arch-blue-dark);
+            margin-bottom: 1rem;
+            letter-spacing: 2px;
+        }
+
+        .arch-whiteboard-content {
+            color: var(--arch-text-light);
+            font-size: 1rem;
+            line-height: 1.8;
+        }
+
+        .arch-whiteboard-hint {
+            margin-top: 1.5rem;
+            font-size: 0.85rem;
+            color: var(--arch-blue-light);
+            font-style: italic;
+        }
+
+        /* ========== 教程步骤卡片 ========== */
+        .tutorial-steps {
+            display: flex;
+            flex-direction: column;
+            gap: 2.5rem;
+            padding-top: 2rem;
+        }
+
+        .step-card {
+            background: var(--arch-white);
+            border: 1px solid var(--arch-border);
+            border-radius: 14px;
+            padding: 2rem;
+            box-shadow: var(--arch-shadow);
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .step-card:hover {
+            border-color: var(--arch-blue);
+            box-shadow: 0 6px 28px rgba(23, 147, 209, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .step-number {
+            position: absolute;
+            top: -16px;
+            left: 24px;
+            background: linear-gradient(135deg, var(--arch-blue), var(--arch-blue-dark));
+            color: #fff;
+            font-weight: 900;
+            font-size: 1.2rem;
+            padding: 4px 18px;
+            border-radius: 20px;
+            letter-spacing: 1px;
+        }
+
+        .step-text {
+            margin-top: 0.8rem;
+            margin-bottom: 1.2rem;
+            color: var(--arch-text);
+            font-size: 1.05rem;
+            line-height: 1.8;
+        }
+
+        .step-image-area {
+            margin: 1.2rem 0;
+            text-align: center;
+            background: var(--arch-bg);
+            border: 2px dashed var(--arch-border);
+            border-radius: 10px;
+            padding: 1.5rem 1rem;
+            min-height: 160px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            overflow: hidden;
+        }
+
+        .step-image-area img {
+            max-width: 100%;
+            max-height: 400px;
+            border-radius: 6px;
+            display: none;
+        }
+
+        .step-image-area.has-image {
+            border-style: solid;
+            padding: 0.5rem;
+        }
+
+        .step-image-area.has-image img {
+            display: block;
+        }
+
+        .step-image-area.has-image .image-placeholder-text {
+            display: none;
+        }
+
+        .image-placeholder-text {
+            color: var(--arch-text-light);
+            font-size: 0.95rem;
+            opacity: 0.7;
+        }
+
+        .image-placeholder-icon {
+            font-size: 2.5rem;
+            color: var(--arch-blue-light);
+            margin-bottom: 0.5rem;
+            opacity: 0.5;
+        }
+
+        /* ========== 网站链接区域 ========== */
+        .step-links {
+            margin: 1rem 0;
+            padding: 0.8rem 0;
+        }
+
+        .step-links-label {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--arch-blue);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 0.6rem;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .step-links-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+        }
+
+        .step-link-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.6rem;
+            padding: 0.45rem 0;
+            font-size: 0.95rem;
+        }
+
+        .step-link-item .link-icon {
+            color: var(--arch-blue);
+            flex-shrink: 0;
+            margin-top: 0.15rem;
+        }
+
+        .step-link-item a {
+            color: var(--arch-blue);
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            border-bottom: 1px solid transparent;
+        }
+
+        .step-link-item a:hover {
+            border-bottom-color: var(--arch-blue);
+        }
+
+        .step-link-item .link-desc {
+            color: var(--arch-text-light);
+            font-size: 0.85rem;
+            margin-left: 0.3rem;
+        }
+
+        /* ========== 视频区域 ========== */
+        .step-video-area {
+            margin: 1.2rem 0;
+        }
+
+        .video-wrapper {
+            position: relative;
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+            cursor: pointer;
+            border: 2px solid var(--arch-border);
+            transition: all 0.3s ease;
+        }
+
+        .video-wrapper:hover {
+            border-color: var(--arch-blue);
+            box-shadow: 0 4px 20px rgba(23, 147, 209, 0.25);
+        }
+
+        .video-wrapper video {
+            display: block;
+            width: 100%;
+            border-radius: 8px;
+        }
+
+        .video-play-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.5);
+            color: #fff;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+
+        .video-play-overlay.hidden {
+            opacity: 0;
+        }
+
+        .video-play-overlay i {
+            font-size: 3.5rem;
+            margin-bottom: 0.5rem;
+            filter: drop-shadow(0 2px 8px rgba(0,0,0,0.4));
+        }
+
+        .video-play-overlay span {
+            font-size: 0.95rem;
+            font-weight: 600;
+            letter-spacing: 1px;
+        }
+
+        /* ========== 分支选择 ========== */
+        .step-branch {
+            background: transparent;
+            border: none;
+            box-shadow: none;
+            padding-top: 0;
+        }
+
+        .step-branch:hover {
+            transform: none;
+            box-shadow: none;
+            border-color: transparent;
+        }
+
+        .branch-options {
+            display: flex;
+            gap: 1.5rem;
+            margin-top: 1rem;
+        }
+
+        .branch-option {
+            flex: 1;
+            background: var(--arch-white);
+            border: 2px solid var(--arch-border);
+            border-radius: 14px;
+            padding: 1.8rem 1.5rem;
+            text-align: center;
+            text-decoration: none;
+            color: var(--arch-text);
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.6rem;
+            position: relative;
+        }
+
+        .branch-option:hover {
+            border-color: var(--arch-blue);
+            box-shadow: 0 6px 28px rgba(23, 147, 209, 0.15);
+            transform: translateY(-3px);
+        }
+
+        .branch-recommended {
+            border-color: var(--arch-blue);
+            background: linear-gradient(135deg, rgba(23,147,209,0.04), rgba(126,200,227,0.08));
+        }
+
+        .branch-badge {
+            position: absolute;
+            top: -12px;
+            background: linear-gradient(135deg, #f39c12, #e67e22);
+            color: #fff;
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 3px 14px;
+            border-radius: 12px;
+            letter-spacing: 1px;
+        }
+
+        .branch-icon {
+            font-size: 2.2rem;
+            color: var(--arch-blue);
+            opacity: 0.8;
+        }
+
+        .branch-option h3 {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: var(--arch-blue-dark);
+            margin: 0;
+        }
+
+        .branch-option p {
+            font-size: 0.9rem;
+            color: var(--arch-text-light);
+            line-height: 1.6;
+            margin: 0;
+        }
+
+        .branch-hint {
+            font-size: 0.8rem;
+            color: var(--arch-blue-light);
+            font-style: italic;
+            margin-top: 0.3rem;
+        }
+
+        /* ========== 下载按钮 ========== */
+        .step-downloads {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.8rem;
+            margin-top: 0.8rem;
+        }
+
+        .btn-download {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.55rem 1.2rem;
+            background: var(--arch-white);
+            color: var(--arch-blue);
+            border: 2px solid var(--arch-blue);
+            border-radius: 25px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-download:hover {
+            background: var(--arch-blue);
+            color: var(--arch-white);
+            box-shadow: var(--arch-shadow);
+        }
+
+        /* ========== 图片放大 Lightbox ========== */
+        .lightbox {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.88);
+            z-index: 3000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+
+        .lightbox.hidden {
+            display: none;
+        }
+
+        .lightbox img {
+            max-width: 90%;
+            max-height: 90%;
+            border-radius: 8px;
+            box-shadow: 0 0 40px rgba(23, 147, 209, 0.5);
+        }
+
+        /* ========== 页脚 ========== */
+        .arch-footer {
+            text-align: center;
+            padding: 3rem 0 1.5rem;
+            color: var(--arch-text-light);
+            font-size: 0.85rem;
+            opacity: 0.7;
+        }
+
+        /* ========== 响应式 ========== */
+        @media (max-width: 768px) {
+            .arch-title {
+                font-size: 2.2rem;
+            }
+            .step-card {
+                padding: 1.5rem 1.2rem;
+            }
+            .arch-header-links {
+                gap: 0.8rem;
+            }
+            .arch-header-links a {
+                font-size: 0.85rem;
+                padding: 0.4rem 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 数学公式 + 行星轨迹 Canvas -->
+    <canvas id="bgCanvas"></canvas>
+
+    <!-- 右上角音乐控制 - 蓝色圆圈，仅暂停/播放 -->
+    <div class="arch-music-control">
+        <button id="archPlayPauseBtn" title="暂停/播放">▶</button>
+    </div>
+
+    <!-- 浮动小白板 - 点击消失 -->
+    <div id="whiteboardOverlay" class="arch-whiteboard-overlay">
+        <div class="arch-whiteboard">
+            <div class="arch-whiteboard-content">
+                <!-- ★ 用户可以修改此处文字 ★ -->
+                这里是arch学习指南，界面风格改变了，因为我想试试其他的前端设计，这里采用的蓝白数理风<br>
+            </div>
+            <div class="arch-whiteboard-hint">点击任意位置关闭</div>
+        </div>
+    </div>
+
+    <!-- 主内容 -->
+    <main class="arch-main">
+
+        <!-- 头部 -->
+        <header class="arch-header">
+            <h1 class="arch-title">arch学习</h1>
+            <div class="arch-header-links">
+                <a href="index.html"><i class="fas fa-home"></i> 回到主页</a>
+                <a href="about.html"><i class="fas fa-arrow-left"></i> 返回学习页面</a>
+            </div>
+        </header>
+
+        <!-- 教程步骤 -->
+        <section class="tutorial-steps">
+
+            <!-- ============ 步骤 1 ============ -->
+            <article class="step-card">
+                <span class="step-number">写在教程之前</span>
+                <div class="step-text">
+                    <!-- ★ 用户在此填写第一步的文字说明 ★ -->
+                <div>渴望学习的可以直接跳过，我们以最快的速度讲解</div>
+                   首先我要介绍一下archlinux，面向小白的说，就是一个超帅的很高级的操作系统，使用它会让人觉得"哇！电脑高手!"。而他人之所以对你有如此评价，是因为使用它有着极大的门槛，也就是安装难度和使用难度极大。接下来你就会感受到它有多么难了。但是这里教程我一定要把你教会的！
+                   那么我们再来谈谈真正archlinux系统吧，它的好处，它的特点。
+                <div>
+                <div> </div>
+                   archlinux是一款主打"简洁，现代，以用户为中心"的独立linux发行版，相较于Ubuntu和常见的windows系统，它的核心优势在于极致的灵活性和最新的软件体验。
+                <div>
+                <div> </div>
+                   实际上linux发行版很多，并不止archlinux这一个，但是arch高度面向用户的特性使得在适用arch的过程中，用户本身对操作系统的理解会加深，具有很好的linux学习和引导作用，当然真正重要的还是其具备高度可自定义性和最新体验，以及滚动更新!!   
+                <div>
+                <div> </div>
+                   arch当然也具备更多子衍生版本，比如Manjaro,它对nvidia显卡尤其友好，使用难度也很低，当然，有利有弊，它更新缓慢，通常会落后一两个版本
+                <div>
+                <div> </div>
+                    CachyOS是目前性能最强的衍生版本之一，甚至被作为专门的游戏系统使用，但是它更远大的应用前景是超功耗服务器系统
+                <div>
+                <div> </div>
+                    SteamOS 3 ,经常玩steam游戏的应该知道Steam Deck掌机吧，没错，这是一款专门用于游戏的系统，是Steam Deck的御用系统哦！
+                <div> </div>
+                <div> </div><div>BlackArch 面向网络安全的黑客系统，超过3000种网络安全工具，可与日用Arch系统共存，适合安全研究</div>
+                <div> </div><div>Arch Linux ARM 及其衍生版，这是面向嵌入式的linux系统，适用于树莓派等数百种开发板,从零定制，极致性能，让嵌入式研究有了新的滚动优势</div>
+                <div> </div><div>当然，还有更多的版本，毕竟linux大家庭从来如此，如果想要了解更多可以进入下面的archlinux官网进行深度了解，我们这里只展示原始archlinux的安装和学习</div>
+                </div>
+                <!-- 视频区域 -->
+                <div class="step-video-area">
+                    <div class="video-wrapper">
+                        <video id="introVideo" width="100%" preload="metadata" playsinline>
+                            <source src="assets/img/archlinux/arch.mp4" type="video/mp4">
+                        </video>
+                        <div class="video-play-overlay" id="videoPlayOverlay">
+                            <i class="fas fa-play-circle"></i>
+                            <span>点击播放视频</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- 网站链接 -->
+                <div class="step-links">
+                    <div class="step-links-label"><i class="fas fa-link"></i> 相关链接</div>
+                    <div class="step-links-list">
+                        <div class="step-link-item">
+                            <span class="link-icon"><i class="fas fa-globe"></i></span>
+                            <span>
+                                <a href="https://archlinux.org" target="_blank" rel="noopener">Arch Linux 官方网站</a>
+                                <span class="link-desc">— 了解 Arch Linux 最新动态与下载</span>
+                            </span>
+                        </div>
+                        <div class="step-link-item">
+                            <span class="link-icon"><i class="fas fa-book"></i></span>
+                            <span>
+                                <a href="https://wiki.archlinux.org" target="_blank" rel="noopener">Arch Wiki</a>
+                                <span class="link-desc">— 最全面的 Arch Linux 文档</span>
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                <div class="step-downloads">
+                      <div>这里的iso文件我会定期更新，下载于中科大源，适合中原地区的朋友，其他地区建议到官网查看并找到相应镜像站</div>
+                        <div class="step-link-item">
+                            <span class="link-icon"><i class="fas fa-book"></i></span>
+                            <span>
+                                <a href="https://archlinux.org/download/" target="_blank" rel="noopener">Arch download</a>
+                                <span class="link-desc">archlinux镜像总站---下拉找到中国区域，选择最合适你的，离你地理位置越近越好</span>
+                            </span>
+                        </div>
+                    <a href="downloads/archlinux/archlinux.torrent" download class="btn-download"><i class="fas fa-download"></i> 下载 Arch Linux ISO 镜像元数据文件，双击后开始下载正式iso文件</a>
+                </div>
+            </article>
+
+            <!-- ============ 步骤1 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤1</span>
+                <div class="step-text">
+                    制作系统启动盘是安装 Arch Linux 的第一步。将上一步下载好的 ISO 镜像写入 U 盘即可得到启动盘。
+                </div>
+                <div class="step-text">
+                    <strong>Windows 用户</strong>推荐使用 <strong>Rufus</strong>：选择 U 盘和 ISO 镜像，分区类型选 GPT，文件系统选 FAT32，点击开始即可。<br>
+                    <strong>Linux / macOS 用户<div>(先进入终端)</div></strong>使用 <code>dd</code> 命令：<br>
+                    <code>sudo dd if=archlinux.iso of=/dev/sdX bs=4M status=progress conv=fsync</code>
+                </div>
+                <div class="step-image-area" data-fullsize="assets/img/archlinux/step2.png">
+                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                    <img src="assets/img/archlinux/step2.png" alt="步骤1演示图片" data-zoomable>
+                </div>
+            </article>
+
+            <!-- ============ 步骤2 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤2</span>
+                <div class="step-text">
+                    将制作好的 U 盘插入电脑，重启并进入 BIOS/UEFI 设置，将启动顺序调整为优先从 U 盘启动（USB Boot），保存后重启即可进入 Arch Linux 安装环境。
+                </div>
+                <div class="step-text">
+                    进入 live 环境后，首先需要配置网络连接：
+                    <ul style="margin-top:0.5rem;padding-left:1.2rem;line-height:1.8;">
+                        <li>有线网络通常已自动连接，可用 <code>ping archlinux.org</code> 测试连通性</li>
+                        <li>无线网络使用 <code>iwctl</code> 连接：先输入 <code>iwctl</code> 进入交互模式，然后 <code>station wlan0 get-network(按键盘Tab键会根据首字母自动补全单词)</code> 扫描，<code>station wlan0 connect “想要选择的网络”</code> 输入密码后连接</li>
+                        <div>这里因为是虚拟机就没有展示wlan0，可以用ping 有效网址 比如ping baidu.com来验证是否连接成功网络</div>
+                    </ul>
+                    确认网络通畅后即可继续下一步。
+                </div>
+                <div class="step-image-area" data-fullsize="assets/img/archlinux/step3.png">
+                   <img src="assets/img/archlinux/step3.png" alt="进入界面，默认选第一个，文盲选(带读音版本）第二个" data-zoomable>
+                    <div></div>
+                   <img src="assets/img/archlinux/step3_1.png" alt="载入完成界面" data-zoomable>
+                    <div></div>
+                   <img src="assets/img/archlinux/step3_2.png" alt="使用ping指令验证网络是否连接" data-zoomable>
+                    <div></div>
+                   <img src="assets/img/archlinux/step3_3.png" alt="iwctl连接互联网示例子" data-zoomable>
+                     <div></div>
+                </div>
+            </article>
+
+            <!-- ============ 选择安装方式 ============ -->
+            <article class="step-card step-branch">
+                <span class="step-number">选择安装方式</span>
+                <div class="branch-options">
+                    <a href="archlinux_archinstall.html" class="branch-option branch-recommended">
+                        <span class="branch-badge">新手推荐</span>
+                        <span class="branch-icon"><i class="fas fa-rocket"></i></span>
+                        <h3>archinstall</h3>
+                        <p>使用官方安装脚本，交互式引导安装，简单快捷，适合初次接触 Arch Linux 的用户。</p>
+                    </a>
+                    <div class="branch-option">
+                        <span class="branch-icon"><i class="fas fa-cogs"></i></span>
+                        <h3>手动安装</h3>
+                        <p>一步步手动配置每一个环节，深入理解 Linux 系统的底层运作。</p>
+                        <span class="branch-hint">继续下方步骤 ↓</span>
+                    </div>
+                </div>
+            </article>
+
+            <!-- ============ 步骤3 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤3</span>
+                <div class="step-text">
+                    使用 <code>lsblk</code> 或 <code>fdisk -l</code> 查看磁盘信息，确认你要安装的目标硬盘。然后使用 <code>gfdisk</code>进行分区。
+                    <div>按o重写，按n新建，输入1，出现第一个让你输入数字的直接回车，第二个输入+512M，第三个输入EF00，再按一次n，第一次回车之后第二个输入你想要的主空间大小比如100G（也可以回车默认全部选中），剩下全部回车，按p检查空间分配是否符合预期，不符合按o重写再来一遍。符合按w写入并退出</div>
+                </div>
+                <div class="step-text">
+                    推荐分区方案（UEFI）：
+                    <ul style="margin-top:0.5rem;padding-left:1.2rem;line-height:1.8;">
+                        <li><strong>EFI 分区</strong>：512MB ~ 1GB，类型 <code>EFI System</code></li>
+                        <li><strong>根分区</strong>：剩余空间，类型 <code>Linux filesystem</code></li>
+                        <li>（可选）Swap 分区：内存大小的 1~2 倍</li>
+                    </ul>
+                </div>
+                <div class="step-image-area" data-fullsize="assets/img/archlinux/step-partition.png">
+                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                    <span class="image-placeholder-text">图片演示区域 — 请将图片放入此处<br><small>点击可放大查看</small></span>
+                    <img src="assets/img/archlinux/step-partition.png" alt="步骤3演示图片" data-zoomable>
+                </div>
+            </article>
+
+            <!-- ============ 步骤4 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤4</span>
+                <div class="step-text">
+                <div>先用lsblk查看你的分区格式，看到树状图的那部分，一般是sda1 和 sda2 我这里是虚拟机所以是vda</div>
+                <div>对照你的分区名字输入相对应的指令，不要直接照抄，要把sdXn切换为你从树状图看到的</div>
+                    格式化分区并挂载。通常将根分区格式化为 <code>ext4</code>，使用 <code>mkfs.f -F 32 /dev/sdXn</code> 格式化引导分区（空间小的那部分，一般是512M，记得把sdXn换成你的） <code>mkfs.ext4 /dev/sdXn</code>格式化主空间（大的那个），然后用 <code>mount /dev/sdXn /mnt</code> 命令将主分区挂载到 <code>/mnt</code><code>用</code><code>mkdir /mnt/boot && mount /dev/sdXn /mnt/boot</code> <code>创建并把跟分区挂载到boot</code>
+                </div>
+                <div class="step-image-area" data-fullsize="assets/img/archlinux/step4.png">
+                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                    <span class="image-placeholder-text">图片演示区域 — 请将图片放入此处<br><small>点击可放大查看</small></span>
+                    <img src="assets/img/archlinux/step4.png" alt="步骤4演示图片" data-zoomable>
+                </div>
+            </article>
+
+            <!-- ============ 步骤5 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤5</span>
+                <div class="step-text">
+                    使用 <code>pacstrap /mnt base linux linux-firmware sudo vim </code> 
+            <code>安装基本系统和基本工具。也可以可以切换内核，比如linux-zen内核（性能更强，耗电更大）使用pacstrap /mnt base linux-zen linux-firmware sudo vim 进行安装</code>
+                </div>
+                <div class="step-image-area" data-fullsize="assets/img/archlinux/step5.png">
+                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                    <span class="image-placeholder-text">图片演示区域 — 请将图片放入此处<br><small>点击可放大查看</small></span>
+                    <img src="assets/img/archlinux/step5.png" alt="步骤5演示图片" data-zoomable>
+                </div>
+            </article>
+
+            <!-- ============ 步骤6 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤6</span>
+                <div class="step-text">
+                    使用 <code>arch-chroot /mnt</code> 切换到新安装的系统环境中。之后的所有操作都在新系统里进行。
+                </div>
+                <div class="step-text">
+                    <strong>进入新系统：</strong><br>
+                    <code>arch-chroot /mnt</code><br><br>
+                    现在你已经在新的 Arch Linux 系统中了，接下来进行系统配置。
+                </div>
+                <div class="step-image-area" data-fullsize="assets/img/archlinux/step6.png">
+                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                    <span class="image-placeholder-text">图片演示区域 — 请将图片放入此处<br><small>点击可放大查看</small></span>
+                    <img src="assets/img/archlinux/step6.png" alt="步骤6演示图片" data-zoomable>
+                </div>
+            </article>
+
+            <!-- ============ 步骤7 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤7</span>
+                <div class="step-text">
+                    设置时区为中国上海（Asia/Shanghai），并同步硬件时钟。
+                </div>
+                <div class="step-text">
+                    <strong>设置时区：</strong><br>
+                    <code>ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime</code><br><br>
+                    <strong>同步硬件时钟：</strong><br>
+                    <code>hwclock --systohc</code><br><br>
+                    这条命令确保系统时间和硬件时间一致，双系统时尤为重要，可以避免 Windows 和 Linux 时间不同步的问题。
+                </div>
+                <div class="step-image-area" data-fullsize="assets/img/archlinux/step7.png">
+                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                    <span class="image-placeholder-text">图片演示区域 — 请将图片放入此处<br><small>点击可放大查看</small></span>
+                    <img src="assets/img/archlinux/step7.png" alt="步骤7演示图片" data-zoomable>
+                </div>
+            </article>
+
+            <!-- ============ 步骤8 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤8</span>
+                <div class="step-text">
+                    设置系统语言和本地化（locale），让系统支持中文显示。
+                </div>
+                <div class="step-text">
+                    <strong>编辑 locale 配置文件：</strong><br>
+                    <code>vim /etc/locale.gen</code><br>
+                    找到并取消以下行的注释（删除前面的 #）：<br>
+                    <code>en_US.UTF-8 UTF-8</code><br>
+                    <code>zh_CN.UTF-8 UTF-8</code><br>
+                    <code>zh_TW.UTF-8 UTF-8</code><br><br>
+                    （如果不会用 vim，可以用 <code>nano /etc/locale.gen</code>，按 Ctrl+X 退出保存）<br><br>
+                    <strong>生成 locale：</strong><br>
+                    <code>locale-gen</code><br><br>
+                    <strong>设置默认语言：</strong><br>
+                    <code>echo "LANG=en_US.UTF-8" > /etc/locale.conf</code><br><br>
+                    建议默认使用英文，避免 TTY 下中文乱码问题。桌面环境安装后再设置为中文即可。
+                </div>
+                <div class="step-image-area" data-fullsize="assets/img/archlinux/step8.png">
+                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                    <span class="image-placeholder-text">图片演示区域 — 请将图片放入此处<br><small>点击可放大查看</small></span>
+                    <img src="assets/img/archlinux/step8.png" alt="步骤8演示图片" data-zoomable>
+                </div>
+            </article>
+
+            <!-- ============ 步骤9 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤9</span>
+                <div class="step-text">
+                    设置主机名（hostname）和 hosts 文件，这是网络识别你电脑的名称。
+                </div>
+                <div class="step-text">
+                    <strong>设置主机名（例如 archlinux）：</strong><br>
+                    <code>echo "archlinux" > /etc/hostname</code><br><br>
+                    <strong>编辑 hosts 文件：</strong><br>
+                    <code>vim /etc/hosts</code><br>
+                    添加以下内容（把 archlinux 换成你的主机名）：<br>
+<pre style="background:rgba(23,147,209,0.08);padding:0.8rem;border-radius:8px;margin:0.5rem 0;font-family:'Courier New',monospace;font-size:0.9rem;line-height:1.6;">
+127.0.0.1   localhost
+::1         localhost
+127.0.1.1   archlinux.localdomain  archlinux
+</pre>
+                </div>
+                <div class="step-image-area" data-fullsize="assets/img/archlinux/step9.png">
+                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                    <span class="image-placeholder-text">图片演示区域 — 请将图片放入此处<br><small>点击可放大查看</small></span>
+                    <img src="assets/img/archlinux/step9.png" alt="步骤9演示图片" data-zoomable>
+                </div>
+            </article>
+
+            <!-- ============ 步骤10 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤10</span>
+                <div class="step-text">
+                    创建普通用户并设置密码，以及设置 root 密码。
+                </div>
+                <div class="step-text">
+                    <strong>设置 root 密码：</strong><br>
+                    <code>passwd</code><br>
+                    输入两次密码（注意：输入时不显示任何字符，这是正常的安全设计）<br><br>
+                    <strong>创建普通用户（例如用户名 misser）：</strong><br>
+                    <code>useradd -m -G wheel -s /bin/bash misser</code><br>
+                    参数说明：<code>-m</code> 创建家目录，<code>-G wheel</code> 加入管理员组，<code>-s /bin/bash</code> 指定默认 shell<br><br>
+                    <strong>设置用户密码：</strong><br>
+                    <code>passwd misser</code><br><br>
+                    <strong>配置 sudo 权限（让用户可以使用 sudo 命令）：</strong><br>
+                    <code>pacman -S sudo</code>（如果未安装）<br>
+                    <code>EDITOR=vim visudo</code><br>
+                    找到 <code># %wheel ALL=(ALL:ALL) ALL</code> 这行，删除前面的 # 号，保存退出。<br>
+                    这样 wheel 组的用户就可以使用 sudo 了。
+                </div>
+                <div class="step-image-area" data-fullsize="assets/img/archlinux/step10.png">
+                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                    <span class="image-placeholder-text">图片演示区域 — 请将图片放入此处<br><small>点击可放大查看</small></span>
+                    <img src="assets/img/archlinux/step10.png" alt="步骤10演示图片" data-zoomable>
+                </div>
+            </article>
+
+            <!-- ============ 步骤11 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤11</span>
+                <div class="step-text">
+                    安装并配置引导程序。这里以 GRUB 为例，<strong>支持双系统（与 Windows 共存）</strong>。
+                </div>
+                <div class="step-text">
+                    <strong>安装 GRUB 和相关工具：</strong><br>
+                    <code>pacman -S grub efibootmgr os-prober</code><br>
+                    — <code>grub</code>：引导程序本体<br>
+                    — <code>efibootmgr</code>：管理 UEFI 启动项<br>
+                    — <code>os-prober</code>：<strong>自动检测其他系统（如 Windows），实现双系统引导</strong><br><br>
+                    
+                    <strong>安装 GRUB 到 EFI 分区：</strong><br>
+                    <code>grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB</code><br>
+                    注意：<code>/boot</code> 是 EFI 分区的挂载点，如果你的 EFI 分区挂载在其他位置（如 <code>/boot/efi</code>），请对应修改。<br><br>
+                    
+                    <strong>开启双系统检测：</strong><br>
+                    编辑 <code>/etc/default/grub</code>，取消这一行的注释：<br>
+                    <code>#GRUB_DISABLE_OS_PROBER=false</code> → <code>GRUB_DISABLE_OS_PROBER=false</code><br>
+                    这样 os-prober 才会去扫描 Windows 等其他系统。<br><br>
+                    
+                    <strong>生成 GRUB 配置文件：</strong><br>
+                    <code>grub-mkconfig -o /boot/grub/grub.cfg</code><br>
+                    如果输出中看到 <code>Found Windows Boot Manager</code>，说明双系统配置成功！<br><br>
+                    
+                    <strong>双系统注意事项：</strong>
+                    <ul style="margin-top:0.5rem;padding-left:1.2rem;line-height:1.8;">
+                        <li>在安装 Arch 之前确保已经为 Arch 预留了空闲磁盘空间</li>
+                        <li>确保 Windows 的 EFI 分区没有被格式化（通常在安装前就能看到）</li>
+                        <li>如果使用同一块硬盘，EFI 分区可以共用，不要重复创建</li>
+                        <li>安装完成后重启，GRUB 菜单会同时显示 Arch Linux 和 Windows Boot Manager</li>
+                    </ul>
+                </div>
+                <div class="step-image-area" data-fullsize="assets/img/archlinux/step11.png">
+                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                    <span class="image-placeholder-text">图片演示区域 — 请将图片放入此处<br><small>点击可放大查看</small></span>
+                    <img src="assets/img/archlinux/step11.png" alt="步骤11演示图片" data-zoomable>
+                </div>
+            </article>
+
+            <!-- ============ 步骤12 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤12</span>
+                <div class="step-text">
+                    安装完成！退出 chroot 环境，卸载分区，重启进入全新的 Arch Linux 系统。
+                </div>
+                <div class="step-text">
+                    <strong>退出 chroot：</strong><br>
+                    <code>exit</code><br><br>
+                    <strong>卸载所有分区：</strong><br>
+                    <code>umount -R /mnt</code><br><br>
+                    <strong>重启系统：</strong><br>
+                    <code>reboot</code><br><br>
+                    拔出 U 盘后，系统将启动到 GRUB 引导菜单，选择 Arch Linux 即可进入你的新系统！<br>
+                    恭喜你，你已经成功手动安装了 Arch Linux！
+                </div>
+                <div class="step-image-area" data-fullsize="assets/img/archlinux/step12.png">
+                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                    <span class="image-placeholder-text">图片演示区域 — 请将图片放入此处<br><small>点击可放大查看</small></span>
+                    <img src="assets/img/archlinux/step12.png" alt="步骤12演示图片" data-zoomable>
+                </div>
+            </article>
+
+            <!-- ============ 跳转 archlinux_use ============ -->
+            <article class="step-card" style="text-align:center;background:linear-gradient(135deg, rgba(23,147,209,0.06), rgba(126,200,227,0.12));border:2px dashed var(--arch-blue);">
+                <div style="font-size:1.5rem;color:var(--arch-blue);margin-bottom:0.6rem;"><i class="fas fa-arrow-right"></i></div>
+                <div class="step-text" style="text-align:center;">
+                    系统安装完成了吗？接下来学习如何使用 Arch Linux！<br>
+                    <strong>常用软件安装、桌面环境配置、系统美化……都在这里！</strong>
+                </div>
+                <a href="archlinux_use.html" style="display:inline-block;margin-top:1rem;padding:0.7rem 2rem;background:linear-gradient(135deg, var(--arch-blue), var(--arch-blue-dark));color:#fff;border-radius:25px;text-decoration:none;font-weight:700;font-size:1rem;transition:all 0.3s ease;box-shadow:var(--arch-shadow);">
+                    <i class="fas fa-rocket"></i> 进入使用教程 → Arch Linux 使用指南
+                </a>
+            </article>
+
+        </section>
+
+        <footer class="arch-footer">
+            &copy; 2026 Misser-catos · Arch Linux 学习笔记
+        </footer>
+    </main>
+
+    <!-- 隐藏的音频播放器 - 仅一首歌，循环播放 -->
+    <audio id="archBgm" loop preload="auto">
+        <!-- ★ 用户将歌曲放到此处，修改 src 路径 ★ -->
+        <!-- 默认路径：assets/music/arch-song.mp3，请放入你自己的mp3文件 -->
+        <source src="assets/music/arch-song.mp3" type="audio/mpeg">
+    </audio>
+
+    <!-- ========== 脚本 ========== -->
+    <script>
+    (function() {
+
+        // =============================================
+        // 1. 背景 Canvas - 数学公式与行星轨迹
+        // =============================================
+        const canvas = document.getElementById('bgCanvas');
+        const ctx = canvas.getContext('2d');
+        let W, H;
+
+        // 数学公式列表（用于飘浮显示）
+        const formulas = [
+            'E=mc²', '∫ₐᵇ f(x)dx', 'π ≈ 3.14159', 'e^{iπ}+1=0',
+            '∇·B=0', 'F=ma', '∂²u/∂t²=c²∇²u', '∑_{n=1}^∞ 1/n²=π²/6',
+            '√-1 = i', 'a²+b²=c²', 'lim_{x→∞} (1+1/x)^x=e',
+            'iℏ∂ψ/∂t=Ĥψ', '∯ E·dA=Q/ε₀', 'det(A-λI)=0',
+            'Γ(n)=(n-1)!', 'e^x=∑_{n=0}^∞ x^n/n!', 'sin²θ+cos²θ=1',
+            'ζ(s)=∑_{n=1}^∞ 1/n^s', 'P(A|B)=P(B|A)P(A)/P(B)',
+            'log(xy)=log x+log y', '|ψ⟩⟨ψ|'
+        ];
+
+        // 飘浮的公式对象
+        let formulaItems = [];
+
+        // 行星/轨道对象
+        let orbits = [];
+
+        function resize() {
+            W = canvas.width = window.innerWidth;
+            H = canvas.height = window.innerHeight;
+            initItems();
+        }
+
+        function initItems() {
+            // 初始化公式
+            formulaItems = [];
+            const count = Math.floor(W * H / 18000);
+            for (let i = 0; i < Math.min(count, 35); i++) {
+                formulaItems.push({
+                    text: formulas[Math.floor(Math.random() * formulas.length)],
+                    x: Math.random() * W,
+                    y: Math.random() * H,
+                    speed: 0.15 + Math.random() * 0.35,
+                    opacity: 0.06 + Math.random() * 0.10,
+                    size: 11 + Math.random() * 10,
+                    drift: (Math.random() - 0.5) * 0.3
+                });
+            }
+
+            // 初始化行星轨道
+            orbits = [];
+            const orbitCount = Math.min(Math.floor(W / 130), 8);
+            for (let i = 0; i < orbitCount; i++) {
+                const cx = 50 + Math.random() * (W - 100);
+                const cy = 50 + Math.random() * (H - 100);
+                const rx = 60 + Math.random() * 180;
+                const ry = 30 + Math.random() * 100;
+                const planetCount = 1 + Math.floor(Math.random() * 3);
+                const planets = [];
+                for (let j = 0; j < planetCount; j++) {
+                    planets.push({
+                        angle: Math.random() * Math.PI * 2,
+                        speed: 0.002 + Math.random() * 0.006,
+                        radius: 2 + Math.random() * 4,
+                        color: `rgba(23,147,209,${0.12 + Math.random() * 0.15})`
+                    });
+                }
+                orbits.push({
+                    cx, cy, rx, ry,
+                    planets,
+                    lineColor: `rgba(150,200,230,${0.06 + Math.random() * 0.06})`
+                });
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+
+            // 绘制行星轨道
+            orbits.forEach(orbit => {
+                // 轨道线
+                ctx.strokeStyle = orbit.lineColor;
+                ctx.lineWidth = 0.8;
+                ctx.beginPath();
+                ctx.ellipse(orbit.cx, orbit.cy, orbit.rx, orbit.ry, 0, 0, Math.PI * 2);
+                ctx.stroke();
+
+                // 行星
+                orbit.planets.forEach(planet => {
+                    planet.angle += planet.speed;
+                    if (planet.angle > Math.PI * 2) planet.angle -= Math.PI * 2;
+                    const px = orbit.cx + orbit.rx * Math.cos(planet.angle);
+                    const py = orbit.cy + orbit.ry * Math.sin(planet.angle);
+                    ctx.fillStyle = planet.color;
+                    ctx.beginPath();
+                    ctx.arc(px, py, planet.radius, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+            });
+
+            // 绘制数学公式
+            ctx.textBaseline = 'middle';
+            ctx.textAlign = 'center';
+            formulaItems.forEach(item => {
+                item.y -= item.speed;
+                item.x += item.drift;
+                if (item.y < -30) {
+                    item.y = H + 30;
+                    item.x = Math.random() * W;
+                }
+                if (item.x < -50) item.x = W + 50;
+                if (item.x > W + 50) item.x = -50;
+                ctx.fillStyle = `rgba(23,147,209,${item.opacity})`;
+                ctx.font = `${item.size}px "Courier New", "Segoe UI", monospace`;
+                ctx.fillText(item.text, item.x, item.y);
+            });
+
+            requestAnimationFrame(draw);
+        }
+
+        window.addEventListener('resize', resize);
+        resize();
+        draw();
+
+        // =============================================
+        // 2. 浮动小白板 - 点击消失
+        // =============================================
+        const whiteboardOverlay = document.getElementById('whiteboardOverlay');
+        whiteboardOverlay.addEventListener('click', function(e) {
+            whiteboardOverlay.classList.add('dismissed');
+            sessionStorage.setItem('archWhiteboardDismissed', '1');
+        });
+
+        // 如果之前关闭过，本次不再显示
+        if (sessionStorage.getItem('archWhiteboardDismissed') === '1') {
+            whiteboardOverlay.classList.add('dismissed');
+        }
+
+        // =============================================
+        // 3. 音乐控制 - 仅暂停/播放
+        // =============================================
+        const archBgm = document.getElementById('archBgm');
+        const playPauseBtn = document.getElementById('archPlayPauseBtn');
+        let isPlaying = false;
+
+        playPauseBtn.addEventListener('click', function() {
+            if (isPlaying) {
+                archBgm.pause();
+                playPauseBtn.innerHTML = '▶';
+                playPauseBtn.classList.remove('playing');
+                isPlaying = false;
+            } else {
+                archBgm.play().catch(function() {});
+                playPauseBtn.innerHTML = '⏸';
+                playPauseBtn.classList.add('playing');
+                isPlaying = true;
+            }
+        });
+
+        // 尝试自动播放（需要用户交互后才能真正播放，这里只是尝试）
+        // 第一次用户点击页面任何位置时尝试播放音乐
+        let musicStarted = false;
+        function tryAutoPlay() {
+            if (musicStarted) return;
+            archBgm.play().then(function() {
+                playPauseBtn.innerHTML = '⏸';
+                playPauseBtn.classList.add('playing');
+                isPlaying = true;
+                musicStarted = true;
+            }).catch(function() {
+                // 浏览器阻止自动播放，等待用户交互
+            });
+        }
+
+        // 小白板关闭后尝试播放
+        whiteboardOverlay.addEventListener('click', function handler() {
+            whiteboardOverlay.removeEventListener('click', handler);
+            setTimeout(tryAutoPlay, 300);
+        });
+
+        // 如果小白板已被关闭，页面加载后尝试播放
+        if (sessionStorage.getItem('archWhiteboardDismissed') === '1') {
+            setTimeout(tryAutoPlay, 500);
+        }
+
+        // =============================================
+        // 4. 视频点击播放
+        // =============================================
+        const introVideo = document.getElementById('introVideo');
+        const videoPlayOverlay = document.getElementById('videoPlayOverlay');
+        const videoWrapper = document.querySelector('.video-wrapper');
+
+        if (introVideo && videoPlayOverlay && videoWrapper) {
+            videoWrapper.addEventListener('click', function() {
+                if (introVideo.paused) {
+                    introVideo.play().catch(function() {});
+                } else {
+                    introVideo.pause();
+                }
+            });
+
+            introVideo.addEventListener('play', function() {
+                videoPlayOverlay.classList.add('hidden');
+            });
+
+            introVideo.addEventListener('pause', function() {
+                videoPlayOverlay.classList.remove('hidden');
+            });
+
+            introVideo.addEventListener('ended', function() {
+                videoPlayOverlay.classList.remove('hidden');
+            });
+        }
+
+        // =============================================
+        // 5. 跨页面音乐状态保持（sessionStorage）
+        // =============================================
+        // 保存音乐状态（页面离开时）
+        window.addEventListener('beforeunload', function() {
+            sessionStorage.setItem('archMusicPlaying', isPlaying ? '1' : '0');
+            sessionStorage.setItem('archMusicCurrentTime', archBgm.currentTime);
+            sessionStorage.setItem('archMusicSrc', archBgm.querySelector('source').src);
+        });
+
+        // 恢复音乐状态（页面加载时）
+        (function restoreMusic() {
+            var savedPlaying = sessionStorage.getItem('archMusicPlaying');
+            var savedTime = parseFloat(sessionStorage.getItem('archMusicCurrentTime'));
+            var savedSrc = sessionStorage.getItem('archMusicSrc');
+            
+            if (savedSrc) {
+                var currentSrc = archBgm.querySelector('source').src;
+                // 确保使用相同的音源
+                if (savedSrc === currentSrc && !isNaN(savedTime) && savedTime > 0) {
+                    archBgm.currentTime = savedTime;
+                }
+                if (savedPlaying === '1') {
+                    archBgm.play().then(function() {
+                        playPauseBtn.innerHTML = '⏸';
+                        playPauseBtn.classList.add('playing');
+                        isPlaying = true;
+                        musicStarted = true;
+                    }).catch(function() {});
+                }
+            }
+        })();
+
+        // =============================================
+        // 6. 图片点击放大
+        // =============================================
+        const lightbox = document.createElement('div');
+        lightbox.className = 'lightbox hidden';
+        lightbox.innerHTML = '<img src="" alt="放大图片">';
+        document.body.appendChild(lightbox);
+
+        const lightboxImg = lightbox.querySelector('img');
+
+        lightbox.addEventListener('click', function() {
+            lightbox.classList.add('hidden');
+            document.body.style.overflow = '';
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && !lightbox.classList.contains('hidden')) {
+                lightbox.classList.add('hidden');
+                document.body.style.overflow = '';
+            }
+        });
+
+        // 为每个 step-image-area 绑定点击放大
+        document.querySelectorAll('.step-image-area').forEach(function(area) {
+            area.addEventListener('click', function(e) {
+                const img = area.querySelector('img[data-zoomable]');
+                if (!img) return;
+                const fullSrc = area.getAttribute('data-fullsize') || img.src;
+                // 检查图片是否真实存在：设置 src 尝试加载
+                lightboxImg.src = fullSrc;
+                lightbox.classList.remove('hidden');
+                document.body.style.overflow = 'hidden';
+                e.stopPropagation();
+            });
+        });
+
+        // 初始化：检测图片是否已存在（有实际src）
+        document.querySelectorAll('.step-image-area img[data-zoomable]').forEach(function(img) {
+            const area = img.closest('.step-image-area');
+            // 简单判断：如果src不是以.png/.jpg/.webp等结尾的有效路径，就不显示
+            const src = img.getAttribute('src');
+            if (src && src.length > 5) {
+                img.onload = function() {
+                    area.classList.add('has-image');
+                };
+                img.onerror = function() {
+                    // 图片不存在，保持占位状态
+                };
+                // 触发加载检测
+                if (img.complete) {
+                    if (img.naturalWidth > 0) {
+                        area.classList.add('has-image');
+                    }
+                }
+            }
+        });
+
+    })();
+    </script>
+</body>
+</html>

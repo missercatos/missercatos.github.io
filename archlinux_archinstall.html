@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Archinstall 安装教程 - Misser-catos</title>
+    <link rel="icon" href="assets/img/avatar.png">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --arch-blue: #1793d1;
+            --arch-blue-dark: #0c5e8a;
+            --arch-blue-light: #7ec8e3;
+            --arch-bg: #f0f8ff;
+            --arch-white: #ffffff;
+            --arch-text: #1a2a3a;
+            --arch-text-light: #4a5a6a;
+            --arch-border: #b8d4e8;
+            --arch-shadow: 0 4px 20px rgba(23, 147, 209, 0.15);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', 'Helvetica Neue', sans-serif;
+            background: var(--arch-bg);
+            color: var(--arch-text);
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        #bgCanvas {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        .arch-main {
+            position: relative;
+            z-index: 1;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 0 1.5rem 3rem;
+        }
+
+        .arch-header {
+            text-align: center;
+            padding: 2.5rem 0 1.5rem;
+            position: relative;
+        }
+
+        .arch-title {
+            font-size: 3.2rem;
+            font-weight: 900;
+            color: var(--arch-blue-dark);
+            letter-spacing: 4px;
+            margin-bottom: 0.8rem;
+            text-shadow: 0 2px 8px rgba(23, 147, 209, 0.2);
+        }
+
+        .arch-subtitle {
+            font-size: 1.1rem;
+            color: var(--arch-blue);
+            font-weight: 600;
+            margin-bottom: 1rem;
+            letter-spacing: 1px;
+        }
+
+        .arch-header-links {
+            display: flex;
+            justify-content: center;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .arch-header-links a {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            text-decoration: none;
+            color: var(--arch-blue);
+            font-size: 0.95rem;
+            font-weight: 600;
+            padding: 0.5rem 1.2rem;
+            border: 2px solid var(--arch-blue);
+            border-radius: 25px;
+            transition: all 0.3s ease;
+            background: var(--arch-white);
+        }
+
+        .arch-header-links a:hover {
+            background: var(--arch-blue);
+            color: var(--arch-white);
+            box-shadow: var(--arch-shadow);
+        }
+
+        .arch-music-control {
+            position: fixed;
+            top: 20px; right: 20px;
+            z-index: 1000;
+        }
+
+        #archPlayPauseBtn {
+            width: 44px; height: 44px;
+            border-radius: 50%;
+            border: 2px solid var(--arch-blue);
+            background: var(--arch-white);
+            color: var(--arch-blue);
+            font-size: 1.2rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 12px rgba(23, 147, 209, 0.2);
+        }
+
+        #archPlayPauseBtn:hover { background: var(--arch-blue); color: var(--arch-white); transform: scale(1.08); }
+        #archPlayPauseBtn.playing { background: var(--arch-blue); color: var(--arch-white); }
+
+        .arch-whiteboard-overlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 2000;
+            background: rgba(0, 0, 0, 0.45);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: opacity 0.4s ease;
+        }
+
+        .arch-whiteboard-overlay.dismissed { opacity: 0; pointer-events: none; }
+
+        .arch-whiteboard {
+            background: var(--arch-white);
+            border: 3px solid var(--arch-blue);
+            border-radius: 16px;
+            padding: 2rem 2.5rem;
+            max-width: 560px;
+            width: 90%;
+            box-shadow: 0 10px 40px rgba(23, 147, 209, 0.3);
+            text-align: center;
+            cursor: default;
+            position: relative;
+        }
+
+        .arch-whiteboard::before {
+            content: '✦ Archinstall 安装教程 ✦';
+            display: block;
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--arch-blue-dark);
+            margin-bottom: 1rem;
+            letter-spacing: 2px;
+        }
+
+        .arch-whiteboard-content {
+            color: var(--arch-text-light);
+            font-size: 1rem;
+            line-height: 1.8;
+        }
+
+        .arch-whiteboard-hint {
+            margin-top: 1.5rem;
+            font-size: 0.85rem;
+            color: var(--arch-blue-light);
+            font-style: italic;
+        }
+
+        .tutorial-steps {
+            display: flex;
+            flex-direction: column;
+            gap: 2.5rem;
+            padding-top: 2rem;
+        }
+
+        .step-card {
+            background: var(--arch-white);
+            border: 1px solid var(--arch-border);
+            border-radius: 14px;
+            padding: 2rem;
+            box-shadow: var(--arch-shadow);
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .step-card:hover { border-color: var(--arch-blue); box-shadow: 0 6px 28px rgba(23, 147, 209, 0.2); transform: translateY(-2px); }
+
+        .step-number {
+            position: absolute;
+            top: -16px; left: 24px;
+            background: linear-gradient(135deg, var(--arch-blue), var(--arch-blue-dark));
+            color: #fff;
+            font-weight: 900;
+            font-size: 1.2rem;
+            padding: 4px 18px;
+            border-radius: 20px;
+            letter-spacing: 1px;
+        }
+
+        .step-text {
+            margin-top: 0.8rem;
+            margin-bottom: 1.2rem;
+            color: var(--arch-text);
+            font-size: 1.05rem;
+            line-height: 1.8;
+        }
+
+        .step-image-area {
+            margin: 1.2rem 0;
+            text-align: center;
+            background: var(--arch-bg);
+            border: 2px dashed var(--arch-border);
+            border-radius: 10px;
+            padding: 1.5rem 1rem;
+            min-height: 160px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            overflow: hidden;
+        }
+
+        .step-image-area img {
+            max-width: 100%;
+            max-height: 400px;
+            border-radius: 6px;
+            display: none;
+        }
+
+        .step-image-area.has-image { border-style: solid; padding: 0.5rem; }
+        .step-image-area.has-image img { display: block; }
+        .step-image-area.has-image .image-placeholder-text { display: none; }
+
+        .image-placeholder-text {
+            color: var(--arch-text-light);
+            font-size: 0.95rem;
+            opacity: 0.7;
+        }
+
+        .image-placeholder-icon {
+            font-size: 2.5rem;
+            color: var(--arch-blue-light);
+            margin-bottom: 0.5rem;
+            opacity: 0.5;
+        }
+
+        .step-image-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .step-image-row .step-image-area {
+            margin: 0;
+        }
+
+        @media (max-width: 768px) {
+            .step-image-row { grid-template-columns: 1fr; }
+        }
+
+        .step-tip {
+            margin-top: 0.8rem;
+            padding: 0.8rem 1rem;
+            background: rgba(243, 156, 18, 0.08);
+            border-left: 3px solid #f39c12;
+            border-radius: 0 6px 6px 0;
+            font-size: 0.9rem;
+            color: #8a6d14;
+        }
+
+        .step-tip i { color: #f39c12; margin-right: 0.4rem; }
+
+        .step-downloads {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.8rem;
+            margin-top: 0.8rem;
+        }
+
+        .btn-download {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.55rem 1.2rem;
+            background: var(--arch-white);
+            color: var(--arch-blue);
+            border: 2px solid var(--arch-blue);
+            border-radius: 25px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-download:hover { background: var(--arch-blue); color: var(--arch-white); box-shadow: var(--arch-shadow); }
+
+        .lightbox {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.88);
+            z-index: 3000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+
+        .lightbox.hidden { display: none; }
+
+        .lightbox img {
+            max-width: 90%; max-height: 90%;
+            border-radius: 8px;
+            box-shadow: 0 0 40px rgba(23, 147, 209, 0.5);
+        }
+
+        .arch-footer {
+            text-align: center;
+            padding: 3rem 0 1.5rem;
+            color: var(--arch-text-light);
+            font-size: 0.85rem;
+            opacity: 0.7;
+        }
+
+        .nav-jump-card {
+            text-align: center;
+            background: linear-gradient(135deg, rgba(23,147,209,0.06), rgba(126,200,227,0.12));
+            border: 2px dashed var(--arch-blue) !important;
+        }
+
+        .btn-jump {
+            display: inline-block;
+            margin-top: 1rem;
+            padding: 0.7rem 2rem;
+            background: linear-gradient(135deg, var(--arch-blue), var(--arch-blue-dark));
+            color: #fff;
+            border-radius: 25px;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            box-shadow: var(--arch-shadow);
+        }
+
+        .btn-jump:hover { transform: translateY(-2px); box-shadow: 0 6px 28px rgba(23, 147, 209, 0.3); }
+
+        @media (max-width: 768px) {
+            .arch-title { font-size: 2.2rem; }
+            .step-card { padding: 1.5rem 1.2rem; }
+            .arch-header-links { gap: 0.8rem; }
+            .arch-header-links a { font-size: 0.85rem; padding: 0.4rem 1rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="bgCanvas"></canvas>
+
+    <div class="arch-music-control">
+        <button id="archPlayPauseBtn" title="暂停/播放">▶</button>
+    </div>
+
+    <div id="whiteboardOverlay" class="arch-whiteboard-overlay">
+        <div class="arch-whiteboard">
+            <div class="arch-whiteboard-content">
+                欢迎来到 Archinstall 安装教程！<br>
+                archinstall 是 Arch Linux 官方提供的自动化安装脚本，通过交互式问答引导你完成安装。<br>
+                推荐新手使用，简单快捷，只需回答几个问题即可完成安装！
+            </div>
+            <div class="arch-whiteboard-hint">点击任意位置关闭</div>
+        </div>
+    </div>
+
+    <main class="arch-main">
+
+        <header class="arch-header">
+            <h1 class="arch-title">archinstall教程</h1>
+            <p class="arch-subtitle">官方安装脚本 · 交互式引导</p>
+            <div class="arch-header-links">
+                <a href="index.html"><i class="fas fa-home"></i> 回到主页</a>
+                <a href="archlinux.html"><i class="fas fa-arrow-left"></i> 返回Arch学习</a>
+            </div>
+        </header>
+
+        <section class="tutorial-steps">
+
+            <!-- ============ 步骤 0：启动 archinstall ============ -->
+            <article class="step-card">
+                <span class="step-number">启动 archinstall</span>
+                <div class="step-text">
+                    进入 Arch Linux Live 环境后，确保网络已连接，然后在终端输入：
+                    <br><strong><code style="font-size:1.1rem;background:rgba(23,147,209,0.1);padding:0.3rem 0.8rem;border-radius:5px;">archinstall</code></strong>
+                    <br><br>
+                    系统将启动交互式安装向导。你会看到一个蓝白色的 TUI 界面，使用 <strong>方向键</strong> 上下选择，<strong>Enter</strong> 确认，<strong>Tab</strong> 切换选项。
+                </div>
+                <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-main.png">
+                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                    <span class="image-placeholder-text">archinstall 主界面截图<br><small>点击可放大查看</small></span>
+                    <img src="assets/img/archlinux/archinstall-main.png" alt="archinstall主界面" data-zoomable>
+                </div>
+            </article>
+
+            <!-- ============ 步骤 1：语言 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤1</span>
+                <div class="step-text">
+                    <strong>选择安装语言（Archinstall Language）</strong><br>
+                    推荐选择 <strong>English</strong>，因为中文翻译可能不完整，而且英文界面在搜索资料时更容易对应。<br>
+                    不用担心，这只是安装界面的语言，系统安装后仍然可以设置中文。
+                </div>
+                <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-lang.png">
+                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                    <span class="image-placeholder-text">语言选择界面<br><small>点击可放大查看</small></span>
+                    <img src="assets/img/archlinux/archinstall-lang.png" alt="语言选择" data-zoomable>
+                </div>
+                <div class="step-tip">
+                    <i class="fas fa-lightbulb"></i> 小提示：选择 English 可以在遇到问题时更容易搜索到解决方案。
+                </div>
+            </article>
+
+            <!-- ============ 步骤 2：键盘布局 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤2</span>
+                <div class="step-text">
+                    <strong>选择键盘布局（Keyboard Layout）</strong><br>
+                    选择 <strong>us</strong>（美式键盘），这是最通用的键盘布局，大多数中国用户也使用此布局。<br>
+                    不要改动，直接按 Enter 继续即可。
+                </div>
+                <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-keyboard.png">
+                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                    <span class="image-placeholder-text">键盘布局选择<br><small>点击可放大查看</small></span>
+                    <img src="assets/img/archlinux/archinstall-keyboard.png" alt="键盘布局" data-zoomable>
+                </div>
+            </article>
+
+            <!-- ============ 步骤 3：镜像源区域 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤3</span>
+                <div class="step-text">
+                    <strong>选择镜像源区域（Mirror Region）</strong><br>
+                    选择 <strong>China</strong> 以获得最快的下载速度。镜像源决定了从哪个区域的服务器下载软件包，选择中国镜像可以让下载速度更快。
+                </div>
+                <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-mirror.png">
+                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                    <span class="image-placeholder-text">镜像源区域选择<br><small>点击可放大查看</small></span>
+                    <img src="assets/img/archlinux/archinstall-mirror.png" alt="镜像源选择" data-zoomable>
+                </div>
+            </article>
+
+            <!-- ============ 步骤 4：磁盘配置 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤4</span>
+                <div class="step-text">
+                    <strong>磁盘配置（Disk Configuration）⭐重点步骤</strong><br>
+                    这是最重要的一步！选择你要安装 Arch Linux 的硬盘。
+                </div>
+                <div class="step-text">
+                    <strong>推荐选择：</strong><br>
+                    1. 选择 <strong>"Use a best-effort default partition layout"</strong>（使用最佳默认分区布局）<br>
+                    2. 选择目标硬盘（通常是 <code>/dev/sda</code> 或 <code>/dev/nvme0n1</code>）<br>
+                    3. 文件系统选择 <strong>ext4</strong>（最稳定）或 <strong>btrfs</strong>（支持快照）<br><br>
+                    <strong style="color:#e74c3c;">⚠ 注意：此操作会清除所选硬盘上的所有数据！请确保选对硬盘！如果有双系统需求，请选择"手动分区"后将空闲空间分配。</strong>
+                </div>
+                <div class="step-image-row">
+                    <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-disk1.png">
+                        <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                        <span class="image-placeholder-text">磁盘分区布局选择</span>
+                        <img src="assets/img/archlinux/archinstall-disk1.png" alt="磁盘布局" data-zoomable>
+                    </div>
+                    <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-disk2.png">
+                        <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                        <span class="image-placeholder-text">选择目标硬盘</span>
+                        <img src="assets/img/archlinux/archinstall-disk2.png" alt="选择硬盘" data-zoomable>
+                    </div>
+                </div>
+            </article>
+
+            <!-- ============ 步骤 5：磁盘加密 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤5</span>
+                <div class="step-text">
+                    <strong>磁盘加密（Disk Encryption）</strong><br>
+                    设置硬盘加密密码。普通用户建议选择 <strong>否 / Skip</strong>，不需要加密。<br>
+                    如果选择加密，每次开机都需要输入密码解密硬盘，可能会稍微降低系统性能。
+                </div>
+                <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-encrypt.png">
+                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                    <span class="image-placeholder-text">磁盘加密选项<br><small>点击可放大查看</small></span>
+                    <img src="assets/img/archlinux/archinstall-encrypt.png" alt="磁盘加密" data-zoomable>
+                </div>
+            </article>
+
+            <!-- ============ 步骤 6：Bootloader ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤6</span>
+                <div class="step-text">
+                    <strong>引导程序（Bootloader）</strong><br>
+                    选择 <strong>Grub</strong> 作为引导程序。Grub 是最成熟的 Linux 引导程序，支持双系统引导。<br>
+                    如果你的电脑是 UEFI 启动（绝大多数现代电脑），选 Grub 即可。
+                </div>
+                <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-bootloader.png">
+                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                    <span class="image-placeholder-text">引导程序选择<br><small>点击可放大查看</small></span>
+                    <img src="assets/img/archlinux/archinstall-bootloader.png" alt="引导程序选择" data-zoomable>
+                </div>
+            </article>
+
+            <!-- ============ 步骤 7：Swap ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤7</span>
+                <div class="step-text">
+                    <strong>Swap（虚拟内存）</strong><br>
+                    选择 <strong>True</strong>（开启），大小设置为内存大小的 1~2 倍。<br>
+                    Swap 可以在内存不足时使用硬盘空间作为虚拟内存，确保系统稳定运行。
+                </div>
+                <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-swap.png">
+                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                    <span class="image-placeholder-text">Swap 配置<br><small>点击可放大查看</small></span>
+                    <img src="assets/img/archlinux/archinstall-swap.png" alt="Swap配置" data-zoomable>
+                </div>
+            </article>
+
+            <!-- ============ 步骤 8：主机名 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤8</span>
+                <div class="step-text">
+                    <strong>设置主机名（Hostname）</strong><br>
+                    给你的电脑起一个名字，例如 <strong>archlinux</strong>、<strong>my-pc</strong> 或任何你喜欢的名称。<br>
+                    主机名是网络上识别你电脑的名称，没什么特殊要求，随便起。
+                </div>
+                <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-hostname.png">
+                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                    <span class="image-placeholder-text">主机名设置<br><small>点击可放大查看</small></span>
+                    <img src="assets/img/archlinux/archinstall-hostname.png" alt="主机名设置" data-zoomable>
+                </div>
+            </article>
+
+            <!-- ============ 步骤 9：Root 密码 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤9</span>
+                <div class="step-text">
+                    <strong>设置 Root 密码</strong><br>
+                    root 是系统的超级管理员账户，密码请设置一个你能记住的强密码。<br>
+                    输入两次确认，注意输入时不会显示任何字符（包括星号），这是正常的安全设计。
+                </div>
+                <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-rootpass.png">
+                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                    <span class="image-placeholder-text">Root 密码设置<br><small>点击可放大查看</small></span>
+                    <img src="assets/img/archlinux/archinstall-rootpass.png" alt="Root密码" data-zoomable>
+                </div>
+            </article>
+
+            <!-- ============ 步骤 10：创建用户 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤10</span>
+                <div class="step-text">
+                    <strong>创建普通用户（User Account）⭐推荐</strong><br>
+                    创建一个日常使用的普通用户账户（例如你的名字拼音）。<br>
+                    archinstall 会自动将用户加入 <strong>wheel 组</strong>（管理员组），可以使用 sudo 命令。<br>
+                    同样需要设置密码，建议和 root 密码不同。
+                </div>
+                <div class="step-image-row">
+                    <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-user1.png">
+                        <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                        <span class="image-placeholder-text">创建用户名</span>
+                        <img src="assets/img/archlinux/archinstall-user1.png" alt="创建用户" data-zoomable>
+                    </div>
+                    <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-user2.png">
+                        <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                        <span class="image-placeholder-text">设置用户密码</span>
+                        <img src="assets/img/archlinux/archinstall-user2.png" alt="用户密码" data-zoomable>
+                    </div>
+                </div>
+                <div class="step-tip">
+                    <i class="fas fa-lightbulb"></i> archinstall 创建的普通用户会自动加入 wheel 组并获得 sudo 权限，无需手动配置 visudo。
+                </div>
+            </article>
+
+            <!-- ============ 步骤 11：Profile / 桌面环境 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤11</span>
+                <div class="step-text">
+                    <strong>选择 Profile（桌面环境/软件配置）⭐决定你的桌面</strong><br>
+                    在下方的列表中选择一个预配置方案，包括桌面环境（DE）和窗口管理器（WM）。
+                </div>
+                <div class="step-text">
+                    <strong>推荐桌面环境：</strong><br>
+                    <ul style="margin-top:0.5rem;padding-left:1.2rem;line-height:1.8;">
+                        <li><strong>KDE Plasma</strong> — 功能最全，界面美观，类似 Windows 操作习惯，推荐新手</li>
+                        <li><strong>GNOME</strong> — 简洁现代，类似 macOS 操作习惯，触屏友好</li>
+                        <li><strong>Xfce</strong> — 轻量级，资源占用低，适合老旧电脑</li>
+                        <li><strong>Cinnamon</strong> — 传统桌面风格，Windows 用户容易上手</li>
+                        <li><strong>Hyprland</strong> — 酷炫的平铺式窗口管理器，适合喜欢折腾的高级用户</li>
+                    </ul>
+                </div>
+                <div class="step-image-row">
+                    <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-profile1.png">
+                        <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                        <span class="image-placeholder-text">选择默认桌面类型</span>
+                        <img src="assets/img/archlinux/archinstall-profile1.png" alt="桌面类型选择" data-zoomable>
+                    </div>
+                    <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-profile2.png">
+                        <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                        <span class="image-placeholder-text">选择具体桌面/显卡驱动</span>
+                        <img src="assets/img/archlinux/archinstall-profile2.png" alt="桌面选择" data-zoomable>
+                    </div>
+                </div>
+            </article>
+
+            <!-- ============ 步骤 12：音频 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤12</span>
+                <div class="step-text">
+                    <strong>音频服务器（Audio）</strong><br>
+                    选择 <strong>Pipewire</strong>（推荐）。Pipewire 是现代 Linux 音频方案，兼容 PulseAudio 和 JACK，低延迟，蓝牙音频支持好。
+                </div>
+                <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-audio.png">
+                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                    <span class="image-placeholder-text">音频服务器选择<br><small>点击可放大查看</small></span>
+                    <img src="assets/img/archlinux/archinstall-audio.png" alt="音频选择" data-zoomable>
+                </div>
+            </article>
+
+            <!-- ============ 步骤 13：内核 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤13</span>
+                <div class="step-text">
+                    <strong>内核选择（Kernel）</strong><br>
+                    选择 <strong>linux</strong>（标准内核），这是最稳定、最广泛使用的内核。除非有特殊需求，否则默认即可。
+                </div>
+                <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-kernel.png">
+                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                    <span class="image-placeholder-text">内核选择<br><small>点击可放大查看</small></span>
+                    <img src="assets/img/archlinux/archinstall-kernel.png" alt="内核选择" data-zoomable>
+                </div>
+            </article>
+
+            <!-- ============ 步骤 14：额外软件包 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤14</span>
+                <div class="step-text">
+                    <strong>额外软件包（Additional Packages）</strong><br>
+                    可以在这里输入一些你想预装的软件包名称，多个用空格分隔。<br>
+                    如果不确定需要什么，可以先留空，系统安装好后随时可以用 pacman 安装。<br><br>
+                    <strong>推荐预装：</strong><br>
+                    <code>firefox vim git base-devel</code><br>
+                    （浏览器、编辑器、版本控制、编译工具链）
+                </div>
+                <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-packages.png">
+                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                    <span class="image-placeholder-text">额外软件包输入<br><small>点击可放大查看</small></span>
+                    <img src="assets/img/archlinux/archinstall-packages.png" alt="额外软件包" data-zoomable>
+                </div>
+            </article>
+
+            <!-- ============ 步骤 15：网络配置 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤15</span>
+                <div class="step-text">
+                    <strong>网络配置（Network Configuration）</strong><br>
+                    选择 <strong>NetworkManager</strong>，这是最通用、最好用的网络管理工具。<br>
+                    它支持有线、Wi-Fi、VPN、移动热点等几乎所有网络连接方式，桌面环境也会自动集成其托盘图标。
+                </div>
+                <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-network.png">
+                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                    <span class="image-placeholder-text">网络配置选择<br><small>点击可放大查看</small></span>
+                    <img src="assets/img/archlinux/archinstall-network.png" alt="网络配置" data-zoomable>
+                </div>
+            </article>
+
+            <!-- ============ 步骤 16：时区 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤16</span>
+                <div class="step-text">
+                    <strong>时区设置（Timezone）</strong><br>
+                    选择 <strong>Asia/Shanghai</strong>，这是中国标准时间（UTC+8）。
+                </div>
+                <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-timezone.png">
+                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                    <span class="image-placeholder-text">时区选择<br><small>点击可放大查看</small></span>
+                    <img src="assets/img/archlinux/archinstall-timezone.png" alt="时区选择" data-zoomable>
+                </div>
+            </article>
+
+            <!-- ============ 步骤 17：可选仓库 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤17</span>
+                <div class="step-text">
+                    <strong>可选仓库（Optional Repositories）</strong><br>
+                    建议开启 <strong>multilib</strong>（多架构支持仓库），它可以让你安装 32 位软件和库。<br>
+                    很多软件（如 Steam、Wine）需要 multilib 仓库才能正常运行。<br>
+                    不用担心，开启后不会对系统性能有任何影响。
+                </div>
+                <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-repos.png">
+                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                    <span class="image-placeholder-text">可选仓库选择<br><small>点击可放大查看</small></span>
+                    <img src="assets/img/archlinux/archinstall-repos.png" alt="可选仓库" data-zoomable>
+                </div>
+            </article>
+
+            <!-- ============ 步骤 18：确认并安装 ============ -->
+            <article class="step-card">
+                <span class="step-number">步骤18</span>
+                <div class="step-text">
+                    <strong>确认配置并开始安装（Install）⭐最后一步</strong><br>
+                    仔细检查所有配置项，确认无误后选择 <strong>Install</strong>，按下 Enter。<br>
+                    安装过程通常需要 5~15 分钟，取决于网络速度和电脑性能。<br>
+                    安装完成后系统会提示你 <strong>"是否 chroot 进新系统"</strong>，选 <strong>否</strong>，然后输入 <code>reboot</code> 重启即可。
+                </div>
+                <div class="step-image-row">
+                    <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-confirm.png">
+                        <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                        <span class="image-placeholder-text">确认所有配置</span>
+                        <img src="assets/img/archlinux/archinstall-confirm.png" alt="确认配置" data-zoomable>
+                    </div>
+                    <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-installing.png">
+                        <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
+                        <span class="image-placeholder-text">安装进行中</span>
+                        <img src="assets/img/archlinux/archinstall-installing.png" alt="安装进行中" data-zoomable>
+                    </div>
+                </div>
+                <div class="step-tip">
+                    <i class="fas fa-check-circle"></i> 安装完成后记得拔出 U 盘再重启，否则会再次进入 Live 环境！
+                </div>
+            </article>
+
+            <!-- ============ 跳转 archlinux_use ============ -->
+            <article class="step-card nav-jump-card">
+                <div style="font-size:1.5rem;color:var(--arch-blue);margin-bottom:0.6rem;"><i class="fas fa-arrow-right"></i></div>
+                <div class="step-text" style="text-align:center;">
+                    archinstall 安装完成！接下来学习如何使用 Arch Linux！<br>
+                    <strong>常用软件安装、桌面环境配置、AUR 使用……都在这里！</strong>
+                </div>
+                <a href="archlinux_use.html" class="btn-jump">
+                    <i class="fas fa-rocket"></i> 进入使用教程 → Arch Linux 使用指南
+                </a>
+            </article>
+
+        </section>
+
+        <footer class="arch-footer">
+            &copy; 2026 Misser-catos · Arch Linux 学习笔记 · archinstall 教程
+        </footer>
+    </main>
+
+    <audio id="archBgm" loop preload="auto">
+        <source src="assets/music/arch-song.mp3" type="audio/mpeg">
+    </audio>
+
+    <script>
+    (function() {
+
+        const canvas = document.getElementById('bgCanvas');
+        const ctx = canvas.getContext('2d');
+        let W, H;
+
+        const formulas = [
+            'E=mc²', '∫ₐᵇ f(x)dx', 'π ≈ 3.14159', 'e^{iπ}+1=0',
+            '∇·B=0', 'F=ma', '∂²u/∂t²=c²∇²u', '∑_{n=1}^∞ 1/n²=π²/6',
+            '√-1 = i', 'a²+b²=c²', 'lim_{x→∞} (1+1/x)^x=e',
+            'iℏ∂ψ/∂t=Ĥψ', '∯ E·dA=Q/ε₀', 'det(A-λI)=0',
+            'Γ(n)=(n-1)!', 'e^x=∑_{n=0}^∞ x^n/n!', 'sin²θ+cos²θ=1',
+            'ζ(s)=∑_{n=1}^∞ 1/n^s', 'P(A|B)=P(B|A)P(A)/P(B)',
+            'log(xy)=log x+log y', '|ψ⟩⟨ψ|'
+        ];
+
+        let formulaItems = [];
+        let orbits = [];
+
+        function resize() {
+            W = canvas.width = window.innerWidth;
+            H = canvas.height = window.innerHeight;
+            initItems();
+        }
+
+        function initItems() {
+            formulaItems = [];
+            const count = Math.floor(W * H / 18000);
+            for (let i = 0; i < Math.min(count, 35); i++) {
+                formulaItems.push({
+                    text: formulas[Math.floor(Math.random() * formulas.length)],
+                    x: Math.random() * W,
+                    y: Math.random() * H,
+                    speed: 0.15 + Math.random() * 0.35,
+                    opacity: 0.06 + Math.random() * 0.10,
+                    size: 11 + Math.random() * 10,
+                    drift: (Math.random() - 0.5) * 0.3
+                });
+            }
+
+            orbits = [];
+            const orbitCount = Math.min(Math.floor(W / 130), 8);
+            for (let i = 0; i < orbitCount; i++) {
+                const cx = 50 + Math.random() * (W - 100);
+                const cy = 50 + Math.random() * (H - 100);
+                const rx = 60 + Math.random() * 180;
+                const ry = 30 + Math.random() * 100;
+                const planetCount = 1 + Math.floor(Math.random() * 3);
+                const planets = [];
+                for (let j = 0; j < planetCount; j++) {
+                    planets.push({
+                        angle: Math.random() * Math.PI * 2,
+                        speed: 0.002 + Math.random() * 0.006,
+                        radius: 2 + Math.random() * 4,
+                        color: `rgba(23,147,209,${0.12 + Math.random() * 0.15})`
+                    });
+                }
+                orbits.push({
+                    cx, cy, rx, ry,
+                    planets,
+                    lineColor: `rgba(150,200,230,${0.06 + Math.random() * 0.06})`
+                });
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            orbits.forEach(orbit => {
+                ctx.strokeStyle = orbit.lineColor;
+                ctx.lineWidth = 0.8;
+                ctx.beginPath();
+                ctx.ellipse(orbit.cx, orbit.cy, orbit.rx, orbit.ry, 0, 0, Math.PI * 2);
+                ctx.stroke();
+                orbit.planets.forEach(planet => {
+                    planet.angle += planet.speed;
+                    if (planet.angle > Math.PI * 2) planet.angle -= Math.PI * 2;
+                    const px = orbit.cx + orbit.rx * Math.cos(planet.angle);
+                    const py = orbit.cy + orbit.ry * Math.sin(planet.angle);
+                    ctx.fillStyle = planet.color;
+                    ctx.beginPath();
+                    ctx.arc(px, py, planet.radius, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+            });
+
+            ctx.textBaseline = 'middle';
+            ctx.textAlign = 'center';
+            formulaItems.forEach(item => {
+                item.y -= item.speed;
+                item.x += item.drift;
+                if (item.y < -30) { item.y = H + 30; item.x = Math.random() * W; }
+                if (item.x < -50) item.x = W + 50;
+                if (item.x > W + 50) item.x = -50;
+                ctx.fillStyle = `rgba(23,147,209,${item.opacity})`;
+                ctx.font = `${item.size}px "Courier New", "Segoe UI", monospace`;
+                ctx.fillText(item.text, item.x, item.y);
+            });
+
+            requestAnimationFrame(draw);
+        }
+
+        window.addEventListener('resize', resize);
+        resize();
+        draw();
+
+        // 浮动小白板
+        const whiteboardOverlay = document.getElementById('whiteboardOverlay');
+        whiteboardOverlay.addEventListener('click', function(e) {
+            whiteboardOverlay.classList.add('dismissed');
+            sessionStorage.setItem('archWhiteboardDismissed', '1');
+        });
+        if (sessionStorage.getItem('archWhiteboardDismissed') === '1') {
+            whiteboardOverlay.classList.add('dismissed');
+        }
+
+        // 音乐控制
+        const archBgm = document.getElementById('archBgm');
+        const playPauseBtn = document.getElementById('archPlayPauseBtn');
+        let isPlaying = false;
+
+        playPauseBtn.addEventListener('click', function() {
+            if (isPlaying) {
+                archBgm.pause();
+                playPauseBtn.innerHTML = '▶';
+                playPauseBtn.classList.remove('playing');
+                isPlaying = false;
+            } else {
+                archBgm.play().catch(function() {});
+                playPauseBtn.innerHTML = '⏸';
+                playPauseBtn.classList.add('playing');
+                isPlaying = true;
+            }
+        });
+
+        let musicStarted = false;
+        function tryAutoPlay() {
+            if (musicStarted) return;
+            archBgm.play().then(function() {
+                playPauseBtn.innerHTML = '⏸';
+                playPauseBtn.classList.add('playing');
+                isPlaying = true;
+                musicStarted = true;
+            }).catch(function() {});
+        }
+
+        whiteboardOverlay.addEventListener('click', function handler() {
+            whiteboardOverlay.removeEventListener('click', handler);
+            setTimeout(tryAutoPlay, 300);
+        });
+
+        if (sessionStorage.getItem('archWhiteboardDismissed') === '1') {
+            setTimeout(tryAutoPlay, 500);
+        }
+
+        // 跨页面音乐状态保持
+        window.addEventListener('beforeunload', function() {
+            sessionStorage.setItem('archMusicPlaying', isPlaying ? '1' : '0');
+            sessionStorage.setItem('archMusicCurrentTime', archBgm.currentTime);
+            sessionStorage.setItem('archMusicSrc', archBgm.querySelector('source').src);
+        });
+
+        (function restoreMusic() {
+            var savedPlaying = sessionStorage.getItem('archMusicPlaying');
+            var savedTime = parseFloat(sessionStorage.getItem('archMusicCurrentTime'));
+            var savedSrc = sessionStorage.getItem('archMusicSrc');
+            if (savedSrc) {
+                var currentSrc = archBgm.querySelector('source').src;
+                if (savedSrc === currentSrc && !isNaN(savedTime) && savedTime > 0) {
+                    archBgm.currentTime = savedTime;
+                }
+                if (savedPlaying === '1') {
+                    archBgm.play().then(function() {
+                        playPauseBtn.innerHTML = '⏸';
+                        playPauseBtn.classList.add('playing');
+                        isPlaying = true;
+                        musicStarted = true;
+                    }).catch(function() {});
+                }
+            }
+        })();
+
+        // 图片放大
+        const lightbox = document.createElement('div');
+        lightbox.className = 'lightbox hidden';
+        lightbox.innerHTML = '<img src="" alt="放大图片">';
+        document.body.appendChild(lightbox);
+        const lightboxImg = lightbox.querySelector('img');
+
+        lightbox.addEventListener('click', function() {
+            lightbox.classList.add('hidden');
+            document.body.style.overflow = '';
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && !lightbox.classList.contains('hidden')) {
+                lightbox.classList.add('hidden');
+                document.body.style.overflow = '';
+            }
+        });
+
+        document.querySelectorAll('.step-image-area').forEach(function(area) {
+            area.addEventListener('click', function(e) {
+                const img = area.querySelector('img[data-zoomable]');
+                if (!img) return;
+                const fullSrc = area.getAttribute('data-fullsize') || img.src;
+                lightboxImg.src = fullSrc;
+                lightbox.classList.remove('hidden');
+                document.body.style.overflow = 'hidden';
+                e.stopPropagation();
+            });
+        });
+
+        document.querySelectorAll('.step-image-area img[data-zoomable]').forEach(function(img) {
+            const area = img.closest('.step-image-area');
+            const src = img.getAttribute('src');
+            if (src && src.length > 5) {
+                img.onload = function() { area.classList.add('has-image'); };
+                img.onerror = function() {};
+                if (img.complete && img.naturalWidth > 0) {
+                    area.classList.add('has-image');
+                }
+            }
+        });
+
+    })();
+    </script>
+</body>
+</html>
