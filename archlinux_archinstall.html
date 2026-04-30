@@ -374,7 +374,7 @@
             <div class="arch-whiteboard-content">
                 欢迎来到 Archinstall 安装教程！<br>
                 archinstall 是 Arch Linux 官方提供的自动化安装脚本，通过交互式问答引导你完成安装。<br>
-                推荐新手使用，简单快捷，只需回答几个问题即可完成安装！
+                推荐新手使用，简单快捷！但是archinstall脚本安装在分配空间和双系统引导方面做的不太好，如果有双系统需求建议还是返回手动安装
             </div>
             <div class="arch-whiteboard-hint">点击任意位置关闭</div>
         </div>
@@ -400,12 +400,11 @@
                     进入 Arch Linux Live 环境后，确保网络已连接，然后在终端输入：
                     <br><strong><code style="font-size:1.1rem;background:rgba(23,147,209,0.1);padding:0.3rem 0.8rem;border-radius:5px;">archinstall</code></strong>
                     <br><br>
-                    系统将启动交互式安装向导。你会看到一个蓝白色的 TUI 界面，使用 <strong>方向键</strong> 上下选择，<strong>Enter</strong> 确认，<strong>Tab</strong> 切换选项。
+                    系统将启动交互式安装向导。你会看到一个TUI界面，使用 <strong>方向键</strong> 上下选择，<strong>Enter</strong> 确认，<strong>Tab</strong> 切换选项。
                 </div>
                 <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-main.png">
-                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
-                    <span class="image-placeholder-text">archinstall 主界面截图<br><small>点击可放大查看</small></span>
                     <img src="assets/img/archlinux/archinstall-main.png" alt="archinstall主界面" data-zoomable>
+                    <div>如图所示，你会看到这样一个安装引导界面</div>
                 </div>
             </article>
 
@@ -413,15 +412,11 @@
             <article class="step-card">
                 <span class="step-number">步骤1</span>
                 <div class="step-text">
-                    <strong>选择安装语言（Archinstall Language）</strong><br>
+                    <strong>选择安装语言（Archinstall Language）从上往下第一个</strong><br>
                     推荐选择 <strong>English</strong>，因为中文翻译可能不完整，而且英文界面在搜索资料时更容易对应。<br>
                     不用担心，这只是安装界面的语言，系统安装后仍然可以设置中文。
                 </div>
-                <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-lang.png">
-                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
-                    <span class="image-placeholder-text">语言选择界面<br><small>点击可放大查看</small></span>
-                    <img src="assets/img/archlinux/archinstall-lang.png" alt="语言选择" data-zoomable>
-                </div>
+                <div>默认就是英语，这里直接跳过即可</div>
                 <div class="step-tip">
                     <i class="fas fa-lightbulb"></i> 小提示：选择 English 可以在遇到问题时更容易搜索到解决方案。
                 </div>
@@ -433,13 +428,9 @@
                 <div class="step-text">
                     <strong>选择键盘布局（Keyboard Layout）</strong><br>
                     选择 <strong>us</strong>（美式键盘），这是最通用的键盘布局，大多数中国用户也使用此布局。<br>
-                    不要改动，直接按 Enter 继续即可。
                 </div>
-                <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-keyboard.png">
-                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
-                    <span class="image-placeholder-text">键盘布局选择<br><small>点击可放大查看</small></span>
-                    <img src="assets/img/archlinux/archinstall-keyboard.png" alt="键盘布局" data-zoomable>
-                </div>
+                <div>这里也是默认就选好了，直接跳过即可</div>
+                <div>默认选择好的我就没有录屏，因此你也可以不用关注，放心跳过即可</div>
             </article>
 
             <!-- ============ 步骤 3：镜像源区域 ============ -->
@@ -447,12 +438,24 @@
                 <span class="step-number">步骤3</span>
                 <div class="step-text">
                     <strong>选择镜像源区域（Mirror Region）</strong><br>
-                    选择 <strong>China</strong> 以获得最快的下载速度。镜像源决定了从哪个区域的服务器下载软件包，选择中国镜像可以让下载速度更快。
+                    进入Select regions（第一个）选项，选择 <strong>China</strong> 以获得最快的下载速度。镜像源决定了从哪个区域的服务器下载软件包，选择中国镜像可以让下载速度更快。
                 </div>
+                <div>移动到china所在位置，按空格键选择，enter回车确认并退出</div>
+               <div>然后再进入Optional repositories（第三个）</div>
+               <div>这里是32位系统库的选择，建议选择上，直接选第一个，空格选定，回车确认并退出</div>
                 <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-mirror.png">
-                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
-                    <span class="image-placeholder-text">镜像源区域选择<br><small>点击可放大查看</small></span>
-                    <img src="assets/img/archlinux/archinstall-mirror.png" alt="镜像源选择" data-zoomable>
+                    <img src="assets/img/archlinux/archinstall-mirror1.png" alt="镜像源选择" data-zoomable>
+                    选择镜像源
+                    <img src="assets/img/archlinux/archinstall-mirror2.png" alt="镜像源选择" data-zoomable>
+                    选择中国
+                    <img src="assets/img/archlinux/archinstall-mirror3.png" alt="镜像源选择" data-zoomable>
+                    空格选择，回车确定
+                    <img src="assets/img/archlinux/archinstall-mirror4.png" alt="镜像源选择" data-zoomable>
+                    选择32位库
+                    <img src="assets/img/archlinux/archinstall-mirror5.png" alt="镜像源选择" data-zoomable>
+                    开启第一个
+                    <img src="assets/img/archlinux/archinstall-mirror6.png" alt="镜像源选择" data-zoomable>
+                    退出
                 </div>
             </article>
 
@@ -467,7 +470,8 @@
                     <strong>推荐选择：</strong><br>
                     1. 选择 <strong>"Use a best-effort default partition layout"</strong>（使用最佳默认分区布局）<br>
                     2. 选择目标硬盘（通常是 <code>/dev/sda</code> 或 <code>/dev/nvme0n1</code>）<br>
-                    3. 文件系统选择 <strong>ext4</strong>（最稳定）或 <strong>btrfs</strong>（支持快照）<br><br>
+                        <div>如果看不懂，你就选择空间最大的那个就好，空格选定，回车进入</div>
+                    3. 文件系统选择  <strong>btrfs</strong>（支持快照,这是目前最先进的选择）默认就是第一个 ，直接回车就行<br><br>
                     <strong style="color:#e74c3c;">⚠ 注意：此操作会清除所选硬盘上的所有数据！请确保选对硬盘！如果有双系统需求，请选择"手动分区"后将空闲空间分配。</strong>
                 </div>
                 <div class="step-image-row">
@@ -484,13 +488,12 @@
                 </div>
             </article>
 
-            <!-- ============ 步骤 5：磁盘加密 ============ -->
+            <!-- ============ 步骤 5：内核选择 ============ -->
             <article class="step-card">
                 <span class="step-number">步骤5</span>
                 <div class="step-text">
-                    <strong>磁盘加密（Disk Encryption）</strong><br>
-                    设置硬盘加密密码。普通用户建议选择 <strong>否 / Skip</strong>，不需要加密。<br>
-                    如果选择加密，每次开机都需要输入密码解密硬盘，可能会稍微降低系统性能。
+                    <strong>内核选择（kernels）</strong><br>
+                    进入选择想要使用的内核，可以选择多个，目前主流的两个是linux和linux-zen，linux是原版内核,linux-zen是变体，性能更强
                 </div>
                 <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-encrypt.png">
                     <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
@@ -506,6 +509,7 @@
                     <strong>引导程序（Bootloader）</strong><br>
                     选择 <strong>Grub</strong> 作为引导程序。Grub 是最成熟的 Linux 引导程序，支持双系统引导。<br>
                     如果你的电脑是 UEFI 启动（绝大多数现代电脑），选 Grub 即可。
+                    如果你啥也不懂的话，可以不用管，直接进行下一步
                 </div>
                 <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-bootloader.png">
                     <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
@@ -521,6 +525,7 @@
                     <strong>Swap（虚拟内存）</strong><br>
                     选择 <strong>True</strong>（开启），大小设置为内存大小的 1~2 倍。<br>
                     Swap 可以在内存不足时使用硬盘空间作为虚拟内存，确保系统稳定运行。
+                    这里可以跳过，一般会帮我们默认调制好，除非电脑特别古董，需要自己设置除外
                 </div>
                 <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-swap.png">
                     <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
@@ -536,6 +541,7 @@
                     <strong>设置主机名（Hostname）</strong><br>
                     给你的电脑起一个名字，例如 <strong>archlinux</strong>、<strong>my-pc</strong> 或任何你喜欢的名称。<br>
                     主机名是网络上识别你电脑的名称，没什么特殊要求，随便起。
+                    当然你也可以不用管它
                 </div>
                 <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-hostname.png">
                     <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
@@ -549,8 +555,11 @@
                 <span class="step-number">步骤9</span>
                 <div class="step-text">
                     <strong>设置 Root 密码</strong><br>
+                    进入Authentication
+                    选择第一个Root Password
                     root 是系统的超级管理员账户，密码请设置一个你能记住的强密码。<br>
                     输入两次确认，注意输入时不会显示任何字符（包括星号），这是正常的安全设计。
+                    当然你也可以不用管，因为创建用户时如果没有管理员密码会自动把用户密码设定为管理员密码
                 </div>
                 <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-rootpass.png">
                     <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
@@ -564,9 +573,12 @@
                 <span class="step-number">步骤10</span>
                 <div class="step-text">
                     <strong>创建普通用户（User Account）⭐推荐</strong><br>
+                    不用退出，就在刚刚的Rootpassword下面
+                    进入之后选择add a user
                     创建一个日常使用的普通用户账户（例如你的名字拼音）。<br>
                     archinstall 会自动将用户加入 <strong>wheel 组</strong>（管理员组），可以使用 sudo 命令。<br>
                     同样需要设置密码，建议和 root 密码不同。
+                    然后选择confirm and exit保存并退出
                 </div>
                 <div class="step-image-row">
                     <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-user1.png">
@@ -590,16 +602,18 @@
                 <span class="step-number">步骤11</span>
                 <div class="step-text">
                     <strong>选择 Profile（桌面环境/软件配置）⭐决定你的桌面</strong><br>
-                    在下方的列表中选择一个预配置方案，包括桌面环境（DE）和窗口管理器（WM）。
+                    在下方的列表中选择一个预配置方案Desktop,括桌面环境（DE）和窗口管理器（WM）。
+                    或者选择第二个minimal原始系统不带任何其他组建（黑窗口，命令行）
+                    剩下两个不建议动，计算机一般已经为我们选择了最合适的选项
                 </div>
                 <div class="step-text">
                     <strong>推荐桌面环境：</strong><br>
                     <ul style="margin-top:0.5rem;padding-left:1.2rem;line-height:1.8;">
                         <li><strong>KDE Plasma</strong> — 功能最全，界面美观，类似 Windows 操作习惯，推荐新手</li>
                         <li><strong>GNOME</strong> — 简洁现代，类似 macOS 操作习惯，触屏友好</li>
-                        <li><strong>Xfce</strong> — 轻量级，资源占用低，适合老旧电脑</li>
-                        <li><strong>Cinnamon</strong> — 传统桌面风格，Windows 用户容易上手</li>
+                        <li><strong>niri</strong>最近崛起的新型桌面管理器，使用rust编写，wayland桌面协议，工作效率极高</li> 
                         <li><strong>Hyprland</strong> — 酷炫的平铺式窗口管理器，适合喜欢折腾的高级用户</li>
+                        当然，还有更多桌面环境，有兴趣的可以体验一下。可以选择多个桌面环境，在电脑登录界面可以切换
                     </ul>
                 </div>
                 <div class="step-image-row">
@@ -621,7 +635,10 @@
                 <span class="step-number">步骤12</span>
                 <div class="step-text">
                     <strong>音频服务器（Audio）</strong><br>
+                    进入Applications
+                    进入Audio选项
                     选择 <strong>Pipewire</strong>（推荐）。Pipewire 是现代 Linux 音频方案，兼容 PulseAudio 和 JACK，低延迟，蓝牙音频支持好。
+                    这里我因为是虚拟机，所以选择了pulseaudio
                 </div>
                 <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-audio.png">
                     <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
@@ -630,23 +647,10 @@
                 </div>
             </article>
 
-            <!-- ============ 步骤 13：内核 ============ -->
+           
+            <!-- ============ 步骤 13：额外软件包 ============ -->
             <article class="step-card">
                 <span class="step-number">步骤13</span>
-                <div class="step-text">
-                    <strong>内核选择（Kernel）</strong><br>
-                    选择 <strong>linux</strong>（标准内核），这是最稳定、最广泛使用的内核。除非有特殊需求，否则默认即可。
-                </div>
-                <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-kernel.png">
-                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
-                    <span class="image-placeholder-text">内核选择<br><small>点击可放大查看</small></span>
-                    <img src="assets/img/archlinux/archinstall-kernel.png" alt="内核选择" data-zoomable>
-                </div>
-            </article>
-
-            <!-- ============ 步骤 14：额外软件包 ============ -->
-            <article class="step-card">
-                <span class="step-number">步骤14</span>
                 <div class="step-text">
                     <strong>额外软件包（Additional Packages）</strong><br>
                     可以在这里输入一些你想预装的软件包名称，多个用空格分隔。<br>
@@ -662,12 +666,13 @@
                 </div>
             </article>
 
-            <!-- ============ 步骤 15：网络配置 ============ -->
+            <!-- ============ 步骤 14：网络配置 ============ -->
             <article class="step-card">
-                <span class="step-number">步骤15</span>
+                <span class="step-number">步骤14</span>
                 <div class="step-text">
                     <strong>网络配置（Network Configuration）</strong><br>
                     选择 <strong>NetworkManager</strong>，这是最通用、最好用的网络管理工具。<br>
+                    如果两个Network Configuration不确定选什么的话，选最后一个就行
                     它支持有线、Wi-Fi、VPN、移动热点等几乎所有网络连接方式，桌面环境也会自动集成其托盘图标。
                 </div>
                 <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-network.png">
@@ -677,12 +682,13 @@
                 </div>
             </article>
 
-            <!-- ============ 步骤 16：时区 ============ -->
+            <!-- ============ 步骤 15：时区 ============ -->
             <article class="step-card">
-                <span class="step-number">步骤16</span>
+                <span class="step-number">步骤15</span>
                 <div class="step-text">
                     <strong>时区设置（Timezone）</strong><br>
                     选择 <strong>Asia/Shanghai</strong>，这是中国标准时间（UTC+8）。
+                    你可以输入/shanghai可以自动筛选出上海时区，按回车选择即可，多按几次退出
                 </div>
                 <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-timezone.png">
                     <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
@@ -691,14 +697,15 @@
                 </div>
             </article>
 
-            <!-- ============ 步骤 17：可选仓库 ============ -->
+            <!-- ============ 步骤 16：可选仓库 ============ -->
             <article class="step-card">
-                <span class="step-number">步骤17</span>
+                <span class="step-number">步骤16</span>
                 <div class="step-text">
                     <strong>可选仓库（Optional Repositories）</strong><br>
                     建议开启 <strong>multilib</strong>（多架构支持仓库），它可以让你安装 32 位软件和库。<br>
                     很多软件（如 Steam、Wine）需要 multilib 仓库才能正常运行。<br>
                     不用担心，开启后不会对系统性能有任何影响。
+                    当然，一般也会自动为我们开启，你不放心可以进入检查，也可以直接跳过
                 </div>
                 <div class="step-image-area" data-fullsize="assets/img/archlinux/archinstall-repos.png">
                     <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
@@ -707,9 +714,9 @@
                 </div>
             </article>
 
-            <!-- ============ 步骤 18：确认并安装 ============ -->
+            <!-- ============ 步骤 17：确认并安装 ============ -->
             <article class="step-card">
-                <span class="step-number">步骤18</span>
+                <span class="step-number">步骤17</span>
                 <div class="step-text">
                     <strong>确认配置并开始安装（Install）⭐最后一步</strong><br>
                     仔细检查所有配置项，确认无误后选择 <strong>Install</strong>，按下 Enter。<br>
