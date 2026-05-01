@@ -476,10 +476,10 @@
 
                 <!-- XFCE -->
                 <div class="step-text" style="margin-top:1.2rem;">
-                    <strong style="color:var(--arch-blue-dark);font-size:1.1rem;">Xfce — 轻量高效</strong><br>
+                    <strong style="color:var(--arch-blue-dark);font-size:1.1rem;">niri— 轻量高效</strong><br>
                     资源占用极低，适合老旧电脑或追求极致性能的用户，功能也足够日常使用。<br>
                     <strong>安装命令：</strong><br>
-                    <code>sudo pacman -S xfce4 xfce4-goodies lightdm lightdm-gtk-greeter</code><br>
+                    <code>sudo pacman -S niri lightdm alacritty</code><br>
                     <code>sudo systemctl enable lightdm</code>
                 </div>
 
@@ -504,7 +504,7 @@
                     </div>
                     <div class="de-card">
                         <div class="de-card-icon"><i class="fas fa-feather"></i></div>
-                        <h4>Xfce</h4>
+                        <h4>niri</h4>
                         <p>轻量级，内存占用低<br>老旧设备不二之选</p>
                     </div>
                     <div class="de-card">
@@ -580,12 +580,6 @@
                     </ul>
                 </div>
 
-                <div class="step-image-area" data-fullsize="assets/img/archlinux/use-software.png">
-                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
-                    <span class="image-placeholder-text">软件截图展示区域<br><small>点击可放大查看</small></span>
-                    <img src="assets/img/archlinux/use-software.png" alt="软件展示" data-zoomable>
-                </div>
-
                 <div class="step-tip">
                     <i class="fas fa-lightbulb"></i> 一行安装全部常用软件：<code>sudo pacman -S firefox vim vlc mpv git base-devel python nodejs</code>
                 </div>
@@ -613,12 +607,8 @@ makepkg -si
                     <code>yay -Ss 关键词</code> — 搜索软件包<br>
                     <code>yay -Rns 包名</code> — 彻底卸载软件及无用依赖<br>
                     <code>yay -Yc</code> — 清理无用的 AUR 构建缓存
-                </div>
-                <div class="step-image-area" data-fullsize="assets/img/archlinux/use-yay.png">
-                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
-                    <span class="image-placeholder-text">yay 安装/使用截图<br><small>点击可放大查看</small></span>
-                    <img src="assets/img/archlinux/use-yay.png" alt="yay使用" data-zoomable>
-                </div>
+                </div>          
+
                 <div class="step-tip">
                     <i class="fas fa-lightbulb"></i> AUR 包由社区维护，安装前建议检查 PKGBUILD 和评论，确保安全可靠。
                 </div>
@@ -643,11 +633,6 @@ export SDL_IM_MODULE=fcitx
 </pre>
                     重启或重新登录后，使用 <code>Ctrl+Space</code> 切换中英文输入。
                 </div>
-                <div class="step-image-area" data-fullsize="assets/img/archlinux/use-fcitx.png">
-                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
-                    <span class="image-placeholder-text">Fcitx5 配置界面截图<br><small>点击可放大查看</small></span>
-                    <img src="assets/img/archlinux/use-fcitx.png" alt="输入法" data-zoomable>
-                </div>
             </article>
 
             <!-- ============ 第六节：系统美化和字体 ============ -->
@@ -667,11 +652,6 @@ export SDL_IM_MODULE=fcitx
                     <strong>KDE 主题推荐（通过系统设置 → 外观下载）：</strong><br>
                     — 全局主题：Sweet、Layan、Nordic<br>
                     — Plasma 样式：Fluent、Win11OS
-                </div>
-                <div class="step-image-area" data-fullsize="assets/img/archlinux/use-theme.png">
-                    <span class="image-placeholder-icon"><i class="fas fa-image"></i></span>
-                    <span class="image-placeholder-text">系统美化效果展示<br><small>点击可放大查看</small></span>
-                    <img src="assets/img/archlinux/use-theme.png" alt="系统美化" data-zoomable>
                 </div>
             </article>
 
