@@ -71,9 +71,37 @@
         <!-- 音乐内容 -->
         <section class="content-section">
             <h2 class="section-title">音乐收藏</h2>
-            <div class="content-placeholder">
-                <p class="placeholder-text">暂时还没有完成</p>
-                <p class="placeholder-subtext">这里将会展示我的音乐收藏和推荐</p>
+            <div class="music-list">
+                <div class="music-card" data-src="assets/music/track1.mp3" data-title="不存在的乐园" data-artist="塞壬唱片">
+                    <span class="music-number">001</span>
+                    <button class="music-play-btn"><i class="fas fa-play"></i> 播放</button>
+                    <div class="music-info">不存在的乐园 / 塞壬唱片</div>
+                    <a href="assets/music/track1.mp3" download="不存在的乐园.mp3" class="music-download-btn"><i class="fas fa-download"></i> 下载</a>
+                </div>
+                <div class="music-card" data-src="assets/music/track2.mp3" data-title="****生息****" data-artist="塞壬唱片">
+                    <span class="music-number">002</span>
+                    <button class="music-play-btn"><i class="fas fa-play"></i> 播放</button>
+                    <div class="music-info">****生息**** / 塞壬唱片</div>
+                    <a href="assets/music/track2.mp3" download="生息.mp3" class="music-download-btn"><i class="fas fa-download"></i> 下载</a>
+                </div>
+                <div class="music-card" data-src="assets/music/track3.mp3" data-title="走过漫漫时空" data-artist="塞壬唱片">
+                    <span class="music-number">003</span>
+                    <button class="music-play-btn"><i class="fas fa-play"></i> 播放</button>
+                    <div class="music-info">走过漫漫时空 / 塞壬唱片</div>
+                    <a href="assets/music/track3.mp3" download="走过漫漫时空.mp3" class="music-download-btn"><i class="fas fa-download"></i> 下载</a>
+                </div>
+                <div class="music-card" data-src="assets/music/我的生活.mp3" data-title="我的生活" data-artist="塞壬唱片">
+                    <span class="music-number">004</span>
+                    <button class="music-play-btn"><i class="fas fa-play"></i> 播放</button>
+                    <div class="music-info">我的生活/ 塞壬唱片</div>
+                    <a href="assets/music/我的生活.mp3" download="我的生活.mp3" class="music-download-btn"><i class="fas fa-download"></i> 下载</a>
+                </div>
+                <div class="music-card" data-src="assets/music/永恒呼吸.mp3" data-title="永恒呼吸" data-artist="塞壬唱片">
+                    <span class="music-number">005</span>
+                    <button class="music-play-btn"><i class="fas fa-play"></i> 播放</button>
+                    <div class="music-info">永恒呼吸 / 塞壬唱片</div>
+                    <a href="assets/music/永恒呼吸.mp3" download="永恒呼吸.mp3" class="music-download-btn"><i class="fas fa-download"></i> 下载</a>
+                </div>
             </div>
         </section>
 
@@ -82,14 +110,18 @@
         </footer>
     </main>
 
-    <!-- 隐藏的音频播放器 -->
+    <!-- 隐藏的音频播放器（全局BGM） -->
     <audio id="bgmPlayer" loop preload="auto">
         <!-- 音源由JS动态设置 -->
     </audio>
 
+    <!-- 音乐卡片独立播放器 -->
+    <audio id="musicCardPlayer" preload="auto"></audio>
+
     <!-- 脚本引入 -->
     <script src="assets/js/cmatrix.js"></script>
     <script src="assets/js/musicPlayer.js"></script>
+    <script src="assets/js/musicCards.js"></script>
     <script src="assets/js/main.js"></script>
 </body>
 </html>

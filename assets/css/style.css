@@ -1124,6 +1124,124 @@ body:not(.preload) .top-left-actions {
     opacity: 0.8;
 }
 
+/* ========== 音乐卡片样式 (music.html) ========== */
+.music-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+    margin-top: 2rem;
+}
+
+.music-card {
+    position: relative;
+    background: rgba(10, 10, 18, 0.6);
+    border: 1px solid var(--acid-border);
+    border-radius: 15px;
+    padding: 2rem;
+    backdrop-filter: blur(10px);
+    transition: all 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.2rem;
+}
+
+.music-card:hover {
+    border-color: var(--acid-primary);
+    box-shadow: 0 0 30px rgba(0, 255, 157, 0.2);
+    transform: translateY(-5px);
+}
+
+.music-number {
+    position: absolute;
+    top: -15px;
+    left: 20px;
+    background: var(--acid-primary);
+    color: var(--acid-bg);
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+    font-size: 1.2rem;
+    padding: 5px 15px;
+    border-radius: 20px;
+    border: 2px solid var(--acid-border);
+}
+
+.music-play-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 28px;
+    background: linear-gradient(135deg, var(--acid-primary), var(--acid-secondary));
+    color: var(--acid-bg);
+    border: none;
+    border-radius: 30px;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.music-play-btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 0 20px rgba(0, 255, 157, 0.4);
+}
+
+.music-play-btn.playing {
+    background: linear-gradient(135deg, #ff4080, #ff80ab);
+    box-shadow: 0 0 15px rgba(255, 64, 128, 0.3);
+}
+
+.music-play-btn.playing:hover {
+    box-shadow: 0 0 25px rgba(255, 64, 128, 0.5);
+}
+
+.music-info {
+    font-size: 1.3rem;
+    color: var(--acid-text);
+    font-family: 'Courier New', monospace;
+    text-align: center;
+    letter-spacing: 1px;
+}
+
+.music-download-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 24px;
+    background: transparent;
+    color: var(--acid-primary);
+    border: 1px solid var(--acid-primary);
+    border-radius: 30px;
+    text-decoration: none;
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+    font-size: 0.95rem;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.music-download-btn:hover {
+    background: rgba(0, 255, 157, 0.1);
+    transform: scale(1.05);
+    box-shadow: 0 0 15px rgba(0, 255, 157, 0.3);
+}
+
+@media (max-width: 768px) {
+    .music-card {
+        padding: 1.5rem;
+    }
+    .music-info {
+        font-size: 1.1rem;
+    }
+    .music-play-btn {
+        padding: 10px 22px;
+        font-size: 0.9rem;
+    }
+}
+
 /* 响应式调整 */
 @media (max-width: 768px) {
     .project-card {
