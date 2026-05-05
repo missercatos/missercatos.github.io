@@ -9,7 +9,13 @@ window.musicPlayer = (function() {
     const playlist = [
         { title: "不存在的乐园", src: "assets/music/track1.mp3" },
         { title: "****生息****", src: "assets/music/track2.mp3" },
-        { title: "走过漫漫时空", src: "assets/music/track3.mp3" }
+        { title: "走过漫漫时空", src: "assets/music/track3.mp3" },
+        { title: "不存在的乐园", src: "assets/music/我的生活.mp3" },
+        { title: "**永恒呼吸**",src: "assets/music/永恒呼吸.mp3" },
+        { title: "春弦-塞壬唱片", src: "assets/music/春弦-塞壬唱片-MSR,横山克.mp3" },
+        { title: "****MY AL****L", src: "assets/music/MY ALL-浜崎あゆみ.mp3" },
+        { title: "永世のクレイドル", src: "assets/music/永世のクレイドル-鈴華ゆう子.mp3" },
+        { title: "****浸春芜****", src: "assets/music/浸春芜-塞壬唱片-MSR,宋柏,十音,解伟苓.mp3" }
     ];
     let currentTrackIndex = 0;
     let isMuted = false;
