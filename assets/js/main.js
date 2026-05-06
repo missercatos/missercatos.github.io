@@ -1,3 +1,170 @@
+// ========== 技术分享浮动按钮配置 ==========
+// ★ 新增分享入口：在下面数组中追加条目即可
+const TECH_SHARES = [
+    {
+        id: 'archlinux',
+        name: 'Arch Linux',
+        url: 'archlinux.html',
+        logo: 'assets/ima/cions/archlinux.png',
+        description: 'Arch Linux 安装与使用教程',
+        color: '#1793d1'
+    },
+    // ★ 模板 - 复制以下内容并修改即可添加新技术分享入口：
+    // {
+    //     id: 'unique-id',
+    //     name: '分享名称',
+    //     url: '目标页面.html',
+    //     logo: 'assets/ima/cions/图标.png',
+    //     description: '简短描述',
+    //     color: '#主题色'
+    // },
+];
+
+const ITEMS_PER_ROW = 3;
+const FLOAT_SPEED = 135; // px/s (数字雨 540px/s 的 0.25 倍)
+const EDGE_MARGIN = 50;   // 边缘反弹边距(px)
+
+let floatingRows = [];
+let floatingAnimId = null;
+let floatingLastTime = 0;
+let floatingPaused = false;
+let floatingResizeBound = false;
+
+function darkenHex(hex, amount) {
+    const n = parseInt(hex.replace('#', ''), 16);
+    const r = Math.max(0, Math.min(255, (n >> 16) + amount));
+    const g = Math.max(0, Math.min(255, ((n >> 8) & 0xFF) + amount));
+    const b = Math.max(0, Math.min(255, (n & 0xFF) + amount));
+    return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
+}
+
+function stopFloating() {
+    if (floatingAnimId) {
+        cancelAnimationFrame(floatingAnimId);
+        floatingAnimId = null;
+    }
+    floatingRows = [];
+    floatingPaused = false;
+}
+
+function updateFloatingBounds() {
+    const container = document.getElementById('floatingShareContainer');
+    if (!container) return;
+    const cw = container.clientWidth;
+    floatingRows.forEach(function(rd) {
+        const rw = rd.el.scrollWidth;
+        rd.maxOff = Math.max(0, (cw - rw) / 2 - EDGE_MARGIN);
+        rd.offset = Math.max(-rd.maxOff, Math.min(rd.maxOff, rd.offset));
+    });
+}
+
+function animateFloating(ts) {
+    if (!floatingLastTime) floatingLastTime = ts;
+    var dt = Math.min((ts - floatingLastTime) / 1000, 0.1);
+    floatingLastTime = ts;
+
+    if (!floatingPaused && floatingRows.length > 0) {
+        for (var i = 0; i < floatingRows.length; i++) {
+            var rd = floatingRows[i];
+            rd.offset += rd.dir * FLOAT_SPEED * dt;
+
+            if (rd.offset >= rd.maxOff) {
+                rd.offset = rd.maxOff;
+                rd.dir = -1;
+            } else if (rd.offset <= -rd.maxOff) {
+                rd.offset = -rd.maxOff;
+                rd.dir = 1;
+            }
+
+            rd.el.style.transform = 'translateX(' + rd.offset + 'px)';
+        }
+    }
+
+    floatingAnimId = requestAnimationFrame(animateFloating);
+}
+
+function onFloatingResize() {
+    updateFloatingBounds();
+}
+
+function initFloatingShares() {
+    stopFloating();
+
+    var container = document.getElementById('floatingShareContainer');
+    if (!container) return;
+
+    container.innerHTML = '';
+    var numRows = Math.ceil(TECH_SHARES.length / ITEMS_PER_ROW);
+
+    for (var ri = 0; ri < numRows; ri++) {
+        var row = document.createElement('div');
+        row.className = 'floating-row';
+
+        var start = ri * ITEMS_PER_ROW;
+        var end = Math.min(start + ITEMS_PER_ROW, TECH_SHARES.length);
+
+        for (var i = start; i < end; i++) {
+            (function(share) {
+                var btn = document.createElement('a');
+                btn.className = 'tech-share-btn';
+                btn.href = share.url;
+                btn.title = share.description;
+
+                var circle = document.createElement('div');
+                circle.className = 'tech-share-circle';
+                circle.style.background = 'linear-gradient(135deg, ' + share.color + ' 0%, ' + darkenHex(share.color, -30) + ' 100%)';
+                circle.style.boxShadow = '0 0 20px ' + share.color + '66, 0 4px 12px rgba(0,0,0,0.2)';
+
+                var img = document.createElement('img');
+                img.src = share.logo;
+                img.alt = share.name;
+                img.onerror = function() {
+                    this.style.display = 'none';
+                    circle.classList.add('no-logo');
+                    circle.textContent = share.name.substring(0, 3);
+                };
+
+                circle.appendChild(img);
+                btn.appendChild(circle);
+
+                var label = document.createElement('span');
+                label.className = 'tech-share-label';
+                label.textContent = share.name;
+                btn.appendChild(label);
+
+                row.appendChild(btn);
+            })(TECH_SHARES[i]);
+        }
+
+        container.appendChild(row);
+
+        var dir = ri % 2 === 0 ? 1 : -1;
+        floatingRows.push({
+            el: row,
+            offset: dir > 0 ? -EDGE_MARGIN : EDGE_MARGIN,
+            dir: dir,
+            maxOff: 0
+        });
+    }
+
+    updateFloatingBounds();
+
+    // 悬停时暂停所有按钮移动
+    var buttons = container.querySelectorAll('.tech-share-btn');
+    for (var b = 0; b < buttons.length; b++) {
+        buttons[b].addEventListener('mouseenter', function() { floatingPaused = true; });
+        buttons[b].addEventListener('mouseleave', function() { floatingPaused = false; });
+    }
+
+    if (!floatingResizeBound) {
+        window.addEventListener('resize', onFloatingResize);
+        floatingResizeBound = true;
+    }
+
+    floatingLastTime = performance.now();
+    floatingAnimId = requestAnimationFrame(animateFloating);
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     const mainContent = document.getElementById('mainContent');
     const body = document.body;
@@ -67,6 +234,11 @@ document.addEventListener('DOMContentLoaded', function() {
         // 显示加载状态
         mainContent.classList.add('hidden');
         
+        // 停止浮动动画（离开技术分享页时）
+        stopFloating();
+        // 停止音乐卡片浮动
+        if (window.floatingMusic) window.floatingMusic.stop();
+        
         // 如果是首页，直接显示现有内容
         if (url === 'index.html' || url === '/' || url === '') {
             setTimeout(() => {
@@ -97,6 +269,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (newMainContent) {
                     // 替换当前内容
                     mainContent.innerHTML = newMainContent.innerHTML;
+                    
+                    // 初始化浮动分享按钮（about.html）
+                    initFloatingShares();
+                    // 初始化浮动音乐卡片（music.html）
+                    if (window.floatingMusic) window.floatingMusic.init();
                     
                     // 更新页面标题
                     if (updateTitle) {
@@ -133,6 +310,11 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // 图片点击放大功能
     setupImageZoom();
+    
+    // 初始化浮动分享按钮（about.html 直接访问时）
+    initFloatingShares();
+    // 初始化浮动音乐卡片（music.html 直接访问时）
+    if (window.floatingMusic) window.floatingMusic.init();
 });
 
 // 图片放大功能

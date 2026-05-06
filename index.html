@@ -18,8 +18,13 @@
     <div class="music-control">
         <button id="playPauseBtn" aria-label="播放/暂停">⏸/▶</button>
         <button id="nextTrackBtn" aria-label="下一首">▽</button>
+        <button id="volDownBtn" aria-label="音量减小" title="音量 −">−</button>
+        <button id="volUpBtn" aria-label="音量增大" title="音量 +">+</button>
+        <button id="downloadBtn" aria-label="下载当前歌曲" title="下载 MP3">⬇</button>
+        <button id="playlistBtn" aria-label="播放列表" title="展开目录">☰</button>
         <button id="muteBtn" aria-label="静音/取消静音">◆</button>
         <span id="nowPlaying">未播放</span>
+        <div id="playlistDropdown" class="playlist-dropdown hidden"></div>
     </div>
 
     <!-- 左上角点赞 + 跳转留言板 -->
@@ -64,7 +69,7 @@
                 <a href="projects.html" class="func-link polygon-shape"><i class="fas fa-code"></i> Projects</a>
                 <a href="music.html" class="func-link polygon-shape"><i class="fas fa-music"></i> Music</a>
                 <a href="game.html" class="func-link polygon-shape"><i class="fas fa-gamepad"></i> Game</a>
-                <a href="about.html" class="func-link polygon-shape"><i class="fas fa-book"></i> Learning</a>
+                <a href="about.html" class="func-link polygon-shape"><i class="fas fa-share-alt"></i> Tech Share</a>
                 <a href="#downloads" class="func-link polygon-shape"><i class="fas fa-download"></i> Downloads</a>
             </div>
             
@@ -151,6 +156,7 @@
     <!-- 脚本引入 -->
     <script src="assets/js/cmatrix.js"></script>
     <script src="assets/js/musicPlayer.js"></script>
+    <script src="assets/js/musicCards.js"></script>
     <script src="assets/js/main.js"></script>
 </body>
 </html>
