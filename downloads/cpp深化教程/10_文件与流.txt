@@ -1,0 +1,2209 @@
+================================================================================
+  C++深化教程  第十章: 文件与流 (File I/O and Streams)
+================================================================================
+
+【章节导读】
+C++的输入输出流(I/O Streams)库提供了强大的数据读写抽象。
+它通过缓冲区机制将用户态程序与底层操作系统文件操作连接起来，
+既提供高级的格式化输入输出，又支持底层的二进制操作。
+本章从底层原理出发，全面覆盖IO流、文件流、字符串流和C++17文件系统库的用法。
+
+================================================================================
+### 第一节: 基础示例代码 + 计算机底层原理
+================================================================================
+
+一、文件流基础操作
+
+---------------------------------------------------------------
+// ---- 基础示例：文件写入与读取 ----
+#include <iostream>
+#include <fstream>
+#include <string>
+
+int main() {
+    // 写入文件
+    std::ofstream outFile("hello.txt");
+    if (!outFile.is_open()) {
+        std::cerr << "无法创建文件!" << std::endl;
+        return 1;
+    }
+    outFile << "Hello, C++ World!" << std::endl;
+    outFile << "这是第二行内容。" << std::endl;
+    outFile << "数字: " << 42 << " 浮点: " << 3.14159 << std::endl;
+    outFile.close();
+
+    // 读取文件
+    std::ifstream inFile("hello.txt");
+    if (!inFile.is_open()) {
+        std::cerr << "无法打开文件!" << std::endl;
+        return 1;
+    }
+
+    std::string line;
+    std::cout << "===== 文件内容 =====" << std::endl;
+    while (std::getline(inFile, line)) {
+        std::cout << line << std::endl;
+    }
+    inFile.close();
+
+    return 0;
+}
+---------------------------------------------------------------
+
+二、流(Stream)的缓冲区机制 —— 底层原理
+
+1. 缓冲区的架构
+
+   C++的IO流采用三层架构：
+
+   ┌─────────────────────────────────────────────────────┐
+   │  用户程序层    ofstream / ifstream / cout / cin     │
+   │  (高级接口)    格式化 >> / << , getline, read       │
+   ├─────────────────────────────────────────────────────┤
+   │  缓冲区层      std::streambuf / std::filebuf        │
+   │  (缓冲策略)    内部字符缓冲区 (数组)                 │
+   ├─────────────────────────────────────────────────────┤
+   │  系统调用层    read() / write() (POSIX)             │
+   │  (内核交互)    syscall → 内核文件系统                │
+   └─────────────────────────────────────────────────────┘
+
+   每一层的职责：
+   - 用户程序层：提供格式化输入/输出的高级抽象
+   - 缓冲区层：在用户态缓存数据，减少系统调用次数
+   - 系统调用层：通过内核与磁盘交互
+
+2. 缓冲区的工作机制
+
+   streambuf 维护一个内部字符数组（缓冲区），其工作流程如下：
+
+   输出流程（如 ofstream << "hello"）:
+   步骤1: 数据先写入 streambuf 的内部缓冲区
+   步骤2: 当缓冲区满（或显式调用 flush、换行符、程序正常结束时）
+   步骤3: 缓冲区数据通过 write() 系统调用一次写入内核
+   步骤4: 内核将数据写入磁盘（可能通过内核的页缓存进一步延迟）
+
+   读取流程（如 ifstream >> value）:
+   步骤1: 内核通过 read() 系统调用从磁盘读取一大块数据
+   步骤2: 放入 streambuf 的缓冲区
+   步骤3: 用户程序从缓冲区逐字节/逐行取数据
+   步骤4: 缓冲区耗尽时再次触发 read() 系统调用
+
+3. 三种缓冲策略
+
+   使用 setbuf() / pubsetbuf() 可以设置缓冲策略：
+
+   ┌──────────────┬──────────────────────────────────────────────┐
+   │ 策略         │ 行为                                          │
+   ├──────────────┼──────────────────────────────────────────────┤
+   │ 全缓冲       │ 缓冲区满才执行系统调用（默认，文件流）         │
+   │ 行缓冲       │ 遇到换行符\\n时执行系统调用（终端输出）        │
+   │ 无缓冲       │ 每次写操作都立即执行系统调用（stderr/cerr）   │
+   └──────────────┴──────────────────────────────────────────────┘
+
+   实践意义：
+   - std::cout 通常行缓冲：在终端上遇到 \n 就刷新
+   - std::ofstream 通常全缓冲：填满缓冲区（如4KB）才写磁盘
+   - std::cerr 通常无缓冲：保证错误信息立即输出
+   - endl vs \n：endl 会显式刷新缓冲区，\n 不会
+
+4. 系统调用与文件描述符的底层流转
+
+   从C++流到底层硬件，数据经过的完整路径：
+
+   应用程序 (ofstream::write)
+     │
+     ▼
+   C++ streambuf (用户态缓冲区)
+     │
+     ▼ flush
+   POSIX write(fd, buf, size) —— 系统调用 (syscall)
+     │
+     ▼ 用户态→内核态切换
+   内核 VFS (虚拟文件系统层)
+     │
+     ▼
+   内核 页缓存 (Page Cache)
+     │
+     ▼ 内核定时回写 (dirty_expire_centisecs)
+   具体文件系统 (ext4/xfs/btrfs)
+     │
+     ▼
+   块设备驱动 (Block Layer)
+     │
+     ▼
+   磁盘控制器 → 物理磁盘
+
+   每个C++ fstream 对象内部关联一个文件描述符(fd)，
+   文件描述符指向内核文件表中的一项，该表项再指向
+   具体的 inode（索引节点），最终定位到磁盘上的数据块。
+
+5. C++流与C标准库的同步 (sync_with_stdio)
+
+   默认情况下，C++流和C标准库(stdin/stdout/stderr)是同步的：
+
+   // 默认：C++ cout 和 C printf 可以混合使用，输出不会乱序
+   std::cout << "Hello ";
+   printf("World\n");
+
+   这是通过 ios_base::sync_with_stdio(true) 实现的（默认true）。
+   同步的代价是每次IO操作都要刷新C和C++双边的缓冲区。
+
+   如果程序只用C++流或只用C标准库，可以通过以下语句获得性能提升：
+
+   std::ios_base::sync_with_stdio(false);
+   std::cin.tie(nullptr);  // 解除 cin 和 cout 的绑定
+
+   这使C++流的缓冲区完全独立于C标准库，避免了频繁刷新。
+
+6. 内核文件描述符与文件表
+
+   每个进程有一个文件描述符表（前三个固定：0=stdin, 1=stdout, 2=stderr）。
+   打开文件时，内核分配一个新fd并关联到内核级"打开文件表"中的一项，
+   该表项记录：
+   - 当前文件偏移量（读写指针位置）
+   - 打开模式（O_RDONLY / O_WRONLY / O_RDWR）
+   - 指向 inode 的指针
+
+   多个fd可以指向同一个文件（如通过dup或父子进程继承），
+   共享同一个文件偏移量。这是UNIX文件系统的核心设计。
+
+================================================================================
+### 第二节: 所有用法大全（标准库/关键字/函数）
+================================================================================
+
+一、输入流 (istream)
+
+---------------------------------------------------------------
+#include <iostream>
+#include <sstream>
+#include <string>
+
+int main() {
+    // ===== 标准输入 cin =====
+    int age;
+    std::string name;
+
+    std::cout << "输入姓名和年龄: ";
+    // std::cin >> name >> age;
+
+    // ===== getline: 读取整行（包含空格） =====
+    std::string input = "Hello C++ World";
+    std::istringstream iss(input);
+    std::string word;
+
+    std::cout << "按空格分词:" << std::endl;
+    while (iss >> word) {         // >> 运算符：按空白字符分割
+        std::cout << "  [" << word << "]" << std::endl;
+    }
+
+    // 重置流到开头
+    iss.clear();                  // 清除eof状态
+    iss.seekg(0);                // 移动读取指针到开头
+
+    std::string fullLine;
+    std::getline(iss, fullLine);  // 读取整行
+    std::cout << "完整行: " << fullLine << std::endl;
+
+    // ===== read: 读取指定字节数 =====
+    const char* data = "ABCDEFGHIJKLMNOP";
+    std::istringstream iss2(data);
+
+    char buffer[6] = {};
+    iss2.read(buffer, 5);         // 读取5个字节
+    std::cout << "读取前5字节: " << buffer << std::endl;
+
+    // ===== get: 逐字符读取 =====
+    iss2.seekg(0);
+    char ch;
+    std::cout << "逐字符读取前3个: ";
+    for (int i = 0; i < 3; ++i) {
+        iss2.get(ch);
+        std::cout << ch << " ";
+    }
+    std::cout << std::endl;
+
+    // ===== peek: 查看下一个字符但不读取 =====
+    iss2.seekg(0);
+    std::cout << "下一个字符(不消耗): " << (char)iss2.peek() << std::endl;
+    iss2.get(ch);
+    std::cout << "消耗后的字符: " << ch << std::endl;
+
+    // ===== ignore: 跳过字符 =====
+    std::istringstream iss3("123,456,789");
+    int a, b;
+    iss3 >> a;
+    iss3.ignore(10, ',');        // 忽略最多10个字符或直到遇到','
+    iss3 >> b;
+    std::cout << "a=" << a << " b=" << b << std::endl;  // a=123 b=456
+
+    // ===== tellg / seekg: 获取/设置读取指针 =====
+    std::istringstream iss4("Hello World");
+    std::cout << "初始位置: " << iss4.tellg() << std::endl;  // 0
+
+    iss4.seekg(6);               // 移动到第6个字节
+    std::cout << "移动后位置: " << iss4.tellg() << std::endl;
+
+    std::string rest;
+    iss4 >> rest;
+    std::cout << "从位置6读取: " << rest << std::endl;  // World
+
+    return 0;
+}
+---------------------------------------------------------------
+
+二、输出流 (ostream)
+
+---------------------------------------------------------------
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <iomanip>
+
+int main() {
+    // ===== 标准输出 cout, cerr, clog =====
+    std::cout << "cout: 标准输出（行缓冲）" << std::endl;
+    std::cerr << "cerr: 标准错误（无缓冲）" << std::endl;
+    std::clog << "clog: 标准日志（全缓冲）" << std::endl;
+
+    // ===== write: 写入指定字节 =====
+    const char* msg = "Hello";
+    std::cout.write(msg, 5);     // 写入5个字节（不包含\0）
+    std::cout << std::endl;
+
+    // ===== put: 写入单个字符 =====
+    std::cout.put('A');
+    std::cout.put('\n');
+
+    // ===== flush: 手动刷新缓冲区 =====
+    std::cout << "这行会立即显示" << std::flush;
+    // flush 强制将缓冲区内容输出（不添加换行）
+
+    // 对比 endl vs \n：
+    // std::endl = \n + flush    (换行并刷新)
+    // \n = 仅换行               (不刷新)
+
+    // ===== 字符串输出流 (ostringstream) =====
+    std::ostringstream oss;
+    oss << "姓名: " << "张三" << ", 年龄: " << 25
+        << ", 成绩: " << 95.5;
+    std::string result = oss.str();
+    std::cout << "格式化字符串: " << result << std::endl;
+
+    // 动态构建JSON
+    std::ostringstream json;
+    json << "{\n";
+    json << "  \"name\": \"" << "小明" << "\",\n";
+    json << "  \"age\": " << 20 << ",\n";
+    json << "  \"score\": " << 88.5 << "\n";
+    json << "}";
+    std::cout << json.str() << std::endl;
+
+    return 0;
+}
+---------------------------------------------------------------
+
+三、文件流 (fstream) —— 打开模式
+
+---------------------------------------------------------------
+#include <iostream>
+#include <fstream>
+#include <string>
+
+void displayModes() {
+    // 打开模式一览：
+    // ios::in      - 打开用于读取（ifstream默认）
+    // ios::out     - 打开用于写入（ofstream默认）
+    // ios::binary  - 二进制模式（不进行文本转换）
+    // ios::app     - 追加模式（每次写入都在文件末尾）
+    // ios::ate     - 打开时定位到文件末尾
+    // ios::trunc   - 打开时清空文件内容（ofstream默认）
+    // ios::nocreate - 不创建新文件（仅打开已存在的）
+    // ios::noreplace - 不覆盖已存在的文件
+}
+
+int main() {
+    const std::string filename = "test_modes.txt";
+
+    // ===== 模式1: out (默认), trunc (默认) —— 覆盖写入 =====
+    {
+        std::ofstream f(filename);           // 等价于 out | trunc
+        f << "覆盖写入的第一行" << std::endl;
+        f.close();
+    }
+
+    // ===== 模式2: out | app —— 追加写入 =====
+    {
+        std::ofstream f(filename, std::ios::out | std::ios::app);
+        f << "追加写入: 不会被覆盖" << std::endl;
+        f.close();
+    }
+
+    // ===== 模式3: in —— 只读 =====
+    {
+        std::ifstream f(filename);           // 等价于 in
+        std::string line;
+        while (std::getline(f, line)) {
+            std::cout << "读取: " << line << std::endl;
+        }
+        f.close();
+    }
+
+    // ===== 模式4: in | out —— 读写 =====
+    {
+        std::fstream f(filename, std::ios::in | std::ios::out | std::ios::ate);
+        // 在末尾追加内容
+        f << "读写模式追加" << std::endl;
+
+        // 移动指针到开头读取
+        f.seekg(0);
+        std::string line;
+        std::getline(f, line);
+        std::cout << "读写模式首行: " << line << std::endl;
+        f.close();
+    }
+
+    // ===== 模式5: in | out | trunc —— 读写但先清空 =====
+    {
+        std::fstream f(filename, std::ios::in | std::ios::out | std::ios::trunc);
+        f << "全新内容" << std::endl;
+        f.seekg(0);
+        std::string line;
+        std::getline(f, line);
+        std::cout << "清空后内容: " << line << std::endl;
+        f.close();
+    }
+
+    // ===== 检查文件状态 =====
+    {
+        std::fstream f("不存在的文件.txt", std::ios::in);
+        if (!f.is_open()) {
+            std::cout << "文件不存在(is_open=false)" << std::endl;
+        }
+
+        f.open(filename, std::ios::out | std::ios::app);
+        if (f.is_open()) {
+            std::cout << "文件已打开" << std::endl;
+        }
+        f.close();
+        std::cout << "已关闭: " << (!f.is_open() ? "是" : "否") << std::endl;
+    }
+
+    // 清理
+    std::remove(filename.c_str());
+
+    return 0;
+}
+---------------------------------------------------------------
+
+四、流状态管理
+
+---------------------------------------------------------------
+#include <iostream>
+#include <sstream>
+#include <limits>
+
+int main() {
+    std::cout << "===== 流状态位 =====" << std::endl;
+    std::cout << "goodbit  = " << std::ios::goodbit  << " (正常)" << std::endl;
+    std::cout << "badbit   = " << std::ios::badbit   << " (不可恢复错误)" << std::endl;
+    std::cout << "failbit  = " << std::ios::failbit  << " (操作失败)" << std::endl;
+    std::cout << "eofbit   = " << std::ios::eofbit   << " (到达文件尾)" << std::endl;
+
+    // ===== 状态检查 =====
+    std::istringstream iss("123 abc");
+
+    int num;
+    iss >> num;                          // 成功读取123
+    std::cout << "\n读取123后:" << std::endl;
+    std::cout << "  good(): " << iss.good() << std::endl;   // 1
+    std::cout << "  eof():  " << iss.eof()  << std::endl;   // 0
+    std::cout << "  fail(): " << iss.fail() << std::endl;   // 0
+    std::cout << "  bad():  " << iss.bad()  << std::endl;   // 0
+
+    std::string str;
+    iss >> str;                          // 读取abc
+
+    std::cout << "\n读取abc后:" << std::endl;
+    std::cout << "  eof(): " << iss.eof() << std::endl;    // 1 (到达末尾)
+
+    // ===== 模拟失败 =====
+    std::istringstream iss2("hello world");
+    int x;
+    iss2 >> x;  // 失败！"hello" 不能转为 int
+
+    std::cout << "\n尝试读取字符串到int后:" << std::endl;
+    std::cout << "  fail(): " << iss2.fail() << std::endl;  // 1
+    std::cout << "  bad():  " << iss2.bad()  << std::endl;  // 0
+
+    // ===== clear() 重置状态 =====
+    iss2.clear();                        // 重置所有状态位
+    std::cout << "\nclear()后 fail(): " << iss2.fail() << std::endl;  // 0
+
+    // ===== rdstate() 获取原始状态位 =====
+    std::ios::iostate state = iss2.rdstate();
+    std::cout << "rdstate(): " << state << std::endl;
+
+    // ===== 安全读取模式 =====
+    std::istringstream iss3("42");
+    int value;
+    if (iss3 >> value) {                 // 流可以隐式转为bool
+        std::cout << "\n成功读取: " << value << std::endl;
+    } else {
+        std::cerr << "读取失败" << std::endl;
+        iss3.clear();
+        iss3.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    }
+
+    return 0;
+}
+---------------------------------------------------------------
+
+五、格式化输出 (iomanip)
+
+---------------------------------------------------------------
+#include <iostream>
+#include <iomanip>
+#include <cmath>
+
+int main() {
+    double pi = 3.141592653589793;
+
+    // ===== setprecision: 精度 =====
+    std::cout << "默认精度: " << pi << std::endl;
+    std::cout << "精度2: " << std::setprecision(2) << pi << std::endl;
+    std::cout << "精度6: " << std::setprecision(6) << pi << std::endl;
+    std::cout << "精度10: " << std::setprecision(10) << pi << std::endl;
+
+    // ===== fixed / scientific =====
+    double val = 1234567.89;
+
+    std::cout << "\n默认:      " << val << std::endl;
+    std::cout << "fixed:     " << std::fixed << val << std::endl;
+    std::cout << "scientific:" << std::scientific << val << std::endl;
+
+    // 恢复默认
+    std::cout << std::defaultfloat;
+
+    // ===== setw: 字段宽度 =====
+    std::cout << "\n===== 表格输出 =====" << std::endl;
+    std::cout << std::left;  // 左对齐
+    std::cout << std::setw(15) << "商品" << std::setw(10)
+              << "价格" << std::setw(10) << "数量" << std::endl;
+    std::cout << std::setfill('-');  // 设置填充字符
+    std::cout << std::setw(35) << "" << std::endl;
+    std::cout << std::setfill(' ');  // 恢复空格填充
+
+    std::cout << std::setw(15) << "苹果" << std::setw(10)
+              << 5.99 << std::setw(10) << 100 << std::endl;
+    std::cout << std::setw(15) << "香蕉" << std::setw(10)
+              << 3.49 << std::setw(10) << 200 << std::endl;
+    std::cout << std::setw(15) << "橙子" << std::setw(10)
+              << 4.29 << std::setw(10) << 150 << std::endl;
+
+    // ===== boolalpha: 布尔值显示 =====
+    std::cout << "\n布尔值: " << true << std::endl;
+    std::cout << "boolalpha: " << std::boolalpha << true << std::endl;
+    std::cout << "noboolalpha: " << std::noboolalpha << false << std::endl;
+
+    // ===== 进制转换 =====
+    int num = 255;
+    std::cout << "\n十进制:     " << std::dec << num << std::endl;
+    std::cout << "十六进制:   " << std::hex << num << std::endl;
+    std::cout << "八进制:     " << std::oct << num << std::endl;
+    std::cout << "showbase:   " << std::showbase << std::hex
+              << num << std::endl;  // 0xff
+
+    // ===== hexfloat (C++17) =====
+    std::cout << "\n十六进制浮点: " << std::hexfloat << 3.14 << std::endl;
+
+    return 0;
+}
+---------------------------------------------------------------
+
+六、二进制文件读写
+
+---------------------------------------------------------------
+#include <iostream>
+#include <fstream>
+#include <cstring>
+
+struct Employee {
+    int id;
+    char name[50];
+    double salary;
+
+    void display() const {
+        std::cout << "ID: " << id << ", 姓名: " << name
+                  << ", 薪资: $" << salary << std::endl;
+    }
+};
+
+int main() {
+    const std::string filename = "employees.bin";
+
+    // ===== 二进制写入 =====
+    {
+        std::ofstream file(filename, std::ios::binary);
+        if (!file) {
+            std::cerr << "无法创建文件" << std::endl;
+            return 1;
+        }
+
+        Employee emp1 = {1001, "张三", 15000.0};
+        Employee emp2 = {1002, "李四", 18000.0};
+        Employee emp3 = {1003, "王五", 20000.0};
+
+        // 写入结构体（pod类型可直接写入）
+        file.write(reinterpret_cast<const char*>(&emp1), sizeof(Employee));
+        file.write(reinterpret_cast<const char*>(&emp2), sizeof(Employee));
+        file.write(reinterpret_cast<const char*>(&emp3), sizeof(Employee));
+
+        // 写入int数组
+        int numbers[] = {1, 2, 3, 4, 5, 100, 200};
+        file.write(reinterpret_cast<const char*>(numbers), sizeof(numbers));
+
+        file.close();
+        std::cout << "二进制文件写入完成" << std::endl;
+    }
+
+    // ===== 二进制读取 =====
+    {
+        std::ifstream file(filename, std::ios::binary);
+        if (!file) {
+            std::cerr << "无法打开文件" << std::endl;
+            return 1;
+        }
+
+        // 获取文件大小
+        file.seekg(0, std::ios::end);
+        std::streamsize fileSize = file.tellg();
+        file.seekg(0, std::ios::beg);
+        std::cout << "文件大小: " << fileSize << " 字节" << std::endl;
+
+        // 读取员工记录
+        std::cout << "\n===== 员工记录 =====" << std::endl;
+        Employee emp;
+        int recordCount = 0;
+
+        while (file.read(reinterpret_cast<char*>(&emp), sizeof(Employee))) {
+            emp.display();
+            recordCount++;
+            if (recordCount >= 3) break;  // 只读前3条Employee记录
+        }
+
+        // 读取后面的int数组
+        if (file) {
+            int numbers[7];
+            file.read(reinterpret_cast<char*>(numbers), sizeof(numbers));
+            std::cout << "\n整数数组: ";
+            for (int n : numbers) {
+                std::cout << n << " ";
+            }
+            std::cout << std::endl;
+        }
+
+        // ===== 随机访问（定位到第2条记录） =====
+        file.clear();  // 清除可能的eof状态
+        file.seekg(sizeof(Employee), std::ios::beg);  // 跳过第1条
+        Employee secondEmp;
+        file.read(reinterpret_cast<char*>(&secondEmp), sizeof(Employee));
+        std::cout << "\n第2条记录(随机访问): ";
+        secondEmp.display();
+
+        file.close();
+    }
+
+    // 清理
+    std::remove(filename.c_str());
+
+    return 0;
+}
+---------------------------------------------------------------
+
+七、C++17 文件系统库 <filesystem>
+
+---------------------------------------------------------------
+#include <iostream>
+#include <filesystem>
+#include <fstream>
+#include <chrono>
+#include <iomanip>
+
+namespace fs = std::filesystem;
+
+int main() {
+    std::cout << "===== C++17 文件系统库 =====" << std::endl;
+
+    // ===== 路径操作 =====
+    fs::path p1 = "/home/user/documents/report.pdf";
+    std::cout << "完整路径: " << p1 << std::endl;
+    std::cout << "  根路径: " << p1.root_path() << std::endl;
+    std::cout << "  根名:   " << p1.root_name() << std::endl;
+    std::cout << "  根目录: " << p1.root_directory() << std::endl;
+    std::cout << "  相对路径: " << p1.relative_path() << std::endl;
+    std::cout << "  父路径: " << p1.parent_path() << std::endl;
+    std::cout << "  文件名: " << p1.filename() << std::endl;
+    std::cout << "  主文件名: " << p1.stem() << std::endl;
+    std::cout << "  扩展名: " << p1.extension() << std::endl;
+
+    // 路径拼接
+    fs::path p2 = fs::path("/home/user") / "downloads" / "file.txt";
+    std::cout << "\n拼接路径: " << p2 << std::endl;
+
+    // ===== 目录操作 =====
+    const fs::path testDir = "./test_filesystem_demo";
+
+    // 创建目录
+    if (!fs::exists(testDir)) {
+        fs::create_directory(testDir);
+        std::cout << "\n创建目录: " << testDir << std::endl;
+    }
+
+    // 创建多级目录
+    fs::path subDir = testDir / "sub1" / "sub2";
+    fs::create_directories(subDir);
+    std::cout << "创建多级目录: " << subDir << std::endl;
+
+    // 在当前目录创建测试文件
+    {
+        std::ofstream(testDir / "file1.txt") << "内容1" << std::endl;
+        std::ofstream(testDir / "file2.txt") << "内容2" << std::endl;
+        std::ofstream(subDir / "deep.txt") << "深层文件" << std::endl;
+    }
+
+    // ===== 遍历目录 =====
+    std::cout << "\n===== 遍历目录 =====" << std::endl;
+    for (const auto& entry : fs::directory_iterator(testDir)) {
+        const auto& path = entry.path();
+        std::cout << "  "
+                  << (entry.is_directory() ? "[DIR]  " : "[FILE] ")
+                  << path.filename();
+
+        if (entry.is_regular_file()) {
+            std::cout << "  (" << entry.file_size() << " bytes)";
+        }
+        std::cout << std::endl;
+    }
+
+    // ===== 递归遍历 =====
+    std::cout << "\n===== 递归遍历 =====" << std::endl;
+    for (const auto& entry : fs::recursive_directory_iterator(testDir)) {
+        std::cout << "  " << entry.path() << std::endl;
+    }
+
+    // ===== 文件信息 =====
+    if (fs::exists(testDir / "file1.txt")) {
+        auto ftime = fs::last_write_time(testDir / "file1.txt");
+        auto size = fs::file_size(testDir / "file1.txt");
+        std::cout << "\n文件信息:" << std::endl;
+        std::cout << "  大小: " << size << " bytes" << std::endl;
+    }
+
+    // ===== 磁盘空间 =====
+    auto spaceInfo = fs::space(testDir);
+    std::cout << "\n磁盘空间:" << std::endl;
+    std::cout << "  总容量: "
+              << spaceInfo.capacity / (1024*1024) << " MB" << std::endl;
+    std::cout << "  可用:   "
+              << spaceInfo.available / (1024*1024) << " MB" << std::endl;
+
+    // ===== 权限操作 =====
+    // fs::permissions(testDir / "file1.txt",
+    //                  fs::perms::owner_read | fs::perms::owner_write,
+    //                  fs::perm_options::replace);
+
+    // ===== 复制/删除 =====
+    // fs::copy_file(src, dst);
+    // fs::rename(oldPath, newPath);
+    // fs::remove(filePath);
+
+    // 清理测试目录
+    fs::remove_all(testDir);
+    std::cout << "\n清理完成: " << testDir << std::endl;
+
+    return 0;
+}
+---------------------------------------------------------------
+
+八、流用法速查表
+
+┌────────────────────────────┬──────────────────────────────────────┐
+│ 操作                       │ 语法 / 函数                           │
+├────────────────────────────┼──────────────────────────────────────┤
+│ 文件写入                   │ ofstream f("f.txt"); f << data;      │
+│ 文件读取                   │ ifstream f("f.txt"); f >> var;       │
+│ 文件读写                   │ fstream f("f.txt", in | out);        │
+│ 二进制写入                 │ f.write(buf, size);                   │
+│ 二进制读取                 │ f.read(buf, size);                    │
+│ 获取文件大小               │ seekg(0,end); tellg();               │
+│ 移动读指针                 │ seekg(offset, beg/cur/end);          │
+│ 移动写指针                 │ seekp(offset, beg/cur/end);          │
+│ 字符串流(输出)             │ ostringstream oss; oss << data;      │
+│ 字符串流(输入)             │ istringstream iss(str); iss >> var;  │
+│ 逐行读取                   │ getline(stream, line);                │
+│ 刷新缓冲区                 │ flush / endl                          │
+│ 检查文件存在               │ filesystem::exists(path);            │
+│ 创建目录                   │ filesystem::create_directory(path);  │
+│ 遍历目录                   │ filesystem::directory_iterator(path);│
+└────────────────────────────┴──────────────────────────────────────┘
+
+================================================================================
+### 第三节: 实用代码案例（生活场景举例，融入前面已学章节知识点）
+================================================================================
+
+案例1: 日记本应用 —— 个人日记软件
+---------------------------------------------------------------
+场景：简单日记本，支持写入新日记（追加模式）、按日期查看日记。
+
+知识点融入：
+- Ch9 异常处理：文件打开失败处理
+- 本章：文件追加模式、getline、日期格式化
+
+---------------------------------------------------------------
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <sstream>
+#include <ctime>
+#include <iomanip>
+#include <vector>
+#include <stdexcept>
+
+namespace Diary {
+
+    class DiaryManager {
+    private:
+        std::string diaryFile;
+
+        // 获取当前日期字符串
+        std::string getToday() const {
+            time_t now = time(nullptr);
+            struct tm* t = localtime(&now);
+            std::ostringstream oss;
+            oss << std::setfill('0')
+                << (t->tm_year + 1900) << "-"
+                << std::setw(2) << (t->tm_mon + 1) << "-"
+                << std::setw(2) << t->tm_mday;
+            return oss.str();
+        }
+
+    public:
+        DiaryManager(const std::string& filename = "diary.txt")
+            : diaryFile(filename) {}
+
+        // 写入新日记
+        void writeEntry(const std::string& content) {
+            std::ofstream file(diaryFile, std::ios::app);  // 追加模式
+            if (!file.is_open()) {
+                throw std::runtime_error("无法打开日记文件: " + diaryFile);
+            }
+
+            std::string today = getToday();
+            file << "=== " << today << " ===" << std::endl;
+            file << content << std::endl;
+            file << std::endl;  // 空行分隔
+            file.close();
+
+            std::cout << "[日记] " << today << " 保存成功" << std::endl;
+        }
+
+        // 读取所有日记
+        void readAll() const {
+            std::ifstream file(diaryFile);
+            if (!file.is_open()) {
+                std::cout << "日记文件不存在或为空" << std::endl;
+                return;
+            }
+
+            std::string line;
+            int entryCount = 0;
+
+            std::cout << "===== 全部日记 =====" << std::endl;
+            while (std::getline(file, line)) {
+                if (line.find("===") != std::string::npos) {
+                    entryCount++;
+                }
+                std::cout << line << std::endl;
+            }
+            file.close();
+
+            std::cout << "共 " << entryCount << " 篇日记" << std::endl;
+        }
+
+        // 按关键字搜索
+        std::vector<std::string> search(const std::string& keyword) const {
+            std::vector<std::string> results;
+            std::ifstream file(diaryFile);
+
+            if (!file.is_open()) return results;
+
+            std::string line;
+            std::string currentEntry;
+            bool inEntry = false;
+
+            while (std::getline(file, line)) {
+                if (line.find("===") == 0 && line.find("===", 4) != std::string::npos) {
+                    // 找到日期分隔线
+                    if (!currentEntry.empty() &&
+                        currentEntry.find(keyword) != std::string::npos) {
+                        results.push_back(currentEntry);
+                    }
+                    currentEntry = line + "\n";
+                    inEntry = true;
+                } else if (inEntry) {
+                    currentEntry += line + "\n";
+                }
+            }
+
+            // 检查最后一篇
+            if (!currentEntry.empty() &&
+                currentEntry.find(keyword) != std::string::npos) {
+                results.push_back(currentEntry);
+            }
+
+            return results;
+        }
+
+        // 读特定日期的日记
+        void readByDate(const std::string& date) const {
+            std::ifstream file(diaryFile);
+            if (!file.is_open()) {
+                std::cout << "日记文件不存在" << std::endl;
+                return;
+            }
+
+            std::string line;
+            bool found = false;
+            bool inTargetEntry = false;
+
+            while (std::getline(file, line)) {
+                if (line.find("=== " + date + " ===") != std::string::npos) {
+                    found = true;
+                    inTargetEntry = true;
+                    std::cout << line << std::endl;
+                    continue;
+                }
+
+                if (inTargetEntry) {
+                    if (line.find("===") != std::string::npos && !line.empty()) {
+                        break;  // 下一篇日记开始了
+                    }
+                    std::cout << line << std::endl;
+                }
+            }
+
+            if (!found) {
+                std::cout << "未找到 " << date << " 的日记" << std::endl;
+            }
+        }
+    };
+
+} // namespace Diary
+
+int main() {
+    using namespace Diary;
+
+    std::cout << "===== 个人日记本 =====" << std::endl;
+
+    try {
+        DiaryManager diary;
+
+        // 写日记
+        diary.writeEntry("今天学习了C++模板编程，理解了两阶段编译检查机制。");
+        diary.writeEntry("用模板实现了通用比较器，代码简洁了很多。");
+        diary.writeEntry("今天学习了异常处理，理解了栈展开和RAII的深刻关系。");
+
+        // 读取所有日记
+        diary.readAll();
+
+        // 搜索日记
+        std::cout << "\n--- 搜索 \"模板\" ---" << std::endl;
+        auto results = diary.search("模板");
+        for (const auto& entry : results) {
+            std::cout << entry << std::endl;
+        }
+
+        // 按日期读（用今天的日期）
+        std::cout << "\n--- 今天的日记 ---" << std::endl;
+        time_t now = time(nullptr);
+        struct tm* t = localtime(&now);
+        std::ostringstream today;
+        today << (t->tm_year + 1900) << "-"
+              << std::setfill('0') << std::setw(2) << (t->tm_mon + 1) << "-"
+              << std::setw(2) << t->tm_mday;
+        diary.readByDate(today.str());
+
+    }
+    catch (const std::exception& e) {
+        std::cerr << "错误: " << e.what() << std::endl;
+    }
+
+    // 清理
+    std::remove("diary.txt");
+
+    return 0;
+}
+---------------------------------------------------------------
+
+案例2: 学生成绩CSV处理器 —— 教务处批量处理成绩
+---------------------------------------------------------------
+场景：教务处需要读取CSV格式的成绩文件，解析后计算统计，
+输出格式化的成绩单。
+
+知识点融入：
+- Ch3 动态内存：vector 管理 Student 对象
+- Ch9 异常处理：文件不存在、格式错误处理
+- 本章：fstream, stringstream, iomanip
+
+---------------------------------------------------------------
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <vector>
+#include <iomanip>
+#include <algorithm>
+#include <stdexcept>
+#include <numeric>
+
+struct Student {
+    std::string id;
+    std::string name;
+    double math;
+    double english;
+    double programming;
+
+    double average() const {
+        return (math + english + programming) / 3.0;
+    }
+
+    double total() const {
+        return math + english + programming;
+    }
+
+    friend std::ostream& operator<<(std::ostream& os,
+                                     const Student& s) {
+        os << std::left
+           << std::setw(10) << s.id
+           << std::setw(12) << s.name
+           << std::setw(10) << s.math
+           << std::setw(10) << s.english
+           << std::setw(12) << s.programming
+           << std::setw(10) << std::fixed
+           << std::setprecision(2) << s.average();
+        return os;
+    }
+};
+
+class ScoreProcessor {
+private:
+    std::vector<Student> students;
+
+    // 解析CSV行
+    static Student parseLine(const std::string& line) {
+        std::istringstream iss(line);
+        std::string token;
+        Student s;
+
+        try {
+            std::getline(iss, s.id, ',');
+            std::getline(iss, s.name, ',');
+
+            std::getline(iss, token, ',');
+            s.math = std::stod(token);
+
+            std::getline(iss, token, ',');
+            s.english = std::stod(token);
+
+            std::getline(iss, token, ',');
+            s.programming = std::stod(token);
+        }
+        catch (const std::exception& e) {
+            throw std::runtime_error("解析行失败: " + line
+                                     + " (" + e.what() + ")");
+        }
+
+        return s;
+    }
+
+    // 求最大值
+    Student findMax(const std::string& subject) const {
+        if (students.empty())
+            throw std::runtime_error("没有学生数据");
+
+        return *std::max_element(students.begin(), students.end(),
+            [&subject](const Student& a, const Student& b) {
+                if (subject == "math") return a.math < b.math;
+                if (subject == "english") return a.english < b.english;
+                return a.programming < b.programming;
+            });
+    }
+
+public:
+    void loadCSV(const std::string& filename) {
+        std::ifstream file(filename);
+        if (!file.is_open()) {
+            throw std::runtime_error("无法打开文件: " + filename);
+        }
+
+        students.clear();
+        std::string line;
+
+        // 跳过标题行
+        if (std::getline(file, line)) {
+            // 可以验证标题行格式
+        }
+
+        int lineNum = 1;
+        while (std::getline(file, line)) {
+            lineNum++;
+            if (line.empty()) continue;
+            try {
+                students.push_back(parseLine(line));
+            }
+            catch (const std::exception& e) {
+                std::cerr << "警告: 第" << lineNum
+                          << "行跳过: " << e.what() << std::endl;
+            }
+        }
+
+        file.close();
+        std::cout << "成功加载 " << students.size()
+                  << " 条学生记录" << std::endl;
+    }
+
+    void printReport() const {
+        std::cout << "\n===== 学生成绩单 =====" << std::endl;
+        std::cout << std::string(64, '=') << std::endl;
+        std::cout << std::left
+                  << std::setw(10) << "学号"
+                  << std::setw(12) << "姓名"
+                  << std::setw(10) << "数学"
+                  << std::setw(10) << "英语"
+                  << std::setw(12) << "程序设计"
+                  << std::setw(10) << "平均分"
+                  << std::endl;
+        std::cout << std::string(64, '-') << std::endl;
+
+        for (const auto& s : students) {
+            std::cout << s << std::endl;
+        }
+        std::cout << std::string(64, '=') << std::endl;
+
+        // 统计信息
+        double totalMath = 0, totalEng = 0, totalProg = 0;
+        for (const auto& s : students) {
+            totalMath += s.math;
+            totalEng += s.english;
+            totalProg += s.programming;
+        }
+        int n = students.size();
+        std::cout << "\n===== 统计信息 =====" << std::endl;
+        std::cout << "学生总数: " << n << std::endl;
+        std::cout << "数学平均: " << std::fixed << std::setprecision(2)
+                  << totalMath / n << std::endl;
+        std::cout << "英语平均: " << totalEng / n << std::endl;
+        std::cout << "程序设计平均: " << totalProg / n << std::endl;
+
+        auto bestMath = findMax("math");
+        auto bestEng = findMax("english");
+        auto bestProg = findMax("programming");
+
+        std::cout << "\n数学最高: " << bestMath.name
+                  << " (" << bestMath.math << ")" << std::endl;
+        std::cout << "英语最高: " << bestEng.name
+                  << " (" << bestEng.english << ")" << std::endl;
+        std::cout << "程序设计最高: " << bestProg.name
+                  << " (" << bestProg.programming << ")" << std::endl;
+    }
+
+    // 保存报告到文件
+    void saveReport(const std::string& filename) const {
+        std::ofstream file(filename);
+        if (!file.is_open()) {
+            throw std::runtime_error("无法创建报告文件: " + filename);
+        }
+
+        file << "学号,姓名,数学,英语,程序设计,平均分\n";
+        for (const auto& s : students) {
+            file << s.id << "," << s.name << ","
+                 << s.math << "," << s.english << ","
+                 << s.programming << ","
+                 << std::fixed << std::setprecision(2)
+                 << s.average() << "\n";
+        }
+
+        file.close();
+        std::cout << "报告已保存到: " << filename << std::endl;
+    }
+};
+
+void createTestCSV(const std::string& filename) {
+    std::ofstream file(filename);
+    file << "学号,姓名,数学,英语,程序设计\n";
+    file << "2024001,张三,85,92,88\n";
+    file << "2024002,李四,78,95,90\n";
+    file << "2024003,王五,92,88,95\n";
+    file << "2024004,赵六,65,70,72\n";
+    file << "2024005,孙七,88,85,91\n";
+    file << "2024006,周八,73,80,78\n";
+    file.close();
+}
+
+int main() {
+    const std::string csvFile = "scores.csv";
+    const std::string reportFile = "score_report.csv";
+
+    createTestCSV(csvFile);
+
+    try {
+        ScoreProcessor processor;
+        processor.loadCSV(csvFile);
+        processor.printReport();
+        processor.saveReport(reportFile);
+    }
+    catch (const std::exception& e) {
+        std::cerr << "错误: " << e.what() << std::endl;
+    }
+
+    std::remove(csvFile.c_str());
+    std::remove(reportFile.c_str());
+
+    return 0;
+}
+---------------------------------------------------------------
+
+案例3: 配置文件解析器 —— 软件设置管理
+---------------------------------------------------------------
+场景：软件需要读取/修改/保存INI格式配置文件（类似Windows的.ini文件）。
+
+知识点融入：
+- Ch1 命名空间：namespace config {}
+- Ch8 模板：模板存储任意类型值
+- Ch9 异常处理：格式错误
+- 本章：fstream, stringstream
+
+---------------------------------------------------------------
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <map>
+#include <vector>
+#include <algorithm>
+#include <stdexcept>
+#include <iomanip>
+#include <type_traits>
+
+namespace config {
+
+    // 异常类
+    class ConfigException : public std::runtime_error {
+    public:
+        ConfigException(const std::string& msg)
+            : std::runtime_error(msg) {}
+    };
+
+    class ParseException : public ConfigException {
+    private:
+        int lineNumber;
+    public:
+        ParseException(int line, const std::string& msg)
+            : ConfigException("第" + std::to_string(line) + "行: " + msg),
+              lineNumber(line) {}
+        int getLine() const { return lineNumber; }
+    };
+
+    // 值类型（支持 int, double, string, bool）
+    class ConfigValue {
+    private:
+        std::string raw;
+
+    public:
+        ConfigValue(const std::string& v = "") : raw(v) {}
+        ConfigValue(int v) : raw(std::to_string(v)) {}
+        ConfigValue(double v) : raw(std::to_string(v)) {}
+        ConfigValue(bool v) : raw(v ? "true" : "false") {}
+
+        std::string toString() const { return raw; }
+
+        int toInt() const {
+            try { return std::stoi(raw); }
+            catch(...) { throw ConfigException("不能转为int: " + raw); }
+        }
+
+        double toDouble() const {
+            try { return std::stod(raw); }
+            catch(...) { throw ConfigException("不能转为double: " + raw); }
+        }
+
+        bool toBool() const {
+            std::string lower = raw;
+            std::transform(lower.begin(), lower.end(),
+                          lower.begin(), ::tolower);
+            if (lower == "true" || lower == "1" || lower == "yes") return true;
+            if (lower == "false" || lower == "0" || lower == "no") return false;
+            throw ConfigException("不能转为bool: " + raw);
+        }
+
+        friend std::ostream& operator<<(std::ostream& os,
+                                        const ConfigValue& v) {
+            os << v.raw;
+            return os;
+        }
+    };
+
+    // 节（Section）包含键值对
+    class Section {
+    private:
+        std::map<std::string, ConfigValue> entries;
+
+    public:
+        void set(const std::string& key, const ConfigValue& value) {
+            entries[key] = value;
+        }
+
+        template<typename T>
+        void set(const std::string& key, T value) {
+            entries[key] = ConfigValue(value);
+        }
+
+        ConfigValue get(const std::string& key,
+                       const ConfigValue& defaultVal = ConfigValue()) const {
+            auto it = entries.find(key);
+            return (it != entries.end()) ? it->second : defaultVal;
+        }
+
+        bool has(const std::string& key) const {
+            return entries.find(key) != entries.end();
+        }
+
+        const auto& getAll() const { return entries; }
+    };
+
+    // 配置文件管理器
+    class ConfigFile {
+    private:
+        std::string filename;
+        std::map<std::string, Section> sections;
+        Section globalSection;  // 无节名时的默认节
+
+        // 去除首尾空格
+        static std::string trim(const std::string& s) {
+            size_t start = s.find_first_not_of(" \t\r\n");
+            if (start == std::string::npos) return "";
+            size_t end = s.find_last_not_of(" \t\r\n");
+            return s.substr(start, end - start + 1);
+        }
+
+    public:
+        ConfigFile(const std::string& fn = "") : filename(fn) {}
+
+        // 加载文件
+        void load() {
+            if (filename.empty())
+                throw ConfigException("未指定配置文件名");
+
+            std::ifstream file(filename);
+            if (!file.is_open()) {
+                std::cerr << "配置文件不存在，将使用默认设置" << std::endl;
+                return;
+            }
+
+            sections.clear();
+            std::string currentSection = "";
+            std::string line;
+            int lineNum = 0;
+
+            while (std::getline(file, line)) {
+                lineNum++;
+                line = trim(line);
+
+                // 跳过空行和注释
+                if (line.empty() || line[0] == '#' || line[0] == ';')
+                    continue;
+
+                // 节名 [SectionName]
+                if (line[0] == '[' && line.back() == ']') {
+                    currentSection = line.substr(1, line.length() - 2);
+                    sections[currentSection] = Section();
+                    continue;
+                }
+
+                // 键值对 key = value
+                size_t eqPos = line.find('=');
+                if (eqPos == std::string::npos) {
+                    throw ParseException(lineNum,
+                        "无效行: " + line + " (缺少 '=')");
+                }
+
+                std::string key = trim(line.substr(0, eqPos));
+                std::string value = trim(line.substr(eqPos + 1));
+
+                if (key.empty()) {
+                    throw ParseException(lineNum, "键名为空");
+                }
+
+                if (currentSection.empty()) {
+                    globalSection.set(key, value);
+                } else {
+                    sections[currentSection].set(key, value);
+                }
+            }
+
+            file.close();
+            std::cout << "配置文件加载完成: " << filename
+                      << " (" << lineNum << " 行)" << std::endl;
+        }
+
+        // 保存文件
+        void save() {
+            if (filename.empty())
+                throw ConfigException("未指定配置文件名");
+
+            std::ofstream file(filename);
+            if (!file.is_open())
+                throw ConfigException("无法创建文件: " + filename);
+
+            file << "# 自动生成的配置文件\n";
+            file << "# 修改后请重新加载\n\n";
+
+            // 全局节
+            for (const auto& entry : globalSection.getAll()) {
+                file << entry.first << " = " << entry.second << "\n";
+            }
+            file << "\n";
+
+            // 各节
+            for (const auto& sec : sections) {
+                file << "[" << sec.first << "]\n";
+                for (const auto& entry : sec.second.getAll()) {
+                    file << entry.first << " = " << entry.second << "\n";
+                }
+                file << "\n";
+            }
+
+            file.close();
+            std::cout << "配置文件已保存: " << filename << std::endl;
+        }
+
+        // 访问节
+        Section& operator[](const std::string& sectionName) {
+            return sections[sectionName];
+        }
+
+        Section& global() { return globalSection; }
+
+        void setFilename(const std::string& fn) { filename = fn; }
+
+        // 打印配置
+        void print() const {
+            std::cout << "\n===== 配置内容 " << filename
+                      << " =====" << std::endl;
+
+            std::cout << "[全局设置]" << std::endl;
+            for (const auto& e : globalSection.getAll()) {
+                std::cout << "  " << e.first << " = " << e.second << std::endl;
+            }
+
+            for (const auto& sec : sections) {
+                std::cout << "[" << sec.first << "]" << std::endl;
+                for (const auto& e : sec.second.getAll()) {
+                    std::cout << "  " << e.first << " = " << e.second << std::endl;
+                }
+            }
+        }
+    };
+
+} // namespace config
+
+int main() {
+    using namespace config;
+
+    std::cout << "===== 配置文件解析器 =====" << std::endl;
+
+    // 创建示例配置文件
+    {
+        std::ofstream f("app.ini");
+        f << "# 应用程序配置\n";
+        f << "version = 1.0.0\n";
+        f << "debug_mode = false\n\n";
+        f << "[Database]\n";
+        f << "host = localhost\n";
+        f << "port = 3306\n";
+        f << "username = admin\n";
+        f << "max_connections = 100\n\n";
+        f << "[UI]\n";
+        f << "theme = dark\n";
+        f << "language = zh_CN\n";
+        f << "font_size = 14\n";
+        f.close();
+    }
+
+    try {
+        ConfigFile config("app.ini");
+        config.load();
+        config.print();
+
+        // 读取配置值
+        std::cout << "\n--- 程序使用配置 ---" << std::endl;
+        std::cout << "版本: " << config.global().get("version") << std::endl;
+        std::cout << "调试模式: " << std::boolalpha
+                  << config.global().get("debug_mode").toBool() << std::endl;
+
+        auto& db = config["Database"];
+        std::cout << "数据库: " << db.get("host") << ":"
+                  << db.get("port").toInt() << std::endl;
+
+        auto& ui = config["UI"];
+        std::cout << "主题: " << ui.get("theme") << std::endl;
+
+        // 修改配置并保存
+        ui.set("font_size", 16);
+        ui.set("fullscreen", true);
+        db.set("max_connections", 200);
+
+        std::cout << "\n修改后:" << std::endl;
+        std::cout << "  字体大小: " << ui.get("font_size").toInt() << std::endl;
+        std::cout << "  全屏: " << ui.get("fullscreen").toBool() << std::endl;
+
+        config.save();
+
+    }
+    catch (const ConfigException& e) {
+        std::cerr << "配置错误: " << e.what() << std::endl;
+    }
+
+    std::remove("app.ini");
+
+    return 0;
+}
+---------------------------------------------------------------
+
+案例4: 简易数据库引擎 —— 嵌入式Key-Value存储
+---------------------------------------------------------------
+场景：实现一个基于文件的轻量级Key-Value数据库，支持增删改查，
+使用二进制索引提高查找效率。
+
+知识点融入：
+- Ch3 动态内存：管理数据缓冲
+- Ch4 类与对象
+- Ch8 模板：模板类支持任意值类型
+- Ch9 异常处理：文件操作异常
+- 本章：二进制读写
+
+---------------------------------------------------------------
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <vector>
+#include <map>
+#include <cstring>
+#include <stdexcept>
+#include <iomanip>
+
+// 简易的键值存储引擎
+template<typename ValueType>
+class KVStore {
+private:
+    struct IndexEntry {
+        char key[64];        // 键（定长）
+        std::streampos offset;  // 数据在文件中的偏移
+        std::streamsize size;   // 数据大小
+
+        IndexEntry() : offset(0), size(0) {
+            std::memset(key, 0, sizeof(key));
+        }
+
+        IndexEntry(const std::string& k, std::streampos off,
+                   std::streamsize sz)
+            : offset(off), size(sz) {
+            std::strncpy(key, k.c_str(), sizeof(key) - 1);
+        }
+    };
+
+    std::string dataFile;
+    std::string indexFile;
+    std::vector<IndexEntry> index;
+
+    // 重建索引（从数据文件读取）
+    void rebuildIndex() {
+        index.clear();
+        std::ifstream data(dataFile, std::ios::binary);
+        if (!data.is_open()) return;
+
+        while (data.peek() != EOF) {
+            IndexEntry entry;
+            std::streampos pos = data.tellg();
+
+            // 读取key长度和key
+            int32_t keyLen = 0;
+            data.read(reinterpret_cast<char*>(&keyLen), sizeof(keyLen));
+            if (data.eof()) break;
+
+            data.read(entry.key, keyLen);
+            entry.key[keyLen] = '\0';
+
+            entry.offset = pos;
+
+            // 读取value长度（跳过value数据本身）
+            int32_t valLen = 0;
+            data.read(reinterpret_cast<char*>(&valLen), sizeof(valLen));
+            entry.size = sizeof(int32_t) + keyLen + sizeof(int32_t) + valLen;
+
+            data.seekg(valLen, std::ios::cur);
+
+            index.push_back(entry);
+        }
+
+        data.close();
+        std::cout << "索引重建完成: " << index.size() << " 条记录" << std::endl;
+    }
+
+    // 序列化值
+    std::string serialize(const ValueType& value) {
+        return std::string(reinterpret_cast<const char*>(&value),
+                          sizeof(ValueType));
+    }
+
+    // 反序列化值
+    ValueType deserialize(const char* data, std::streamsize size) {
+        if (size != sizeof(ValueType))
+            throw std::runtime_error("数据大小不匹配");
+        ValueType result;
+        std::memcpy(&result, data, sizeof(ValueType));
+        return result;
+    }
+
+    // 在索引中查找键
+    int findIndex(const std::string& key) const {
+        for (size_t i = 0; i < index.size(); ++i) {
+            if (std::strcmp(index[i].key, key.c_str()) == 0)
+                return static_cast<int>(i);
+        }
+        return -1;
+    }
+
+public:
+    KVStore(const std::string& name)
+        : dataFile(name + ".dat"), indexFile(name + ".idx") {
+        // 启动时重建索引
+        std::ifstream test(dataFile, std::ios::binary);
+        if (test.is_open()) {
+            test.close();
+            rebuildIndex();
+        } else {
+            // 新数据库，创建空文件
+            std::ofstream create(dataFile, std::ios::binary);
+            create.close();
+        }
+    }
+
+    // 插入
+    void insert(const std::string& key, const ValueType& value) {
+        if (key.length() >= 64) {
+            throw std::runtime_error("键长度不能超过63字符");
+        }
+
+        int existing = findIndex(key);
+        if (existing >= 0) {
+            throw std::runtime_error("键已存在: " + key);
+        }
+
+        std::ofstream data(dataFile, std::ios::binary | std::ios::app);
+        if (!data.is_open())
+            throw std::runtime_error("无法打开数据文件");
+
+        std::streampos offset = data.tellp();
+
+        // 写入 key长度 + key + value长度 + value
+        int32_t keyLen = static_cast<int32_t>(key.length());
+        data.write(reinterpret_cast<const char*>(&keyLen), sizeof(keyLen));
+        data.write(key.c_str(), keyLen);
+
+        int32_t valLen = static_cast<int32_t>(sizeof(ValueType));
+        data.write(reinterpret_cast<const char*>(&valLen), sizeof(valLen));
+        data.write(reinterpret_cast<const char*>(&value), sizeof(ValueType));
+
+        std::streamsize totalSize = sizeof(int32_t) + keyLen
+                                    + sizeof(int32_t) + valLen;
+
+        index.push_back(IndexEntry(key, offset, totalSize));
+        data.close();
+
+        std::cout << "[插入] " << key
+                  << " (偏移: " << offset << ")" << std::endl;
+    }
+
+    // 查找
+    bool find(const std::string& key, ValueType& outValue) const {
+        int idx = findIndex(key);
+        if (idx < 0) return false;
+
+        std::ifstream data(dataFile, std::ios::binary);
+        if (!data.is_open()) return false;
+
+        // 定位到记录位置
+        data.seekg(index[idx].offset);
+
+        // 跳过key
+        int32_t keyLen;
+        data.read(reinterpret_cast<char*>(&keyLen), sizeof(keyLen));
+        data.seekg(keyLen, std::ios::cur);
+
+        // 读取value
+        int32_t valLen;
+        data.read(reinterpret_cast<char*>(&valLen), sizeof(valLen));
+
+        std::vector<char> buffer(valLen);
+        data.read(buffer.data(), valLen);
+
+        outValue = deserialize(buffer.data(), valLen);
+        data.close();
+        return true;
+    }
+
+    // 删除（标记删除）
+    void remove(const std::string& key) {
+        int idx = findIndex(key);
+        if (idx < 0) {
+            throw std::runtime_error("键不存在: " + key);
+        }
+        // 简化版：从索引中移除（不实际删除文件中的数据）
+        index.erase(index.begin() + idx);
+        std::cout << "[删除] " << key << std::endl;
+    }
+
+    // 更新
+    void update(const std::string& key, const ValueType& newValue) {
+        int idx = findIndex(key);
+        if (idx < 0) {
+            throw std::runtime_error("键不存在: " + key);
+        }
+        // 简化版：直接追加新记录并更新索引
+        remove(key);
+        insert(key, newValue);
+    }
+
+    // 列出所有键
+    std::vector<std::string> listKeys() const {
+        std::vector<std::string> keys;
+        for (const auto& entry : index) {
+            keys.push_back(std::string(entry.key));
+        }
+        return keys;
+    }
+
+    // 统计信息
+    void stats() const {
+        std::cout << "\n===== KVStore 统计 =====" << std::endl;
+        std::cout << "数据文件: " << dataFile << std::endl;
+        std::cout << "索引文件: " << indexFile << std::endl;
+        std::cout << "记录数: " << index.size() << std::endl;
+
+        std::streamsize totalSize = 0;
+        for (const auto& entry : index) {
+            totalSize += entry.size;
+        }
+        std::cout << "总数据大小: " << totalSize << " 字节" << std::endl;
+    }
+};
+
+int main() {
+    std::cout << "===== 简易KV数据库引擎 =====" << std::endl;
+
+    try {
+        // 存储double类型的温度数据
+        KVStore<double> tempDB("temperature");
+
+        // 插入数据
+        tempDB.insert("北京", 22.5);
+        tempDB.insert("上海", 28.3);
+        tempDB.insert("广州", 31.0);
+        tempDB.insert("深圳", 30.5);
+        tempDB.insert("杭州", 25.8);
+
+        // 查找
+        double temp;
+        if (tempDB.find("上海", temp)) {
+            std::cout << "\n上海温度: " << temp << "°C" << std::endl;
+        }
+
+        // 更新
+        tempDB.update("北京", 24.0);
+        if (tempDB.find("北京", temp)) {
+            std::cout << "北京温度(更新后): " << temp << "°C" << std::endl;
+        }
+
+        // 删除
+        tempDB.remove("广州");
+        if (!tempDB.find("广州", temp)) {
+            std::cout << "广州记录已删除" << std::endl;
+        }
+
+        // 列出所有键
+        std::cout << "\n当前城市: ";
+        for (const auto& key : tempDB.listKeys()) {
+            std::cout << key << " ";
+        }
+        std::cout << std::endl;
+
+        // 统计
+        tempDB.stats();
+
+        // 另一个存储实例：存储整数类型
+        KVStore<int> idDB("identifiers");
+        idDB.insert("user_max_id", 10000);
+        idDB.insert("order_max_id", 50000);
+
+        int val;
+        if (idDB.find("user_max_id", val)) {
+            std::cout << "\n用户最大ID: " << val << std::endl;
+        }
+
+    }
+    catch (const std::exception& e) {
+        std::cerr << "数据库错误: " << e.what() << std::endl;
+    }
+
+    // 清理
+    std::remove("temperature.dat");
+    std::remove("temperature.idx");
+    std::remove("identifiers.dat");
+    std::remove("identifiers.idx");
+
+    return 0;
+}
+---------------------------------------------------------------
+
+案例5: 日志分析系统 —— 运维监控系统
+---------------------------------------------------------------
+场景：运维人员需要分析服务器日志文件，提取错误统计、流量分析、
+访问频率等指标。
+
+知识点融入：
+- Ch1 命名空间：namespace LogAnalyzer {}
+- Ch2 预处理器：DEBUG宏
+- Ch3 动态内存/智能指针：unique_ptr
+- Ch7 运算符重载：<< 输出
+- Ch8 模板：模板分析函数
+- Ch9 异常处理
+- 本章：fstream, stringstream, filesystem
+
+---------------------------------------------------------------
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <vector>
+#include <map>
+#include <memory>
+#include <regex>
+#include <filesystem>
+#include <iomanip>
+#include <algorithm>
+#include <stdexcept>
+#include <ctime>
+
+namespace fs = std::filesystem;
+
+namespace LogAnalyzer {
+
+    // 日志条目
+    struct LogEntry {
+        std::string timestamp;
+        std::string level;     // INFO, WARN, ERROR, DEBUG
+        std::string module;
+        std::string message;
+        int lineNumber;
+
+        friend std::ostream& operator<<(std::ostream& os,
+                                         const LogEntry& entry) {
+            os << "[" << entry.timestamp << "]"
+               << "[" << entry.level << "]"
+               << "[" << entry.module << "] "
+               << entry.message;
+            return os;
+        }
+    };
+
+    // 分析统计结果
+    struct AnalysisResult {
+        int totalLines;
+        int errorCount;
+        int warningCount;
+        int infoCount;
+        std::map<std::string, int> moduleStats;
+        std::map<std::string, int> errorTypes;
+        std::vector<LogEntry> criticalErrors;
+    };
+
+    // 日志解析器
+    class LogParser {
+    public:
+        // 解析日志行
+        static bool parseLine(const std::string& line,
+                              int lineNum, LogEntry& entry) {
+            // 期望格式: [2024-01-15 14:30:22][ERROR][Database] 连接超时
+            std::regex logPattern(
+                R"(\[(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})\]\[(\w+)\]\[(\w+)\]\s+(.*))"
+            );
+
+            std::smatch match;
+            if (std::regex_match(line, match, logPattern)) {
+                entry.timestamp = match[1];
+                entry.level = match[2];
+                entry.module = match[3];
+                entry.message = match[4];
+                entry.lineNumber = lineNum;
+                return true;
+            }
+            return false;
+        }
+
+        // 解析整个日志文件
+        static std::vector<LogEntry> parseFile(const std::string& filepath) {
+            std::vector<LogEntry> entries;
+            std::ifstream file(filepath);
+
+            if (!file.is_open()) {
+                throw std::runtime_error("无法打开日志文件: " + filepath);
+            }
+
+            std::string line;
+            int lineNum = 0;
+            int skipped = 0;
+
+            while (std::getline(file, line)) {
+                lineNum++;
+                LogEntry entry;
+                if (parseLine(line, lineNum, entry)) {
+                    entries.push_back(entry);
+                } else {
+                    skipped++;
+                }
+            }
+
+            file.close();
+
+            std::cout << "解析完成: " << filepath << " ("
+                      << entries.size() << " 条日志, "
+                      << skipped << " 条跳过)" << std::endl;
+
+            return entries;
+        }
+    };
+
+    // 日志分析器
+    class Analyzer {
+    private:
+        AnalysisResult result;
+
+    public:
+        void analyze(const std::vector<LogEntry>& entries) {
+            result = AnalysisResult{};
+            result.totalLines = entries.size();
+
+            for (const auto& entry : entries) {
+                // 按级别统计
+                if (entry.level == "ERROR") {
+                    result.errorCount++;
+                    result.criticalErrors.push_back(entry);
+
+                    // 统计错误类型（取前20字符作为类型）
+                    std::string errorType = entry.message.substr(0,
+                        std::min(entry.message.length(), size_t(30)));
+                    result.errorTypes[errorType]++;
+                } else if (entry.level == "WARN") {
+                    result.warningCount++;
+                } else if (entry.level == "INFO") {
+                    result.infoCount++;
+                }
+
+                // 按模块统计
+                result.moduleStats[entry.module]++;
+            }
+        }
+
+        void printReport() const {
+            std::cout << "\n╔══════════════════════════════════════╗" << std::endl;
+            std::cout << "║         日志分析报告                  ║" << std::endl;
+            std::cout << "╚══════════════════════════════════════╝" << std::endl;
+
+            // 总览
+            std::cout << "\n--- 总览 ---" << std::endl;
+            std::cout << "  总行数:    " << result.totalLines << std::endl;
+            std::cout << "  ERROR:     " << result.errorCount << std::endl;
+            std::cout << "  WARN:      " << result.warningCount << std::endl;
+            std::cout << "  INFO:      " << result.infoCount << std::endl;
+
+            // 模块统计
+            std::cout << "\n--- 模块统计 ---" << std::endl;
+            for (const auto& ms : result.moduleStats) {
+                std::cout << "  " << std::left << std::setw(20)
+                          << ms.first << std::setw(6) << ms.second;
+                // 柱状图
+                int barLen = ms.second / (result.totalLines / 50 + 1);
+                std::cout << std::string(barLen, '#') << std::endl;
+            }
+
+            // 错误类型统计
+            if (!result.errorTypes.empty()) {
+                std::cout << "\n--- 常见错误 ---" << std::endl;
+                // 排序取前5
+                std::vector<std::pair<std::string, int>> sortedErrors(
+                    result.errorTypes.begin(), result.errorTypes.end());
+                std::sort(sortedErrors.begin(), sortedErrors.end(),
+                    [](const auto& a, const auto& b) {
+                        return a.second > b.second;
+                    });
+
+                int shown = 0;
+                for (const auto& err : sortedErrors) {
+                    if (shown++ >= 5) break;
+                    std::cout << "  [" << err.second << "x] "
+                              << err.first << std::endl;
+                }
+            }
+
+            // 严重错误详情
+            if (!result.criticalErrors.empty()) {
+                std::cout << "\n--- 严重错误详情 (前3条) ---" << std::endl;
+                int shown = 0;
+                for (const auto& err : result.criticalErrors) {
+                    if (shown++ >= 3) break;
+                    std::cout << "  " << err << std::endl;
+                }
+            }
+        }
+
+        // 保存报告到HTML文件
+        void saveHTMLReport(const std::string& filename) const {
+            std::ofstream file(filename);
+            if (!file.is_open())
+                throw std::runtime_error("无法创建报告文件");
+
+            file << "<html><head><meta charset='utf-8'><title>日志分析报告</title>"
+                 << "<style>body{font-family:monospace;background:#1e1e1e;color:#d4d4d4;padding:20px;}"
+                 << "table{border-collapse:collapse;width:100%;}"
+                 << "th,td{border:1px solid #555;padding:8px;text-align:left;}"
+                 << "th{background:#333;}.error{color:#f44747;}.warn{color:#cca700;}.info{color:#6a9955;}"
+                 << "</style></head><body>"
+                 << "<h1>日志分析报告</h1>";
+
+            file << "<h2>总览</h2><table><tr><th>指标</th><th>数值</th></tr>";
+            file << "<tr><td>总行数</td><td>" << result.totalLines << "</td></tr>";
+            file << "<tr><td class='error'>ERROR</td><td>" << result.errorCount << "</td></tr>";
+            file << "<tr><td class='warn'>WARN</td><td>" << result.warningCount << "</td></tr>";
+            file << "<tr><td class='info'>INFO</td><td>" << result.infoCount << "</td></tr>";
+            file << "</table>";
+
+            file << "</body></html>";
+            file.close();
+            std::cout << "HTML报告已保存: " << filename << std::endl;
+        }
+    };
+
+    // 日志目录分析器
+    class LogDirectoryAnalyzer {
+    private:
+        std::vector<std::string> logFiles;
+
+    public:
+        void scanDirectory(const std::string& dirPath) {
+            if (!fs::exists(dirPath)) {
+                throw std::runtime_error("目录不存在: " + dirPath);
+            }
+
+            for (const auto& entry : fs::directory_iterator(dirPath)) {
+                if (entry.is_regular_file() &&
+                    entry.path().extension() == ".log") {
+                    logFiles.push_back(entry.path().string());
+                    std::cout << "发现日志: " << entry.path().filename()
+                              << std::endl;
+                }
+            }
+
+            std::cout << "共发现 " << logFiles.size()
+                      << " 个日志文件" << std::endl;
+        }
+
+        void analyzeAll() const {
+            std::vector<LogEntry> allEntries;
+
+            for (const auto& filepath : logFiles) {
+                try {
+                    auto entries = LogParser::parseFile(filepath);
+                    allEntries.insert(allEntries.end(),
+                                      entries.begin(), entries.end());
+                }
+                catch (const std::exception& e) {
+                    std::cerr << "解析失败: " << filepath
+                              << " - " << e.what() << std::endl;
+                }
+            }
+
+            Analyzer analyzer;
+            analyzer.analyze(allEntries);
+            analyzer.printReport();
+            analyzer.saveHTMLReport("log_report.html");
+        }
+    };
+
+} // namespace LogAnalyzer
+
+// 生成测试日志文件
+void generateTestLogs() {
+    fs::create_directory("./logs");
+
+    {
+        std::ofstream f("./logs/server.log");
+        f << "[2024-01-15 08:00:01][INFO][System] 服务器启动\n";
+        f << "[2024-01-15 08:00:02][INFO][Database] 数据库连接成功\n";
+        f << "[2024-01-15 08:01:15][WARN][Disk] 磁盘使用率超过80%\n";
+        f << "[2024-01-15 08:05:30][ERROR][Network] 连接超时: 192.168.1.100:8080\n";
+        f << "[2024-01-15 08:10:45][INFO][Auth] 用户admin登录成功\n";
+        f << "[2024-01-15 08:15:00][ERROR][Database] 查询超时: SELECT * FROM orders\n";
+        f << "[2024-01-15 08:20:30][WARN][Memory] 内存使用率接近限制\n";
+        f << "[2024-01-15 08:25:00][ERROR][Network] DNS解析失败: api.example.com\n";
+        f << "[2024-01-15 08:30:00][INFO][System] 定时任务执行完成\n";
+        f << "[2024-01-15 08:35:00][ERROR][Database] 连接池耗尽\n";
+        f.close();
+    }
+
+    {
+        std::ofstream f("./logs/access.log");
+        f << "[2024-01-15 08:00:01][INFO][Web] GET /api/users 200 15ms\n";
+        f << "[2024-01-15 08:00:02][INFO][Web] POST /api/login 200 45ms\n";
+        f << "[2024-01-15 08:00:05][ERROR][Web] GET /api/broken 500 2ms\n";
+        f << "[2024-01-15 08:00:10][WARN][Web] POST /api/upload 413 120ms (文件过大)\n";
+        f << "[2024-01-15 08:00:15][INFO][Web] GET /api/products 200 10ms\n";
+        f.close();
+    }
+}
+
+int main() {
+    using namespace LogAnalyzer;
+
+    std::cout << "===== 日志分析系统 =====" << std::endl;
+
+    generateTestLogs();
+
+    try {
+        LogDirectoryAnalyzer logAnalyzer;
+        logAnalyzer.scanDirectory("./logs");
+        logAnalyzer.analyzeAll();
+    }
+    catch (const std::exception& e) {
+        std::cerr << "分析失败: " << e.what() << std::endl;
+    }
+
+    // 清理
+    fs::remove_all("./logs");
+    std::remove("log_report.html");
+
+    return 0;
+}
+---------------------------------------------------------------
+
+================================================================================
+### 第四节: 课后习题
+================================================================================
+
+习题：设计一个"图书管理系统（文件持久化版）"
+
+要求如下：
+
+1. Book 类包含以下字段：
+   - std::string isbn    (ISBN编号)
+   - std::string title   (书名)
+   - std::string author  (作者)
+   - double price        (价格)
+   - int stock           (库存数量)
+
+   实现方法：
+   - serialize(std::ostream&) const: 将Book对象序列化到输出流（二进制格式）
+   - static Book deserialize(std::istream&): 从输入流反序列化
+
+2. 使用 <filesystem> 管理数据目录：
+   - 程序启动时检查 "./bookdata/" 目录是否存在
+   - 不存在则自动创建
+
+3. 实现基于文件的增删改查并持久化：
+   - add(Book): 添加图书，追加写入数据文件
+   - remove(isbn): 删除指定ISBN的图书（软删除或重写文件）
+   - find(isbn): 查找图书，返回Book指针
+   - update(isbn, Book): 更新图书信息
+   - loadAll(): 启动时从文件加载所有数据到内存
+
+4. 使用二进制格式存储每条记录：
+   记录格式：ISBN长度(4字节)|ISBN字符串|书名长度|书名字符串|
+            作者长度|作者字符串|价格(8字节)|库存(4字节)
+
+5. 异常处理：
+   - 文件打开失败
+   - 数据格式错误
+   - ISBN重复
+   - 自定义异常类 BookStoreException
+
+6. 使用 std::unique_ptr 管理 Book 对象（内存中和文件操作资源）
+
+7. 实现模板函数 readBinary<T>(stream) 和 writeBinary<T>(stream, value)
+   用于通用二进制读写。
+
+答题模板框架：
+
+---------------------------------------------------------------
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <vector>
+#include <memory>
+#include <filesystem>
+#include <cstring>
+#include <stdexcept>
+#include <iomanip>
+
+namespace fs = std::filesystem;
+
+// TODO: 自定义异常类
+
+// TODO: Book 类
+
+// TODO: 模板二进制读写函数
+
+// TODO: 图书存储管理器
+
+int main() {
+    // TODO: 演示增删改查操作
+
+    return 0;
+}
+---------------------------------------------------------------
+
+期望运行结果示例：
+
+===== 图书管理系统 =====
+数据目录: ./bookdata/ 已就绪
+从文件加载了 3 本图书
+
+--- 添加图书 ---
+[添加] ISBN:978-7-111- Test1, 《C++ Primer》, 作者: Stanley, ￥128.00, 库存:50
+[添加] ISBN:978-7-302- Test2, 《Effective C++》, 作者: Scott, ￥65.00, 库存:30
+
+--- 查找图书 ---
+找到: 《C++ Primer》 ￥128.00 库存:50
+
+--- 更新库存 ---
+《C++ Primer》库存: 50 -> 45
+
+--- 删除图书 ---
+[删除] ISBN:978-7-302- Test2
+
+--- 当前库存 ---
+1. 《C++ Primer》 [978-7-111- Test1] ￥128.00 x45
+2. ...
+
+数据已持久化到文件
+
+================================================================================

@@ -1,0 +1,3221 @@
+================================================================================
+C++ 深化教程 — 第二章: 预处理器 (Preprocessor)
+================================================================================
+
+## 章节概述
+
+预处理器（Preprocessor）是 C/C++ 编译流程的第一阶段。它在编译器真正开始编译源
+代码之前运行，负责处理以 # 开头的预处理指令（preprocessing directives）。预处理
+器的本质是一个**纯文本替换引擎**——它不理解 C++ 语法，只是机械地进行宏展开、
+文件包含和条件编译。理解预处理器的工作原理对于编写可移植、可调试的 C++ 代码至
+关重要。
+
+本章将深入编译四阶段流程，逐一讲解所有预处理指令的用法，并通过三个生活场景案例
+展示预处理器在实际项目中的应用。本章还将融入第一章所学的命名空间概念，展示两者
+如何配合组织代码。
+
+================================================================================
+### 第一节: 基础示例代码 + 计算机底层原理
+================================================================================
+
+2.1 预处理指令基础示例
+-------------------------
+
+C++ 中最常用的预处理指令包括：文件包含（#include）、宏定义（#define）、
+条件编译（#ifdef、#ifndef、#endif）和头文件守卫。
+
+**#include — 文件包含**
+
+```cpp
+#include <iostream>     // 包含系统头文件（搜索标准库路径）
+#include "myheader.h"   // 包含用户头文件（先在当前目录搜索，再去系统路径）
+```
+
+#include 的工作方式极其简单粗暴：预处理器找到指定的文件，将整个文件内容完整地
+**复制粘贴**到 #include 指令所在的位置，然后继续处理。这完全是一个文本级操作。
+
+**#define — 定义宏**
+
+```cpp
+#define PI 3.141592653589793
+#define MAX(a, b) ((a) > (b) ? (a) : (b))  // 带参数的宏
+#define SQUARE(x) ((x) * (x))               // 注意括号！
+```
+
+预处理器将所有标识符 PI 替换为文字 3.141592653589793，将 MAX(3, 5) 替换为
+((3) > (5) ? (3) : (5))。替换发生在编译器解析 C++ 语法之前。
+
+**条件编译 — #ifdef / #ifndef / #endif**
+
+```cpp
+#include <iostream>
+
+// 通过 #define 启用调试
+#define DEBUG_MODE
+
+int main() {
+#ifdef DEBUG_MODE
+    std::cout << "[DEBUG] 程序启动" << std::endl;
+#endif
+
+    std::cout << "Hello, World!" << std::endl;
+
+#ifndef DEBUG_MODE
+    std::cout << "这是发布版本" << std::endl;
+#else
+    std::cout << "[DEBUG] 这是调试版本" << std::endl;
+#endif
+
+    return 0;
+}
+```
+
+条件编译允许根据宏是否已定义来选择性地包含或排除代码。在上面的例子中，
+DEBUG_MODE 被定义（#define DEBUG_MODE），因此 #ifdef 块内的代码会被保留，
+#ifndef 块内的代码会被排除。
+
+**头文件守卫 — 防止重复包含**
+
+```cpp
+// 传统方式：使用 #ifndef / #define / #endif
+#ifndef MY_HEADER_H
+#define MY_HEADER_H
+
+// 头文件的内容放在这里
+namespace MyLib {
+    void doSomething();
+    struct Config {
+        int width;
+        int height;
+    };
+}
+
+#endif  // MY_HEADER_H
+```
+
+当同一个头文件被多次 #include 时（比如 A 依赖 B，C 也依赖 B，而主文件同时
+#include 了 A 和 C），第一次包含时 MY_HEADER_H 未定义，所以头文件内容被保留；
+后续再次包含时 MY_HEADER_H 已经定义，#ifndef 条件为假，介于其中到 #endif 的
+内容被完全跳过。这样就避免了重复定义错误。
+
+```cpp
+// C++ 中的替代方案：#pragma once
+#pragma once
+
+// 头文件内容
+namespace MyLib {
+    void doSomething();
+}
+```
+
+#pragma once 是非标准但被几乎所有主流编译器支持的指令，用于实现与头文件守卫
+相同的功能。它的语义更清晰：当前文件在同一个编译单元中只被包含一次。
+#pragma once 的优点是更简洁、不会因宏命名冲突导致问题，缺点是它不是 C++ 标准
+的正式组成部分（尽管实际上得到了普遍支持）。
+
+2.2 编译四阶段详解
+--------------------
+
+理解预处理器的工作机制，必须首先理解 C++ 的整体编译流程。一个 .cpp 源文件从
+文本代码到可执行文件经历了四个主要阶段：
+
+```
+源文件 (.cpp / .h)
+    │
+    ▼
+┌─────────────────────────────────────────────┐
+│   阶段1: 预处理 (Preprocessing)             │
+│   ---------------------------------------  │
+│   · 展开所有 #include (复制粘贴文件内容)    │
+│   · 展开所有 #define 宏 (文本替换)          │
+│   · 处理所有条件编译指令 (#ifdef 等)        │
+│   · 删除注释                                │
+│   · 合并行继续符 (\ 结尾的行)               │
+│   · 输出: 纯净的"翻译单元" (纯 C++ 代码)    │
+│   工具: g++ -E source.cpp -o source.i       │
+└───────────────┬─────────────────────────────┘
+                │  翻译单元 (纯净 C++ 源码)
+                ▼
+┌─────────────────────────────────────────────┐
+│   阶段2: 编译 (Compilation)                 │
+│   ---------------------------------------  │
+│   · 词法分析 (Lexing): 将字符流转化为token  │
+│   · 语法分析 (Parsing): 构建抽象语法树AST   │
+│   · 语义分析: 类型检查、重载决议等          │
+│   · 中间代码生成: 生成 IR (如GCC的GIMPLE)   │
+│   · 优化: 各种优化pass                      │
+│   · 输出: 汇编代码 (.s 文件)                │
+│   工具: g++ -S source.i -o source.s         │
+└───────────────┬─────────────────────────────┘
+                │  汇编代码
+                ▼
+┌─────────────────────────────────────────────┐
+│   阶段3: 汇编 (Assembly)                    │
+│   ---------------------------------------  │
+│   · 将汇编指令翻译为机器指令 (二进制)       │
+│   · 生成符号表 (symbol table)               │
+│   · 生成重定位信息 (relocation entries)     │
+│   · 输出: 目标文件 (.o / .obj 文件)         │
+│   工具: g++ -c source.s -o source.o         │
+│         或 as source.s -o source.o          │
+└───────────────┬─────────────────────────────┘
+                │  目标文件
+                ▼
+┌─────────────────────────────────────────────┐
+│   阶段4: 链接 (Linking)                     │
+│   ---------------------------------------  │
+│   · 合并所有目标文件和库                     │
+│   · 解析符号引用 (symbol resolution)         │
+│   · 重定位地址 (relocation)                  │
+│   · 输出: 可执行文件 (或动态/静态库)         │
+│   工具: g++ *.o -o program                  │
+│         (内部调用 ld / collect2)            │
+└───────────────┬─────────────────────────────┘
+                │
+                ▼
+          可执行文件 (ELF/PE/Mach-O)
+```
+
+**深入理解阶段1 — 预处理：**
+
+预处理器的核心是一个文本替换引擎。它维护着一个**宏定义表**（内部字典），记录
+当前已定义的宏及其替换文本。当遇到一个标识符时，预处理器会查找这个表——如果
+找到匹配，就将标识符替换为对应的文本；如果替换后的文本中又包含宏标识符，则
+**递归展开**（宏展开中的递归）。
+
+预处理阶段的输出是完全"纯净的"C++代码——没有任何预处理指令、没有注释、所有的
+#include 文件内容都已经"内联"到源文件中。这个中间文件称为"翻译单元"
+（translation unit）。
+
+用 g++ -E 观察宏展开的效果：
+
+源文件 test.cpp:
+```cpp
+#define SQUARE(x) ((x) * (x))
+#define DOUBLE(x) (x + x)
+
+int main() {
+    int a = SQUARE(3 + 1);      // 期望 16，实际呢？
+    int b = DOUBLE(3) * DOUBLE(4); // 期望 (6) * (8) = 48，实际呢？
+    int c = SQUARE(DOUBLE(2));  // 嵌套宏展开
+    return 0;
+}
+```
+
+运行 `g++ -E test.cpp` 可以看到预处理器输出：
+
+```bash
+$ g++ -E test.cpp
+```
+
+经过宏展开后的代码（简化展示）：
+
+```cpp
+int main() {
+    int a = ((3 + 1) * (3 + 1));      // SQUARE(3+1) -> ((3+1)*(3+1)) = 16 ✓
+    int b = (3 + 3) * (4 + 4);        // DOUBLE(3)*DOUBLE(4) -> (3+3)*(4+4) = 48 ✓
+    int c = ((2 + 2) * (2 + 2));      // SQUARE(DOUBLE(2)) -> ((2+2)*(2+2)) = 16 ✓
+    return 0;
+}
+```
+
+注意：如果没有加括号的情况：
+
+```cpp
+#define BAD_SQUARE(x) x * x
+#define BAD_DOUBLE(x) x + x
+
+// BAD_SQUARE(3+1) 展开为 3+1*3+1 = 3+3+1 = 7 (错误! 期望16)
+// BAD_DOUBLE(3)*BAD_DOUBLE(4) 展开为 3+3*4+4 = 3+12+4 = 19 (错误! 期望48)
+```
+
+这就是为什么**宏参数和整个宏体都要用括号包裹**——预处理器不做任何运算，只是
+文本替换，运算优先级完全由生成代码中的括号决定。
+
+2.3 预处理器作为纯文本替换器的本质
+--------------------------------------
+
+预处理器可以被理解为一个独立的、运行在编译器之前的文本处理器。它有自己的
+"语言"——预处理指令，这套语言与 C++ 语言正交（orthogonal）。预处理器不理解
+C++ 的如下概念：
+
+- **类型**：预处理器不知道 int 和 double 的区别，所有宏都是无类型的文本替换
+- **作用域**：宏没有命名空间或作用域概念，#define 在整个文件范围内有效（除非
+  被 #undef 取消）
+- **重载**：宏不能重载，每个宏名称只能有一个当前定义
+- **模板**：宏在概念上类似于无类型模板，但没有类型安全
+- **constexpr / consteval**：预处理器不参与编译期计算
+
+正因为这种无类型、无作用域的特性，C++ 社区普遍建议：**在可能的情况下，优先
+使用 constexpr、const、inline 函数和模板来代替宏**。
+
+```cpp
+// 不推荐：使用宏定义常量
+#define PI 3.14159
+
+// 推荐：使用 const 或 constexpr
+constexpr double PI = 3.141592653589793;
+
+// 不推荐：使用宏函数
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
+// 推荐：使用模板函数（有类型安全、可重载）
+template<typename T>
+constexpr T max(T a, T b) { return a > b ? a : b; }
+```
+
+然而预处理器在某些场景下仍然不可替代（条件编译、头文件包含、源信息宏等）。
+
+2.4 Token Pasting (##) 的工作机制
+--------------------------------------
+
+Token Pasting（记号黏合）操作符 `##` 用于将两个预处理记号（token）连接成一个
+新的记号。它在宏展开过程中起到"胶水"的作用——将两个独立的 token 合并为一个。
+
+```cpp
+#include <iostream>
+
+// 用 ## 连接两个 token
+#define CONCAT(a, b) a ## b
+// CONCAT(x, 1) -> x1
+// CONCAT(my_, var) -> my_var
+
+// 实用案例：批量定义变量
+#define DECLARE_VARIABLE(type, index) type var_##index = index
+
+// 实用案例：生成函数名
+#define MAKE_GETTER(name) \
+    int get_##name() const { return name##_; } \
+    void set_##name(int val) { name##_ = val; } \
+    int name##_
+
+// 实用案例：生成唯一标识符
+#define UNIQUE_NAME(prefix) prefix ## __LINE__
+
+int main() {
+    // 使用 CONCAT 创建变量
+    int CONCAT(my, Var) = 42;   // int myVar = 42;
+    std::cout << "myVar = " << myVar << std::endl;
+
+    // 使用 DECLARE_VARIABLE
+    DECLARE_VARIABLE(int, 1);   // int var_1 = 1;
+    DECLARE_VARIABLE(int, 2);   // int var_2 = 2;
+    DECLARE_VARIABLE(int, 3);   // int var_3 = 3;
+    std::cout << var_1 << ", " << var_2 << ", " << var_3 << std::endl;
+
+    return 0;
+}
+```
+
+## 操作符的关键规则：
+1. ## 只能出现在宏替换列表中（宏定义体中）
+2. ## 前后的空白被忽略
+3. 如果连接后的结果不是有效的预处理 token（比如连接成一个无效标识符），
+   行为是未定义的
+4. ## 操作符的求值优先级高于宏展开——先进行 token 连接，再进行展开
+
+```cpp
+// ## 的微妙之处
+#define MACRO_A  1
+#define MACRO_B  2
+#define JOIN(a, b) a ## b
+
+// JOIN(MACRO_A, MACRO_B) 
+// 结果: MACRO_A+MACRO_B  → 不是 12!
+// 因为 ## 先连接成 "MACRO_A"+"MACRO_B" → 无效token，行为未定义
+
+// 正确做法：使用两层宏
+#define JOIN2(a, b) JOIN(a, b)  // 先展开参数，再进行连接
+// JOIN2(MACRO_A, MACRO_B) -> JOIN(1, 2) -> 12
+```
+
+2.5 Stringification (#) 的工作机制
+--------------------------------------
+
+# 操作符（字符串化操作符）将宏参数转换为字符串字面量。它在宏参数两边加上
+双引号，并对字符串中的特殊字符进行转义。
+
+```cpp
+#include <iostream>
+#include <string>
+
+// # 操作符将参数转为字符串
+#define TO_STRING(x) #x
+
+// 结合使用：输出变量名和值
+#define PRINT_VAR(var) std::cout << #var << " = " << (var) << std::endl
+
+// 生成格式化字符串
+#define MAKE_MSG(msg) "Message: " #msg
+
+// 结合字符串字面量
+#define LOG(level, msg) \
+    std::cout << "[" #level "] " << msg << std::endl
+
+int main() {
+    int count = 42;
+    double price = 19.99;
+
+    // # 操作符的基本用法
+    std::cout << TO_STRING(Hello World) << std::endl;  // "Hello World"
+
+    // PRINT_VAR 宏：自动输出变量名和值
+    PRINT_VAR(count);    // 输出: count = 42
+    PRINT_VAR(price);    // 输出: price = 19.99
+
+    // MAKE_MSG
+    std::string msg = MAKE_MSG(File not found);
+    std::cout << msg << std::endl;
+
+    // LOG 宏
+    LOG(INFO, "Server started on port 8080");
+    LOG(ERROR, "Connection refused");
+    LOG(WARN, "Low memory");
+
+    // # 的转义特性
+    std::cout << TO_STRING(He said "Hello") << std::endl;  
+    // 输出: He said \"Hello\"
+
+    return 0;
+}
+```
+
+# 操作符的关键规则：
+1. # 前面不能有 ## 操作符
+2. 被 # 转换的结果中的空白字符会被压缩成单个空格
+3. 字符串中的特殊字符（\、"" 等）会被正确转义
+4. 如果参数本身是一个宏，先展开再字符串化（取决于宏展开顺序）
+
+# 和 ## 的配合使用场景：
+
+```cpp
+#include <iostream>
+
+// 调试辅助宏：输出表达式和结果
+#define DEBUG_EXPR(expr) \
+    std::cout << "Line " << __LINE__ << ": " #expr " = " << (expr) << std::endl
+
+// 生成枚举值和对应的字符串描述
+#define MAKE_ENUM(name, value) e_##name = value
+#define ENUM_STRING(name) #name
+
+namespace Color {
+    enum {
+        MAKE_ENUM(RED, 0),
+        MAKE_ENUM(GREEN, 1),
+        MAKE_ENUM(BLUE, 2)
+    };
+}
+
+int main() {
+    int x = 10, y = 5;
+    DEBUG_EXPR(x + y);      // Line XX: x + y = 15
+    DEBUG_EXPR(x * y - 3);  // Line XX: x * y - 3 = 47
+
+    std::cout << "Color RED: " << ENUM_STRING(RED) << std::endl;
+    // Color::e_RED == 0, ENUM_STRING(RED) -> "RED"
+
+    return 0;
+}
+```
+
+2.6 预处理器的内部工作流程
+-----------------------------
+
+预处理器的内部运行流程可以描述为以下几个步骤：
+
+**步骤1: 字符集映射**
+将源文件的物理字符映射到源字符集（source character set）。处理 trigraph（三字符
+序列，C++17 已移除）、行继续符（\）换行（物理行合并为逻辑行）。
+
+**步骤2: 标记化 (Tokenization)**
+将字符流分割为预处理记号（preprocessing tokens）：
+- 标识符（identifiers）
+- 关键字（keywords）
+- 字面量（literals）
+- 运算符和标点符号
+- 每个非空的空白序列被替换为一个空格
+- 注释被替换为一个空格
+
+**步骤3: 预处理执行**
+按从左到右的顺序处理每个预处理 token：
+- 遇到 #include：递归处理被包含的文件
+- 遇到 #define：将宏添加到宏定义表
+- 遇到 #ifdef / #ifndef：条件求值，决定保留或跳过代码段
+- 遇到普通标识符：查宏定义表，如果匹配则展开
+- 遇到 # 和 ## 操作符：执行相应的字符串化或记号黏合
+
+**步骤4: 生成翻译单元**
+输出干净的、没有预处理指令的 C++ 代码，供编译器第二阶段（编译）使用。
+
+2.7 用 g++ -E 观察预处理输出
+-------------------------------
+
+让我们通过一个完整的实验来理解预处理过程。创建以下源文件：
+
+```cpp
+// experiment.cpp
+#define VERSION 2
+#define OS "Linux"
+
+#if VERSION >= 2
+    #define FEATURE_XYZ
+#endif
+
+#ifdef FEATURE_XYZ
+    #define LOG(msg) std::cout << "[LOG] " << msg << std::endl
+#else
+    #define LOG(msg)
+#endif
+
+#define CONCAT_HELPER(a, b) a ## b
+#define CONCAT(a, b) CONCAT_HELPER(a, b)
+
+int CONCAT(counter, VERSION) = 100;
+
+int main() {
+    LOG("Starting on " OS);
+    return 0;
+}
+```
+
+运行预处理器：
+
+```bash
+$ g++ -E experiment.cpp -o experiment.i
+$ cat experiment.i
+```
+
+预处理后的输出（experiment.i）：
+
+```cpp
+# 1 "experiment.cpp"
+# 1 "<built-in>"
+# 1 "<command-line>"
+# 1 "/usr/include/stdc-predef.h" 1 3 4
+# 1 "<command-line>" 2
+# 1 "experiment.cpp"
+
+int counter2 = 100;
+
+int main() {
+    std::cout << "[LOG] " << "Starting on " "Linux" << std::endl;
+    return 0;
+}
+```
+
+观察到的现象：
+1. #define VERSION 2 和 #define OS "Linux" 完全消失（它们被记入了宏定义表，
+   只影响后续的展开，本身不出现在输出中）
+2. #if VERSION >= 2 条件为真，因此 #define FEATURE_XYZ 被保留并处理
+3. #ifdef FEATURE_XYZ 条件为真，因此 LOG 被定义为带有替换体的宏
+4. CONCAT(counter, VERSION) → CONCAT_HELPER(counter, 2) → counter2
+5. LOG("Starting on " OS) → std::cout << "[LOG] " << "Starting on " "Linux" 
+   (注意相邻的字符串字面量会被编译器自动拼接)
+6. 行号标记 (# 1 "experiment.cpp" 等) 是预处理器插入的，用于后续编译阶段的
+   错误信息中显示正确的源文件位置
+
+
+================================================================================
+### 第二节: 所有用法大全（标准库/关键字/函数）
+================================================================================
+
+本节全面列举 C++ 预处理器的所有指令、操作符和标准用法。
+
+3.1 宏定义与取消 — #define / #undef
+--------------------------------------
+
+**基本宏定义 (无参数)**
+
+```cpp
+#define PI 3.141592653589793
+#define BUFFER_SIZE 4096
+#define APP_NAME "MyApplication"
+#define CONFIG_FILE_PATH "/etc/myapp/config.ini"
+```
+
+使用场景：
+- 定义编译时常量
+- 定义平台相关的常量
+- 定义配置信息
+- 简化代码中的魔法数字
+
+**取消宏定义**
+
+```cpp
+#define TEMP 100
+
+// 使用 TEMP...
+
+#undef TEMP  // 取消 TEMP 的定义
+
+// 此后 TEMP 不再是一个宏
+// 如果后续又 #define TEMP 200，则 TEMP 被重新定义为 200
+```
+
+```cpp
+#include <iostream>
+
+int main() {
+    #define VALUE 10
+    std::cout << "VALUE = " << VALUE << std::endl;  // 10
+
+    #undef VALUE
+    #define VALUE 20
+    std::cout << "VALUE = " << VALUE << std::endl;  // 20
+
+    // std::cout << VALUE << std::endl;  // 如果已经 #undef 且没有重新定义，这会编译错误
+
+    return 0;
+}
+```
+
+**带参数的宏**
+
+```cpp
+// 基本形式
+#define ADD(x, y) ((x) + (y))
+#define MAX(x, y) ((x) > (y) ? (x) : (y))
+#define IS_UPPER(c) ((c) >= 'A' && (c) <= 'Z')
+
+// 多参数
+#define CLAMP(val, lo, hi) ((val) < (lo) ? (lo) : ((val) > (hi) ? (hi) : (val)))
+
+// 做类型转换 (注意：无类型安全)
+#define TO_INT(x)  ((int)(x))
+#define TO_FLOAT(x) ((float)(x))
+
+// 多语句宏体 (用 do { ... } while(0) 包裹是经典技巧)
+#define SWAP(a, b) do { \
+    auto temp = (a);    \
+    (a) = (b);          \
+    (b) = temp;         \
+} while(0)
+
+#include <iostream>
+
+int main() {
+    int a = 10, b = 20;
+    SWAP(a, b);
+    std::cout << "a = " << a << ", b = " << b << std::endl;  // a=20, b=10
+
+    // 如果 SWAP 不使用 do-while(0)，下面这种写法会出错:
+    // if (a > b) SWAP(a, b); else a = 0;
+    // 展开为: if (a > b) { auto temp = a; a = b; b = temp; }; else a = 0;
+    // 注意末尾有分号，导致 else 找不到 if (悬挂else问题)
+    // 而 do-while(0) 末尾需要分号，完美解决了这个问题
+
+    if (a > b)
+        SWAP(a, b);
+    else
+        a = 0;
+
+    return 0;
+}
+```
+
+**可变参宏 (Variadic Macros, C++11)**
+
+```cpp
+#include <iostream>
+
+// 使用 ... 和 __VA_ARGS__
+#define LOG(fmt, ...) printf(fmt, __VA_ARGS__)
+
+// 空参数的情况（GCC/Clang 扩展 ##__VA_ARGS__）
+#define DEBUG_LOG(fmt, ...) \
+    fprintf(stderr, "[DEBUG] %s:%d: " fmt "\n", __FILE__, __LINE__, ##__VA_ARGS__)
+
+// C++20 __VA_OPT__ 更安全地处理可选参数
+// #define LOG2(fmt, ...) std::printf(fmt __VA_OPT__(,) __VA_ARGS__)
+
+int main() {
+    LOG("Value: %d\n", 42);
+    DEBUG_LOG("Starting %s v%d", "MyApp", 1);  // 带参数
+    // DEBUG_LOG("Server started"); // GCC下使用 ##__VA_ARGS__ 可正确处理空参数
+    return 0;
+}
+```
+
+`##__VA_ARGS__` 是 GCC/Clang 的扩展：当可变参数列表为空时，它会移除前面的逗号。
+C++20 引入了标准的 `__VA_OPT__` 来处理这个问题。
+
+3.2 条件编译 — #if / #ifdef / #ifndef / #else / #elif / #endif / defined()
+----------------------------------------------------------------------------
+
+**#ifdef 和 #ifndef — 检测宏是否已定义**
+
+```cpp
+#define FEATURE_LOGGING
+
+#ifdef FEATURE_LOGGING
+    #define LOG(x) std::cout << x << std::endl
+#else
+    #define LOG(x)  // 空宏，不做任何事情
+#endif
+
+#ifndef MAX_CONNECTIONS
+    #define MAX_CONNECTIONS 100  // 如果没有定义，提供默认值
+#endif
+```
+
+**#if — 对常量表达式求值**
+
+```cpp
+#if defined(CONFIG_A) && CONFIG_A >= 2
+    // CONFIG_A 必须已定义且值 >= 2
+#endif
+
+#if __cplusplus >= 201703L
+    // C++17 及以上
+    #define HAVE_CPP17 1
+#endif
+
+#if defined(__GNUC__) && !defined(__clang__)
+    // 仅在 GCC (非 Clang) 下编译
+    #define COMPILER_NAME "GCC"
+#elif defined(__clang__)
+    #define COMPILER_NAME "Clang"
+#elif defined(_MSC_VER)
+    #define COMPILER_NAME "MSVC"
+#else
+    #define COMPILER_NAME "Unknown"
+#endif
+```
+
+**defined() 运算符**
+
+```cpp
+// defined() 运算符返回 1 或 0，表示宏是否已定义
+#if defined(DEBUG) && !defined(NDEBUG)
+    // 在调试模式下，且 NDEBUG 未定义
+#endif
+
+// 与 #ifdef 的区别：defined() 可以组合多个条件
+#if defined(FEATURE_A) || defined(FEATURE_B)
+    // A 或 B 至少有一个启用
+#endif
+```
+
+**完整示例：根据配置编译不同代码**
+
+```cpp
+#include <iostream>
+
+// 模拟编译配置
+#define USE_OPENGL
+#define GRAPHICS_QUALITY 2
+
+#if defined(USE_OPENGL) && defined(USE_VULKAN)
+    #error "OpenGL and Vulkan cannot both be enabled!"
+#endif
+
+#ifdef USE_OPENGL
+    #define RENDER_BACKEND "OpenGL"
+    void render() { std::cout << "Rendering with OpenGL" << std::endl; }
+#elif defined(USE_VULKAN)
+    #define RENDER_BACKEND "Vulkan"
+    void render() { std::cout << "Rendering with Vulkan" << std::endl; }
+#else
+    #define RENDER_BACKEND "Software"
+    void render() { std::cout << "Rendering with Software" << std::endl; }
+#endif
+
+#if GRAPHICS_QUALITY >= 3
+    #define TEXTURE_SIZE 4096
+    #define SHADOW_QUALITY "High"
+#elif GRAPHICS_QUALITY >= 2
+    #define TEXTURE_SIZE 2048
+    #define SHADOW_QUALITY "Medium"
+#elif GRAPHICS_QUALITY >= 1
+    #define TEXTURE_SIZE 1024
+    #define SHADOW_QUALITY "Low"
+#else
+    #define TEXTURE_SIZE 512
+    #define SHADOW_QUALITY "Minimal"
+#endif
+
+int main() {
+    std::cout << "Backend: " << RENDER_BACKEND << std::endl;
+    std::cout << "Texture: " << TEXTURE_SIZE << std::endl;
+    std::cout << "Shadows: " << SHADOW_QUALITY << std::endl;
+    render();
+    return 0;
+}
+```
+
+3.3 文件包含 — #include / 头文件守卫 / #pragma once
+------------------------------------------------------
+
+**#include 的两种形式**
+
+```cpp
+#include <iostream>     // 尖括号：搜索标准系统头文件路径
+#include "myheader.h"   // 双引号：先在当前文件目录搜索，未找到再搜索系统路径
+#include "../lib/utils.h" // 相对路径也可以
+```
+
+**头文件守卫 (Include Guard) 的标准写法**
+
+```cpp
+// mylibrary.h
+#ifndef MYLIBRARY_H        // 检查宏是否未定义
+#define MYLIBRARY_H        // 立即定义，防止重复包含
+
+// ... 头文件内容 ...
+
+#endif                     // MYLIBRARY_H
+```
+
+**#pragma once**
+
+```cpp
+#pragma once
+
+// 头文件内容
+// 编译器保证此文件在当前编译单元中只被处理一次
+```
+
+两者的对比如下：
+
+| 特性 | #ifndef/#define/#endif | #pragma once |
+|------|----------------------|-------------|
+| 标准化程度 | C++标准 | 非标准（但广泛支持） |
+| 唯一性保证 | 依赖宏名称（可能冲突） | 依赖文件路径（更可靠） |
+| 编译速度 | 略慢（需打开文件检查宏） | 略快（编译器内部记录） |
+| 符号链接处理 | 按宏名称 | 取决于实现 |
+| 前置声明支持 | 手动前置声明 | 同样需要手动 |
+
+实践中推荐的组合：
+
+```cpp
+#pragma once
+#ifndef MYCOMPLEXHEADER_H
+#define MYCOMPLEXHEADER_H
+
+// 同时使用两者：
+// #pragma once 提供编译器级别的快速跳过
+// #ifndef 提供标准兼容性，作为后备方案
+
+// ... 头文件内容 ...
+
+#endif
+```
+
+3.4 特殊操作符 — # 和 ##
+----------------------------
+
+**# 操作符 — 字符串化**
+
+```cpp
+#define STRINGIFY(x) #x
+#define TO_STRING_WITH_FILE(var) "File: " __FILE__ ", Variable: " #var
+
+// #@ 将字符转换为字符字面量 (MSVC 扩展，非标准)
+// #define CHARIFY(c) #@c
+
+const char* name = STRINGIFY(Hello World);  // "Hello World"
+const char* desc = STRINGIFY(42);           // "42"
+// 注意：STRINGIFY(42 + 10) -> "42 + 10" (表达式本身被字符串化，不是结果)
+```
+
+**## 操作符 — Token 连接**
+
+```cpp
+#define GLUE(a, b) a ## b
+
+// 参数需要先展开，否则宏标识符本身不会被展开
+#define GLUE2(a, b) GLUE(a, b)
+
+// 用于生成唯一的变量名
+#define UNIQUE_VAR(prefix) GLUE(prefix, __COUNTER__) // __COUNTER__ 是 GCC 扩展
+
+// 用于生成类方法名
+#define PROPERTY(type, name) \
+    type GLUE(_, name); \
+    type GLUE(get_, name)() const { return GLUE(_, name); } \
+    void GLUE(set_, name)(type val) { GLUE(_, name) = val; }
+```
+
+3.5 其他预处理指令 — #error / #line / #pragma
+-----------------------------------------------
+
+**#error — 生成编译错误**
+
+```cpp
+#ifdef _WIN32
+    // Windows 平台
+#elif defined(__linux__)
+    // Linux 平台
+#else
+    #error "Unsupported platform! Only Windows and Linux are supported."
+#endif
+
+#if __cplusplus < 201103L
+    #error "C++11 or later is required!"
+#endif
+```
+
+**#line — 修改行号和文件名**
+
+```cpp
+#line 100 "custom_file.cpp"
+// 从此行开始，编译器认为当前行号是 100，文件名是 "custom_file.cpp"
+// 影响 __LINE__ 和 __FILE__ 的值，以及错误/警告信息中的位置
+
+// 不指定文件名，只改变行号
+#line 50
+
+// 重置为实际位置
+#line __LINE__ __FILE__
+```
+
+**#pragma — 编译器特定指令**
+
+```cpp
+#pragma once                     // 头文件保护
+#pragma pack(1)                  // 设置结构体对齐为1字节
+#pragma warning(disable: 4996)   // MSVC: 禁用特定警告
+#pragma GCC diagnostic ignored "-Wunused-variable"  // GCC: 忽略特定警告
+#pragma message("Compiling " __FILE__)   // 在编译时输出信息
+#pragma optimize("", off)        // MSVC: 关闭优化
+
+// C++标准规定的 pragma 不多，大多数 pragma 是编译器特定的
+```
+
+3.6 预定义宏 — __FILE__ / __LINE__ / __DATE__ / __TIME__ 等
+---------------------------------------------------------------
+
+C++ 标准预定义了以下宏，用于获取编译时的上下文信息：
+
+```cpp
+#include <iostream>
+
+int main() {
+    // 源文件名 (字符串字面量)
+    std::cout << "File: " << __FILE__ << std::endl;
+
+    // 当前行号 (整数)
+    std::cout << "Line: " << __LINE__ << std::endl;
+
+    // 编译日期 (格式: "Mmm dd yyyy")
+    std::cout << "Date: " << __DATE__ << std::endl;
+
+    // 编译时间 (格式: "hh:mm:ss")
+    std::cout << "Time: " << __TIME__ << std::endl;
+
+    // C++ 标准版本号
+    std::cout << "C++ std: " << __cplusplus << std::endl;
+    // __cplusplus 值含义:
+    // 199711L → C++98
+    // 201103L → C++11
+    // 201402L → C++14
+    // 201703L → C++17
+    // 202002L → C++20
+    // 202302L → C++23
+
+    // C 标准版本 (如果适用)
+#ifdef __STDC__
+    std::cout << "C std: " << __STDC_VERSION__ << std::endl;
+#endif
+
+    // 编译器检测
+#ifdef __GNUC__
+    std::cout << "GCC version: " << __GNUC__ << "." << __GNUC_MINOR__ << std::endl;
+#endif
+#ifdef __clang__
+    std::cout << "Clang version: " << __clang_major__ << "." << __clang_minor__ << std::endl;
+#endif
+#ifdef _MSC_VER
+    std::cout << "MSVC version: " << _MSC_VER << std::endl;
+#endif
+
+    // 函数名（不是预处理器宏，而是编译器内置标识符，但常一起使用）
+    std::cout << "Function: " << __func__ << std::endl;  // C++11 标准
+    // GCC 还提供 __FUNCTION__ 和 __PRETTY_FUNCTION__ 扩展
+
+    return 0;
+}
+```
+
+**完整的预定义宏列表：**
+
+| 宏 | 含义 | 类型 |
+|---|------|------|
+| __FILE__ | 当前源文件名 | 字符串字面量 |
+| __LINE__ | 当前行号 | 整数常量 |
+| __DATE__ | 编译日期 "Mmm dd yyyy" | 字符串字面量 |
+| __TIME__ | 编译时间 "hh:mm:ss" | 字符串字面量 |
+| __cplusplus | C++ 标准版本号 | 整数常量 |
+| __STDC__ | 是否遵循 C 标准 (仅当C编译器) | 整数 1 |
+| __STDC_VERSION__ | C 标准版本 (仅当C编译器) | 整数常量 |
+| __STDC_HOSTED__ | 是否为托管实现 | 整数 1/0 |
+| __func__ | 当前函数名 (非宏，C++11) | const char[] |
+
+**编译器特定预定义宏：**
+
+```cpp
+// GCC / Clang
+__GNUC__              // GCC 主版本号
+__GNUC_MINOR__        // GCC 次版本号
+__GNUC_PATCHLEVEL__   // GCC 补丁号
+__clang__             // 如果使用 Clang 编译器则定义
+__linux__             // Linux 目标
+__APPLE__             // macOS 目标
+__unix__              // Unix-like 系统
+__x86_64__            // x86_64 架构
+__aarch64__           // ARM 64位架构
+
+// MSVC
+_MSC_VER              // MSVC 版本号
+_WIN32                // Windows 32/64 位
+_WIN64                // Windows 64 位
+_M_AMD64              // AMD64 架构
+_M_ARM64              // ARM64 架构
+
+// 跨平台检测
+#ifdef _WIN32
+    // Windows
+#elif defined(__linux__)
+    // Linux
+#elif defined(__APPLE__) && defined(__MACH__)
+    // macOS
+#elif defined(__FreeBSD__)
+    // FreeBSD
+#else
+    // 未知平台
+#endif
+```
+
+3.7 头文件包含搜索路径
+-------------------------
+
+理解 #include 的搜索策略对于构建系统很重要：
+
+```bash
+# 查看默认的头文件搜索路径
+$ g++ -E -x c++ - -v < /dev/null
+
+# 添加额外的头文件搜索路径
+$ g++ -I/path/to/include -I../lib/include source.cpp
+
+# 常见的系统头文件路径 (Linux)
+/usr/include/
+/usr/local/include/
+/usr/include/c++/<version>/
+
+# 头文件搜索顺序:
+# 1. 对于 #include "file.h": 先搜索当前文件所在目录，再搜索 -I 指定的路径，
+#    最后搜索系统路径
+# 2. 对于 #include <file.h>: 先搜索 -I 指定的路径，再搜索系统路径
+#    不搜索当前文件所在目录
+```
+
+3.8 宏展开的特殊规则
+-----------------------
+
+**递归展开抑制**
+如果一个宏的展开过程中再次遇到了自己，预处理器不会二次展开（防止无限递归）：
+
+```cpp
+#define FOO BAR
+#define BAR FOO
+
+// FOO → BAR → FOO  (第二次的 FOO 不再展开)
+// 最终结果是 FOO (作为普通标识符)
+```
+
+**展开顺序规则**
+1. 先扫描替换文本中的 # 和 ## 操作符
+2. 然后展开参数中的宏（参数扩展）
+3. 最后展开替换文本中的宏（替换体扩展）
+4. 递归步骤 2-3，直到没有新的展开可以发生
+
+```cpp
+#include <iostream>
+
+#define A 1
+#define B 2
+#define CONCAT_A_B(x, y) x ## y
+#define CONCAT(x, y) CONCAT_A_B(x, y)
+
+int main() {
+    int value_1_2 = 100;
+    int result = CONCAT(value_, CONCAT(A, B));
+    // 展开: CONCAT(value_, CONCAT(1, 2))
+    //     -> CONCAT(value_, CONCAT_A_B(1, 2))
+    //     -> CONCAT(value_, 12)
+    //     -> CONCAT_A_B(value_, 12)
+    //     -> value_12  (但我们要的是 value_1_2!)
+
+    // 正确做法: 意识到 A 和 B 已经是值，不能用 ## 来"计算"它们的和
+    // 需要设计不同的宏结构
+
+    std::cout << result << std::endl;
+    return 0;
+}
+```
+
+3.9 宏的跨文件使用
+--------------------
+
+宏只在其定义的翻译单元内有效。要让宏在多个源文件中可用，必须将它定义在头文件中：
+
+```cpp
+// config.h
+#ifndef CONFIG_H
+#define CONFIG_H
+
+#define APP_VERSION_MAJOR 1
+#define APP_VERSION_MINOR 5
+#define APP_VERSION_PATCH 3
+
+// 将版本号转为字符串的宏
+#define STRINGIFY_HELPER(x) #x
+#define STRINGIFY(x) STRINGIFY_HELPER(x)
+#define APP_VERSION_STRING \
+    STRINGIFY(APP_VERSION_MAJOR) "." \
+    STRINGIFY(APP_VERSION_MINOR) "." \
+    STRINGIFY(APP_VERSION_PATCH)
+
+#define FEATURE_LOGIN
+#define FEATURE_NETWORK
+// #define FEATURE_AI    // 可选，注释掉即禁用
+
+#endif
+```
+
+```cpp
+// main.cpp
+#include <iostream>
+#include "config.h"  // 包含后，所有宏都可用
+
+namespace App {
+    void printVersion() {
+        std::cout << "Version: " << APP_VERSION_STRING << std::endl;
+    }
+}
+
+int main() {
+    App::printVersion();
+
+    std::cout << "Enabled features: ";
+#ifdef FEATURE_LOGIN
+    std::cout << "Login ";
+#endif
+#ifdef FEATURE_NETWORK
+    std::cout << "Network ";
+#endif
+#ifdef FEATURE_AI
+    std::cout << "AI ";
+#endif
+    std::cout << std::endl;
+
+    return 0;
+}
+```
+
+
+================================================================================
+### 第三节: 实用代码案例（生活场景举例）
+================================================================================
+
+案例一：调试日志系统
+----------------------------------------------------------------
+
+生活场景：开发一个手机 App 的后端服务程序，需要在开发和调试阶段记录详细日志，
+但发布给用户时关闭日志以减少性能开销。需要支持不同级别的日志（DEBUG/INFO/WARN/
+ERROR），每条日志自动包含文件名和行号。
+
+本案例涉及：可变参数宏、__FILE__/__LINE__、条件编译控制功能开关、命名空间
+组织代码（融入第一章知识）。
+
+```cpp
+#include <iostream>
+#include <string>
+#include <ctime>
+#include <cstdarg>
+
+// ============================================================
+// 日志配置 (编译时控制)
+// 注释掉下面这行即可全局关闭调试日志
+#define ENABLE_LOGGING
+
+// 设置日志级别: 0=ALL, 1=INFO+, 2=WARN+, 3=ERROR+
+#define LOG_LEVEL 0
+
+// ============================================================
+// 日志系统命名空间
+// ============================================================
+namespace Logger {
+
+    // 获取当前时间字符串
+    // (使用第六章的 <chrono> 更好，此处为简化示范用 <ctime>)
+    namespace {
+        std::string getTimestamp() {
+            std::time_t now = std::time(nullptr);
+            char buffer[32];
+            std::strftime(buffer, sizeof(buffer),
+                          "%Y-%m-%d %H:%M:%S",
+                          std::localtime(&now));
+            return std::string(buffer);
+        }
+    }
+
+    // 日志级别枚举
+    enum Level {
+        DEBUG = 0,
+        INFO  = 1,
+        WARN  = 2,
+        ERROR = 3
+    };
+
+    // 获取日志级别名称
+    inline const char* levelToString(Level lv) {
+        switch (lv) {
+            case DEBUG: return "DEBUG";
+            case INFO:  return "INFO ";
+            case WARN:  return "WARN ";
+            case ERROR: return "ERROR";
+            default:    return "UNKN ";
+        }
+    }
+
+    // 底层打印函数
+    inline void logPrint(Level lv, const char* file, int line,
+                         const char* fmt, ...) {
+        char buffer[1024];
+
+        va_list args;
+        va_start(args, fmt);
+        std::vsnprintf(buffer, sizeof(buffer), fmt, args);
+        va_end(args);
+
+        std::cout << "[" << getTimestamp() << "] "
+                  << "[" << levelToString(lv) << "] "
+                  << "[" << file << ":" << line << "] "
+                  << buffer << std::endl;
+    }
+
+}  // namespace Logger
+
+// ============================================================
+// 日志宏定义 — 对外暴露的便捷接口
+// ============================================================
+
+#ifdef ENABLE_LOGGING
+
+    // 调试日志: 仅在 LOG_LEVEL == 0 时输出
+    #if LOG_LEVEL <= 0
+        #define LOG_DEBUG(fmt, ...) \
+            Logger::logPrint(Logger::DEBUG, __FILE__, __LINE__, \
+                             fmt, ##__VA_ARGS__)
+    #else
+        #define LOG_DEBUG(fmt, ...) ((void)0)
+    #endif
+
+    // 信息日志: LOG_LEVEL <= 1 时输出
+    #if LOG_LEVEL <= 1
+        #define LOG_INFO(fmt, ...) \
+            Logger::logPrint(Logger::INFO, __FILE__, __LINE__, \
+                             fmt, ##__VA_ARGS__)
+    #else
+        #define LOG_INFO(fmt, ...) ((void)0)
+    #endif
+
+    // 警告日志: LOG_LEVEL <= 2 时输出
+    #if LOG_LEVEL <= 2
+        #define LOG_WARN(fmt, ...) \
+            Logger::logPrint(Logger::WARN, __FILE__, __LINE__, \
+                             fmt, ##__VA_ARGS__)
+    #else
+        #define LOG_WARN(fmt, ...) ((void)0)
+    #endif
+
+    // 错误日志: 始终输出 (LOG_LEVEL <= 3)
+    #if LOG_LEVEL <= 3
+        #define LOG_ERROR(fmt, ...) \
+            Logger::logPrint(Logger::ERROR, __FILE__, __LINE__, \
+                             fmt, ##__VA_ARGS__)
+    #else
+        #define LOG_ERROR(fmt, ...) ((void)0)
+    #endif
+
+#else
+    // 完全禁用日志: 所有宏展开为空操作
+    #define LOG_DEBUG(fmt, ...) ((void)0)
+    #define LOG_INFO(fmt, ...)  ((void)0)
+    #define LOG_WARN(fmt, ...)  ((void)0)
+    #define LOG_ERROR(fmt, ...) ((void)0)
+#endif
+
+// ============================================================
+// 模拟 App 后台服务
+// ============================================================
+namespace AppServer {
+
+    namespace UserService {
+        bool authenticateUser(const std::string& username,
+                              const std::string& password) {
+            LOG_DEBUG("开始认证用户: %s", username.c_str());
+
+            // 模拟数据库查询
+            if (password.length() < 6) {
+                LOG_WARN("用户 %s 的密码过短 (长度: %zu)",
+                         username.c_str(), password.length());
+                return false;
+            }
+
+            LOG_INFO("用户 %s 认证成功", username.c_str());
+            return true;
+        }
+    }
+
+    namespace Database {
+        bool connect(const std::string& host, int port) {
+            LOG_INFO("正在连接数据库 %s:%d", host.c_str(), port);
+
+            // 模拟连接过程
+            if (port < 1024) {
+                LOG_WARN("数据库端口 %d 可能需要管理员权限", port);
+            }
+
+            LOG_DEBUG("数据库连接已建立: %s:%d", host.c_str(), port);
+            return true;
+        }
+
+        bool disconnect() {
+            LOG_INFO("断开数据库连接");
+            return true;
+        }
+    }
+
+    namespace PaymentProcessor {
+        bool processPayment(const std::string& orderId, double amount) {
+            LOG_INFO("处理支付: 订单=%s, 金额=%.2f",
+                     orderId.c_str(), amount);
+
+            if (amount <= 0) {
+                LOG_ERROR("无效支付金额: %.2f (订单=%s)",
+                          amount, orderId.c_str());
+                return false;
+            }
+
+            if (amount > 10000) {
+                LOG_WARN("大额支付: %.2f (订单=%s), 需要额外审核",
+                         amount, orderId.c_str());
+            }
+
+            LOG_DEBUG("支付完成: 订单=%s", orderId.c_str());
+            return true;
+        }
+    }
+
+}  // namespace AppServer
+
+int main() {
+    // 可以编译时切换日志级别:
+    // 修改 #define LOG_LEVEL 为 1/2/3 或注释掉 #define ENABLE_LOGGING
+
+    std::cout << "==== 应用服务器启动 ====" << std::endl;
+
+    // 使用命名空间别名简化
+    using namespace AppServer;
+
+    // 数据库操作
+    Database::connect("localhost", 3306);
+
+    // 用户认证
+    UserService::authenticateUser("alice", "12345");   // 密码太短
+    UserService::authenticateUser("bob", "secureP@ss");  // 认证成功
+
+    // 支付处理
+    PaymentProcessor::processPayment("ORD-001", 99.99);
+    PaymentProcessor::processPayment("ORD-002", -5.00);  // 无效
+    PaymentProcessor::processPayment("ORD-003", 15000.00); // 大额
+
+    Database::disconnect();
+
+    std::cout << "==== 服务器关闭 ====" << std::endl;
+    return 0;
+}
+```
+
+代码讲解：
+- `Logger` 命名空间封装了日志输出的底层实现
+- `ENABLE_LOGGING` 宏控制日志总开关
+- `LOG_LEVEL` 宏控制输出的最低日志级别
+- `LOG_DEBUG` 等四个宏自动携带 __FILE__ 和 __LINE__，方便调试时快速定位代码
+- 使用 `##__VA_ARGS__` (GCC扩展) 处理可变参数为空的情况
+- 当日志被禁用时，所有宏展开为 `((void)0)`，不产生任何运行时开销
+
+
+案例二：跨平台文件路径处理器
+----------------------------------------------------------------
+
+生活场景：开发一个文件管理器 App，需要在 Windows 和 Linux 上都能正确拼接文件
+路径。Windows 使用反斜杠 `\`，Linux 使用正斜杠 `/`。还需要根据平台选择不同的
+系统 API。
+
+本案例涉及：条件编译（#ifdef）、平台检测宏、宏函数的跨平台抽象。
+
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+
+// ============================================================
+// 平台检测与配置
+// ============================================================
+#ifdef _WIN32
+    #define PLATFORM_NAME "Windows"
+    #define PATH_SEPARATOR '\\'
+    #define PATH_SEPARATOR_STR "\\"
+    #define NEWLINE "\r\n"
+    #define DRIVE_SEPARATOR ':'
+#elif defined(__APPLE__) && defined(__MACH__)
+    #define PLATFORM_NAME "macOS"
+    #define PATH_SEPARATOR '/'
+    #define PATH_SEPARATOR_STR "/"
+    #define NEWLINE "\n"
+    #define DRIVE_SEPARATOR 0
+#else
+    #define PLATFORM_NAME "Linux"
+    #define PATH_SEPARATOR '/'
+    #define PATH_SEPARATOR_STR "/"
+    #define NEWLINE "\n"
+    #define DRIVE_SEPARATOR 0
+#endif
+
+// 平台特定的 API 宏
+#ifdef _WIN32
+    #define PLATFORM_CREATE_DIR(path) \
+        std::cout << "[WinAPI] CreateDirectory(" << path << ")" << std::endl
+    #define PLATFORM_DELETE_FILE(path) \
+        std::cout << "[WinAPI] DeleteFile(" << path << ")" << std::endl
+    #define PLATFORM_GET_HOME() \
+        std::string(std::getenv("USERPROFILE") ? std::getenv("USERPROFILE") : "C:\\Users\\Default")
+#else
+    #define PLATFORM_CREATE_DIR(path) \
+        std::cout << "[POSIX] mkdir(" << path << ", 0755)" << std::endl
+    #define PLATFORM_DELETE_FILE(path) \
+        std::cout << "[POSIX] unlink(" << path << ")" << std::endl
+    #define PLATFORM_GET_HOME() \
+        std::string(std::getenv("HOME") ? std::getenv("HOME") : "/home/default")
+#endif
+
+// ============================================================
+// 文件路径处理命名空间
+// ============================================================
+namespace PathUtils {
+
+    // 判断是否为绝对路径
+    bool isAbsolute(const std::string& path) {
+        if (path.empty()) return false;
+    #ifdef _WIN32
+        // Windows: C:\xxx 或 \\server\share
+        return (path.length() >= 2 && path[1] == ':') ||
+               (path.length() >= 2 && path[0] == '\\' && path[1] == '\\');
+    #else
+        // Linux/macOS: /xxx
+        return path[0] == '/';
+    #endif
+    }
+
+    // 拼接路径
+    std::string join(const std::string& base, const std::string& sub) {
+        if (base.empty()) return sub;
+        if (sub.empty()) return base;
+
+        // 检查 base 末尾是否有分隔符
+        bool baseEnds = (base.back() == PATH_SEPARATOR);
+        bool subStarts = (sub.front() == PATH_SEPARATOR);
+
+        if (baseEnds && subStarts) {
+            return base + sub.substr(1);  // 去掉 sub 开头的分隔符
+        } else if (!baseEnds && !subStarts) {
+            return base + PATH_SEPARATOR + sub;
+        } else {
+            return base + sub;
+        }
+    }
+
+    // 多段路径拼接 (使用可变参数宏模拟)
+    std::string joinMany(std::initializer_list<std::string> parts) {
+        std::string result;
+        for (const auto& part : parts) {
+            result = join(result, part);
+        }
+        return result;
+    }
+
+    // 获取路径的父目录
+    std::string parentDir(const std::string& path) {
+        if (path.empty()) return ".";
+        auto pos = path.find_last_of(PATH_SEPARATOR);
+        if (pos == std::string::npos) return ".";
+        if (pos == 0) return std::string(1, PATH_SEPARATOR);  // 根目录
+        return path.substr(0, pos);
+    }
+
+    // 获取文件名部分
+    std::string fileName(const std::string& path) {
+        if (path.empty()) return "";
+        auto pos = path.find_last_of(PATH_SEPARATOR);
+        if (pos == std::string::npos) return path;
+        return path.substr(pos + 1);
+    }
+
+    // 获取扩展名
+    std::string extension(const std::string& path) {
+        std::string fname = fileName(path);
+        auto pos = fname.find_last_of('.');
+        if (pos == std::string::npos) return "";
+        return fname.substr(pos);
+    }
+
+}  // namespace PathUtils
+
+// ============================================================
+// 宏：批量拼接路径（使用 # 和 ## 生成调试信息）
+// ============================================================
+#define JOIN_PATH_DEBUG(base, sub) \
+    (std::cout << "[Join] " #base " + " #sub " = ", \
+     PathUtils::join(base, sub))
+
+// ============================================================
+// 模拟文件管理器
+// ============================================================
+namespace FileManager {
+
+    namespace Config {
+        // 默认的工作目录
+        std::string getDefaultPath() {
+            std::string home = PLATFORM_GET_HOME();
+            return PathUtils::join(home, "Documents");
+        }
+    }
+
+    // 创建目录树
+    void createDirectoryTree(const std::string& root) {
+        std::cout << "\n在 " << root << " 下创建目录树:" << std::endl;
+
+        std::vector<std::string> subdirs = {
+            "Projects", "Downloads", "Pictures", "Music", "Videos"
+        };
+
+        for (const auto& dir : subdirs) {
+            std::string fullPath = PathUtils::join(root, dir);
+            PLATFORM_CREATE_DIR(fullPath);
+        }
+    }
+
+    // 显示路径信息
+    void showPathInfo(const std::string& path) {
+        std::cout << "\n--- 路径信息 ---" << std::endl;
+        std::cout << "完整路径: " << path << std::endl;
+        std::cout << "平台: " << PLATFORM_NAME << std::endl;
+        std::cout << "分隔符: " << PATH_SEPARATOR_STR << std::endl;
+        std::cout << "是否为绝对路径: "
+                  << (PathUtils::isAbsolute(path) ? "是" : "否") << std::endl;
+        std::cout << "父目录: " << PathUtils::parentDir(path) << std::endl;
+        std::cout << "文件名: " << PathUtils::fileName(path) << std::endl;
+        std::cout << "扩展名: " << PathUtils::extension(path) << std::endl;
+    }
+
+}  // namespace FileManager
+
+int main() {
+    std::cout << "╔══════════════════════════════╗" << std::endl;
+    std::cout << "║     文 件 管 理 器          ║" << std::endl;
+    std::cout << "╚══════════════════════════════╝\n" << std::endl;
+
+    std::cout << "运行平台: " << PLATFORM_NAME << std::endl;
+    std::cout << "路径分隔符: '" << PATH_SEPARATOR_STR << "'" << std::endl;
+
+    // 显示 HOME 目录
+    std::string home = PLATFORM_GET_HOME();
+    std::cout << "用户目录: " << home << std::endl;
+
+    // 路径拼接
+    std::string docsDir = FileManager::Config::getDefaultPath();
+    std::cout << "文档目录: " << docsDir << std::endl;
+
+    // 使用宏拼接并输出调试信息
+    std::string projectDir = JOIN_PATH_DEBUG(docsDir, "Projects");
+    std::string sourceFile = PathUtils::join(projectDir, "main.cpp");
+
+    // 多段路径拼接
+    std::string deepPath = PathUtils::joinMany(
+        {home, "Projects", "MyApp", "src", "core", "engine.cpp"});
+    std::cout << "\n深层路径: " << deepPath << std::endl;
+
+    // 路径信息展示
+    FileManager::showPathInfo(deepPath);
+
+    // 模拟创建目录
+    FileManager::createDirectoryTree(docsDir);
+
+    // 模拟删除文件
+    PLATFORM_DELETE_FILE(PathUtils::join(docsDir, "temp.txt"));
+
+    return 0;
+}
+```
+
+代码讲解：
+- `#ifdef _WIN32` 在编译时自动检测平台，定义对应的路径分隔符、API 宏等
+- `PLATFORM_CREATE_DIR` 宏展开为不同平台的 API 调用代码
+- `PathUtils` 命名空间封装了跨平台路径处理函数
+- `JOIN_PATH_DEBUG` 宏利用 `#` 操作符输出调试信息，展示拼接前后的路径
+- 程序在 Windows 和 Linux 下编译会得到不同的行为，但源代码完全一致
+
+
+案例三：游戏引擎配置系统
+----------------------------------------------------------------
+
+生活场景：一个游戏引擎需要在编译时根据目标平台（PC/移动端/主机）进行不同的配置，
+包括选择数学库的精度、是否启用 3D 渲染、调试级别等。同时需要用宏定义常用数学
+常量，并通过 # 和 ## 操作符自动生成调试字符串。
+
+本案例融入：命名空间（第一章）组织不同模块、宏定义、条件编译、#/## 操作符。
+
+```cpp
+#include <iostream>
+#include <string>
+#include <cmath>
+
+// ============================================================
+// 编译时配置
+// ============================================================
+
+// 目标平台: 0=PC, 1=Mobile, 2=Console
+#define TARGET_PLATFORM 0
+
+// 精度: 0=float(单精度), 1=double(双精度)
+#define PRECISION_MODE 0
+
+// 功能开关
+#define ENABLE_3D_RENDERING
+#define ENABLE_PHYSICS
+// #define ENABLE_VR      // 注释掉即禁用 VR 支持
+
+// 调试级别: 0=None, 1=Basic, 2=Verbose
+#define DEBUG_LEVEL 2
+
+// ============================================================
+// 根据平台选择配置
+// ============================================================
+#if TARGET_PLATFORM == 0
+    // PC
+    #define PLATFORM_TAG "PC"
+    #define MAX_TEXTURE_SIZE 4096
+    #define MAX_FPS 144
+    #define SUPPORT_KEYBOARD_MOUSE
+#elif TARGET_PLATFORM == 1
+    // 移动端
+    #define PLATFORM_TAG "Mobile"
+    #define MAX_TEXTURE_SIZE 1024
+    #define MAX_FPS 60
+    #define SUPPORT_TOUCH
+#elif TARGET_PLATFORM == 2
+    // 游戏主机
+    #define PLATFORM_TAG "Console"
+    #define MAX_TEXTURE_SIZE 2048
+    #define MAX_FPS 60
+    #define SUPPORT_GAMEPAD
+#endif
+
+// ============================================================
+// 根据精度选择数值类型
+// ============================================================
+#if PRECISION_MODE == 0
+    using Real = float;
+    #define REAL_TAG "float"
+    #define REAL_EPSILON 1.192092896e-07f
+#else
+    using Real = double;
+    #define REAL_TAG "double"
+    #define REAL_EPSILON 2.2204460492503131e-16
+#endif
+
+// ============================================================
+// 数学常量宏定义
+// ============================================================
+#define PI      3.14159265358979323846
+#define TWO_PI  (2.0 * PI)
+#define HALF_PI (PI / 2.0)
+#define E       2.71828182845904523536
+#define DEG2RAD (PI / 180.0)
+#define RAD2DEG (180.0 / PI)
+#define GOLDEN_RATIO 1.61803398874989484820
+
+// ============================================================
+// 字符串化辅助
+// ============================================================
+#define STRINGIFY_HELPER(x) #x
+#define STRINGIFY(x) STRINGIFY_HELPER(x)
+
+// 生成"平台-精度-日期"的组合标识字符串
+#define BUILD_SIGNATURE \
+    STRINGIFY(TARGET_PLATFORM) "-" REAL_TAG "-" __DATE__
+
+// ============================================================
+// 调试宏
+// ============================================================
+#if DEBUG_LEVEL >= 1
+    #define ENGINE_LOG(msg) \
+        std::cout << "[ENGINE][" << __FILE__ << ":" << __LINE__ << "] " \
+                  << msg << std::endl
+#else
+    #define ENGINE_LOG(msg) ((void)0)
+#endif
+
+#if DEBUG_LEVEL >= 2
+    #define ENGINE_LOG_VERBOSE(msg) \
+        std::cout << "[ENGINE-V][" << __func__ << "] " \
+                  << msg << std::endl
+#else
+    #define ENGINE_LOG_VERBOSE(msg) ((void)0)
+#endif
+
+// ============================================================
+// ## 操作符：生成函数名
+// ============================================================
+#define MAKE_RENDERER_FUNC(apiName) \
+    void GLUE2(render_, apiName)() { \
+        std::cout << "Rendering with " #apiName " API" << std::endl; \
+    }
+
+// 两层展开（前面已定义）
+#define GLUE(a, b) a ## b
+#define GLUE2(a, b) GLUE(a, b)
+
+// ============================================================
+// 引擎命名空间层次
+// ============================================================
+namespace GameEngine {
+
+    namespace Math {
+        Real clamp(Real value, Real lo, Real hi) {
+            return value < lo ? lo : (value > hi ? hi : value);
+        }
+
+        Real lerp(Real a, Real b, Real t) {
+            return a + t * (b - a);
+        }
+
+        Real degToRad(Real degrees) {
+            return degrees * static_cast<Real>(DEG2RAD);
+        }
+
+        Real radToDeg(Real radians) {
+            return radians * static_cast<Real>(RAD2DEG);
+        }
+    }
+
+    namespace Core {
+        void initEngine() {
+            ENGINE_LOG("正在初始化游戏引擎...");
+
+            std::cout << "\n╔══════════════════════════════╗" << std::endl;
+            std::cout << "║   游戏引擎配置信息           ║" << std::endl;
+            std::cout << "╠══════════════════════════════╣" << std::endl;
+            std::cout << "║ 目标平台: " << PLATFORM_TAG << std::endl;
+            std::cout << "║ 精度模式: " << REAL_TAG << std::endl;
+            std::cout << "║ 最大纹理: " << MAX_TEXTURE_SIZE << "x"
+                      << MAX_TEXTURE_SIZE << std::endl;
+            std::cout << "║ 最大帧率: " << MAX_FPS << " FPS" << std::endl;
+            std::cout << "║ 构建签名: " << BUILD_SIGNATURE << std::endl;
+            std::cout << "║ 编译时间: " << __DATE__ << " " << __TIME__ << std::endl;
+            std::cout << "╚══════════════════════════════╝\n" << std::endl;
+
+            ENGINE_LOG_VERBOSE("引擎核心模块已加载");
+        }
+
+        void printFeatures() {
+            std::cout << "启用的功能:" << std::endl;
+        #ifdef ENABLE_3D_RENDERING
+            std::cout << "  [x] 3D渲染" << std::endl;
+        #else
+            std::cout << "  [ ] 3D渲染 (未启用)" << std::endl;
+        #endif
+        #ifdef ENABLE_PHYSICS
+            std::cout << "  [x] 物理引擎" << std::endl;
+        #else
+            std::cout << "  [ ] 物理引擎 (未启用)" << std::endl;
+        #endif
+        #ifdef ENABLE_VR
+            std::cout << "  [x] VR/AR支持" << std::endl;
+        #else
+            std::cout << "  [ ] VR/AR支持 (未启用)" << std::endl;
+        #endif
+        }
+    }  // namespace Core
+
+    namespace Renderer {
+        // 使用 ## 生成的函数
+        MAKE_RENDERER_FUNC(OpenGL)
+        MAKE_RENDERER_FUNC(Vulkan)
+        MAKE_RENDERER_FUNC(DirectX)
+        MAKE_RENDERER_FUNC(Metal)
+
+        void renderFrame() {
+            ENGINE_LOG_VERBOSE("开始渲染帧...");
+            render_OpenGL();  // 使用 ## 生成的函数
+        }
+    }
+
+    namespace Physics {
+        // 根据精度计算重力
+        constexpr Real GRAVITY = static_cast<Real>(9.80665);
+
+        Real calculateFallDistance(Real timeSeconds) {
+            // d = 1/2 * g * t^2
+            Real half = static_cast<Real>(0.5);
+            return half * GRAVITY * timeSeconds * timeSeconds;
+        }
+
+        void simulateStep(Real deltaTime) {
+            ENGINE_LOG_VERBOSE("物理模拟步进: dt = "
+                               + std::to_string(deltaTime));
+        }
+    }
+
+}  // namespace GameEngine
+
+// ============================================================
+// 内存调试宏（为第三章动态内存做铺垫）
+// ============================================================
+#if DEBUG_LEVEL >= 1
+    #define DEBUG_ALLOC(type, count) \
+        []() -> type* { \
+            ENGINE_LOG("分配内存: " #type "[" #count "]"); \
+            return new type[count]; \
+        }()
+    #define DEBUG_FREE(ptr) \
+        do { \
+            ENGINE_LOG("释放内存: " #ptr); \
+            delete[] (ptr); \
+            (ptr) = nullptr; \
+        } while(0)
+#else
+    #define DEBUG_ALLOC(type, count) (new type[count])
+    #define DEBUG_FREE(ptr) do { delete[] (ptr); (ptr) = nullptr; } while(0)
+#endif
+
+int main() {
+    // 第一部分：引擎初始化（使用 Core 命名空间）
+    GameEngine::Core::initEngine();
+    GameEngine::Core::printFeatures();
+
+    // 第二部分：数学运算（使用 Math 命名空间）
+    std::cout << "\n=== 数学常量演示 ===" << std::endl;
+    std::cout << "PI = " << PI << std::endl;
+    std::cout << "E  = " << E << std::endl;
+    std::cout << "黄金比例 = " << GOLDEN_RATIO << std::endl;
+
+    using GameEngine::Math;
+    Real angle = 90.0f;
+    std::cout << angle << "度 = " << degToRad(angle) << " 弧度" << std::endl;
+    std::cout << PI/2 << "弧度 = " << radToDeg(static_cast<Real>(PI/2.0))
+              << " 度" << std::endl;
+
+    // clamp 和 lerp
+    std::cout << "clamp(2.5, 0, 1) = " << clamp(2.5f, 0.0f, 1.0f) << std::endl;
+    std::cout << "lerp(0, 10, 0.75) = " << lerp(0.0f, 10.0f, 0.75f) << std::endl;
+
+    // 第三部分：渲染（使用 Renderer 命名空间）
+    std::cout << "\n=== 渲染测试 ===" << std::endl;
+    GameEngine::Renderer::render_OpenGL();
+    GameEngine::Renderer::render_Vulkan();
+    GameEngine::Renderer::renderFrame();
+
+    // 第四部分：物理模拟
+    std::cout << "\n=== 物理模拟 ===" << std::endl;
+    Real time = 3.0f;
+    std::cout << "物体自由落体 " << time << " 秒后下落距离: "
+              << GameEngine::Physics::calculateFallDistance(time) << " 米"
+              << std::endl;
+    GameEngine::Physics::simulateStep(0.016f);  // 约 60 FPS
+
+    // 第五部分：内存调试宏演示
+    std::cout << "\n=== 内存调试 ===" << std::endl;
+    int* testBuffer = DEBUG_ALLOC(int, 100);
+    DEBUG_FREE(testBuffer);
+
+    return 0;
+}
+```
+
+代码讲解：
+- `TARGET_PLATFORM` 宏在编译时选择平台配置（PC/移动/主机）
+- `PRECISION_MODE` 宏控制使用 `float` 还是 `double` 精度
+- `#ifdef ENABLE_3D_RENDERING` 等条件实现功能模块的可选编译
+- `MAKE_RENDERER_FUNC(apiName)` 宏利用 `##` 操作符自动生成不同 API 的渲染函数
+- `STRINGIFY` / `BUILD_SIGNATURE` 利用 `#` 操作符生成编译信息字符串
+- `GameEngine::Math` / `GameEngine::Core` / `GameEngine::Renderer` / 
+  `GameEngine::Physics` 命名空间组织不同模块
+- `DEBUG_ALLOC` / `DEBUG_FREE` 宏为第三章的动态内存主题做铺垫
+
+
+================================================================================
+### 第四节: 课后习题
+================================================================================
+
+习题：应用程序配置管理器
+----------------------------
+
+**场景描述**：
+编写一个应用程序配置管理器，它可以在编译时切换 DEBUG 和 RELEASE 两种模式，并
+根据模式输出不同的调试日志。同时在头文件中使用标准头文件守卫。
+
+**要求实现**：
+
+1. **定义一个 CONFIG_MODE 宏**：
+   - 值为 0 表示 RELEASE 模式
+   - 值为 1 表示 DEBUG 模式
+   - 在 DEBUG 模式下，所有配置读取操作要自动输出调试日志（包含文件名和行号）
+
+2. **头文件守卫**：
+   - 创建 `app_config.h`（或直接用单文件模拟），使用 `#ifndef / #define / #endif`
+     实现头文件守卫
+   - 额外添加 `#pragma once` 作为双重保护
+
+3. **定义 APP_VERSION 相关宏**：
+   - `APP_VERSION_MAJOR`、`APP_VERSION_MINOR`、`APP_VERSION_PATCH` 三个数字宏
+   - 用 `#` 操作符将版本号拼接为 "major.minor.patch" 格式的字符串
+
+4. **条件编译使用 C++版本特性**：
+   - 检测 `__cplusplus` 的值
+   - 当 C++17 及以上时，使用 `std::optional` 来返回配置值
+   - 当低于 C++17 时，使用指针（返回 nullptr 表示未找到）
+   - 用条件编译选择对应的实现方式
+
+5. **实现 ConfigManager 命名空间**：
+   - 提供 `getString(key)`、`getInt(key)`、`getBool(key)` 三个配置读取函数
+   - 用一个内部的 `std::map` 存储配置项
+   - 在 DEBUG 模式下，每次读取配置都输出日志
+   - 在 RELEASE 模式下，静默读取
+
+6. **主函数演示**：
+   - 读取多个配置项
+   - 展示 DEBUG 和 RELEASE 模式下的不同行为（修改宏后重新编译）
+
+**参考答案框架**：
+
+```cpp
+#include <iostream>
+#include <string>
+#include <map>
+
+// ============================================================
+// 头文件守卫（模拟 app_config.h）
+// ============================================================
+#ifndef APP_CONFIG_H
+#define APP_CONFIG_H
+#pragma once
+
+// 编译模式: 0 = RELEASE, 1 = DEBUG
+#define CONFIG_MODE 1
+
+// 版本号
+#define APP_VERSION_MAJOR 2
+#define APP_VERSION_MINOR 1
+#define APP_VERSION_PATCH 5
+
+// 将版本号转为字符串
+#define STRINGIFY_HELPER(x) #x
+#define STRINGIFY(x) STRINGIFY_HELPER(x)
+#define APP_VERSION_STRING \
+    STRINGIFY(APP_VERSION_MAJOR) "." \
+    STRINGIFY(APP_VERSION_MINOR) "." \
+    STRINGIFY(APP_VERSION_PATCH)
+
+// ============================================================
+// 调试日志宏
+// ============================================================
+#if CONFIG_MODE == 1
+    #define CONFIG_LOG(msg) \
+        std::cout << "[DEBUG-CONFIG][" << __FILE__ << ":" << __LINE__ \
+                  << "] " << msg << std::endl
+#else
+    #define CONFIG_LOG(msg) ((void)0)
+#endif
+
+// ============================================================
+// C++ 版本条件编译
+// ============================================================
+#if __cplusplus >= 201703L
+    #include <optional>
+    #define OPTIONAL_RETURN(type) std::optional<type>
+    #define NO_VALUE std::nullopt
+    #define UNWRAP_OR(opt, default_val) (opt.value_or(default_val))
+#else
+    #define OPTIONAL_RETURN(type) type*
+    #define NO_VALUE nullptr
+    #define UNWRAP_OR(opt, default_val) ((opt) ? *(opt) : (default_val))
+#endif
+
+#endif  // APP_CONFIG_H
+
+// ============================================================
+// 配置管理器命名空间
+// ============================================================
+namespace ConfigManager {
+
+    namespace {
+        // 内部配置存储
+        std::map<std::string, std::string> configStore;
+
+        // 初始化默认配置
+        struct ConfigInitializer {
+            ConfigInitializer() {
+                configStore["app.name"] = "MySuperApp";
+                configStore["app.version"] = APP_VERSION_STRING;
+                configStore["server.host"] = "localhost";
+                configStore["server.port"] = "8080";
+                configStore["feature.ai"] = "true";
+                configStore["feature.logging"] = "true";
+                configStore["cache.size_mb"] = "256";
+                configStore["max_connections"] = "100";
+                configStore["timeout_seconds"] = "30";
+                configStore["debug.enabled"] = (CONFIG_MODE == 1) ? "true" : "false";
+            }
+        };
+        ConfigInitializer init;  // 静态初始化
+    }  // 匿名命名空间
+
+    // 获取字符串配置
+    OPTIONAL_RETURN(std::string) getString(const std::string& key) {
+        CONFIG_LOG("读取字符串配置: " << key);
+        auto it = configStore.find(key);
+        if (it != configStore.end()) {
+            CONFIG_LOG("  值: " << it->second);
+            return it->second;
+        }
+        CONFIG_LOG("  配置项不存在: " << key);
+        return NO_VALUE;
+    }
+
+    // 获取整数配置
+    OPTIONAL_RETURN(int) getInt(const std::string& key) {
+        CONFIG_LOG("读取整数配置: " << key);
+        auto it = configStore.find(key);
+        if (it != configStore.end()) {
+            int value = std::stoi(it->second);
+            CONFIG_LOG("  值: " << value);
+            return value;
+        }
+        CONFIG_LOG("  配置项不存在: " << key);
+        return NO_VALUE;
+    }
+
+    // 获取布尔配置
+    OPTIONAL_RETURN(bool) getBool(const std::string& key) {
+        CONFIG_LOG("读取布尔配置: " << key);
+        auto it = configStore.find(key);
+        if (it != configStore.end()) {
+            bool value = (it->second == "true" || it->second == "1");
+            CONFIG_LOG("  值: " << (value ? "true" : "false"));
+            return value;
+        }
+        CONFIG_LOG("  配置项不存在: " << key);
+        return NO_VALUE;
+    }
+
+    // 列出所有配置
+    void listAll() {
+        std::cout << "\n=== 全部配置项 ===" << std::endl;
+        for (const auto& pair : configStore) {
+            std::cout << "  " << pair.first << " = " << pair.second << std::endl;
+        }
+    }
+}  // namespace ConfigManager
+
+int main() {
+    std::cout << "╔══════════════════════════════╗" << std::endl;
+    std::cout << "║   应 用 配 置 管 理 器      ║" << std::endl;
+    std::cout << "╚══════════════════════════════╝\n" << std::endl;
+
+    std::cout << "编译模式: "
+              << (CONFIG_MODE == 1 ? "DEBUG" : "RELEASE") << std::endl;
+    std::cout << "版本: " << APP_VERSION_STRING << std::endl;
+
+#ifdef __cplusplus
+    std::cout << "C++标准: " << __cplusplus << std::endl;
+#endif
+
+#if __cplusplus >= 201703L
+    std::cout << "使用 C++17 特性: std::optional" << std::endl;
+#else
+    std::cout << "使用传统方式: 指针返回值" << std::endl;
+#endif
+
+    ConfigManager::listAll();
+
+    std::cout << "\n=== 配置读取 ===" << std::endl;
+
+    // 读取存在的配置
+    auto serverHost = ConfigManager::getString("server.host");
+    auto serverPort = ConfigManager::getInt("server.port");
+    auto cacheSize = ConfigManager::getInt("cache.size_mb");
+    auto aiEnabled = ConfigManager::getBool("feature.ai");
+    auto debugEnabled = ConfigManager::getBool("debug.enabled");
+
+    std::cout << "\n=== 读取结果 ===" << std::endl;
+    std::cout << "服务器: "
+              << UNWRAP_OR(serverHost, std::string("unknown"))
+              << ":" << UNWRAP_OR(serverPort, 80) << std::endl;
+    std::cout << "缓存大小: "
+              << UNWRAP_OR(cacheSize, 128) << " MB" << std::endl;
+    std::cout << "AI功能: "
+              << (UNWRAP_OR(aiEnabled, false) ? "启用" : "禁用") << std::endl;
+    std::cout << "调试: "
+              << (UNWRAP_OR(debugEnabled, false) ? "启用" : "禁用") << std::endl;
+
+    // 读取不存在的配置
+    auto unknown = ConfigManager::getString("nonexistent.key");
+    std::cout << "未知配置项: "
+              << UNWRAP_OR(unknown, std::string("<未找到>")) << std::endl;
+
+    return 0;
+}
+```
+
+**考察要点**：
+- 条件编译（#if / #ifdef）的实际应用
+- 头文件守卫的两种方式（#ifndef + #pragma once）
+- # 操作符将版本号宏转为字符串
+- 根据 __cplusplus 的值条件编译不同的实现方式
+- DEBUG/RELEASE 模式下宏行为的不同
+- 可变参数宏在日志中的应用
+
+================================================================================
+### 补充知识：进阶主题
+================================================================================
+
+5.1 宏展开的陷阱与高级技巧
+----------------------------
+
+**陷阱一：宏参数的多次求值**
+
+```cpp
+#include <iostream>
+
+#define SQUARE(x) ((x) * (x))
+
+int getValue() {
+    static int counter = 0;
+    std::cout << "getValue() 调用 #" << (++counter) << std::endl;
+    return counter;
+}
+
+int main() {
+    // SQUARE(getValue()) 展开为 ((getValue()) * (getValue()))
+    // getValue() 被调用了两次！
+    int result = SQUARE(getValue());
+    std::cout << "SQUARE(getValue()) = " << result << std::endl;
+    // 输出: getValue() 调用 #1, #2, #3, #4...
+    // 注意副作用！
+
+    // 正确的替代方案：使用模板函数
+    // template<typename T> T square(T x) { return x * x; }
+    // square(getValue()) — getValue() 只调用一次
+    return 0;
+}
+```
+
+**陷阱二：宏名为标识符时的处理**
+
+```cpp
+#include <iostream>
+
+#define foo bar
+
+// 宏定义本身不会被自己的递归展开影响
+#define bar baz
+// foo → bar → baz
+// bar → baz
+
+int main() {
+    int foo = 10;  // 预处理后: int baz = 10;
+    int bar = 20;  // 预处理后: int baz = 20; ← 冲突！
+    // 编译错误: baz 被定义了两次
+
+    return 0;
+}
+```
+
+**陷阱三：宏与命名空间同名（万不可为）**
+
+```cpp
+#define MyLib  // 定义了一个空的宏
+
+namespace MyLib {  // 预处理器将 MyLib 替换为空 → namespace { }
+    // 这个命名空间变成了匿名命名空间！
+    // ...所有代码的行为都变了...
+}
+
+// 教训：宏名称不要与命名空间、类名、函数名相同
+```
+
+**高级技巧一：X-Macro（X宏）技术**
+
+X-Macro 是一种利用预处理器生成重复代码的强大技术：
+
+```cpp
+#include <iostream>
+#include <string>
+
+// 第一步：定义类型列表（X宏文件）
+#define COLOR_TABLE \
+    X(RED,    0xFF0000, "红色") \
+    X(GREEN,  0x00FF00, "绿色") \
+    X(BLUE,   0x0000FF, "蓝色") \
+    X(YELLOW, 0xFFFF00, "黄色") \
+    X(CYAN,   0x00FFFF, "青色") \
+    X(MAGENTA,0xFF00FF, "品红") \
+    X(BLACK,  0x000000, "黑色") \
+    X(WHITE,  0xFFFFFF, "白色")
+
+// 第二步：利用 X 宏生成不同形式的代码
+
+// 生成枚举
+enum class Color {
+    #define X(name, hex, desc) name,
+    COLOR_TABLE
+    #undef X
+    COUNT  // 枚举总数
+};
+
+// 生成从枚举到名称的映射
+const char* colorName(Color c) {
+    switch (c) {
+        #define X(name, hex, desc) case Color::name: return #name;
+        COLOR_TABLE
+        #undef X
+        default: return "UNKNOWN";
+    }
+}
+
+// 生成从枚举到16进制值的映射
+int colorHex(Color c) {
+    switch (c) {
+        #define X(name, hex, desc) case Color::name: return hex;
+        COLOR_TABLE
+        #undef X
+        default: return 0;
+    }
+}
+
+// 生成从枚举到描述的映射
+const char* colorDesc(Color c) {
+    switch (c) {
+        #define X(name, hex, desc) case Color::name: return desc;
+        COLOR_TABLE
+        #undef X
+        default: return "未知颜色";
+    }
+}
+
+// 第三步：生成的代码自动同步 —— 修改 COLOR_TABLE 后所有映射自动更新
+int main() {
+    for (int i = 0; i < static_cast<int>(Color::COUNT); ++i) {
+        Color c = static_cast<Color>(i);
+        std::cout << colorName(c) << " | #"
+                  << std::hex << colorHex(c) << std::dec
+                  << " | " << colorDesc(c) << std::endl;
+    }
+    std::cout << "颜色总数: " << static_cast<int>(Color::COUNT) << std::endl;
+    return 0;
+}
+```
+
+X-Macro 的优势：维护者只需要修改 COLOR_TABLE 这一处，所有的枚举值、名称映射、
+属性映射都会自动保持一致。这在需要维护大量相关数据集合的场景下非常高效。
+
+**高级技巧二：宏用于编译时反射（Compile-Time Reflection）**
+
+虽然 C++ 不支持真正的运行时反射，但可以通过宏实现编译时的类型信息注册：
+
+```cpp
+#include <iostream>
+#include <string>
+#include <map>
+
+#define REGISTER_CLASS(ClassName) \
+    static const char* className() { return #ClassName; } \
+    static int classId() { return __LINE__; } \
+    static void* createInstance() { return new ClassName(); }
+
+#define REGISTER_CLASS_WITH_BASE(ClassName, BaseClass) \
+    static const char* className() { return #ClassName; } \
+    static int classId() { return __LINE__; } \
+    static BaseClass* createInstance() { return new ClassName(); }
+
+class Base {
+public:
+    virtual ~Base() {}
+    virtual void whoAmI() = 0;
+};
+
+class Dog : public Base {
+    REGISTER_CLASS_WITH_BASE(Dog, Base)
+public:
+    void whoAmI() override {
+        std::cout << "I am a " << className() << " (ID:"
+                  << classId() << ")" << std::endl;
+    }
+};
+
+class Cat : public Base {
+    REGISTER_CLASS_WITH_BASE(Cat, Base)
+public:
+    void whoAmI() override {
+        std::cout << "I am a " << className() << " (ID:"
+                  << classId() << ")" << std::endl;
+    }
+};
+
+int main() {
+    Dog dog;
+    Cat cat;
+
+    dog.whoAmI();
+    cat.whoAmI();
+
+    Dog* dogPtr = static_cast<Dog*>(Dog::createInstance());
+    Cat* catPtr = static_cast<Cat*>(Cat::createInstance());
+    dogPtr->whoAmI();
+    catPtr->whoAmI();
+
+    delete dogPtr;
+    delete catPtr;
+
+    return 0;
+}
+```
+
+5.2 跨平台条件编译完整指南
+----------------------------
+
+在实际项目中，条件编译主要用于处理不同平台、不同编译器、不同标准版本下的
+代码差异。以下是一个完整的跨平台检测框架：
+
+```cpp
+#include <iostream>
+
+// ============================================================
+// 平台检测
+// ============================================================
+#if defined(_WIN32) || defined(_WIN64)
+    #define PLATFORM_WINDOWS 1
+    #if defined(_WIN64)
+        #define PLATFORM_WINDOWS_64 1
+    #else
+        #define PLATFORM_WINDOWS_32 1
+    #endif
+#elif defined(__APPLE__) && defined(__MACH__)
+    #define PLATFORM_APPLE 1
+    #include <TargetConditionals.h>
+    #if TARGET_IPHONE_SIMULATOR || TARGET_OS_IPHONE
+        #define PLATFORM_IOS 1
+    #else
+        #define PLATFORM_MACOS 1
+    #endif
+#elif defined(__ANDROID__)
+    #define PLATFORM_ANDROID 1
+#elif defined(__linux__)
+    #define PLATFORM_LINUX 1
+#elif defined(__FreeBSD__)
+    #define PLATFORM_FREEBSD 1
+#else
+    #define PLATFORM_UNKNOWN 1
+#endif
+
+// ============================================================
+// 编译器检测
+// ============================================================
+#if defined(__clang__)
+    #define COMPILER_CLANG 1
+    #define COMPILER_NAME "Clang"
+    #define COMPILER_VERSION (__clang_major__ * 10000 + __clang_minor__ * 100)
+#elif defined(__GNUC__) || defined(__GNUG__)
+    #define COMPILER_GCC 1
+    #define COMPILER_NAME "GCC"
+    #define COMPILER_VERSION (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__)
+#elif defined(_MSC_VER)
+    #define COMPILER_MSVC 1
+    #define COMPILER_NAME "MSVC"
+    #define COMPILER_VERSION _MSC_VER
+#else
+    #define COMPILER_UNKNOWN 1
+    #define COMPILER_NAME "Unknown"
+    #define COMPILER_VERSION 0
+#endif
+
+// ============================================================
+// 架构检测
+// ============================================================
+#if defined(__x86_64__) || defined(_M_X64)
+    #define ARCH_X86_64 1
+    #define ARCH_NAME "x86_64"
+#elif defined(__i386__) || defined(_M_IX86)
+    #define ARCH_X86_32 1
+    #define ARCH_NAME "x86"
+#elif defined(__aarch64__) || defined(_M_ARM64)
+    #define ARCH_ARM_64 1
+    #define ARCH_NAME "ARM64"
+#elif defined(__arm__) || defined(_M_ARM)
+    #define ARCH_ARM_32 1
+    #define ARCH_NAME "ARM32"
+#elif defined(__riscv)
+    #if __riscv_xlen == 64
+        #define ARCH_RISCV64 1
+        #define ARCH_NAME "RISC-V 64"
+    #else
+        #define ARCH_RISCV32 1
+        #define ARCH_NAME "RISC-V 32"
+    #endif
+#else
+    #define ARCH_UNKNOWN 1
+    #define ARCH_NAME "Unknown"
+#endif
+
+// ============================================================
+// 字节序检测
+// ============================================================
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    #define BIG_ENDIAN 1
+#elif defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    #define LITTLE_ENDIAN 1
+#elif defined(_WIN32) || defined(__LITTLE_ENDIAN__)
+    #define LITTLE_ENDIAN 1
+#else
+    #define BIG_ENDIAN 1
+#endif
+
+// ============================================================
+// 根据平台选择特性
+// ============================================================
+#if defined(PLATFORM_WINDOWS)
+    #define DLL_EXPORT __declspec(dllexport)
+    #define DLL_IMPORT __declspec(dllimport)
+    #define ALIGNAS(n) __declspec(align(n))
+    #define THREAD_LOCAL __declspec(thread)
+    #define FORCE_INLINE __forceinline
+    #define NO_INLINE __declspec(noinline)
+#else
+    #define DLL_EXPORT __attribute__((visibility("default")))
+    #define DLL_IMPORT
+    #define ALIGNAS(n) __attribute__((aligned(n)))
+    #define THREAD_LOCAL __thread
+    #define FORCE_INLINE __attribute__((always_inline)) inline
+    #define NO_INLINE __attribute__((noinline))
+#endif
+
+int main() {
+    std::cout << "╔══════════════════════════════╗" << std::endl;
+    std::cout << "║     系 统 检 测 报 告       ║" << std::endl;
+    std::cout << "╠══════════════════════════════╣" << std::endl;
+
+    // 平台
+#ifdef PLATFORM_WINDOWS
+    std::cout << "║ 平台: Windows" << std::endl;
+#elif defined(PLATFORM_APPLE)
+    std::cout << "║ 平台: Apple (macOS/iOS)" << std::endl;
+#elif defined(PLATFORM_LINUX)
+    std::cout << "║ 平台: Linux" << std::endl;
+#elif defined(PLATFORM_ANDROID)
+    std::cout << "║ 平台: Android" << std::endl;
+#elif defined(PLATFORM_FREEBSD)
+    std::cout << "║ 平台: FreeBSD" << std::endl;
+#else
+    std::cout << "║ 平台: Unknown" << std::endl;
+#endif
+
+    std::cout << "║ 编译器: " << COMPILER_NAME
+              << " v" << COMPILER_VERSION << std::endl;
+    std::cout << "║ 架构: " << ARCH_NAME << std::endl;
+
+#ifdef BIG_ENDIAN
+    std::cout << "║ 字节序: Big Endian" << std::endl;
+#else
+    std::cout << "║ 字节序: Little Endian" << std::endl;
+#endif
+
+    std::cout << "║ C++ 标准: "
+#if __cplusplus >= 202302L
+              << "C++23"
+#elif __cplusplus >= 202002L
+              << "C++20"
+#elif __cplusplus >= 201703L
+              << "C++17"
+#elif __cplusplus >= 201402L
+              << "C++14"
+#elif __cplusplus >= 201103L
+              << "C++11"
+#else
+              << "Pre-C++11"
+#endif
+              << std::endl;
+
+    std::cout << "╚══════════════════════════════╝" << std::endl;
+
+    return 0;
+}
+```
+
+5.3 预处理器与编译优化
+------------------------
+
+**死代码消除（Dead Code Elimination）**
+
+条件编译可以在编译前就移除不需要的代码，比运行时条件判断更高效：
+
+```cpp
+#include <iostream>
+#include <chrono>
+
+// 编译时VS运行时条件判断的对比
+
+// 方法1：预处理条件编译（零运行时开销）
+#ifdef USE_FAST_ALGORITHM
+    #define computeValue(x) ((x) * (x) + (x) + 1)  // 快速算法
+#else
+    #define computeValue(x) ((x) * (x) * (x) - (x) + 7)  // 精确算法
+#endif
+
+// 方法2：运行时条件判断（有开销）
+int computeValueRuntime(int x, bool useFast) {
+    if (useFast) {
+        return x * x + x + 1;
+    } else {
+        return x * x * x - x + 7;
+    }
+}
+
+int main() {
+    const int ITERATIONS = 10000000;
+    volatile int result = 0;  // 防止编译器优化掉循环
+
+    // 编译时选择（方法1）
+    auto start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < ITERATIONS; ++i) {
+        result += computeValue(i);
+    }
+    auto end = std::chrono::high_resolution_clock::now();
+    std::cout << "编译时宏: "
+              << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()
+              << " us" << std::endl;
+
+    // 运行时选择（方法2）
+    start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < ITERATIONS; ++i) {
+        result += computeValueRuntime(i, true);
+    }
+    end = std::chrono::high_resolution_clock::now();
+    std::cout << "运行时if: "
+              << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()
+              << " us" << std::endl;
+
+    // 预处理宏直接生成了确定的代码路径，没有分支判断
+    // 运行时 if 每次迭代都要做比较和跳转
+
+    return 0;
+}
+```
+
+**Assert（断言）——条件编译的经典应用**
+
+```cpp
+#include <iostream>
+#include <cassert>
+
+// 自定义断言（比标准 assert 更灵活）
+#ifdef DEBUG
+    #define MY_ASSERT(condition, message) \
+        do { \
+            if (!(condition)) { \
+                std::cerr << "[ASSERT FAILED] " \
+                          << __FILE__ << ":" << __LINE__ << " | " \
+                          << "条件: " #condition << " | " \
+                          << "信息: " << message << std::endl; \
+                std::abort(); \
+            } \
+        } while(0)
+
+    #define MY_VERIFY(condition) MY_ASSERT(condition, "验证失败")
+#else
+    // 发布模式下完全移除
+    #define MY_ASSERT(condition, message) ((void)0)
+    #define MY_VERIFY(condition) ((void)0)
+#endif
+
+// 注意：标准 assert 在 NDEBUG 定义时也会被移除
+
+double divide(double a, double b) {
+    MY_ASSERT(b != 0.0, "除数不能为零");
+    return a / b;
+}
+
+int main() {
+    double result = divide(10.0, 2.0);
+    std::cout << "10 / 2 = " << result << std::endl;
+
+    // divide(10.0, 0.0);  // 这会触发断言
+
+    return 0;
+}
+```
+
+5.4 #pragma 指令大全
+--------------------
+
+虽然大部分 #pragma 是编译器特定的，但了解常用的 pragma 是实际开发中的必备知识。
+
+```cpp
+// ============================================================
+// GCC / Clang 常用 #pragma
+// ============================================================
+
+// 1. 诊断控制
+#pragma GCC diagnostic push              // 保存当前诊断状态
+#pragma GCC diagnostic ignored "-Wunused-variable"  // 忽略特定警告
+int unused_var = 42;
+#pragma GCC diagnostic pop               // 恢复之前的诊断状态
+
+// Clang 也可以用相同语法
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+// ... 使用已废弃的 API ...
+#pragma clang diagnostic pop
+
+// 2. 编译信息输出
+#pragma message("正在编译 " __FILE__ " (使用GCC扩展)")
+
+// 3. 优化控制
+#if defined(__GNUC__)
+    #pragma GCC optimize("O0")  // 对特定函数关闭优化
+    void debugFunction() {
+        // 这个函数不会被优化
+    }
+    #pragma GCC reset_options     // 恢复默认优化选项
+#endif
+
+// ============================================================
+// MSVC 常用 #pragma
+// ============================================================
+
+#ifdef _MSC_VER
+    // 警告控制
+    #pragma warning(push)
+    #pragma warning(disable: 4996)  // 忽略"不安全函数"警告
+    strcpy(dest, src);
+    #pragma warning(pop)
+
+    // 链接库
+    #pragma comment(lib, "ws2_32.lib")
+
+    // 结构体对齐
+    #pragma pack(push, 1)
+    struct PackedStruct {
+        char c;
+        int i;
+        short s;
+    };
+    #pragma pack(pop)
+#endif
+
+// ============================================================
+// 标准 #pragma (C++标准定义的)
+// ============================================================
+
+// 1. #pragma once — 头文件保护（虽非严格标准但广泛支持）
+#pragma once
+
+// 2. #pragma STDC FENV_ACCESS — 浮点环境访问（C99引入）
+// #pragma STDC FENV_ACCESS ON
+
+// 3. #pragma STDC FP_CONTRACT — 浮点表达式缩并
+// #pragma STDC FP_CONTRACT OFF
+
+// 4. #pragma STDC CX_LIMITED_RANGE — 复数运算范围限制
+// #pragma STDC CX_LIMITED_RANGE ON
+```
+
+5.5 预处理器的局限性及现代替代方案
+------------------------------------
+
+预处理器虽然强大，但有明显的局限性。以下是推荐使用现代 C++ 特性替代宏的指南：
+
+```cpp
+// ❌ 旧方式：宏定义常量
+#define PI 3.14159
+#define BUFFER_SIZE 256
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
+// ✅ 新方式：constexpr / const
+constexpr double PI = 3.141592653589793;
+constexpr int BUFFER_SIZE = 256;
+template<typename T>
+constexpr const T& max(const T& a, const T& b) { return a > b ? a : b; }
+
+// ❌ 旧方式：条件编译选择特性
+#ifdef USE_FEATURE_X
+    void process() { /* 实现A */ }
+#else
+    void process() { /* 实现B */ }
+#endif
+
+// ✅ 新方式：if constexpr + 模板特化
+template<bool EnableFeature>
+struct Processor {
+    void process() { /* 实现B */ }
+};
+template<>
+struct Processor<true> {
+    void process() { /* 实现A */ }
+};
+// 使用: Processor<USE_FEATURE_X>().process();
+
+// ❌ 旧方式：用宏生成代码
+#define PROPERTY(type, name) \
+    type name##_; \
+    type get##name() const { return name##_; } \
+    void set##name(type val) { name##_ = val; }
+
+// ✅ 新方式：取决于具体需求，但模板或代码生成工具可能更好
+// 对于简单的 getter/setter，推荐手写以保持清晰
+// 或者使用 IDE 的代码片段功能
+
+// ❌ 旧方式：用宏处理平台差异
+#ifdef _WIN32
+    void sleepMs(int ms) { Sleep(ms); }
+#else
+    void sleepMs(int ms) { usleep(ms * 1000); }
+#endif
+
+// ✅ 新方式：C++17 的 if constexpr
+// 但平台差异通常仍需预处理（编译前条件判断），
+// 这是少数预处理宏仍不可替代的场景之一
+```
+
+**预处理宏仍然不可替代的场景：**
+1. 头文件守卫（#ifndef + #define + #endif 或 #pragma once）
+2. 包含文件（#include）
+3. 条件编译平台特定代码（#ifdef _WIN32）
+4. __FILE__、__LINE__ 等预定义宏
+5. 断言宏（#ifdef NDEBUG）
+
+5.6 预处理器的调试技巧
+------------------------
+
+由于预处理器在编译之前运行，调试宏展开问题有时很棘手。以下技巧可以帮助排查：
+
+```bash
+# 技巧1: 使用 g++ -E 只做预处理，查看展开后的代码
+$ g++ -E source.cpp -o source_preprocessed.cpp
+$ cat source_preprocessed.cpp  # 查看宏展开后的完整翻译单元
+
+# 技巧2: 使用 -C 保留注释
+$ g++ -E -C source.cpp
+
+# 技巧3: 使用 -dM 列出所有预定义宏
+$ g++ -dM -E -x c++ /dev/null | sort
+$ g++ -dM -E -x c++ /dev/null | grep -i version
+
+# 技巧4: 使用 -H 查看头文件包含树
+$ g++ -H source.cpp
+# 输出显示:
+# . /usr/include/stdio.h
+# .. /usr/include/features.h
+# ... /usr/include/stdc-predef.h
+# 每个点代表一级嵌套深度
+
+# 技巧5: 使用 #error 故意触发编译错误来检查宏的值
+// 在源代码中:
+#define MY_MACRO 42
+#if MY_MACRO != 42
+    #error "MY_MACRO 不是 42"
+#endif
+
+// 查看宏展开后的值
+#pragma message("MY_MACRO = " STRINGIFY(MY_MACRO))
+
+// 技巧6: 使用 #pragma message 在编译时打印宏的值
+#define STRINGIFY_HELPER(x) #x
+#define STRINGIFY(x) STRINGIFY_HELPER(x)
+#pragma message("当前行号: " STRINGIFY(__LINE__))
+#pragma message("编译日期: " __DATE__)
+#pragma message("C++标准: " STRINGIFY(__cplusplus))
+```
+
+5.7 头文件依赖管理
+--------------------
+
+在大型项目中，不合理的 #include 会导致编译速度变慢。以下是最佳实践：
+
+```cpp
+// ============================================================
+// 头文件包含原则
+// ============================================================
+
+// 1. 只包含需要的头文件（不要包含不必要的）
+// ❌ 坏习惯：包含整个库的头文件
+// #include <bits/stdc++.h>  // 极度不推荐！非标准且影响编译速度
+
+// ✅ 好习惯：精确包含
+#include <iostream>   // 如果只要 cout
+#include <string>     // 如果只要 string
+#include <vector>     // 如果只要 vector
+
+// 2. 优先使用前向声明，减少头文件依赖
+// header.h
+#pragma once
+
+// 前向声明（只声明类名，不包含完整定义，避免头文件依赖传递）
+namespace MyLib {
+    class DataBase;         // 前向声明
+    class Logger;           // 前向声明
+    struct ConnectionInfo; // 前向声明
+}
+
+namespace App {
+    class Manager {
+    public:
+        void setDatabase(MyLib::DataBase* db);  // 指针/引用不需要完整定义
+        void log(MyLib::Logger* logger);
+
+    private:
+        MyLib::DataBase* database_;  // 指针，不需要完整定义
+        // MyLib::ConnectionInfo info_; // 错误！需要完整定义
+    };
+}
+
+// 3. 头文件自给自足原则
+// 每个头文件应该能独立编译（不依赖其他头文件的包含顺序）
+// 在编写完头文件后，立即在 .cpp 中最先包含它来验证
+// myheader.cpp
+#include "myheader.h"  // 第一行
+// #include <other_headers...>  // 之后的包含
+
+// 4. 使用编译防火墙 (Pimpl Idiom / Cheshire Cat)
+// widget.h
+#pragma once
+#include <memory>
+
+class Widget {
+public:
+    Widget();
+    ~Widget();  // 必须在 .cpp 中实现（析构 shared_ptr）
+    void doSomething();
+private:
+    struct Impl;                    // 前向声明实现类
+    std::unique_ptr<Impl> pImpl_;  // 隐藏实现细节
+};
+
+// widget.cpp
+#include "widget.h"
+#include <string>      // 在 .cpp 中才包含
+#include <vector>      // 这些依赖不会传递给包含 widget.h 的文件
+
+struct Widget::Impl {
+    std::string name;
+    std::vector<int> data;
+    int counter;
+    // ... 复杂的内部状态
+};
+
+Widget::Widget() : pImpl_(std::make_unique<Impl>()) {}
+Widget::~Widget() = default;
+void Widget::doSomething() { /* 使用 pImpl_->name 等 */ }
+```
+
+5.8 预处理器在构建系统中的角色
+-------------------------------
+
+现代 C++ 项目的构建系统（CMake、Meson 等）通常会定义宏来控制编译行为：
+
+```cmake
+# CMakeLists.txt 示例
+cmake_minimum_required(VERSION 3.14)
+project(MyApp VERSION 2.1.0)
+
+# 定义预处理器宏
+add_compile_definitions(
+    APP_NAME="MyApp"
+    APP_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+    APP_VERSION_MINOR=${PROJECT_VERSION_MINOR}
+    APP_VERSION_PATCH=${PROJECT_VERSION_PATCH}
+)
+
+# 根据构建类型定义
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_compile_definitions(DEBUG_BUILD LOG_LEVEL=0)
+else()
+    add_compile_definitions(LOG_LEVEL=2)
+endif()
+
+# 检测平台
+if(WIN32)
+    add_compile_definitions(PLATFORM_WINDOWS)
+elseif(APPLE)
+    add_compile_definitions(PLATFORM_APPLE)
+else()
+    add_compile_definitions(PLATFORM_LINUX)
+endif()
+```
+
+```cpp
+// 在源代码中使用构建系统定义的宏
+#include <iostream>
+
+#ifndef APP_NAME
+    #define APP_NAME "UnknownApp"
+#endif
+
+#ifndef APP_VERSION_MAJOR
+    #define APP_VERSION_MAJOR 0
+    #define APP_VERSION_MINOR 0
+    #define APP_VERSION_PATCH 0
+#endif
+
+int main() {
+    std::cout << "App: " << APP_NAME << " v"
+              << APP_VERSION_MAJOR << "."
+              << APP_VERSION_MINOR << "."
+              << APP_VERSION_PATCH << std::endl;
+
+#ifdef DEBUG_BUILD
+    std::cout << "模式: DEBUG" << std::endl;
+#else
+    std::cout << "模式: RELEASE" << std::endl;
+#endif
+
+    return 0;
+}
+```
+
+编译命令：
+```bash
+# 通过 -D 在命令行传递宏
+$ g++ -DAPP_NAME='"MyCustomApp"' \
+      -DAPP_VERSION_MAJOR=3 \
+      -DDEBUG_BUILD \
+      main.cpp -o myapp
+
+# 等价于在源代码中写了:
+# #define APP_NAME "MyCustomApp"
+# #define APP_VERSION_MAJOR 3
+# #define DEBUG_BUILD
+```
+
+
+================================================================================
+### 章节总结
+================================================================================
+
+本章的核心要点：
+
+1. **预处理器是编译第一阶段**的纯文本替换引擎。它运行在编译器解析 C++ 语法
+   之前，不了解类型、作用域和 C++ 语言结构。
+
+2. **编译四阶段**：预处理 → 编译 → 汇编 → 链接。预处理器输出翻译单元，
+   编译器处理 AST 生成汇编，汇编器生成目标文件，链接器合并为可执行文件。
+
+3. **#include** 只是简单的文件内容复制粘贴。头文件守卫（#ifndef + #define +
+   #endif 或 #pragma once）防止重复包含。
+
+4. **#define** 定义宏——一种无类型、无作用域的文本替换。永远用括号包裹宏参数
+   和宏体会，避免运算符优先级问题。优先使用 constexpr 和 inline 函数替代宏。
+
+5. **条件编译**（#ifdef、#ifndef、#if、#else、#elif、#endif）允许根据宏的
+   定义情况选择性地编译代码，是实现跨平台、DEBUG/RELEASE 模式切换的核心机制。
+
+6. **# 操作符**将宏参数转为字符串字面量，**## 操作符**连接两个 token。它们是
+   生成代码、自动命名等高级宏技巧的基础。
+
+7. **预定义宏**（__FILE__、__LINE__、__DATE__、__TIME__、__cplusplus）提供
+   编译时的上下文信息，在调试日志中不可或缺。
+
+8. **永远不要在头文件中写 using namespace**，也**永远不要在宏中使用命名空间
+   名称**作为宏名。
+
+9. 尽管现代 C++ 提供了许多宏的替代方案（constexpr、inline 函数、模板、
+   if constexpr），预处理在头文件管理、平台检测、编译时配置等方面的作用
+   仍然是不可替代的。
+
+================================================================================
+### 编程实践：预处理器常见错误与纠正
+================================================================================
+
+6.1 Do-While-Zero 惯用法深入
+
+```cpp
+// 经典错误：多语句宏没有包装
+#define BAD_SWAP(a, b) auto tmp = a; a = b; b = tmp
+
+// 如果在 if 后使用:
+// if (condition)
+//     BAD_SWAP(x, y);
+// else
+//     doOtherThing();
+// 展开后:
+// if (condition)
+//     auto tmp = x;    ← if 体到这里结束!
+// x = y;               ← 这条总是执行!
+// y = tmp;             ← 这条也总是执行!
+// ;                    ← 空语句
+// else                 ← 语法错误! 找不到匹配的 if
+//     doOtherThing();
+
+// 正确做法：
+#define GOOD_SWAP(a, b) do { auto tmp = (a); (a) = (b); (b) = tmp; } while(0)
+// do { ... } while(0) 需要末尾的分号，完美吸收用户写的分号
+```
+
+6.2 多行宏的续行符陷阱
+
+```cpp
+// 续行符 \ 必须是该行的最后一个字符（后面不能有空格或注释）
+#define MULTI_LINE_MACRO \
+    int a = 1; \      // ← 这些注释是 OK 的（GCC）
+    int b = 2;        // ← 最后一行不需要 \
+
+// 错误：\ 后面有不可见字符（空格/制表符）
+#define BROKEN_MACRO \
+    int x = 1; \___   // ← 下划线表示这里有一个空格
+    int y = 2;        //   这会导致预处理器认为宏体已经结束
+```
+
+6.3 常见编译器预定义宏速查表
+
+```cpp
+// ============================================================
+// GCC 特有预定义宏
+// ============================================================
+#ifdef __GNUC__
+    // __GNUC__        主版本号 (如 12)
+    // __GNUC_MINOR__  次版本号 (如 2)
+    // __GNUC_PATCHLEVEL__ 补丁号
+    // __GNUG__        等同于 __GNUC__ (GNU C++)
+
+    // __VERSION__     编译器版本字符串 (如 "12.2.0")
+    // __BASE_FILE__   主源文件名
+    // __INCLUDE_LEVEL__ 当前包含深度
+    // __OPTIMIZE__    如果开启了优化则定义
+    // __OPTIMIZE_SIZE__ 如果 -Os 则定义
+    // __NO_INLINE__   如果 -fno-inline 则定义
+    // __CHAR_UNSIGNED__ 如果 char 是无符号的
+    // __WCHAR_MAX__   wchar_t 最大值
+    // __SIZEOF_FLOAT__
+    // __SIZEOF_DOUBLE__
+    // __SIZEOF_POINTER__
+    // __SSE__   SSE 指令集
+    // __SSE2__  SSE2 指令集
+    // __AVX__   AVX 指令集
+    // __AVX2__  AVX2 指令集
+#endif
+
+// ============================================================
+// Clang 特有预定义宏
+// ============================================================
+#ifdef __clang__
+    // __clang_major__  主版本号
+    // __clang_minor__  次版本号
+    // __clang_patchlevel__ 补丁号
+    // __clang_version__ 版本字符串 (如 "14.0.0")
+    // __has_feature(x) 检测编译器特性
+    // __has_extension(x) 检测语言扩展
+    // __has_builtin(x) 检测内置函数
+    // __has_attribute(x) 检测属性支持
+    // __has_cpp_attribute(x) 检测 C++ 属性支持
+#endif
+
+// __has_feature 使用示例:
+// #if __has_feature(address_sanitizer)
+//     // ASan 已启用
+// #endif
+// #if __has_feature(thread_sanitizer)
+//     // TSan 已启用
+// #endif
+
+// ============================================================
+// MSVC 特有预定义宏
+// ============================================================
+#ifdef _MSC_VER
+    // _MSC_VER        版本号 (如 1934)
+    // _MSC_FULL_VER   完整版本号 (如 193431937)
+    // _MSVC_LANG      C++ 标准版本
+    // _M_AMD64        x64 目标
+    // _M_IX86         x86 目标
+    // _M_ARM64        ARM64 目标
+    // _M_ARM          ARM 目标
+    // _DEBUG          Debug 模式下定义
+    // _DLL            如果使用了 DLL 运行时库则定义
+    // _MT             如果使用了多线程运行时库则定义
+    // __FUNCDNAME__   修饰过的函数名
+    // __FUNCSIG__     函数签名
+#endif
+```
+
+6.4 使用 __has_include 检测头文件可用性 (C++17)
+
+```cpp
+#if __has_include(<optional>)
+    #include <optional>
+    #define HAVE_OPTIONAL 1
+#else
+    #define HAVE_OPTIONAL 0
+#endif
+
+#if __has_include(<filesystem>)
+    #include <filesystem>
+    namespace fs = std::filesystem;
+#elif __has_include(<experimental/filesystem>)
+    #include <experimental/filesystem>
+    namespace fs = std::experimental::filesystem;
+#else
+    #error "需要 filesystem 支持"
+#endif
+
+#if __has_include(<boost/optional.hpp>)
+    #include <boost/optional.hpp>
+#endif
+```
+
+6.5 使用 __has_cpp_attribute 检测属性支持 (C++20)
+
+```cpp
+// 检测 [[nodiscard]] 属性是否可用
+#if __has_cpp_attribute(nodiscard)
+    #define NODISCARD [[nodiscard]]
+#else
+    #define NODISCARD
+#endif
+
+// 检测 [[likely]] / [[unlikely]] 属性
+#if __has_cpp_attribute(likely)
+    #define LIKELY [[likely]]
+    #define UNLIKELY [[unlikely]]
+#else
+    #define LIKELY
+    #define UNLIKELY
+#endif
+
+NODISCARD int computeValue() {
+    return 42;
+}
+
+void process(int x) {
+    if (x > 0) LIKELY {
+        // 快速路径
+    } else UNLIKELY {
+        // 慢速路径
+    }
+}
+```
+
+6.6 预处理器在单元测试中的角色
+
+```cpp
+// catch.hpp / doctest 等测试框架大量使用预处理器
+// 以下是一个简化版测试框架
+
+#define TEST_CASE(name) \
+    static void test_function_##name(); \
+    static bool test_registered_##name = \
+        TestRegistry::registerTest(#name, test_function_##name); \
+    static void test_function_##name()
+
+#define CHECK(condition) \
+    do { \
+        if (!(condition)) { \
+            std::cerr << "FAIL: " << __FILE__ << ":" << __LINE__ \
+                      << " | CHECK(" << #condition << ") 失败!" \
+                      << std::endl; \
+            throw std::runtime_error("Test failed"); \
+        } \
+    } while(0)
+
+#define CHECK_EQ(a, b) \
+    do { \
+        auto _a = (a); auto _b = (b); \
+        if (!(_a == _b)) { \
+            std::cerr << "FAIL: " << __FILE__ << ":" << __LINE__ \
+                      << " | CHECK_EQ(" << #a << ", " << #b \
+                      << ") 失败! (" << _a << " != " << _b << ")" \
+                      << std::endl; \
+            throw std::runtime_error("Test failed"); \
+        } \
+    } while(0)
+
+// 测试框架核心
+namespace TestRegistry {
+    using TestFunc = void(*)();
+    std::map<const char*, TestFunc> tests;
+
+    void registerTest(const char* name, TestFunc func) {
+        tests[name] = func;
+    }
+
+    int runAll() {
+        int passed = 0, failed = 0;
+        for (auto& [name, func] : tests) {
+            std::cout << "运行测试: " << name << " ... ";
+            try {
+                func();
+                std::cout << "PASSED" << std::endl;
+                ++passed;
+            } catch (const std::exception& e) {
+                std::cout << "FAILED (" << e.what() << ")" << std::endl;
+                ++failed;
+            }
+        }
+        std::cout << "\n总计: " << passed << " 通过, "
+                  << failed << " 失败" << std::endl;
+        return failed;
+    }
+}
+
+// 示例测试用例
+TEST_CASE(SimpleMath) {
+    CHECK(1 + 1 == 2);
+    CHECK_EQ(3 * 4, 12);
+}
+
+TEST_CASE(StringOperations) {
+    std::string s = "hello";
+    CHECK_EQ(s.size(), 5u);
+}
+
+// 在实际项目中，测试用例的注册是自动的——不需要显式调用
+// 所有 TEST_CASE 中的函数在程序启动前就被注册到 TestRegistry 中
+```
+
+6.7 预处理器最终实践总结
+
+当你使用预处理器时，请记住以下口诀：
+
+```
+宏体括号不能少，     // 宏参数和整体都要加括号
+Do-While-零 记心头， // 多语句宏用 do { } while(0)
+命名空间不要省，     // 能用命名空间组织的代码优先用命名空间
+宏名大写是规矩，     // 宏名全部大写，一眼识别
+头文件守卫是底线，   // 每个头文件都要有
+C++方式优先选。      // 能不用宏就不用宏
+```
+
+```cpp
+// 反例合集（不要这样写）
+#define MIN(a,b) a<b?a:b                    // 没有括号
+#define INIT int a=1;int b=2;              // 多语句没用 do-while(0)
+#define my_value 100                       // 宏名没有大写（无法区分宏和变量）
+#define value 42                           // 太短太通用的宏名会污染全局
+// 头文件没有任何守卫                         // 重复包含会导致编译错误
+#define max(a,b) ((a)>(b)?(a):(b))        // 已经有 std::max 了！
+```
+
+这些总结将帮助你在后续章节的学习中保持对预处理器的正确使用习惯。

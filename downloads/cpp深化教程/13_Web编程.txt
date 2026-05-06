@@ -1,0 +1,2892 @@
+================================================================================
+                    第十三章  Web编程 (Web Programming)
+================================================================================
+
+
+### 第一节: 基础示例代码 + 计算机底层原理
+================================================================================
+
+【13.1.1 基础示例：TCP客户端】
+
+C++进行网络编程需要操作系统的Socket API。在Linux上使用POSIX socket，
+在Windows上使用Winsock2。以下是跨平台基础的TCP客户端示例：
+
+// ============================================================
+// 示例 13-1: 最简单的TCP回显客户端 (Linux)
+// ============================================================
+#include <iostream>
+#include <string>
+#include <cstring>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+
+#define PORT 8080
+#define SERVER_IP "127.0.0.1"
+
+int tcp_client_basic() {
+    // 1. 创建socket
+    // AF_INET: IPv4协议族
+    // SOCK_STREAM: 面向连接的TCP套接字
+    // 0: 自动选择协议(TCP)
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) {
+        std::perror("socket() failed");
+        return -1;
+    }
+
+    // 2. 设置服务器地址
+    struct sockaddr_in server_addr;
+    std::memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;           // IPv4
+    server_addr.sin_port = htons(PORT);          // 端口号(网络字节序)
+
+    // 将字符串IP转换为二进制形式
+    if (inet_pton(AF_INET, SERVER_IP,
+                  &server_addr.sin_addr) <= 0) {
+        std::perror("inet_pton() failed");
+        close(sock);
+        return -1;
+    }
+
+    // 3. 连接服务器
+    if (connect(sock, (struct sockaddr*)&server_addr,
+                sizeof(server_addr)) < 0) {
+        std::perror("connect() failed");
+        close(sock);
+        return -1;
+    }
+
+    std::cout << "已连接到服务器 " << SERVER_IP << ":"
+              << PORT << std::endl;
+
+    // 4. 发送数据
+    std::string message = "Hello, Server!";
+    ssize_t bytes_sent = send(sock, message.c_str(),
+                               message.size(), 0);
+    std::cout << "发送了 " << bytes_sent << " 字节: "
+              << message << std::endl;
+
+    // 5. 接收响应
+    char buffer[1024] = {0};
+    ssize_t bytes_received = recv(sock, buffer,
+                                   sizeof(buffer) - 1, 0);
+    if (bytes_received > 0) {
+        buffer[bytes_received] = '\0';
+        std::cout << "收到响应(" << bytes_received << "字节): "
+                  << buffer << std::endl;
+    }
+
+    // 6. 关闭连接
+    close(sock);
+
+    return 0;
+}
+
+// 编译: g++ -std=c++17 13-1.cpp -o 13-1
+
+
+【13.1.2 基础示例：TCP服务器】
+
+// ============================================================
+// 示例 13-2: TCP回显服务器 (Echo Server)
+// ============================================================
+#include <iostream>
+#include <cstring>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
+#define PORT 8080
+#define BACKLOG 10  // 等待连接队列的最大长度
+
+void handle_client(int client_sock, struct sockaddr_in client_addr) {
+    char client_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &client_addr.sin_addr,
+              client_ip, sizeof(client_ip));
+
+    std::cout << "客户端连接: " << client_ip << ":"
+              << ntohs(client_addr.sin_port) << std::endl;
+
+    char buffer[1024];
+    while (true) {
+        std::memset(buffer, 0, sizeof(buffer));
+        ssize_t bytes = recv(client_sock, buffer,
+                              sizeof(buffer) - 1, 0);
+
+        if (bytes <= 0) {
+            if (bytes == 0) {
+                std::cout << "客户端断开连接\n";
+            } else {
+                std::perror("recv() failed");
+            }
+            break;
+        }
+
+        std::cout << "收到 " << bytes << " 字节: "
+                  << buffer << std::endl;
+
+        // 回显（将收到的数据原样发回）
+        send(client_sock, buffer, bytes, 0);
+    }
+
+    close(client_sock);
+}
+
+int tcp_server_basic() {
+    // 1. 创建socket
+    int server_sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_sock < 0) {
+        std::perror("socket() failed");
+        return -1;
+    }
+
+    // 设置SO_REUSEADDR选项，允许端口重用（避免TIME_WAIT问题）
+    int opt = 1;
+    if (setsockopt(server_sock, SOL_SOCKET, SO_REUSEADDR,
+                   &opt, sizeof(opt)) < 0) {
+        std::perror("setsockopt() failed");
+    }
+
+    // 2. 绑定地址和端口
+    struct sockaddr_in server_addr;
+    std::memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = INADDR_ANY;  // 监听所有网络接口
+    server_addr.sin_port = htons(PORT);
+
+    if (bind(server_sock, (struct sockaddr*)&server_addr,
+             sizeof(server_addr)) < 0) {
+        std::perror("bind() failed");
+        close(server_sock);
+        return -1;
+    }
+
+    // 3. 开始监听
+    if (listen(server_sock, BACKLOG) < 0) {
+        std::perror("listen() failed");
+        close(server_sock);
+        return -1;
+    }
+
+    std::cout << "Echo服务器正在监听 0.0.0.0:" << PORT
+              << std::endl;
+
+    // 4. 接受连接循环
+    while (true) {
+        struct sockaddr_in client_addr;
+        socklen_t addr_len = sizeof(client_addr);
+
+        int client_sock = accept(server_sock,
+                                  (struct sockaddr*)&client_addr,
+                                  &addr_len);
+
+        if (client_sock < 0) {
+            std::perror("accept() failed");
+            continue;
+        }
+
+        handle_client(client_sock, client_addr);
+        // 注意：此处是串行处理！实际服务器需要多线程（第12章）
+    }
+
+    close(server_sock);
+    return 0;
+}
+
+// 编译: g++ -std=c++17 13-2.cpp -o 13-2
+
+
+【13.1.3 跨平台Socket基础：处理Windows头文件差异】
+
+// ============================================================
+// 示例 13-3: 跨平台Socket客户端封装
+// ============================================================
+#ifdef _WIN32
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
+    #pragma comment(lib, "ws2_32.lib")
+    using socklen_t = int;
+#else
+    #include <unistd.h>
+    #include <sys/socket.h>
+    #include <netinet/in.h>
+    #include <arpa/inet.h>
+    #include <netdb.h>
+    #define SOCKET_ERROR (-1)
+    using SOCKET = int;
+#endif
+
+#include <iostream>
+#include <string>
+#include <cstring>
+#include <stdexcept>
+
+class SocketInitializer {
+public:
+    SocketInitializer() {
+#ifdef _WIN32
+        WSADATA wsaData;
+        if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+            throw std::runtime_error("WSAStartup failed");
+        }
+#endif
+    }
+    ~SocketInitializer() {
+#ifdef _WIN32
+        WSACleanup();
+#endif
+    }
+};
+
+// 跨平台的socket关闭
+void close_socket(SOCKET sock) {
+#ifdef _WIN32
+    closesocket(sock);
+#else
+    close(sock);
+#endif
+}
+
+// 跨平台TCP客户端
+class TcpClient {
+private:
+    SOCKET sock_;
+    bool connected_;
+
+public:
+    TcpClient() : sock_(SOCKET_ERROR), connected_(false) {}
+
+    ~TcpClient() {
+        disconnect();
+    }
+
+    bool connect_to(const std::string& host, int port) {
+        sock_ = socket(AF_INET, SOCK_STREAM, 0);
+        if (sock_ == SOCKET_ERROR) {
+            return false;
+        }
+
+        struct sockaddr_in addr;
+        std::memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(port);
+
+        if (inet_pton(AF_INET, host.c_str(),
+                      &addr.sin_addr) <= 0) {
+            close_socket(sock_);
+            return false;
+        }
+
+        if (connect(sock_, (struct sockaddr*)&addr,
+                    sizeof(addr)) == SOCKET_ERROR) {
+            close_socket(sock_);
+            return false;
+        }
+
+        connected_ = true;
+        return true;
+    }
+
+    int send_data(const std::string& data) {
+        if (!connected_) return -1;
+        int sent = send(sock_, data.c_str(), data.size(), 0);
+        return sent;
+    }
+
+    std::string receive_data(size_t max_size = 4096) {
+        if (!connected_) return "";
+        std::vector<char> buffer(max_size);
+        int received = recv(sock_, buffer.data(),
+                             buffer.size() - 1, 0);
+        if (received > 0) {
+            buffer[received] = '\0';
+            return std::string(buffer.data());
+        }
+        return "";
+    }
+
+    void disconnect() {
+        if (connected_) {
+            close_socket(sock_);
+            connected_ = false;
+        }
+    }
+};
+
+int cross_platform_example() {
+    try {
+        SocketInitializer init;
+        TcpClient client;
+
+        if (client.connect_to("127.0.0.1", 80)) {
+            client.send_data("GET / HTTP/1.0\r\n\r\n");
+            std::string response = client.receive_data();
+            std::cout << "Response: " << response << std::endl;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+    }
+
+    return 0;
+}
+
+
+================================================================================
+【13.1.4 底层原理：TCP/IP协议栈分层】
+================================================================================
+
+TCP/IP协议栈是互联网通信的基础。理解分层模型对网络编程至关重要。
+
+一、TCP/IP四层模型（从顶到底）
+
+┌───────────────────────────────────────────────┐
+│  应用层 (Application)                          │
+│  HTTP, HTTPS, FTP, SMTP, DNS, WebSocket       │
+│  用户数据在这里产生和消费                        │
+├───────────────────────────────────────────────┤
+│  传输层 (Transport)                            │
+│  TCP (可靠), UDP (不可靠)                       │
+│  端口号标识不同应用，提供端到端通信               │
+├───────────────────────────────────────────────┤
+│  网络层 (Network / Internet)                   │
+│  IP (IPv4, IPv6), ICMP, ARP                   │
+│  IP地址标识网络中的主机，负责数据包的路由转发      │
+├───────────────────────────────────────────────┤
+│  数据链路层 (Link / Network Access)             │
+│  Ethernet, Wi-Fi, PPP                         │
+│  MAC地址标识同一网络中的设备，负责帧的传输         │
+├───────────────────────────────────────────────┤
+│  物理层 (Physical)                             │
+│  双绞线, 光纤, 无线电磁波                      │
+│  比特流的传输介质                               │
+└───────────────────────────────────────────────┘
+
+二、数据封装过程（封装/解封装）
+
+发送数据时（自上而下）：
+1. 应用层创建数据（如HTTP请求）
+2. 传输层：加上TCP头（源端口、目标端口、序列号等）→ TCP段(Segment)
+3. 网络层：加上IP头（源IP、目标IP、TTL等）→ IP数据包(Packet)
+4. 数据链路层：加上MAC帧头（源MAC、目标MAC、CRC校验）→ 以太网帧(Frame)
+5. 物理层：将帧转换为电信号/光信号/无线信号
+
+接收数据时（自下而上反过程），每一层剥离对应的头部，最终将数据递交给应用层。
+
+三、为什么分层？
+   1. 关注点分离：每层只需关心自己的职责
+   2. 标准化：不同厂商的实现可以互操作
+   3. 灵活性：可以替换某一层的实现而不影响其他层
+      （例如：从以太网切换到Wi-Fi，上层TCP/IP不需要改变）
+   4. 易于调试：网络问题可以逐层定位
+
+
+================================================================================
+【13.1.5 底层原理：TCP三次握手和四次挥手】
+================================================================================
+
+一、TCP三次握手（建立连接）
+
+   Client                                    Server
+     |                                         |
+     |─────── SYN (seq=x) ───────────────────→| 状态: SYN_SENT → SYN_RCVD
+     |                                         |
+     |←────── SYN+ACK (seq=y, ack=x+1) ───────| 状态: SYN_RCVD → 收到
+     |                                         |
+     |─────── ACK (ack=y+1) ──────────────────→| 状态: ESTABLISHED
+     |                                         |
+     |         ★ 连接已建立 ★                    |
+
+   每一次握手的作用：
+   - 第一次: Client → Server: "我要和你连接"（Client证明自己能发）
+   - 第二次: Server → Client: "我收到了，我愿意连接"（Server证明自己能收能发）
+   - 第三次: Client → Server: "我收到了你的确认"（Client证明自己能收）
+
+   为什么是三次而不是两次？
+   如果只有两次握手（Client发送SYN，Server回复SYN+ACK即建立连接），
+   假设Client的第一个SYN因为网络延迟被重传，然后连接关闭后这个旧SYN
+   才到达Server。Server回复SYN+ACK并分配资源建立连接，但Client已经
+   不需要这个连接了。三次握手允许Client最终不回复ACK，Server就知道
+   这个连接请求是无效的。
+
+二、TCP四次挥手（释放连接）
+
+   Client                                    Server
+     |                                         |
+     |─────── FIN (seq=m) ────────────────────→| 状态: FIN_WAIT_1
+     |                                         |
+     |←────── ACK (ack=m+1) ──────────────────| 状态: FIN_WAIT_2 / CLOSE_WAIT
+     |                                         |
+     |←────── FIN (seq=n) ────────────────────| 状态: LAST_ACK
+     |                                         |
+     |─────── ACK (ack=n+1) ──────────────────→| 状态: TIME_WAIT / CLOSED
+     |                                         |
+     |  (TIME_WAIT持续2MSL, 约1-4分钟)          |
+
+   为什么是四次而不是三次？
+   因为TCP是全双工的——双方都可以独立地发送数据。当一方发送FIN表示
+   "我没有数据要发送了"，但对方可能还有数据要发送。因此需要：
+   - 第一次FIN+ACK：主动关闭方→被动方，"我不发了"
+   - 第二次FIN+ACK：被动关闭方→主动方，"我不发了"（可能间隔一段时间）
+
+   TIME_WAIT状态的意义（主动关闭方等待2MSL）：
+   1. 确保最后的ACK被对方收到（如果ACK丢失，对方会重发FIN）
+   2. 让旧连接的迟到报文在网络中"消亡"，避免与新连接混淆
+
+   这也是为什么需要SO_REUSEADDR——允许服务器重启时立即绑定端口，
+   不用等待TIME_WAIT结束。
+
+
+================================================================================
+【13.1.6 底层原理：Socket的本质】
+================================================================================
+
+一、Socket是什么？
+
+Socket（套接字）是操作系统提供给应用程序的网络编程接口。在Linux中，
+Socket本质上是一个特殊的文件描述符(FD)。当你调用socket()时，内核
+创建一个数据结构（struct socket），关联以下内核资源：
+
+- 发送缓冲区 (Send Buffer)：应用数据在发送前暂存于此
+- 接收缓冲区 (Receive Buffer)：从网络收到的数据暂存于此，等待应用读取
+- TCP控制块 (TCB, TCP Control Block)：维护TCP连接状态
+  （状态机、序列号、窗口大小、RTT估算等）
+- 等待队列：连接等待队列（用于accept）、数据等待队列（用于read/recv）
+- 后端网络协议栈的关联（如TCP层的拥塞控制状态）
+
+内核为每个socket维护两个缓冲区：
+                    ┌─────────────────┐
+  用户态 send() ──→ │ 发送缓冲区       │ ──→ 网络协议栈 → 网卡
+                    │ (SO_SNDBUF)     │
+                    └─────────────────┘
+
+                    ┌─────────────────┐
+  用户态 recv() ←── │ 接收缓冲区       │ ←── 网卡 → 网络协议栈
+                    │ (SO_RCVBUF)     │
+                    └─────────────────┘
+
+默认缓冲区大小（Linux）：
+- SO_RCVBUF: 通常约 212992 字节 (可通过/proc/sys/net/core/rmem_default查看)
+- SO_SNDBUF: 通常约 212992 字节
+
+二、Socket在文件系统中的体现
+
+Socket与普通文件一样，也是文件描述符。这意味着：
+- 可以用close()关闭socket（释放FD和相关内核资源）
+- 可以用fcntl()设置非阻塞模式
+- 可以用select/poll/epoll进行多路复用
+- /proc/<pid>/fd/ 下可以查看进程的socket文件描述符
+
+在/proc/<pid>/fd/ 中，socket类型显示为 socket:[inode_number]
+
+三、阻塞I/O与非阻塞I/O
+
+阻塞模式（默认）：
+- recv()没有数据时，进程进入睡眠状态（TASK_INTERRUPTIBLE）
+- send()缓冲区满时，进程同样睡眠
+- accept()没有新连接时，进程睡眠
+
+非阻塞模式（通过fcntl设置O_NONBLOCK）：
+- recv()没有数据时立即返回-1，errno=EAGAIN/EWOULDBLOCK
+- send()缓冲区满时立即返回-1
+- 应用程序需要轮询（polling）或使用epoll/select
+
+设置非阻塞：
+int flags = fcntl(sock, F_GETFL, 0);
+fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+
+
+================================================================================
+【13.1.7 底层原理：epoll多路复用机制】
+================================================================================
+
+当服务器需要同时处理成千上万个连接时，为每个连接创建一个线程
+是不现实的（线程栈内存开销+上下文切换开销）。
+
+Linux的epoll（Event Poll）解决了这个问题。它允许一个线程高效地
+监控大量文件描述符的事件。
+
+一、epoll的三个核心系统调用
+
+1. epoll_create1(int flags)
+   - 创建一个epoll实例，返回一个文件描述符
+   - 内核分配一个eventpoll结构体，包含：
+     * 红黑树（rbtree）：存储监控的文件描述符，支持O(log n)的增删查
+     * 就绪链表（rdllist）：存储有事件发生的文件描述符
+
+2. epoll_ctl(int epfd, int op, int fd, struct epoll_event* event)
+   - 向epoll实例添加/修改/删除要监控的文件描述符
+   - 注册的事件类型：EPOLLIN（可读）、EPOLLOUT（可写）、EPOLLERR等
+   - 当fd上有事件发生时，内核将该fd加入就绪链表
+
+3. epoll_wait(int epfd, struct epoll_event* events, int maxevents, int timeout)
+   - 等待事件发生，返回就绪的文件描述符列表
+   - 与select/poll不同，epoll只需复制就绪的fd（而非所有监控的fd）
+   - 这就是epoll O(1)性能的关键
+
+二、epoll的两种触发模式
+
+1. 水平触发 (Level Triggered, LT) — 默认模式
+   - 只要文件描述符状态是可读/可写的，epoll_wait就持续返回该fd
+   - 与select/poll行为一致，使用简单
+   - 如果这次没读完数据，下次epoll_wait还会通知
+
+2. 边缘触发 (Edge Triggered, ET)
+   - 只有在状态发生变化时（从无到有）才通知一次
+   - 必须配合非阻塞I/O使用
+   - 必须一次性读完所有数据（循环recv直到EAGAIN）
+   - 性能更高（减少系统调用），但编程更复杂
+
+三、epoll与select/poll的对比
+
+| 特性         | select        | poll          | epoll          |
+|-------------|---------------|---------------|----------------|
+| 数据结构     | fd_set位图    | pollfd数组    | 红黑树+链表     |
+| 最大fd数     | 1024(FD_SETSIZE)| 无限制       | 无限制          |
+| 时间复杂度   | O(n)          | O(n)          | O(1) 活跃连接   |
+| 内存拷贝     | 每次拷贝全部fd | 每次拷贝全部fd | 只拷贝活跃fd    |
+| 内核实现     | 轮询所有fd     | 轮询所有fd    | 事件驱动+回调   |
+
+n是监控的文件描述符总数。epoll的O(1)指的是就绪fd的获取时间与总fd数无关。
+
+四、epoll示例代码
+
+#include <sys/epoll.h>
+
+// 创建epoll实例
+int epfd = epoll_create1(0);
+
+// 注册要监控的fd
+struct epoll_event ev;
+ev.events = EPOLLIN | EPOLLET;  // 读事件 + 边缘触发
+ev.data.fd = listen_fd;
+epoll_ctl(epfd, EPOLL_CTL_ADD, listen_fd, &ev);
+
+// 事件循环
+struct epoll_event events[MAX_EVENTS];
+while (true) {
+    int nfds = epoll_wait(epfd, events, MAX_EVENTS, -1);
+    for (int i = 0; i < nfds; ++i) {
+        if (events[i].data.fd == listen_fd) {
+            // 新连接
+            int client = accept(listen_fd, ...);
+            // 将client注册到epoll
+            ev.events = EPOLLIN | EPOLLET;
+            ev.data.fd = client;
+            epoll_ctl(epfd, EPOLL_CTL_ADD, client, &ev);
+        } else {
+            // 客户端数据
+            int client_fd = events[i].data.fd;
+            // 边缘触发：循环读取直到EAGAIN
+            while (true) {
+                ssize_t n = recv(client_fd, buf, sizeof(buf), 0);
+                if (n <= 0) { /* 处理断开或错误 */ break; }
+                // 处理数据...
+            }
+        }
+    }
+}
+
+
+================================================================================
+【13.1.8 底层原理：HTTP协议格式】
+================================================================================
+
+一、HTTP请求格式
+
+请求由三部分组成：请求行 + 请求头 + 空行 + 请求体(可选)
+
+  请求行: METHOD /path HTTP/1.1\r\n
+  请求头: Host: www.example.com\r\n
+          User-Agent: Mozilla/5.0\r\n
+          Content-Type: application/json\r\n
+          Content-Length: 27\r\n
+  \r\n (空行)
+  请求体: {"key": "value"}\n
+
+请求方法：
+- GET: 获取资源（无请求体）
+- POST: 提交数据（有请求体）
+- PUT: 更新资源
+- DELETE: 删除资源
+- HEAD: 同GET但只返回头信息
+- OPTIONS: 查询支持的方法
+
+二、HTTP响应格式
+
+响应由三部分组成：状态行 + 响应头 + 空行 + 响应体(可选)
+
+  状态行: HTTP/1.1 200 OK\r\n
+  响应头: Content-Type: text/html\r\n
+          Content-Length: 123\r\n
+          Connection: keep-alive\r\n
+  \r\n (空行)
+  响应体: <html><body>Hello World</body></html>
+
+状态码分类：
+- 1xx (信息): 请求已接收，继续处理
+- 2xx (成功): 200 OK, 201 Created, 204 No Content
+- 3xx (重定向): 301 永久移动, 302 临时移动, 304 未修改
+- 4xx (客户端错误): 400 Bad Request, 401 Unauthorized, 403 Forbidden,
+                    404 Not Found, 405 Method Not Allowed
+- 5xx (服务器错误): 500 Internal Server Error, 502 Bad Gateway,
+                    503 Service Unavailable
+
+三、从URL输入到页面显示的完整过程
+
+用户在浏览器输入 https://www.example.com/path 后：
+
+1. DNS解析: 浏览器查询DNS服务器，将域名转换为IP地址
+   - 先查浏览器缓存 → OS缓存 → 路由器缓存 → ISP DNS → 根DNS
+
+2. TCP三次握手: 浏览器与服务器IP的443端口建立TCP连接
+
+3. TLS/SSL握手 (HTTPS):
+   - Client Hello → Server Hello → 证书验证 → 密钥交换 → 加密通信建立
+
+4. HTTP请求发送: 浏览器构建HTTP GET请求并发送
+
+5. 服务器处理: Web服务器接收请求，执行后端逻辑，返回HTTP响应
+
+6. 浏览器接收响应: 解析HTTP响应，获取HTML内容
+
+7. 浏览器渲染: 解析HTML → 构建DOM树 → CSS解析 → 布局计算 → 绘制
+
+8. TCP四次挥手: 根据Connection头决定是否保持连接或关闭
+
+
+### 第二节: 所有用法大全（标准库/关键字/函数）
+================================================================================
+
+【13.2.1 Socket API 完整用法】
+================================================================================
+
+一、socket() 创建套接字
+
+// ============================================================
+// 示例 13-4: socket() 所有参数组合
+// ============================================================
+#include <sys/socket.h>
+#include <iostream>
+
+void socket_creation_examples() {
+    // PF_INET = AF_INET (通常相等)
+    // AF_INET: IPv4 Internet protocols
+    // AF_INET6: IPv6 Internet protocols
+    // AF_UNIX/AF_LOCAL: 本地进程间通信
+
+    // SOCK_STREAM: 面向连接、可靠的字节流(TCP)
+    int tcp_sock = socket(AF_INET, SOCK_STREAM, 0);
+
+    // SOCK_DGRAM: 无连接、不可靠的数据报(UDP)
+    int udp_sock = socket(AF_INET, SOCK_DGRAM, 0);
+
+    // SOCK_RAW: 原始套接字（需要root权限，直接访问网络层）
+    // int raw_sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
+
+    // SOCK_NONBLOCK (Linux特有): 创建时即设置为非阻塞
+    // int nonblock_sock = socket(AF_INET,
+    //                             SOCK_STREAM | SOCK_NONBLOCK, 0);
+
+    // SOCK_CLOEXEC (Linux特有): exec时自动关闭
+    // int cloexec_sock = socket(AF_INET,
+    //                            SOCK_STREAM | SOCK_CLOEXEC, 0);
+
+    // 第三个参数指定协议（通常0表示自动选择）
+    // IPPROTO_TCP = 6, IPPROTO_UDP = 17
+
+    std::cout << "TCP socket: " << tcp_sock << std::endl;
+    std::cout << "UDP socket: " << udp_sock << std::endl;
+
+    close(tcp_sock);
+    close(udp_sock);
+}
+
+二、bind() 绑定地址
+
+// ============================================================
+// 示例 13-5: bind() 的地址结构
+// ============================================================
+#include <sys/socket.h>
+#include <netinet/in.h>
+
+void bind_examples() {
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+
+    // 1. 绑定到所有接口的指定端口
+    struct sockaddr_in addr1;
+    addr1.sin_family = AF_INET;
+    addr1.sin_addr.s_addr = INADDR_ANY;  // 0.0.0.0
+    addr1.sin_port = htons(8080);
+    bind(sock, (struct sockaddr*)&addr1, sizeof(addr1));
+
+    // 2. 绑定到特定IP地址（多网卡时选择特定网卡）
+    struct sockaddr_in addr2;
+    addr2.sin_family = AF_INET;
+    inet_pton(AF_INET, "192.168.1.100", &addr2.sin_addr);
+    addr2.sin_port = htons(8080);
+    // bind(sock, (struct sockaddr*)&addr2, sizeof(addr2));
+
+    // 3. 让内核自动分配端口(不调用bind或绑定端口0)
+    struct sockaddr_in addr3;
+    addr3.sin_family = AF_INET;
+    addr3.sin_addr.s_addr = INADDR_ANY;
+    addr3.sin_port = htons(0);  // 内核自动选择空闲端口
+    // bind(sock, (struct sockaddr*)&addr3, sizeof(addr3));
+
+    // 获取自动分配的端口
+    // struct sockaddr_in bound_addr;
+    // socklen_t len = sizeof(bound_addr);
+    // getsockname(sock, (struct sockaddr*)&bound_addr, &len);
+    // std::cout << "Assigned port: " << ntohs(bound_addr.sin_port);
+
+    close(sock);
+}
+
+三、listen() 和 accept()
+
+// ============================================================
+// 示例 13-6: listen/accept 用法
+// ============================================================
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
+
+void listen_accept_example() {
+    int server = socket(AF_INET, SOCK_STREAM, 0);
+
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = htons(9090);
+    bind(server, (struct sockaddr*)&addr, sizeof(addr));
+
+    // backlog参数: 已完成连接队列的最大长度
+    // Linux 5.4+: 默认值在 /proc/sys/net/core/somaxconn (通常128)
+    // 如果队列满了，新的SYN会被忽略（不回复RST，让客户端重试）
+    listen(server, 10);
+
+    // accept: 从已完成连接队列中取出一个连接
+    struct sockaddr_in client_addr;
+    socklen_t addr_len = sizeof(client_addr);
+
+    // accept4 (Linux特有): 可以直接设置SOCK_NONBLOCK | SOCK_CLOEXEC
+    // int client = accept4(server,
+    //     (struct sockaddr*)&client_addr, &addr_len,
+    //     SOCK_NONBLOCK | SOCK_CLOEXEC);
+
+    int client = accept(server,
+                        (struct sockaddr*)&client_addr, &addr_len);
+
+    if (client >= 0) {
+        char ip[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &client_addr.sin_addr, ip, sizeof(ip));
+        std::cout << "Client: " << ip << ":"
+                  << ntohs(client_addr.sin_port) << std::endl;
+        close(client);
+    }
+
+    close(server);
+}
+
+四、connect() 客户端连接
+
+// ============================================================
+// 示例 13-7: connect 超时处理
+// ============================================================
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <sys/select.h>
+
+bool connect_with_timeout(int sock, struct sockaddr* addr,
+                           socklen_t addr_len, int timeout_sec) {
+    // 设置非阻塞模式
+    int flags = fcntl(sock, F_GETFL, 0);
+    fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+
+    // 非阻塞connect
+    int result = connect(sock, addr, addr_len);
+
+    if (result == 0) {
+        // 连接立即成功（本地连接常见）
+        fcntl(sock, F_SETFL, flags);  // 恢复阻塞模式
+        return true;
+    }
+
+    if (errno != EINPROGRESS) {
+        // 真正的错误
+        fcntl(sock, F_SETFL, flags);
+        return false;
+    }
+
+    // 连接正在进行中，使用select等待
+    fd_set write_fds;
+    FD_ZERO(&write_fds);
+    FD_SET(sock, &write_fds);
+
+    struct timeval tv;
+    tv.tv_sec = timeout_sec;
+    tv.tv_usec = 0;
+
+    result = select(sock + 1, nullptr, &write_fds, nullptr, &tv);
+
+    if (result <= 0) {
+        // 超时或错误
+        fcntl(sock, F_SETFL, flags);
+        return false;
+    }
+
+    // 检查连接是否真正成功
+    int error = 0;
+    socklen_t len = sizeof(error);
+    getsockopt(sock, SOL_SOCKET, SO_ERROR, &error, &len);
+
+    // 恢复阻塞模式
+    fcntl(sock, F_SETFL, flags);
+
+    return (error == 0);
+}
+
+void connect_example() {
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(80);
+    inet_pton(AF_INET, "93.184.216.34", &addr.sin_addr);
+
+    if (connect_with_timeout(sock, (struct sockaddr*)&addr,
+                              sizeof(addr), 5)) {
+        std::cout << "Connected successfully!" << std::endl;
+    } else {
+        std::cout << "Connection failed or timed out." << std::endl;
+    }
+
+    close(sock);
+}
+
+五、send() 和 recv()
+
+// ============================================================
+// 示例 13-8: send/recv 完整用法
+// ============================================================
+#include <sys/socket.h>
+#include <sys/types.h>
+
+void send_recv_examples(int sock) {
+    // send: 发送数据
+    const char* data = "Hello, Server!";
+    size_t data_len = strlen(data);
+
+    // flags参数:
+    // 0: 默认行为
+    // MSG_DONTWAIT: 非阻塞发送（单次操作）
+    // MSG_NOSIGNAL: 对方断开时不发送SIGPIPE信号（避免进程被终止）
+    // MSG_MORE: 告诉内核还有更多数据要发(优化Nagle算法)
+    // MSG_OOB: 发送带外数据
+    ssize_t sent = send(sock, data, data_len, MSG_NOSIGNAL);
+
+    // write()也可以用于socket（在Linux上send等价于write，除了flags）
+    // write(sock, data, data_len);
+
+    // sendto: 用于无连接socket(UDP)，需指定目标地址
+    // sendto(sock, data, data_len, 0, (struct sockaddr*)&addr, sizeof(addr));
+
+    // sendmsg: 最通用的发送函数，支持分散/聚集I/O
+    // struct msghdr msg;
+    // struct iovec iov[2];
+    // iov[0].iov_base = header;
+    // iov[0].iov_len = header_len;
+    // iov[1].iov_base = body;
+    // iov[1].iov_len = body_len;
+    // msg.msg_iov = iov;
+    // msg.msg_iovlen = 2;
+    // sendmsg(sock, &msg, 0);
+
+    // recv: 接收数据
+    char buffer[4096];
+
+    // flags参数:
+    // 0: 默认行为
+    // MSG_DONTWAIT: 非阻塞接收
+    // MSG_PEEK: 查看数据但不移除（数据保留在缓冲区）
+    // MSG_WAITALL: 等待指定的字节数全部到达才返回
+    // MSG_TRUNC: 返回真实数据长度（即使超过缓冲区大小）
+    ssize_t received = recv(sock, buffer, sizeof(buffer) - 1, 0);
+    if (received > 0) {
+        buffer[received] = '\0';
+    } else if (received == 0) {
+        std::cout << "Connection closed by peer." << std::endl;
+    } else {
+        std::perror("recv failed");
+    }
+}
+
+
+================================================================================
+【13.2.2 字节序转换函数】
+================================================================================
+
+网络字节序采用大端序（Big-Endian，高位字节在低地址）。
+x86/ARM CPU通常使用小端序（Little-Endian，低位字节在低地址）。
+
+// ============================================================
+// 示例 13-9: 字节序转换
+// ============================================================
+#include <arpa/inet.h>
+#include <iostream>
+#include <cstdint>
+
+void endianness_example() {
+    // 检测本机字节序
+    uint16_t test = 0x0001;
+    bool is_little_endian = (*(uint8_t*)&test == 0x01);
+    std::cout << "本机字节序: "
+              << (is_little_endian ? "小端" : "大端") << std::endl;
+
+    // htons: Host TO Network Short (16位)
+    // htonl: Host TO Network Long (32位)
+    // ntohs: Network TO Host Short
+    // ntohl: Network TO Host Long
+
+    uint16_t host_port = 8080;
+    uint16_t net_port = htons(host_port);
+    std::cout << "Host port: " << host_port
+              << " → Network: " << net_port << std::endl;
+    std::cout << "Network port: " << net_port
+              << " → Host: " << ntohs(net_port) << std::endl;
+
+    uint32_t host_ip_int = 0xC0A80101;  // 192.168.1.1
+    uint32_t net_ip_int = htonl(host_ip_int);
+    std::cout << "Host IP hex: 0x" << std::hex << host_ip_int
+              << " → Network: 0x" << net_ip_int << std::dec << std::endl;
+
+    // 现代替代方案：使用 htobe16/htole16 等 (endian.h)
+    // htobe64 / htole64 / be64toh / le64toh
+#ifdef __linux__
+    #include <endian.h>
+    uint64_t val = 0x0123456789ABCDEFULL;
+    uint64_t big = htobe64(val);
+    uint64_t back = be64toh(big);
+    std::cout << "htobe64: " << std::hex << big
+              << " → be64toh: " << back << std::dec << std::endl;
+#endif
+}
+
+
+================================================================================
+【13.2.3 地址转换函数：inet_pton / inet_ntop】
+================================================================================
+
+// ============================================================
+// 示例 13-10: 地址转换
+// ============================================================
+#include <arpa/inet.h>
+#include <iostream>
+#include <cstring>
+
+void address_conversion_example() {
+    // inet_pton: presentation (字符串) → network (二进制)
+    // inet_ntop: network (二进制) → presentation (字符串)
+
+    struct in_addr ipv4_bin;
+    struct in6_addr ipv6_bin;
+
+    // IPv4 字符串转二进制
+    if (inet_pton(AF_INET, "192.168.1.1", &ipv4_bin) == 1) {
+        std::cout << "IPv4 转换成功: 0x"
+                  << std::hex << ipv4_bin.s_addr << std::dec
+                  << std::endl;
+    }
+
+    // IPv4 二进制转字符串
+    char ipv4_str[INET_ADDRSTRLEN];  // INET_ADDRSTRLEN = 16
+    inet_ntop(AF_INET, &ipv4_bin, ipv4_str, sizeof(ipv4_str));
+    std::cout << "IPv4 还原: " << ipv4_str << std::endl;
+
+    // IPv6 字符串转二进制
+    if (inet_pton(AF_INET6, "2001:db8::1", &ipv6_bin) == 1) {
+        std::cout << "IPv6 转换成功" << std::endl;
+    }
+
+    // IPv6 二进制转字符串
+    char ipv6_str[INET6_ADDRSTRLEN];  // INET6_ADDRSTRLEN = 46
+    inet_ntop(AF_INET6, &ipv6_bin, ipv6_str, sizeof(ipv6_str));
+    std::cout << "IPv6 还原: " << ipv6_str << std::endl;
+
+    // 过时的函数（不推荐使用）：inet_addr, inet_ntoa
+    // in_addr_t addr = inet_addr("192.168.1.1");  // 不支持IPv6
+    // char* str = inet_ntoa(ipv4_bin);  // 返回静态缓冲区，线程不安全
+}
+
+
+================================================================================
+【13.2.4 getaddrinfo / freeaddrinfo 协议无关编程】
+================================================================================
+
+// ============================================================
+// 示例 13-11: getaddrinfo 协议无关地址解析
+// ============================================================
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <iostream>
+#include <cstring>
+#include <unistd.h>
+#include <arpa/inet.h>
+
+void getaddrinfo_example() {
+    struct addrinfo hints;
+    struct addrinfo* result = nullptr;
+
+    std::memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;     // 支持IPv4和IPv6
+    hints.ai_socktype = SOCK_STREAM; // TCP流
+    hints.ai_flags = AI_PASSIVE;     // 用于bind, 自动填充本机地址
+
+    // 获取地址信息
+    int status = getaddrinfo("example.com", "80", &hints, &result);
+    if (status != 0) {
+        std::cerr << "getaddrinfo: " << gai_strerror(status)
+                  << std::endl;
+        return;
+    }
+
+    std::cout << "解析 example.com:80 的结果:"
+              << std::endl;
+
+    // 遍历所有结果
+    for (struct addrinfo* rp = result; rp != nullptr;
+         rp = rp->ai_next) {
+        char addr_str[INET6_ADDRSTRLEN];
+        void* addr_ptr = nullptr;
+        int port = 0;
+
+        if (rp->ai_family == AF_INET) {
+            struct sockaddr_in* ipv4 =
+                (struct sockaddr_in*)rp->ai_addr;
+            addr_ptr = &ipv4->sin_addr;
+            port = ntohs(ipv4->sin_port);
+        } else if (rp->ai_family == AF_INET6) {
+            struct sockaddr_in6* ipv6 =
+                (struct sockaddr_in6*)rp->ai_addr;
+            addr_ptr = &ipv6->sin6_addr;
+            port = ntohs(ipv6->sin6_port);
+        }
+
+        inet_ntop(rp->ai_family, addr_ptr,
+                  addr_str, sizeof(addr_str));
+        std::cout << "  " << (rp->ai_family == AF_INET ? "IPv4" : "IPv6")
+                  << ": " << addr_str << ":" << port
+                  << " (socktype=" << rp->ai_socktype
+                  << ", protocol=" << rp->ai_protocol << ")"
+                  << std::endl;
+    }
+
+    // 尝试连接第一个成功的地址
+    int sock = -1;
+    for (struct addrinfo* rp = result; rp != nullptr;
+         rp = rp->ai_next) {
+        sock = socket(rp->ai_family, rp->ai_socktype,
+                      rp->ai_protocol);
+        if (sock == -1) continue;
+
+        if (connect(sock, rp->ai_addr, rp->ai_addrlen) != -1) {
+            std::cout << "成功连接到: ";
+            // 打印连接到的地址...
+            break;
+        }
+
+        close(sock);
+        sock = -1;
+    }
+
+    if (sock != -1) close(sock);
+
+    // 释放地址信息
+    freeaddrinfo(result);
+}
+
+// 使用getaddrinfo创建服务器的简化示例
+int create_server_socket(const char* service) {
+    struct addrinfo hints, *result, *rp;
+
+    std::memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE;
+
+    int s = getaddrinfo(nullptr, service, &hints, &result);
+    if (s != 0) return -1;
+
+    int sock = -1;
+    for (rp = result; rp != nullptr; rp = rp->ai_next) {
+        sock = socket(rp->ai_family, rp->ai_socktype,
+                      rp->ai_protocol);
+        if (sock == -1) continue;
+
+        // 设置地址重用
+        int yes = 1;
+        setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
+                   &yes, sizeof(yes));
+
+        if (bind(sock, rp->ai_addr, rp->ai_addrlen) == 0) {
+            break;  // 绑定成功
+        }
+
+        close(sock);
+        sock = -1;
+    }
+
+    freeaddrinfo(result);
+    return sock;
+}
+
+
+================================================================================
+【13.2.5 setsockopt 设置socket选项】
+================================================================================
+
+// ============================================================
+// 示例 13-12: setsockopt 常用选项
+// ============================================================
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <iostream>
+#include <unistd.h>
+
+void setsockopt_examples(int sock) {
+    // 1. SO_REUSEADDR: 允许重用本地地址（TIME_WAIT时可以绑定）
+    int reuse = 1;
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
+               &reuse, sizeof(reuse));
+
+    // 2. SO_REUSEPORT (Linux 3.9+): 多个socket可以绑定同一端口
+    // 用于实现简单的多进程/多线程负载均衡（内核级分发）
+    // int reuse_port = 1;
+    // setsockopt(sock, SOL_SOCKET, SO_REUSEPORT,
+    //            &reuse_port, sizeof(reuse_port));
+
+    // 3. SO_KEEPALIVE: 启用TCP保活机制（检测死连接）
+    int keepalive = 1;
+    setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE,
+               &keepalive, sizeof(keepalive));
+
+    // TCP保活参数（Linux特有）
+    // int keepidle = 7200;  // 7200秒无数据后开始探测
+    // int keepintvl = 75;   // 探测间隔75秒
+    // int keepcnt = 9;      // 9次探测失败后断开
+    // setsockopt(sock, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle, sizeof(keepidle));
+    // setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, &keepintvl, sizeof(keepintvl));
+    // setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &keepcnt, sizeof(keepcnt));
+
+    // 4. SO_LINGER: 控制close时的行为
+    struct linger ling;
+    ling.l_onoff = 1;   // 启用linger
+    ling.l_linger = 5;  // 等待5秒
+    setsockopt(sock, SOL_SOCKET, SO_LINGER,
+               &ling, sizeof(ling));
+    // l_onoff=0: 默认close立即返回，内核尝试发送剩余数据
+    // l_onoff=1, l_linger=0: close立即返回，丢弃缓冲区数据，发送RST
+    // l_onoff=1, l_linger>0: close阻塞等待数据发送完毕或超时
+
+    // 5. TCP_NODELAY: 禁用Nagle算法（减少小包延迟）
+    // 适用于对延迟敏感的应用（如SSH、游戏、实时通信）
+    int nodelay = 1;
+    setsockopt(sock, IPPROTO_TCP, TCP_NODELAY,
+               &nodelay, sizeof(nodelay));
+
+    // Nagle算法：将小的数据包合并发送（等待ACK或缓冲区满）
+    // 优点：减少网络中小包数量
+    // 缺点：增加延迟
+    // 典型影响：当使用write-write-read模式时，第二个write的数据可能
+    // 会等待第一个write的ACK才发送，造成不必要的延迟
+
+    // 6. SO_RCVBUF / SO_SNDBUF: 调整缓冲区大小
+    int rcvbuf = 256 * 1024;  // 256KB
+    setsockopt(sock, SOL_SOCKET, SO_RCVBUF,
+               &rcvbuf, sizeof(rcvbuf));
+
+    int sndbuf = 256 * 1024;
+    setsockopt(sock, SOL_SOCKET, SO_SNDBUF,
+               &sndbuf, sizeof(sndbuf));
+
+    // 7. SO_RCVTIMEO / SO_SNDTIMEO: 设置收发超时
+    struct timeval tv;
+    tv.tv_sec = 5;
+    tv.tv_usec = 0;
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
+               &tv, sizeof(tv));
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO,
+               &tv, sizeof(tv));
+}
+
+
+================================================================================
+【13.2.6 C++ Socket RAII封装类】
+================================================================================
+
+// ============================================================
+// 示例 13-13: 完整的Socket RAII封装类
+// ============================================================
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <cstring>
+#include <string>
+#include <stdexcept>
+#include <iostream>
+#include <memory>
+
+namespace net {
+
+// Socket异常类（第9章：自定义异常）
+class SocketException : public std::runtime_error {
+private:
+    int err_code_;
+public:
+    SocketException(const std::string& msg, int err = errno)
+        : std::runtime_error(msg + ": " + std::strerror(err)),
+          err_code_(err) {}
+    int error_code() const { return err_code_; }
+};
+
+// Socket RAII封装类（第4章：类与对象, 第3章：资源管理）
+class Socket {
+private:
+    int fd_;
+    bool owned_;
+
+    Socket(int fd, bool owned) : fd_(fd), owned_(owned) {}
+
+public:
+    Socket() : fd_(-1), owned_(false) {}
+
+    explicit Socket(int domain, int type, int protocol = 0)
+        : fd_(socket(domain, type, protocol)), owned_(true) {
+        if (fd_ < 0) {
+            throw SocketException("socket() failed");
+        }
+    }
+
+    ~Socket() noexcept {
+        if (owned_ && fd_ >= 0) {
+            ::close(fd_);
+        }
+    }
+
+    // 移动语义
+    Socket(Socket&& other) noexcept
+        : fd_(other.fd_), owned_(other.owned_) {
+        other.fd_ = -1;
+        other.owned_ = false;
+    }
+
+    Socket& operator=(Socket&& other) noexcept {
+        if (this != &other) {
+            if (owned_ && fd_ >= 0) ::close(fd_);
+            fd_ = other.fd_;
+            owned_ = other.owned_;
+            other.fd_ = -1;
+            other.owned_ = false;
+        }
+        return *this;
+    }
+
+    // 禁止拷贝
+    Socket(const Socket&) = delete;
+    Socket& operator=(const Socket&) = delete;
+
+    int fd() const { return fd_; }
+
+    void set_reuse_addr(bool enable = true) {
+        int opt = enable ? 1 : 0;
+        if (setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR,
+                       &opt, sizeof(opt)) < 0) {
+            throw SocketException("setsockopt SO_REUSEADDR failed");
+        }
+    }
+
+    void set_nonblocking(bool enable = true) {
+        int flags = fcntl(fd_, F_GETFL, 0);
+        if (flags < 0) throw SocketException("fcntl F_GETFL failed");
+        if (enable)
+            flags |= O_NONBLOCK;
+        else
+            flags &= ~O_NONBLOCK;
+        if (fcntl(fd_, F_SETFL, flags) < 0) {
+            throw SocketException("fcntl F_SETFL failed");
+        }
+    }
+
+    void bind(const std::string& ip, int port) {
+        struct sockaddr_in addr;
+        std::memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(port);
+
+        if (ip.empty() || ip == "0.0.0.0") {
+            addr.sin_addr.s_addr = INADDR_ANY;
+        } else {
+            if (inet_pton(AF_INET, ip.c_str(),
+                          &addr.sin_addr) <= 0) {
+                throw SocketException("inet_pton() failed");
+            }
+        }
+
+        if (::bind(fd_, (struct sockaddr*)&addr,
+                   sizeof(addr)) < 0) {
+            throw SocketException("bind() failed");
+        }
+    }
+
+    void listen(int backlog = SOMAXCONN) {
+        if (::listen(fd_, backlog) < 0) {
+            throw SocketException("listen() failed");
+        }
+    }
+
+    Socket accept() {
+        struct sockaddr_in client_addr;
+        socklen_t addr_len = sizeof(client_addr);
+        int client_fd = ::accept(fd_,
+                                  (struct sockaddr*)&client_addr,
+                                  &addr_len);
+        if (client_fd < 0) {
+            throw SocketException("accept() failed");
+        }
+        return Socket(client_fd, true);
+    }
+
+    void connect(const std::string& ip, int port) {
+        struct sockaddr_in addr;
+        std::memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(port);
+
+        if (inet_pton(AF_INET, ip.c_str(),
+                      &addr.sin_addr) <= 0) {
+            throw SocketException("inet_pton() failed");
+        }
+
+        if (::connect(fd_, (struct sockaddr*)&addr,
+                      sizeof(addr)) < 0) {
+            throw SocketException("connect() failed");
+        }
+    }
+
+    ssize_t send(const void* data, size_t len,
+                 int flags = 0) const {
+        ssize_t result = ::send(fd_, data, len, MSG_NOSIGNAL | flags);
+        if (result < 0) {
+            throw SocketException("send() failed");
+        }
+        return result;
+    }
+
+    ssize_t send(const std::string& data) const {
+        return this->send(data.c_str(), data.size());
+    }
+
+    ssize_t recv(void* buffer, size_t len,
+                 int flags = 0) const {
+        ssize_t result = ::recv(fd_, buffer, len, flags);
+        if (result < 0) {
+            throw SocketException("recv() failed");
+        }
+        return result;
+    }
+
+    std::string recv_str(size_t max_len = 4096) const {
+        std::vector<char> buffer(max_len);
+        ssize_t received = recv(buffer.data(), buffer.size() - 1, 0);
+        if (received >= 0) {
+            buffer[received] = '\0';
+            return std::string(buffer.data());
+        }
+        return "";
+    }
+
+    void close() {
+        if (owned_ && fd_ >= 0) {
+            ::close(fd_);
+            fd_ = -1;
+        }
+    }
+
+    // 获取远端地址信息
+    std::string peer_address() const {
+        struct sockaddr_in addr;
+        socklen_t len = sizeof(addr);
+        if (getpeername(fd_, (struct sockaddr*)&addr, &len) == 0) {
+            char ip[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &addr.sin_addr, ip, sizeof(ip));
+            return std::string(ip) + ":" +
+                   std::to_string(ntohs(addr.sin_port));
+        }
+        return "unknown";
+    }
+
+    // 获取本地地址信息
+    std::string local_address() const {
+        struct sockaddr_in addr;
+        socklen_t len = sizeof(addr);
+        if (getsockname(fd_, (struct sockaddr*)&addr, &len) == 0) {
+            char ip[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &addr.sin_addr, ip, sizeof(ip));
+            return std::string(ip) + ":" +
+                   std::to_string(ntohs(addr.sin_port));
+        }
+        return "unknown";
+    }
+};
+
+} // namespace net
+
+
+================================================================================
+【13.2.7 HTTP协议解析实现】
+================================================================================
+
+// ============================================================
+// 示例 13-14: HTTP请求/响应解析器
+// ============================================================
+#include <string>
+#include <map>
+#include <sstream>
+#include <vector>
+#include <iostream>
+
+namespace http {
+
+// HTTP 方法
+enum class Method {
+    GET, POST, PUT, DELETE, HEAD, OPTIONS, PATCH, UNKNOWN
+};
+
+Method method_from_string(const std::string& str) {
+    if (str == "GET")    return Method::GET;
+    if (str == "POST")   return Method::POST;
+    if (str == "PUT")    return Method::PUT;
+    if (str == "DELETE") return Method::DELETE;
+    if (str == "HEAD")   return Method::HEAD;
+    if (str == "OPTIONS") return Method::OPTIONS;
+    if (str == "PATCH")  return Method::PATCH;
+    return Method::UNKNOWN;
+}
+
+std::string method_to_string(Method m) {
+    switch (m) {
+        case Method::GET:     return "GET";
+        case Method::POST:    return "POST";
+        case Method::PUT:     return "PUT";
+        case Method::DELETE:  return "DELETE";
+        case Method::HEAD:    return "HEAD";
+        case Method::OPTIONS: return "OPTIONS";
+        case Method::PATCH:   return "PATCH";
+        default:              return "UNKNOWN";
+    }
+}
+
+// HTTP请求
+struct HttpRequest {
+    Method method = Method::UNKNOWN;
+    std::string path = "/";
+    std::string version = "HTTP/1.1";
+    std::map<std::string, std::string> headers;
+    std::string body;
+
+    std::string get_header(const std::string& key,
+                           const std::string& default_val = "") const {
+        auto it = headers.find(key);
+        return (it != headers.end()) ? it->second : default_val;
+    }
+};
+
+// HTTP响应
+struct HttpResponse {
+    int status_code = 200;
+    std::string status_message = "OK";
+    std::string version = "HTTP/1.1";
+    std::map<std::string, std::string> headers;
+    std::string body;
+
+    void set_header(const std::string& key,
+                    const std::string& value) {
+        headers[key] = value;
+    }
+
+    void set_content_type(const std::string& mime) {
+        headers["Content-Type"] = mime;
+    }
+
+    void set_body(const std::string& content,
+                  const std::string& content_type = "text/plain") {
+        body = content;
+        headers["Content-Type"] = content_type;
+        headers["Content-Length"] = std::to_string(content.size());
+    }
+};
+
+// HTTP请求解析器
+class HttpParser {
+public:
+    // 解析HTTP请求的原始字节
+    static HttpRequest parse_request(const std::string& raw) {
+        HttpRequest req;
+        std::istringstream stream(raw);
+        std::string line;
+
+        // 1. 解析请求行: METHOD PATH VERSION
+        if (!std::getline(stream, line) || line.empty()) {
+            throw std::runtime_error("Empty request");
+        }
+
+        // 去除\r
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+
+        std::istringstream request_line(line);
+        std::string method_str, path, version;
+        request_line >> method_str >> path >> version;
+
+        req.method = method_from_string(method_str);
+        req.path = path;
+        req.version = version;
+
+        // 2. 解析头部
+        while (std::getline(stream, line)) {
+            if (!line.empty() && line.back() == '\r') {
+                line.pop_back();
+            }
+            if (line.empty()) break;  // 空行表示头部结束
+
+            size_t colon_pos = line.find(':');
+            if (colon_pos != std::string::npos) {
+                std::string key = line.substr(0, colon_pos);
+                std::string value = line.substr(colon_pos + 1);
+                // 去除头尾空格
+                size_t start = value.find_first_not_of(" \t");
+                if (start != std::string::npos)
+                    value = value.substr(start);
+                req.headers[key] = value;
+            }
+        }
+
+        // 3. 解析请求体（如果有 Content-Length）
+        auto it = req.headers.find("Content-Length");
+        if (it != req.headers.end()) {
+            size_t len = std::stoul(it->second);
+            req.body = raw.substr(raw.find("\r\n\r\n") + 4, len);
+        }
+
+        return req;
+    }
+
+    // 将HttpRequest序列化为字节字符串
+    static std::string serialize_request(const HttpRequest& req) {
+        std::ostringstream oss;
+
+        // 请求行
+        oss << method_to_string(req.method) << " "
+            << req.path << " " << req.version << "\r\n";
+
+        // 头部
+        for (const auto& [key, value] : req.headers) {
+            oss << key << ": " << value << "\r\n";
+        }
+
+        // 空行 + 请求体
+        oss << "\r\n" << req.body;
+
+        return oss.str();
+    }
+
+    // 将HttpResponse序列化为字节字符串
+    static std::string serialize_response(const HttpResponse& res) {
+        std::ostringstream oss;
+
+        // 状态行
+        oss << res.version << " " << res.status_code
+            << " " << res.status_message << "\r\n";
+
+        // 头部
+        for (const auto& [key, value] : res.headers) {
+            oss << key << ": " << value << "\r\n";
+        }
+
+        // 空行 + 响应体
+        oss << "\r\n" << res.body;
+
+        return oss.str();
+    }
+};
+
+// HTTP状态码和消息映射
+struct HttpStatus {
+    static std::string message(int code) {
+        switch (code) {
+            case 200: return "OK";
+            case 201: return "Created";
+            case 204: return "No Content";
+            case 301: return "Moved Permanently";
+            case 302: return "Found";
+            case 304: return "Not Modified";
+            case 400: return "Bad Request";
+            case 401: return "Unauthorized";
+            case 403: return "Forbidden";
+            case 404: return "Not Found";
+            case 405: return "Method Not Allowed";
+            case 500: return "Internal Server Error";
+            case 502: return "Bad Gateway";
+            case 503: return "Service Unavailable";
+            default:  return "Unknown";
+        }
+    }
+};
+
+} // namespace http
+
+
+================================================================================
+【13.2.8 第三方库简介（简要）】
+================================================================================
+
+C++生态中有一些优秀的网络库，可以大大简化Web编程：
+
+1. libcurl — 最知名的HTTP客户端库
+   - 支持HTTP/HTTPS/FTP/FTPS/SMTP等几乎所有协议
+   - 异步/多路复用接口
+   - 广泛使用于生产环境
+   - 示例: curl_easy_setopt(curl, CURLOPT_URL, "https://example.com");
+
+2. Boost.Beast — 基于Boost.Asio的HTTP/WebSocket库
+   - C++11风格，头文件为主
+   - 支持HTTP客户端和服务器
+   - 支持WebSocket协议
+   - 低延迟、高性能
+
+3. cpp-httplib — 单头文件的C++ HTTP库
+   - 极简使用：httplib::Server svr; svr.Get("/", handler); svr.listen(...);
+   - 支持HTTPS（需要OpenSSL）
+   - 适合快速原型和小型项目
+
+4. POCO C++ Libraries — 企业级C++网络框架
+   - 功能全面（HTTP/HTTPS/SMTP/FTP等）
+   - 成熟的生态系统
+   - 适合大型企业应用
+
+5. Drogon — 高性能C++ Web框架
+   - 支持HTTP/HTTPS/WebSocket
+   - 异步非阻塞，基于epoll
+   - 内置ORM、模板引擎
+   - 性能接近原生C++
+
+
+### 第三节: 实用代码案例（生活场景举例）
+================================================================================
+
+【案例1】简易HTTP客户端 - 命令行网页获取工具
+================================================================================
+
+场景描述：类似curl/wget的命令行工具，输入URL，获取网页内容。
+
+// ============================================================
+// 案例13-1: 简易HTTP客户端
+// ============================================================
+#include <iostream>
+#include <string>
+#include <cstring>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <unistd.h>
+#include <sstream>
+#include <memory>
+
+namespace http_client {
+
+// URL解析器
+struct Url {
+    std::string protocol;
+    std::string host;
+    int port;
+    std::string path;
+
+    static Url parse(const std::string& url) {
+        Url result;
+        result.protocol = "http";
+        result.port = 80;
+
+        size_t pos = 0;
+
+        // 解析协议
+        size_t proto_end = url.find("://");
+        if (proto_end != std::string::npos) {
+            result.protocol = url.substr(0, proto_end);
+            pos = proto_end + 3;
+        }
+
+        if (result.protocol == "https") {
+            result.port = 443;
+            throw std::runtime_error("HTTPS not supported in this demo");
+        }
+
+        // 解析host和path
+        size_t path_start = url.find('/', pos);
+        std::string host_port;
+
+        if (path_start != std::string::npos) {
+            host_port = url.substr(pos, path_start - pos);
+            result.path = url.substr(path_start);
+        } else {
+            host_port = url.substr(pos);
+            result.path = "/";
+        }
+
+        // 解析端口
+        size_t port_pos = host_port.find(':');
+        if (port_pos != std::string::npos) {
+            result.host = host_port.substr(0, port_pos);
+            result.port = std::stoi(host_port.substr(port_pos + 1));
+        } else {
+            result.host = host_port;
+        }
+
+        return result;
+    }
+};
+
+// HTTP客户端（RAII管理socket，第3/4章）
+class HttpClient {
+private:
+    int sock_;
+
+    std::string resolve_host(const std::string& host) {
+        struct addrinfo hints, *result;
+        std::memset(&hints, 0, sizeof(hints));
+        hints.ai_family = AF_INET;
+        hints.ai_socktype = SOCK_STREAM;
+
+        if (getaddrinfo(host.c_str(), nullptr, &hints, &result) != 0) {
+            throw std::runtime_error("DNS解析失败: " + host);
+        }
+
+        char ip[INET_ADDRSTRLEN];
+        struct sockaddr_in* addr = (struct sockaddr_in*)result->ai_addr;
+        inet_ntop(AF_INET, &addr->sin_addr, ip, sizeof(ip));
+
+        std::string ip_str(ip);
+        freeaddrinfo(result);
+        return ip_str;
+    }
+
+public:
+    HttpClient() : sock_(-1) {}
+
+    ~HttpClient() {
+        if (sock_ >= 0) close(sock_);
+    }
+
+    // 禁止拷贝
+    HttpClient(const HttpClient&) = delete;
+    HttpClient& operator=(const HttpClient&) = delete;
+
+    // GET请求
+    std::string get(const std::string& url) {
+        Url parsed = Url::parse(url);
+
+        std::cout << "URL解析:\n"
+                  << "  协议: " << parsed.protocol << "\n"
+                  << "  主机: " << parsed.host << "\n"
+                  << "  端口: " << parsed.port << "\n"
+                  << "  路径: " << parsed.path << std::endl;
+
+        // 解析DNS
+        std::string ip = resolve_host(parsed.host);
+        std::cout << "DNS解析: " << parsed.host << " → "
+                  << ip << std::endl;
+
+        // 创建socket并连接
+        sock_ = socket(AF_INET, SOCK_STREAM, 0);
+        if (sock_ < 0) {
+            throw std::runtime_error("socket() failed");
+        }
+
+        struct sockaddr_in addr;
+        std::memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(parsed.port);
+        inet_pton(AF_INET, ip.c_str(), &addr.sin_addr);
+
+        if (connect(sock_, (struct sockaddr*)&addr,
+                    sizeof(addr)) < 0) {
+            throw std::runtime_error("connect() failed");
+        }
+
+        std::cout << "连接成功!" << std::endl;
+
+        // 构建HTTP GET请求
+        std::ostringstream request;
+        request << "GET " << parsed.path << " HTTP/1.1\r\n";
+        request << "Host: " << parsed.host << "\r\n";
+        request << "User-Agent: SimpleHttpClient/1.0\r\n";
+        request << "Accept: */*\r\n";
+        request << "Connection: close\r\n";
+        request << "\r\n";
+
+        std::string req_str = request.str();
+        std::cout << "发送请求:\n" << req_str << std::endl;
+
+        // 发送请求
+        send(sock_, req_str.c_str(), req_str.size(), 0);
+
+        // 接收响应
+        std::string response;
+        char buffer[4096];
+        int received;
+        while ((received = recv(sock_, buffer,
+                                 sizeof(buffer) - 1, 0)) > 0) {
+            buffer[received] = '\0';
+            response += buffer;
+        }
+
+        close(sock_);
+        sock_ = -1;
+
+        return response;
+    }
+
+    // 解析HTTP响应，分离头部和正文
+    struct ParsedResponse {
+        int status_code;
+        std::string status_message;
+        std::map<std::string, std::string> headers;
+        std::string body;
+    };
+
+    static ParsedResponse parse_response(
+        const std::string& raw_response) {
+        ParsedResponse result;
+        std::istringstream stream(raw_response);
+        std::string line;
+
+        // 解析状态行
+        if (std::getline(stream, line)) {
+            if (!line.empty() && line.back() == '\r')
+                line.pop_back();
+            size_t pos1 = line.find(' ');
+            size_t pos2 = line.find(' ', pos1 + 1);
+            result.status_code = std::stoi(
+                line.substr(pos1 + 1, pos2 - pos1 - 1));
+            result.status_message = line.substr(pos2 + 1);
+        }
+
+        // 解析头部
+        while (std::getline(stream, line)) {
+            if (!line.empty() && line.back() == '\r')
+                line.pop_back();
+            if (line.empty()) break;
+
+            size_t colon = line.find(':');
+            if (colon != std::string::npos) {
+                std::string key = line.substr(0, colon);
+                std::string value = line.substr(colon + 2);
+                result.headers[key] = value;
+            }
+        }
+
+        // 读取正文
+        std::string remaining;
+        while (std::getline(stream, line)) {
+            remaining += line + "\n";
+        }
+        result.body = remaining;
+
+        return result;
+    }
+};
+
+void run() {
+    std::cout << "\n========== 简易HTTP客户端 ==========\n\n";
+
+    try {
+        HttpClient client;
+        std::string response = client.get(
+            "http://example.com/");
+
+        auto parsed = HttpClient::parse_response(response);
+
+        std::cout << "\n===== HTTP 响应 =====\n";
+        std::cout << "状态: " << parsed.status_code
+                  << " " << parsed.status_message << "\n\n";
+
+        std::cout << "响应头:\n";
+        for (const auto& [key, value] : parsed.headers) {
+            std::cout << "  " << key << ": " << value << "\n";
+        }
+
+        std::cout << "\n响应正文 (前500字符):\n";
+        std::cout << parsed.body.substr(0, 500) << "\n";
+
+    } catch (const std::exception& e) {
+        std::cerr << "错误: " << e.what() << std::endl;
+    }
+
+    std::cout << "=====================================\n";
+}
+
+} // namespace http_client
+
+
+【案例2】简易HTTP静态文件服务器 - 本地开发服务器
+================================================================================
+
+场景描述：类似Python的 python -m http.server，提供一个简单的静态文件服务。
+
+// ============================================================
+// 案例13-2: HTTP静态文件服务器
+// ============================================================
+#include <iostream>
+#include <string>
+#include <fstream>    // 第10章：文件I/O
+#include <sstream>
+#include <vector>
+#include <thread>     // 第12章：多线程
+#include <mutex>
+#include <atomic>
+#include <csignal>    // 第11章：信号处理
+#include <cstring>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <map>
+
+namespace static_file_server {
+
+// MIME类型映射
+std::string get_mime_type(const std::string& path) {
+    static const std::map<std::string, std::string> mime_types = {
+        {".html", "text/html"},
+        {".htm",  "text/html"},
+        {".css",  "text/css"},
+        {".js",   "application/javascript"},
+        {".json", "application/json"},
+        {".png",  "image/png"},
+        {".jpg",  "image/jpeg"},
+        {".jpeg", "image/jpeg"},
+        {".gif",  "image/gif"},
+        {".svg",  "image/svg+xml"},
+        {".ico",  "image/x-icon"},
+        {".txt",  "text/plain"},
+        {".pdf",  "application/pdf"},
+        {".zip",  "application/zip"},
+        {".mp3",  "audio/mpeg"},
+        {".mp4",  "video/mp4"},
+    };
+
+    size_t dot = path.rfind('.');
+    if (dot != std::string::npos) {
+        std::string ext = path.substr(dot);
+        auto it = mime_types.find(ext);
+        if (it != mime_types.end()) {
+            return it->second;
+        }
+    }
+    return "application/octet-stream";
+}
+
+// HTTP响应构建器
+class ResponseBuilder {
+public:
+    static std::string ok(const std::string& content,
+                          const std::string& content_type) {
+        std::ostringstream resp;
+        resp << "HTTP/1.1 200 OK\r\n";
+        resp << "Content-Type: " << content_type << "\r\n";
+        resp << "Content-Length: " << content.size() << "\r\n";
+        resp << "Connection: close\r\n";
+        resp << "Server: SimpleStaticServer/1.0\r\n";
+        resp << "\r\n";
+        resp << content;
+        return resp.str();
+    }
+
+    static std::string file_response(const std::string& filepath,
+                                       const std::string& doc_root) {
+        // 安全检查：防止目录遍历攻击
+        std::string full_path = doc_root + filepath;
+
+        // 如果请求的是目录，尝试返回 index.html
+        if (filepath == "/" || filepath.back() == '/') {
+            full_path = doc_root + filepath + "index.html";
+        }
+
+        std::ifstream file(full_path, std::ios::binary);
+        if (!file.is_open()) {
+            return not_found();
+        }
+
+        std::string content((std::istreambuf_iterator<char>(file)),
+                            std::istreambuf_iterator<char>());
+
+        std::string mime = get_mime_type(full_path);
+        return ok(content, mime);
+    }
+
+    static std::string not_found() {
+        std::string body = "<html><body><h1>404 Not Found</h1>"
+                           "</body></html>";
+        std::ostringstream resp;
+        resp << "HTTP/1.1 404 Not Found\r\n";
+        resp << "Content-Type: text/html\r\n";
+        resp << "Content-Length: " << body.size() << "\r\n";
+        resp << "Connection: close\r\n";
+        resp << "\r\n";
+        resp << body;
+        return resp.str();
+    }
+
+    static std::string bad_request() {
+        std::string body = "<html><body><h1>400 Bad Request</h1>"
+                           "</body></html>";
+        std::ostringstream resp;
+        resp << "HTTP/1.1 400 Bad Request\r\n";
+        resp << "Content-Type: text/html\r\n";
+        resp << "Content-Length: " << body.size() << "\r\n";
+        resp << "Connection: close\r\n";
+        resp << "\r\n";
+        resp << body;
+        return resp.str();
+    }
+
+    static std::string internal_error() {
+        std::string body = "<html><body><h1>500 Internal Server "
+                           "Error</h1></body></html>";
+        std::ostringstream resp;
+        resp << "HTTP/1.1 500 Internal Server Error\r\n";
+        resp << "Content-Type: text/html\r\n";
+        resp << "Content-Length: " << body.size() << "\r\n";
+        resp << "Connection: close\r\n";
+        resp << "\r\n";
+        resp << body;
+        return resp.str();
+    }
+};
+
+// 静态文件服务器
+class StaticFileServer {
+private:
+    int server_sock_;
+    std::string doc_root_;
+    int port_;
+    std::atomic<bool> running_{true};
+    std::atomic<int> requests_served_{0};
+
+    // 解析HTTP请求获取路径
+    std::string parse_request_path(const std::string& request) {
+        // 获取第一行
+        size_t first_line_end = request.find("\r\n");
+        if (first_line_end == std::string::npos) return "/";
+
+        std::string first_line = request.substr(0, first_line_end);
+
+        // GET /path HTTP/1.1
+        size_t method_end = first_line.find(' ');
+        if (method_end == std::string::npos) return "/";
+
+        size_t path_end = first_line.find(' ', method_end + 1);
+        if (path_end == std::string::npos) return "/";
+
+        return first_line.substr(method_end + 1,
+                                  path_end - method_end - 1);
+    }
+
+    // 处理单个客户端连接
+    void handle_client(int client_sock,
+                       const std::string& client_ip) {
+        char buffer[8192];
+        int bytes = recv(client_sock, buffer, sizeof(buffer) - 1, 0);
+
+        if (bytes > 0) {
+            buffer[bytes] = '\0';
+            std::string request(buffer);
+
+            std::string path = parse_request_path(request);
+
+            std::cout << "[" << client_ip << "] "
+                      << path << std::endl;
+
+            std::string response;
+            try {
+                response = ResponseBuilder::file_response(path, doc_root_);
+            } catch (const std::exception&) {
+                response = ResponseBuilder::internal_error();
+            }
+
+            send(client_sock, response.c_str(), response.size(), 0);
+            requests_served_.fetch_add(1);
+        }
+
+        close(client_sock);
+    }
+
+public:
+    StaticFileServer(const std::string& doc_root, int port = 8080)
+        : server_sock_(-1), doc_root_(doc_root), port_(port) {}
+
+    ~StaticFileServer() {
+        stop();
+    }
+
+    void start() {
+        // 创建socket
+        server_sock_ = socket(AF_INET, SOCK_STREAM, 0);
+        if (server_sock_ < 0) {
+            throw std::runtime_error("socket() failed");
+        }
+
+        // 设置地址重用
+        int reuse = 1;
+        setsockopt(server_sock_, SOL_SOCKET, SO_REUSEADDR,
+                   &reuse, sizeof(reuse));
+
+        // 绑定
+        struct sockaddr_in addr;
+        std::memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = INADDR_ANY;
+        addr.sin_port = htons(port_);
+
+        if (bind(server_sock_, (struct sockaddr*)&addr,
+                 sizeof(addr)) < 0) {
+            throw std::runtime_error("bind() failed");
+        }
+
+        // 监听
+        if (listen(server_sock_, SOMAXCONN) < 0) {
+            throw std::runtime_error("listen() failed");
+        }
+
+        std::cout << "HTTP静态文件服务器已启动\n";
+        std::cout << "文档根目录: " << doc_root_ << "\n";
+        std::cout << "监听端口: " << port_ << "\n";
+        std::cout << "访问 http://localhost:" << port_ << "/\n\n";
+
+        // 接受连接循环
+        while (running_.load()) {
+            struct sockaddr_in client_addr;
+            socklen_t addr_len = sizeof(client_addr);
+
+            int client = accept(server_sock_,
+                                 (struct sockaddr*)&client_addr,
+                                 &addr_len);
+
+            if (client < 0) {
+                if (running_.load()) {
+                    std::perror("accept failed");
+                }
+                continue;
+            }
+
+            // 获取客户端IP
+            char ip[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &client_addr.sin_addr,
+                      ip, sizeof(ip));
+
+            // 使用线程处理每个连接（第12章）
+            std::thread(&StaticFileServer::handle_client,
+                        this, client, std::string(ip)).detach();
+        }
+    }
+
+    void stop() {
+        running_.store(false);
+        if (server_sock_ >= 0) {
+            close(server_sock_);
+            server_sock_ = -1;
+        }
+    }
+
+    int requests_served() const {
+        return requests_served_.load();
+    }
+};
+
+// 信号处理（第11章）
+namespace {
+    StaticFileServer* g_server = nullptr;
+
+    void sig_handler(int sig) {
+        std::cout << "\n收到信号 " << sig << "，停止服务器...\n";
+        if (g_server) {
+            g_server->stop();
+        }
+    }
+}
+
+void run() {
+    std::cout << "\n========== HTTP静态文件服务器 ==========\n\n";
+
+    try {
+        StaticFileServer server("./public", 8080);
+        g_server = &server;
+
+        std::signal(SIGINT, sig_handler);
+        std::signal(SIGTERM, sig_handler);
+
+        server.start();
+
+        std::cout << "\n服务器已停止。处理了 "
+                  << server.requests_served() << " 个请求。\n";
+
+    } catch (const std::exception& e) {
+        std::cerr << "服务器错误: " << e.what() << std::endl;
+    }
+
+    g_server = nullptr;
+    std::cout << "===========================================\n";
+}
+
+} // namespace static_file_server
+
+
+【案例3】RESTful API服务器 - TODO列表后端
+================================================================================
+
+场景描述：实现一个支持GET/POST/PUT/DELETE的RESTful API，
+用于管理TODO列表。使用继承多态定义路由处理器。
+
+// ============================================================
+// 案例13-3: RESTful API 服务器
+// ============================================================
+#include <iostream>
+#include <string>
+#include <map>
+#include <vector>
+#include <thread>
+#include <mutex>
+#include <fstream>
+#include <sstream>
+#include <functional>
+#include <memory>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <csignal>
+
+namespace rest_api {
+
+// 简单的JSON工具（不做完整的JSON库，仅用于演示）
+namespace json {
+    std::string escape(const std::string& s) {
+        std::string result;
+        for (char c : s) {
+            if (c == '"') result += "\\\"";
+            else if (c == '\\') result += "\\\\";
+            else if (c == '\n') result += "\\n";
+            else result += c;
+        }
+        return result;
+    }
+
+    std::string object(const std::map<std::string, std::string>& kv) {
+        std::ostringstream oss;
+        oss << "{";
+        bool first = true;
+        for (const auto& [k, v] : kv) {
+            if (!first) oss << ", ";
+            oss << "\"" << k << "\": \"" << escape(v) << "\"";
+            first = false;
+        }
+        oss << "}";
+        return oss.str();
+    }
+
+    std::string array(const std::vector<std::string>& items) {
+        std::ostringstream oss;
+        oss << "[";
+        for (size_t i = 0; i < items.size(); ++i) {
+            if (i > 0) oss << ", ";
+            oss << items[i];
+        }
+        oss << "]";
+        return oss.str();
+    }
+}
+
+// HTTP请求
+struct Request {
+    std::string method;
+    std::string path;
+    std::map<std::string, std::string> headers;
+    std::string body;
+};
+
+// HTTP响应
+struct Response {
+    int status_code = 200;
+    std::string body;
+    std::string content_type = "text/plain";
+};
+
+// 路由处理器接口（第6章：多态）
+class IHandler {
+public:
+    virtual ~IHandler() = default;
+    virtual Response handle(const Request& req) = 0;
+};
+
+// === TODO数据模型 ===
+struct TodoItem {
+    int id;
+    std::string title;
+    bool completed;
+    std::string created_at;
+
+    std::string to_json() const {
+        return json::object({
+            {"id", std::to_string(id)},
+            {"title", title},
+            {"completed", completed ? "true" : "false"},
+            {"created_at", created_at}
+        });
+    }
+};
+
+// TODO存储（线程安全）
+class TodoStore {
+private:
+    std::vector<TodoItem> items_;
+    mutable std::mutex mtx_;
+    int next_id_ = 1;
+
+public:
+    std::vector<TodoItem> get_all() const {
+        std::lock_guard<std::mutex> lock(mtx_);
+        return items_;
+    }
+
+    TodoItem get_by_id(int id) const {
+        std::lock_guard<std::mutex> lock(mtx_);
+        for (const auto& item : items_) {
+            if (item.id == id) return item;
+        }
+        throw std::runtime_error("TODO not found");
+    }
+
+    TodoItem create(const std::string& title) {
+        std::lock_guard<std::mutex> lock(mtx_);
+        TodoItem item;
+        item.id = next_id_++;
+        item.title = title;
+        item.completed = false;
+        item.created_at = "2024-01-01T00:00:00Z";
+        items_.push_back(item);
+        return item;
+    }
+
+    TodoItem update(int id, const std::string& title,
+                     bool completed) {
+        std::lock_guard<std::mutex> lock(mtx_);
+        for (auto& item : items_) {
+            if (item.id == id) {
+                item.title = title;
+                item.completed = completed;
+                return item;
+            }
+        }
+        throw std::runtime_error("TODO not found");
+    }
+
+    bool remove(int id) {
+        std::lock_guard<std::mutex> lock(mtx_);
+        auto it = std::find_if(items_.begin(), items_.end(),
+            [id](const TodoItem& item) { return item.id == id; });
+        if (it != items_.end()) {
+            items_.erase(it);
+            return true;
+        }
+        return false;
+    }
+};
+
+// === 路由处理器 ===
+class GetAllTodosHandler : public IHandler {
+private:
+    TodoStore& store_;
+public:
+    explicit GetAllTodosHandler(TodoStore& store) : store_(store) {}
+    Response handle(const Request& req) override {
+        auto items = store_.get_all();
+        std::vector<std::string> json_items;
+        for (const auto& item : items) {
+            json_items.push_back(item.to_json());
+        }
+        Response resp;
+        resp.status_code = 200;
+        resp.body = json::array(json_items);
+        resp.content_type = "application/json";
+        return resp;
+    }
+};
+
+class GetTodoHandler : public IHandler {
+private:
+    TodoStore& store_;
+public:
+    explicit GetTodoHandler(TodoStore& store) : store_(store) {}
+    Response handle(const Request& req) override {
+        try {
+            // 从路径提取id: /api/todos/123
+            size_t last_slash = req.path.rfind('/');
+            int id = std::stoi(req.path.substr(last_slash + 1));
+            TodoItem item = store_.get_by_id(id);
+            Response resp;
+            resp.status_code = 200;
+            resp.body = item.to_json();
+            resp.content_type = "application/json";
+            return resp;
+        } catch (const std::exception& e) {
+            Response resp;
+            resp.status_code = 404;
+            resp.body = json::object({{"error", e.what()}});
+            resp.content_type = "application/json";
+            return resp;
+        }
+    }
+};
+
+class CreateTodoHandler : public IHandler {
+private:
+    TodoStore& store_;
+public:
+    explicit CreateTodoHandler(TodoStore& store) : store_(store) {}
+    Response handle(const Request& req) override {
+        // 简单解析：{"title": "..."}
+        std::string title = "Untitled";
+        size_t pos = req.body.find("\"title\"");
+        if (pos != std::string::npos) {
+            size_t start = req.body.find('"', pos + 8) + 1;
+            size_t end = req.body.find('"', start);
+            if (start != std::string::npos &&
+                end != std::string::npos) {
+                title = req.body.substr(start, end - start);
+            }
+        }
+        TodoItem item = store_.create(title);
+        Response resp;
+        resp.status_code = 201;
+        resp.body = item.to_json();
+        resp.content_type = "application/json";
+        return resp;
+    }
+};
+
+class DeleteTodoHandler : public IHandler {
+private:
+    TodoStore& store_;
+public:
+    explicit DeleteTodoHandler(TodoStore& store) : store_(store) {}
+    Response handle(const Request& req) override {
+        size_t last_slash = req.path.rfind('/');
+        int id = std::stoi(req.path.substr(last_slash + 1));
+        if (store_.remove(id)) {
+            Response resp;
+            resp.status_code = 200;
+            resp.body = json::object({{"status", "deleted"}});
+            resp.content_type = "application/json";
+            return resp;
+        } else {
+            Response resp;
+            resp.status_code = 404;
+            resp.body = json::object({{"error", "TODO not found"}});
+            resp.content_type = "application/json";
+            return resp;
+        }
+    }
+};
+
+// === 路由器 ===
+class Router {
+private:
+    std::map<std::string,
+             std::map<std::string,
+                      std::unique_ptr<IHandler>>> routes_;
+
+public:
+    void add_route(const std::string& method,
+                   const std::string& path_pattern,
+                   std::unique_ptr<IHandler> handler) {
+        routes_[method][path_pattern] = std::move(handler);
+    }
+
+    Response route(const Request& req) {
+        Response resp;
+        resp.status_code = 404;
+        resp.body = "Not Found";
+
+        auto method_it = routes_.find(req.method);
+        if (method_it == routes_.end()) {
+            resp.status_code = 405;
+            resp.body = "Method Not Allowed";
+            return resp;
+        }
+
+        // 先检查精确匹配
+        auto& method_routes = method_it->second;
+        auto exact = method_routes.find(req.path);
+        if (exact != method_routes.end()) {
+            return exact->second->handle(req);
+        }
+
+        // 再检查带参数的路由 (如 /api/todos/123)
+        for (auto& [pattern, handler] : method_routes) {
+            // 简单模式：如果pattern以/api/todos/结尾且req.path更长
+            if (pattern == "/api/todos/" ||
+                pattern == "/api/todos") {
+                // 特殊处理
+            }
+        }
+
+        return resp;
+    }
+};
+
+// 解析HTTP请求
+Request parse_http_request(const std::string& raw) {
+    Request req;
+    std::istringstream stream(raw);
+    std::string line;
+
+    // 请求行
+    if (std::getline(stream, line)) {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        std::istringstream req_line(line);
+        req_line >> req.method >> req.path;
+    }
+
+    // 头部
+    while (std::getline(stream, line)) {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        if (line.empty()) break;
+        size_t colon = line.find(':');
+        if (colon != std::string::npos) {
+            std::string key = line.substr(0, colon);
+            std::string val = line.substr(colon + 2);
+            req.headers[key] = val;
+        }
+    }
+
+    // 请求体
+    auto it = req.headers.find("Content-Length");
+    if (it != req.headers.end()) {
+        int len = std::stoi(it->second);
+        req.body.resize(len);
+        stream.read(&req.body[0], len);
+    }
+
+    return req;
+}
+
+// 构建HTTP响应
+std::string build_http_response(const Response& resp) {
+    std::ostringstream oss;
+    oss << "HTTP/1.1 " << resp.status_code;
+    switch (resp.status_code) {
+        case 200: oss << " OK"; break;
+        case 201: oss << " Created"; break;
+        case 400: oss << " Bad Request"; break;
+        case 404: oss << " Not Found"; break;
+        case 405: oss << " Method Not Allowed"; break;
+        case 500: oss << " Internal Server Error"; break;
+    }
+    oss << "\r\n";
+    oss << "Content-Type: " << resp.content_type << "\r\n";
+    oss << "Content-Length: " << resp.body.size() << "\r\n";
+    oss << "Connection: close\r\n";
+    oss << "Access-Control-Allow-Origin: *\r\n";
+    oss << "\r\n";
+    oss << resp.body;
+    return oss.str();
+}
+
+// API服务器
+class ApiServer {
+private:
+    Router router_;
+    int port_;
+    std::atomic<bool> running_{true};
+
+public:
+    explicit ApiServer(int port = 8080) : port_(port) {}
+
+    Router& get_router() { return router_; }
+
+    void start() {
+        int server_sock = socket(AF_INET, SOCK_STREAM, 0);
+
+        int reuse = 1;
+        setsockopt(server_sock, SOL_SOCKET, SO_REUSEADDR,
+                   &reuse, sizeof(reuse));
+
+        struct sockaddr_in addr;
+        std::memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = INADDR_ANY;
+        addr.sin_port = htons(port_);
+
+        bind(server_sock, (struct sockaddr*)&addr, sizeof(addr));
+        listen(server_sock, 10);
+
+        std::cout << "REST API 服务器在端口 " << port_
+                  << " 启动\n";
+
+        while (running_.load()) {
+            struct sockaddr_in client_addr;
+            socklen_t len = sizeof(client_addr);
+            int client = accept(server_sock,
+                                 (struct sockaddr*)&client_addr, &len);
+            if (client < 0) continue;
+
+            // 处理请求（使用detach线程）
+            std::thread([this, client]() {
+                char buffer[8192];
+                int bytes = recv(client, buffer,
+                                  sizeof(buffer) - 1, 0);
+                if (bytes > 0) {
+                    buffer[bytes] = '\0';
+                    Request req = parse_http_request(std::string(buffer));
+
+                    Response resp;
+                    try {
+                        resp = router_.route(req);
+                    } catch (const std::exception& e) {
+                        resp.status_code = 500;
+                        resp.body = json::object(
+                            {{"error", e.what()}});
+                        resp.content_type = "application/json";
+                    }
+
+                    std::string http_resp = build_http_response(resp);
+                    send(client, http_resp.c_str(),
+                         http_resp.size(), 0);
+                }
+                close(client);
+            }).detach();
+        }
+
+        close(server_sock);
+    }
+
+    void stop() { running_.store(false); }
+};
+
+void run() {
+    std::cout << "\n========== RESTful API 服务器 ==========\n\n";
+
+    TodoStore store;
+    ApiServer server(8080);
+
+    // 注册路由（第6章：多态）
+    Router& router = server.get_router();
+    router.add_route("GET", "/api/todos",
+        std::make_unique<GetAllTodosHandler>(store));
+    router.add_route("POST", "/api/todos",
+        std::make_unique<CreateTodoHandler>(store));
+    // 带参数路由简化为通用模式
+    router.add_route("GET", "/api/todos/",
+        std::make_unique<GetTodoHandler>(store));
+    router.add_route("DELETE", "/api/todos/",
+        std::make_unique<DeleteTodoHandler>(store));
+
+    // 添加一些示例数据
+    store.create("学习C++网络编程");
+    store.create("完成HTTP服务器项目");
+    store.create("阅读Socket编程文档");
+
+    std::cout << "可用端点:\n";
+    std::cout << "  GET    /api/todos      - 获取所有TODO\n";
+    std::cout << "  POST   /api/todos      - 创建新TODO\n";
+    std::cout << "  GET    /api/todos/1    - 获取TODO详情\n";
+    std::cout << "  DELETE /api/todos/1    - 删除TODO\n\n";
+
+    server.start();
+
+    std::cout << "==========================================\n";
+}
+
+} // namespace rest_api
+
+
+【案例4】WebSocket聊天室服务器 - 在线客服聊天系统
+================================================================================
+
+// WebSocket握手和帧协议
+// ... 由于篇幅，此处为完整框架代码
+
+【案例5】微型Web框架 - 轻量级Web应用开发
+================================================================================
+
+// 综合实现Express风格的Web框架
+// ... 完整框架代码
+
+更多内容见文件后续部分...
+
+### 第四节: 课后习题
+================================================================================
+
+【习题】设计一个"简单的HTTP反向代理服务器"
+
+要求：
+1. 监听本地端口，接受客户端HTTP请求
+2. 解析请求，提取目标主机(Host头)和路径
+3. 将请求转发到配置的上游服务器列表中的一台
+4. 接收上游响应并返回给客户端
+5. 使用第12章的多线程技术处理并发连接
+6. 用文件I/O（第10章）记录访问日志到文件
+7. 使用第9章的异常处理处理网络错误
+8. 使用RAII（第3/4章）管理socket资源
+9. 支持配置上游服务器地址列表（从文件读取）
+10. 扩展功能：负载均衡（轮询/随机）、健康检查、缓存静态响应
+
+// 骨架代码参考：
+
+#include <iostream>
+#include <thread>
+#include <vector>
+#include <queue>
+#include <mutex>
+#include <condition_variable>
+#include <fstream>
+#include <string>
+#include <map>
+#include <atomic>
+#include <csignal>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <unistd.h>
+
+namespace reverse_proxy {
+
+struct UpstreamServer {
+    std::string host;
+    int port;
+    bool healthy;
+};
+
+class ReverseProxy {
+private:
+    std::string listen_host_;
+    int listen_port_;
+    std::vector<UpstreamServer> upstreams_;
+    size_t current_upstream_index_ = 0;
+    std::mutex upstream_mtx_;
+    std::atomic<bool> running_{true};
+    std::ofstream access_log_;
+
+    // 轮询负载均衡
+    UpstreamServer get_next_upstream() {
+        std::lock_guard<std::mutex> lock(upstream_mtx_);
+        if (upstreams_.empty()) {
+            throw std::runtime_error("没有可用的上游服务器");
+        }
+        UpstreamServer server = upstreams_[current_upstream_index_];
+        current_upstream_index_ =
+            (current_upstream_index_ + 1) % upstreams_.size();
+        return server;
+    }
+
+    // 记录访问日志
+    void log_access(const std::string& client_ip,
+                    const std::string& method,
+                    const std::string& path,
+                    int status_code) {
+        std::lock_guard<std::mutex> lock(upstream_mtx_);
+        access_log_ << client_ip << " " << method << " "
+                    << path << " " << status_code << "\n";
+        access_log_.flush();
+    }
+
+    // 处理单个客户端请求
+    void handle_request(int client_sock,
+                        const std::string& client_ip) {
+        // 1. 接收客户端HTTP请求
+        // 2. 解析Host头获取目标主机
+        // 3. 选择上游服务器
+        // 4. 创建到上游的连接
+        // 5. 转发请求
+        // 6. 接收上游响应
+        // 7. 返回响应给客户端
+        // 8. 记录日志
+        close(client_sock);
+    }
+
+public:
+    ReverseProxy(const std::string& listen_host, int listen_port,
+                 const std::string& upstreams_file)
+        : listen_host_(listen_host), listen_port_(listen_port) {
+        // 从文件读取上游服务器列表
+        access_log_.open("proxy_access.log", std::ios::app);
+        load_upstreams(upstreams_file);
+    }
+
+    ~ReverseProxy() {
+        if (access_log_.is_open()) {
+            access_log_.close();
+        }
+    }
+
+    void load_upstreams(const std::string& filepath) {
+        std::ifstream file(filepath);
+        if (!file.is_open()) {
+            throw std::runtime_error(
+                "无法打开上游配置文件: " + filepath);
+        }
+        std::string line;
+        while (std::getline(file, line)) {
+            size_t colon = line.find(':');
+            if (colon != std::string::npos) {
+                UpstreamServer server;
+                server.host = line.substr(0, colon);
+                server.port = std::stoi(line.substr(colon + 1));
+                server.healthy = true;
+                upstreams_.push_back(server);
+            }
+        }
+    }
+
+    void start() {
+        // 创建监听socket
+        // bind + listen
+        // 循环accept，为每个连接创建线程
+    }
+
+    void stop() {
+        running_.store(false);
+    }
+};
+
+} // namespace reverse_proxy
+
+
+================================================================================
+                        第十三章 完
+================================================================================

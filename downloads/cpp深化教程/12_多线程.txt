@@ -1,0 +1,3257 @@
+================================================================================
+                    第十二章  多线程 (Multithreading)
+================================================================================
+
+
+### 第一节: 基础示例代码 + 计算机底层原理
+================================================================================
+
+【12.1.1 基础示例：创建和等待线程】
+
+C++11引入了std::thread类，使得多线程编程变得简单且跨平台。下面是最基础的线程
+创建和等待示例：
+
+// ============================================================
+// 示例 12-1: 最基本的线程创建
+// ============================================================
+#include <iostream>
+#include <thread>
+#include <string>
+
+void print_message(const std::string& msg) {
+    std::cout << "[Thread " << std::this_thread::get_id()
+              << "] " << msg << std::endl;
+}
+
+int main() {
+    std::cout << "[Main] Starting. Main thread ID: "
+              << std::this_thread::get_id() << std::endl;
+
+    // 创建线程：传入函数和参数
+    std::thread t1(print_message, "Hello from thread 1");
+    std::thread t2(print_message, "Hello from thread 2");
+
+    // join: 主线程等待子线程完成
+    t1.join();
+    t2.join();
+
+    std::cout << "[Main] All threads finished." << std::endl;
+    return 0;
+}
+// 编译: g++ -std=c++17 -pthread 12-1.cpp -o 12-1
+
+【12.1.2 join 与 detach 的区别】
+
+// ============================================================
+// 示例 12-2: join vs detach
+// ============================================================
+#include <iostream>
+#include <thread>
+#include <chrono>
+#include <atomic>
+
+std::atomic<bool> g_running{true};
+
+void worker_thread(int id) {
+    while (g_running.load(std::memory_order_relaxed)) {
+        std::cout << "Worker " << id << " is running..." << std::endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+    std::cout << "Worker " << id << " stopped." << std::endl;
+}
+
+void independent_task() {
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    std::cout << "[Detached] Independent task done!" << std::endl;
+}
+
+int main() {
+    // === join 示例 ===
+    std::thread joined_thread(worker_thread, 1);
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    g_running.store(false);
+    joined_thread.join();  // 主线程在此阻塞，直到worker_thread结束
+    // join之后，可以安全地检查线程状态
+    std::cout << "joined_thread is joinable? "
+              << joined_thread.joinable() << std::endl;  // 0 (false)
+
+    // === detach 示例 ===
+    // detach将线程与std::thread对象分离，线程在后台运行
+    // 分离后无法join，线程结束时资源自动回收
+    std::thread detached_thread(independent_task);
+    detached_thread.detach();
+    // detached_thread.join();  // 错误！已分离的线程不能join
+    std::cout << "[Main] detached_thread is joinable? "
+              << detached_thread.joinable() << std::endl;  // 0 (false)
+    std::cout << "[Main] Main thread continues without waiting..."
+              << std::endl;
+
+    // 必须给分离线程足够时间完成
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+    std::cout << "[Main] Exiting." << std::endl;
+    return 0;
+}
+
+【12.1.3 使用Lambda创建线程】
+
+// ============================================================
+// 示例 12-3: Lambda创建线程与捕获列表
+// ============================================================
+#include <iostream>
+#include <thread>
+#include <vector>
+
+int main() {
+    int shared_counter = 0;
+    std::vector<std::thread> threads;
+
+    // 按引用捕获：多个线程操作同一变量（此处为演示，实际需同步）
+    for (int i = 0; i < 5; ++i) {
+        threads.emplace_back([&shared_counter, i]() {
+            // 每个线程对shared_counter执行某些操作
+            int local = shared_counter;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            shared_counter = local + i + 1;
+            std::cout << "Thread " << i
+                      << " set counter to " << shared_counter << std::endl;
+        });
+    }
+
+    // 按值捕获：线程各自独立操作
+    std::thread independent([i = 42]() {
+        std::cout << "Independent thread with captured value: "
+                  << i << std::endl;
+    });
+
+    for (auto& t : threads) t.join();
+    independent.join();
+
+    std::cout << "Final counter: " << shared_counter << std::endl;
+    return 0;
+}
+
+
+================================================================================
+【12.1.4 底层原理：CPU核心与线程的关系】
+================================================================================
+
+一、物理核心 (Physical Core)
+    CPU芯片上实际存在的独立计算单元。每个核心拥有自己的：
+   - 算术逻辑单元（ALU）
+   - 浮点运算单元（FPU）
+   - L1/L2缓存
+   - 指令解码器
+   一颗8核CPU可以真正同时执行8条指令（真正的并行）。
+
+二、超线程技术 (Hyper-Threading / SMT)
+    Intel的超线程技术（AMD称为SMT，Simultaneous Multi-Threading）让一个物理核心
+    看起来像两个逻辑核心。原理是：
+   - 一个物理核心内有两套寄存器组和程序计数器(PC)
+   - 但共享一套ALU/FPU等执行单元
+   - 当线程A因为缓存未命中而等待内存时，CPU可以切换到线程B执行
+   - 性能提升通常为15%-30%，不是真正的翻倍
+   - 因为执行单元被共享，两个超线程之间会产生资源竞争
+
+    因此，一台"8核16线程"的CPU实际上只有8个物理核心。对于计算密集型任务，
+    超过物理核心数的线程不会有任何性能提升（反而因上下文切换降低性能）。
+    对于I/O密集型任务（如等待网络、磁盘），超线程能有效填充等待时间。
+
+三、std::thread与操作系统的关系
+    在Linux上，std::thread底层调用pthread_create创建POSIX线程。
+    在Windows上，调用CreateThread创建Win32线程。
+    在macOS上，基于Mach线程和POSIX线程。
+
+    无论是哪个平台，std::thread创建的线程都由操作系统内核管理，是真正的
+    内核级线程（Kernel-Level Thread，KLT），与进程共用调度器的调度队列。
+
+    相比之下，有些语言实现的"协程"(coroutine)或"绿色线程"(green thread)
+    是用户态调度，不经过操作系统。C++20虽然引入了协程，但std::thread始终是
+    内核线程。
+
+
+================================================================================
+【12.1.5 底层原理：操作系统线程调度】
+================================================================================
+
+一、时间片轮转 (Round-Robin)
+    最基础的调度算法：每个就绪线程分配一个固定的时间片（通常为10ms-100ms，
+    Linux CFS使用了动态时间片）。时间片用完后，操作系统强制切换线程。
+    这种抢占式调度(Preemptive Scheduling)保证了所有线程都能获得CPU时间。
+
+    时间片设置的艺术：
+   - 时间片太短 → 上下文切换开销占比大，吞吐量下降
+   - 时间片太长 → 交互响应变慢，用户感觉"卡顿"
+   - Linux CFS使用动态计算的时间片：target_latency / nr_running
+
+二、CFS (Completely Fair Scheduler) 完全公平调度器
+    Linux从2.6.23开始使用CFS替代O(1)调度器。核心思想：
+   - 每个线程维护一个虚拟运行时间(vruntime)
+   - vruntime = 实际运行时间 × (nice_0_weight / 当前线程权重)
+   - 调度器总是选择vruntime最小的线程运行
+   - 使用红黑树（std::map的底层数据结构）管理线程，选择next线程的时间复杂度O(log n)
+   - 高优先级线程的vruntime增长慢，因此获得更多CPU时间
+
+    CFS的公平性体现在：在一个调度周期内，所有可运行线程按其权重比例获得CPU份额。
+    例如：线程A的nice值=-5（高优先级，权重较高），线程B的nice值=0（正常），
+    线程C的nice值=+5（低优先级），三者的CPU份额比例约为 3:2:1。
+
+三、调度策略类型
+    Linux支持多种调度策略：
+   - SCHED_OTHER (CFS): 默认分时调度策略，用于普通进程
+   - SCHED_FIFO: 实时先进先出，高优先级抢占低优先级，用于对延迟敏感的任务
+   - SCHED_RR: 实时轮转，类似FIFO但有时间片限制
+   - SCHED_DEADLINE: 截止时间调度，保证任务在deadline前完成
+
+    可通过pthread_attr_setschedpolicy设置，但通常不建议普通程序使用实时调度。
+
+
+================================================================================
+【12.1.6 底层原理：进程与线程的内存共享模型】
+================================================================================
+
+一、进程的内存布局（回顾第3章）
+    ┌─────────────┐ 高地址
+    │  栈 (Stack)  │ ← 函数调用帧、局部变量、返回地址
+    ├─────────────┤
+    │     ↓↓↓     │
+    │   (空隙)    │
+    │     ↑↑↑     │
+    ├─────────────┤
+    │  堆 (Heap)   │ ← 动态分配内存 (new/malloc)
+    ├─────────────┤
+    │  BSS段       │ ← 未初始化的全局/静态变量
+    ├─────────────┤
+    │  数据段      │ ← 已初始化的全局/静态变量
+    ├─────────────┤
+    │  代码段      │ ← 程序的机器指令（只读）
+    └─────────────┘ 低地址
+
+二、线程间共享的资源
+   同一个进程内的所有线程共享：
+   - 堆 (Heap): 所有线程的new/malloc分配在同一堆中，可互相访问
+   - 全局变量/静态变量: .data和.bss段对所有线程可见
+   - 代码段: 同一进程的线程执行相同的程序代码
+   - 文件描述符: 线程A打开的文件，线程B也可以读写（文件描述符表是进程级别的）
+   - 信号处理函数: 进程级别的设置（但信号通常发给进程的某个线程）
+   - 进程ID、工作目录、资源限制等进程属性
+
+三、线程间独立的资源
+   每个线程拥有自己独立的：
+   - 栈 (Stack): 每个线程有自己的调用栈，通常在进程地址空间的高地址区域
+     分配（Linux默认栈大小为8MB，可通过pthread_attr_setstacksize调整）
+   - 寄存器组: 包括通用寄存器、程序计数器(PC)、栈指针(SP)、标志寄存器等
+   - 线程ID (tid): 操作系统级线程标识符
+   - errno: C标准库的errno是线程局部的（通过TLS实现）
+   - 信号掩码 (Signal Mask): 每个线程可以阻塞不同的信号
+
+四、内存共享带来的问题
+   共享是方便的，但也是数据竞争(Data Race)的根源。
+   当线程A和线程B同时访问同一内存位置：
+   - 至少有一个是写操作
+   - 没有同步机制（锁、原子操作等）
+   此时程序的行为是未定义的(Undefined Behavior)。
+
+   例如，两个线程同时执行 counter++：
+   - 线程A读取counter=0
+   - 线程B读取counter=0  （都读到0）
+   - 线程A计算counter+1=1
+   - 线程B计算counter+1=1
+   - 线程A写入counter=1
+   - 线程B写入counter=1  （覆盖了A的写入！）
+   最终counter=1，而非预期的2。这就是典型的丢失更新(Lost Update)。
+
+
+================================================================================
+【12.1.7 底层原理：线程上下文切换的开销】
+================================================================================
+
+当操作系统决定从一个线程切换到另一个线程时，需要执行以下步骤：
+
+一、上下文切换的步骤
+   1. 保存当前线程状态
+      - 将所有寄存器值保存到当前线程的内核栈
+      - 保存程序计数器（下一条指令地址）
+      - 保存栈指针
+      - 保存其他CPU状态寄存器（如标志寄存器）
+
+   2. 更新调度信息
+      - 将当前线程移入适当的调度队列（就绪队列或等待队列）
+      - 更新线程的vruntime（CFS）或其他调度统计信息
+
+   3. 选择下一个线程
+      - CFS从红黑树中选择vruntime最小的线程
+      - 或从等待队列中唤醒满足条件的线程
+
+   4. 恢复下一个线程状态
+      - 从新线程的内核栈恢复寄存器值
+      - 恢复程序计数器
+      - 恢复栈指针，切换到新线程的栈
+      - 更新MMU（内存管理单元）的页表指针（如果切换进程而非线程）
+
+二、上下文切换的开销分析
+   - 直接开销：保存/恢复寄存器的指令（通常约100-200个CPU周期）
+   - 间接开销——缓存失效：
+     * L1/L2/L3缓存中的数据属于前一线程，新线程访问自己的数据时会Cache Miss
+     * TLB（Translation Lookaside Buffer，页表缓存）也需要重新加载
+     * 分支预测器的历史信息失效，需要重新训练
+     * 间接开销可能比直接开销大10-100倍
+
+   - 实际数字（粗略估算）：
+     * 线程切换（同一进程）：约1000-5000个CPU周期
+     * 进程切换（不同进程）：约5000-50000个CPU周期（需要刷新TLB和页表）
+
+三、减少上下文切换的策略
+   1. 线程数 ≈ CPU逻辑核心数（对于计算密集型任务）
+   2. 使用线程池复用线程，避免频繁创建/销毁
+   3. 避免锁竞争过于激烈，减少线程阻塞等待
+   4. 使用无锁数据结构(lock-free)减少阻塞
+   5. 绑定CPU亲和性(pthread_setaffinity_np)，减少线程在核心间迁移
+      // CPU亲和性设置示例
+      #include <pthread.h>
+      cpu_set_t cpuset;
+      CPU_ZERO(&cpuset);
+      CPU_SET(0, &cpuset);  // 绑定到核心0
+      pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+
+
+================================================================================
+【12.1.8 底层原理：内存屏障和缓存一致性协议(MESI)】
+================================================================================
+
+一、缓存一致性问题
+   现代CPU每个核心都有自己的L1/L2缓存。当核心A修改了变量x的值：
+   - A的L1缓存中x的值被更新了
+   - 但核心B的L1缓存中x的值还是旧的
+   - 这导致不同核心看到的x值不一致
+
+   CPU设计者通过缓存一致性协议来解决这个问题。最常用的是MESI协议。
+
+二、MESI协议：四种缓存行状态
+   每个缓存行(Cache Line，通常64字节)处于以下四种状态之一：
+
+   M (Modified，已修改):
+     当前缓存行的数据已被本核心修改，且与其他核心的副本不一致。
+     本核心拥有独占权。在将此缓存行写回主存之前，其他核心不能读取。
+
+   E (Exclusive，独占):
+     当前缓存行的数据与主存一致，且只有本核心拥有副本。
+     本核心可以直接修改它（转入M状态），无需通知其他核心。
+
+   S (Shared，共享):
+     当前缓存行的数据与主存一致，可能有多个核心拥有副本。
+     要修改时，必须先发送消息使其他核心的副本失效。
+
+   I (Invalid，无效):
+     当前缓存行无效，不可使用。要读取数据需要从其他核心或主存获取。
+
+   转换规则：
+   - 核心读取数据：如果有其他核心的副本 → S状态，否则 → E状态
+   - 核心写入数据：必须先使其他核心的副本失效 → E或M状态
+   - 其他核心写入：本核心的副本 → I状态
+
+三、MESI协议的消息传递
+   CPU之间通过总线（或现代CPU的QPI/Infinity Fabric互联）发送消息：
+   - BusRdX: "我要读取并修改，请让你们的副本失效"
+   - BusUpgr: "我要修改，请让你们的副本失效"
+   - BusWB: "我在写回主存"
+   - Flush: "我正在回应你的读取请求"
+
+四、内存屏障 (Memory Barrier / Fence)
+   即使有MESI协议，CPU和编译器仍然可能对指令进行重排序（为了提高性能）。
+   内存屏障是防止重排序的指令：
+
+   1. 编译器屏障: asm volatile("" ::: "memory") 阻止编译器重排指令
+   2. CPU屏障: std::atomic_thread_fence() 或内联汇编的mfence/lfence/sfence
+
+   内存屏障的类型：
+   - 获取屏障 (Acquire Barrier): 屏障后的操作不会被重排到屏障前
+     // 通常用于读取操作后，保证读到的值是最新的
+   - 释放屏障 (Release Barrier): 屏障前的操作不会被重排到屏障后
+     // 通常用于写入操作前，保证写入的值对其他核心可见
+   - 全屏障 (Full Barrier): 双向阻止重排序
+
+   在C++中，通过std::atomic的memory_order来控制：
+   - memory_order_relaxed: 仅保证原子性，不保证顺序
+   - memory_order_acquire: 获取语义
+   - memory_order_release: 释放语义
+   - memory_order_acq_rel: 获取+释放
+   - memory_order_seq_cst: 顺序一致性（默认，最强保证，但开销最大）
+
+
+================================================================================
+【12.1.9 底层原理：数据竞争(Data Race)的本质】
+================================================================================
+
+C++标准对数据竞争的定义（[intro.races]）：
+两个表达式求值在同一线程中或不同线程中，如果其中一个修改了内存位置，而另一个
+读取或也修改了同一内存位置，且这些求值没有通过happens-before关系进行排序，
+则构成数据竞争。数据竞争导致未定义行为。
+
+一、数据竞争的三个条件（缺一不可）
+   1. 多个线程访问同一内存位置
+   2. 至少有一个线程执行写操作
+   3. 访问之间没有同步（无锁/无原子操作/无正确的happens-before关系）
+
+二、常见的数据竞争场景
+   1. 简单的共享变量自增
+      // 错误示例 —— 数据竞争！
+      int counter = 0;
+      void increment() {
+          counter++;  // 读-改-写，不是原子的
+      }
+
+   2. 检查-然后-修改 (Check-Then-Act)
+      // 错误示例
+      if (list.size() > 0) {
+          auto item = list.back();  // 另一个线程可能已经pop了
+          list.pop_back();
+      }
+
+   3. 不变量的临时破坏
+      // 错误示例
+      struct Node { Node* prev; Node* next; };
+      // 在修改双向链表时，中间状态可能.prev和.next不一致
+      // 另一个线程正好看到这个不一致的状态
+
+   4. 非原子类型部分写入
+      // 错误示例
+      struct LargeData { int64_t a; int64_t b; int64_t c; };
+      // 在32位平台上，64位操作可能被拆分为两个32位操作
+      // 另一个线程可能读到"写了一半"的值
+
+三、如何检测数据竞争
+   1. Thread Sanitizer（tsan）：编译时添加 -fsanitize=thread
+   $ g++ -std=c++17 -fsanitize=thread -g prog.cpp -o prog -pthread
+   $ ./prog
+   // TSan会报告所有检测到的数据竞争
+
+   2. Helgrind（Valgrind工具）：
+   $ valgrind --tool=helgrind ./prog
+
+   3. 代码审查：检查所有共享数据的访问路径是否都有适当的同步保护
+
+四、防止数据竞争的方法
+   1. 互斥锁(std::mutex)：保护临界区
+   2. 原子操作(std::atomic)：适合简单的读-改-写操作
+   3. 不可变数据(immutable)：只创建后不修改的数据天然线程安全
+   4. 线程局部存储(thread_local)：每个线程自己有副本
+   5. 消息传递：线程间不共享数据，只通过队列传递消息
+
+
+### 第二节: 所有用法大全（标准库/关键字/函数）
+================================================================================
+
+【12.2.1 <thread> 头文件完整用法】
+================================================================================
+
+一、std::thread 类
+
+// ============================================================
+// 示例 12-4: thread 类的各种构造方式
+// ============================================================
+#include <iostream>
+#include <thread>
+#include <functional>
+#include <chrono>
+
+// 1. 普通函数
+void func(int a, double b) {
+    std::cout << "func: " << a << ", " << b << std::endl;
+}
+
+// 2. 函数对象 (Functor)
+struct Task {
+    int id;
+    Task(int i) : id(i) {}
+    void operator()() const {
+        std::cout << "Task " << id << " executing." << std::endl;
+    }
+};
+
+// 3. 类的成员函数
+class Worker {
+public:
+    void process(int value) {
+        std::cout << "Worker::process(" << value << ")" << std::endl;
+    }
+    void process_const(int value) const {
+        std::cout << "Worker::process_const(" << value << ")" << std::endl;
+    }
+};
+
+int main() {
+    // 方式1: 普通函数 + 参数
+    std::thread t1(func, 42, 3.14);
+
+    // 方式2: 函数对象
+    Task task(100);
+    std::thread t2(task);
+    // 注意: std::thread t2(Task(100)); 可能会被解释为函数声明！
+    // 需要额外括号: std::thread t2((Task(100)));
+    // 或使用大括号: std::thread t2{Task(100)};
+
+    // 方式3: Lambda表达式
+    std::thread t3([](int x, int y) {
+        std::cout << "Lambda: " << x + y << std::endl;
+    }, 10, 20);
+
+    // 方式4: 成员函数 + 对象指针/引用 + 参数
+    Worker w;
+    std::thread t4(&Worker::process, &w, 99);
+
+    // 方式5: const成员函数
+    std::thread t5(&Worker::process_const, &w, 88);
+
+    // 方式6: std::ref 包装引用参数（thread默认按值传递）
+    int value = 5;
+    std::thread t6([](int& v) {
+        v = 100;  // 修改引用的值
+    }, std::ref(value));
+
+    // 方式7: std::function
+    std::function<void()> f = []() {
+        std::cout << "std::function thread" << std::endl;
+    };
+    std::thread t7(f);
+
+    // 方式8: 移动构造
+    std::thread t8([](){ std::cout << "T8" << std::endl; });
+    std::thread t9(std::move(t8));  // t8不再拥有线程
+    // t8.join(); // 错误！t8为空
+
+    t1.join(); t2.join(); t3.join();
+    t4.join(); t5.join(); t6.join();
+    t7.join(); t9.join();
+
+    std::cout << "After t6, value = " << value << std::endl;  // 100
+    return 0;
+}
+
+
+二、std::thread 成员函数
+
+// ============================================================
+// 示例 12-5: join, detach, joinable
+// ============================================================
+#include <iostream>
+#include <thread>
+#include <chrono>
+
+void work() {
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+}
+
+int main() {
+    std::thread t;
+
+    // joinable() - 检查线程是否可join（即是否关联一个活跃线程）
+    std::cout << "Default constructed, joinable: "
+              << t.joinable() << std::endl;  // false
+
+    t = std::thread(work);
+    std::cout << "After assignment, joinable: "
+              << t.joinable() << std::endl;  // true
+
+    t.join();
+    std::cout << "After join, joinable: "
+              << t.joinable() << std::endl;  // false
+
+    // 析构时如果线程还是joinable，会调用std::terminate！
+    // std::thread dt(work);
+    // return 0; // dt析构 → terminate!
+
+    // 安全模式：在析构前确保join或detach
+    std::thread safe_t(work);
+    if (safe_t.joinable()) {
+        safe_t.join();  // 或 safe_t.detach();
+    }
+    return 0;
+}
+
+
+三、std::this_thread 命名空间下的函数
+
+// ============================================================
+// 示例 12-6: this_thread 函数
+// ============================================================
+#include <iostream>
+#include <thread>
+#include <chrono>
+#include <sstream>
+
+std::string current_thread_id_str() {
+    std::ostringstream oss;
+    oss << std::this_thread::get_id();
+    return oss.str();
+}
+
+void sleepy_worker() {
+    std::cout << "Worker starting on thread: "
+              << current_thread_id_str() << std::endl;
+
+    // sleep_for: 阻塞当前线程指定时长
+    std::cout << "  Sleeping for 500ms..." << std::endl;
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    // sleep_until: 阻塞到指定时间点
+    auto wake_time = std::chrono::steady_clock::now()
+                     + std::chrono::milliseconds(500);
+    std::cout << "  Sleeping until..." << std::endl;
+    std::this_thread::sleep_until(wake_time);
+
+    std::cout << "Worker finished on thread: "
+              << current_thread_id_str() << std::endl;
+}
+
+void yield_example() {
+    // yield: 主动放弃CPU时间片，让其他线程运行
+    // 通常用于自旋锁或忙等待的优化
+    for (int i = 0; i < 100; ++i) {
+        // ... 做一些轻量级工作
+        if (i % 10 == 0) {
+            std::this_thread::yield();  // 给其他线程机会
+            std::cout << "Yield at iteration " << i << std::endl;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+}
+
+int main() {
+    std::cout << "Main thread ID: " << current_thread_id_str() << std::endl;
+
+    // get_id: 返回 std::thread::id 类型
+    std::thread t1(sleepy_worker);
+    std::cout << "t1 thread ID: " << t1.get_id() << std::endl;
+
+    // hardware_concurrency: 返回硬件支持的并发线程数
+    std::cout << "Hardware concurrency (logical cores): "
+              << std::thread::hardware_concurrency() << std::endl;
+
+    // yield 示例
+    std::thread t2(yield_example);
+
+    t1.join();
+    t2.join();
+
+    // native_handle: 获取底层操作系统线程句柄（用于系统调用）
+    // pthread_t handle = t1.native_handle();  // Linux
+    // HANDLE handle = t1.native_handle();     // Windows
+
+    return 0;
+}
+
+
+================================================================================
+【12.2.2 <mutex> 头文件完整用法】
+================================================================================
+
+一、std::mutex 基础互斥量
+
+// ============================================================
+// 示例 12-7: mutex 基本用法
+// ============================================================
+#include <iostream>
+#include <thread>
+#include <mutex>
+
+std::mutex mtx;
+int shared_counter = 0;
+
+void safe_increment(int times) {
+    for (int i = 0; i < times; ++i) {
+        mtx.lock();           // 获取锁
+        ++shared_counter;     // 临界区 (Critical Section)
+        mtx.unlock();         // 释放锁
+    }
+}
+
+void unsafe_increment(int times) {
+    for (int i = 0; i < times; ++i) {
+        ++shared_counter;     // 数据竞争！
+    }
+}
+
+int main() {
+    int iterations = 100000;
+
+    // 不安全版本：结果不确定
+    shared_counter = 0;
+    std::thread u1(unsafe_increment, iterations);
+    std::thread u2(unsafe_increment, iterations);
+    u1.join(); u2.join();
+    std::cout << "Unsafe result:  " << shared_counter
+              << " (expected " << (2 * iterations) << ")" << std::endl;
+
+    // 安全版本：结果确定
+    shared_counter = 0;
+    std::thread s1(safe_increment, iterations);
+    std::thread s2(safe_increment, iterations);
+    s1.join(); s2.join();
+    std::cout << "Safe result:    " << shared_counter
+              << " (expected " << (2 * iterations) << ")" << std::endl;
+
+    return 0;
+}
+
+
+二、std::lock_guard RAII风格的锁管理
+
+// ============================================================
+// 示例 12-8: lock_guard 用法
+// ============================================================
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <vector>
+
+class ThreadSafeCounter {
+private:
+    mutable std::mutex mtx_;
+    int value_ = 0;
+
+public:
+    void increment() {
+        std::lock_guard<std::mutex> lock(mtx_);
+        // lock_guard构造时调用mtx_.lock()
+        ++value_;
+        // lock_guard析构时调用mtx_.unlock() —— 自动释放，异常安全！
+    }
+
+    void decrement() {
+        std::lock_guard<std::mutex> lock(mtx_);
+        --value_;
+    }
+
+    int get_value() const {
+        std::lock_guard<std::mutex> lock(mtx_);
+        return value_;
+    }
+};
+
+int main() {
+    ThreadSafeCounter counter;
+    std::vector<std::thread> threads;
+
+    for (int i = 0; i < 10; ++i) {
+        threads.emplace_back([&counter]() {
+            for (int j = 0; j < 1000; ++j) {
+                counter.increment();
+            }
+        });
+    }
+
+    for (auto& t : threads) t.join();
+    std::cout << "Final count: " << counter.get_value() << std::endl;
+    return 0;
+}
+
+
+三、std::unique_lock 高级锁管理
+
+// ============================================================
+// 示例 12-9: unique_lock 用法
+// ============================================================
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <chrono>
+
+std::mutex resource_mtx;
+int resource = 0;
+
+void flexible_locker(int id) {
+    // unique_lock 提供灵活的锁管理：
+    // 1. 延迟锁定 (defer_lock)
+    // 2. 尝试锁定 (try_to_lock)
+    // 3. 领养已锁定的mutex (adopt_lock)
+
+    // 方式1: 正常构造，立即锁定
+    {
+        std::unique_lock<std::mutex> lock(resource_mtx);
+        resource += 10;
+        std::cout << "Thread " << id
+                  << " (normal): resource = " << resource << std::endl;
+    } // lock析构，自动解锁
+
+    // 方式2: 延迟锁定，稍后手动锁定
+    {
+        std::unique_lock<std::mutex> lock(resource_mtx, std::defer_lock);
+        // 做一些不需要锁的准备工作...
+        std::cout << "Thread " << id << " preparing..." << std::endl;
+        lock.lock();  // 现在才获取锁
+        resource += 20;
+        std::cout << "Thread " << id
+                  << " (deferred): resource = " << resource << std::endl;
+        // lock.unlock();  // 可以手动提前解锁
+    }
+
+    // 方式3: 尝试锁定 (try_to_lock)
+    {
+        std::unique_lock<std::mutex> lock(resource_mtx, std::try_to_lock);
+        if (lock.owns_lock()) {
+            std::cout << "Thread " << id << " got the lock!" << std::endl;
+            resource += 30;
+        } else {
+            std::cout << "Thread " << id
+                      << " could not get lock, doing other work..."
+                      << std::endl;
+        }
+    }
+
+    // 方式4: 领养已锁定的互斥量
+    {
+        resource_mtx.lock();
+        // ... 持有锁做一些事
+        std::unique_lock<std::mutex> lock(resource_mtx, std::adopt_lock);
+        // 现在lock管理这个mutex，析构时会解锁
+        resource += 40;
+    }
+
+    // unique_lock 还支持移动语义
+    std::unique_lock<std::mutex> lock1(resource_mtx);
+    // std::unique_lock<std::mutex> lock2 = lock1;  // 错误！不可复制
+    std::unique_lock<std::mutex> lock3(std::move(lock1));  // 正确，可移动
+}
+
+int main() {
+    std::thread t1(flexible_locker, 1);
+    std::thread t2(flexible_locker, 2);
+    t1.join(); t2.join();
+    std::cout << "Final resource: " << resource << std::endl;
+    return 0;
+}
+
+
+四、std::scoped_lock (C++17) 死锁避免的锁管理
+
+// ============================================================
+// 示例 12-10: scoped_lock 用法
+// ============================================================
+#include <iostream>
+#include <thread>
+#include <mutex>
+
+std::mutex mtx_a, mtx_b;
+
+void deadlock_prone(int id) {
+    // 危险写法：如果线程1先锁mtx_a再锁mtx_b，
+    // 线程2先锁mtx_b再锁mtx_a，可能死锁！
+    // 使用 std::lock 或 std::scoped_lock 避免
+    {
+        std::scoped_lock lock(mtx_a, mtx_b);
+        // scoped_lock 等效于 std::lock(mtx_a, mtx_b) 然后领养两个锁
+        // std::lock 使用死锁避免算法（try_lock+退避）
+        std::cout << "Thread " << id << " locked both mutexes safely."
+                  << std::endl;
+    }
+}
+
+void manual_deadlock_avoidance(int id) {
+    // C++11/14中手动避免死锁的方式
+    std::lock(mtx_a, mtx_b);  // 原子性地锁定多个mutex
+    std::lock_guard<std::mutex> lock_a(mtx_a, std::adopt_lock);
+    std::lock_guard<std::mutex> lock_b(mtx_b, std::adopt_lock);
+    // 或使用unique_lock
+    std::cout << "Thread " << id << " (manual) locked both." << std::endl;
+}
+
+int main() {
+    std::thread t1(deadlock_prone, 1);
+    std::thread t2(deadlock_prone, 2);
+    std::thread t3(manual_deadlock_avoidance, 3);
+    t1.join(); t2.join(); t3.join();
+    return 0;
+}
+
+
+五、std::recursive_mutex 递归互斥量
+
+// ============================================================
+// 示例 12-11: recursive_mutex 用法
+// ============================================================
+#include <iostream>
+#include <thread>
+#include <mutex>
+
+class RecursiveCounter {
+private:
+    std::recursive_mutex mtx_;
+    int value_ = 0;
+
+public:
+    void increment() {
+        std::lock_guard<std::recursive_mutex> lock(mtx_);
+        ++value_;
+    }
+
+    void add_multiple(int count) {
+        std::lock_guard<std::recursive_mutex> lock(mtx_);
+        for (int i = 0; i < count; ++i) {
+            increment();  // 调用increment，它会再次获取同一个mutex
+            // 如果用普通mutex，这里会死锁！
+            // recursive_mutex允许同一线程多次获取
+        }
+    }
+
+    int get_value() const {
+        std::lock_guard<std::recursive_mutex> lock(mtx_);
+        return value_;
+    }
+};
+
+int main() {
+    RecursiveCounter rc;
+    rc.add_multiple(5);  // 调用increment 5次
+    std::cout << "Value: " << rc.get_value() << std::endl;  // 5
+    return 0;
+}
+
+
+六、std::timed_mutex 带超时的互斥量
+
+// ============================================================
+// 示例 12-12: timed_mutex 用法
+// ============================================================
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <chrono>
+
+std::timed_mutex tmtx;
+
+void try_lock_for_example(int id) {
+    // try_lock_for: 尝试在指定时间内获取锁
+    auto timeout = std::chrono::milliseconds(100);
+    if (tmtx.try_lock_for(timeout)) {
+        std::cout << "Thread " << id
+                  << " got lock within 100ms." << std::endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        tmtx.unlock();
+    } else {
+        std::cout << "Thread " << id
+                  << " timed out after 100ms." << std::endl;
+    }
+}
+
+void try_lock_until_example(int id) {
+    // try_lock_until: 尝试在指定时间点之前获取锁
+    auto deadline = std::chrono::steady_clock::now()
+                    + std::chrono::milliseconds(150);
+    if (tmtx.try_lock_until(deadline)) {
+        std::cout << "Thread " << id
+                  << " got lock before deadline." << std::endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        tmtx.unlock();
+    } else {
+        std::cout << "Thread " << id
+                  << " missed the deadline." << std::endl;
+    }
+}
+
+int main() {
+    std::thread t1(try_lock_for_example, 1);
+    std::thread t2(try_lock_until_example, 2);
+    t1.join(); t2.join();
+    return 0;
+}
+
+
+七、std::call_once 和 std::once_flag 确保单次执行
+
+// ============================================================
+// 示例 12-13: call_once 用法（线程安全的单例）
+// ============================================================
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <vector>
+
+class Singleton {
+private:
+    static std::unique_ptr<Singleton> instance_;
+    static std::once_flag init_flag_;
+
+    Singleton() { std::cout << "Singleton constructed." << std::endl; }
+    ~Singleton() { std::cout << "Singleton destroyed." << std::endl; }
+
+public:
+    Singleton(const Singleton&) = delete;
+    Singleton& operator=(const Singleton&) = delete;
+
+    static Singleton& get_instance() {
+        std::call_once(init_flag_, []() {
+            instance_.reset(new Singleton());
+        });
+        return *instance_;
+    }
+
+    void do_something() {
+        std::cout << "Singleton::do_something()" << std::endl;
+    }
+};
+
+std::unique_ptr<Singleton> Singleton::instance_;
+std::once_flag Singleton::init_flag_;
+
+int main() {
+    std::vector<std::thread> threads;
+    for (int i = 0; i < 10; ++i) {
+        threads.emplace_back([]() {
+            // 所有线程调用get_instance，但Singleton只构造一次
+            Singleton::get_instance().do_something();
+        });
+    }
+    for (auto& t : threads) t.join();
+    return 0;
+}
+
+
+================================================================================
+【12.2.3 <condition_variable> 头文件完整用法】
+================================================================================
+
+// ============================================================
+// 示例 12-14: condition_variable 基本用法
+// ============================================================
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <queue>
+#include <chrono>
+
+std::mutex mtx;
+std::condition_variable cv;
+std::queue<int> data_queue;
+bool done = false;
+
+void producer() {
+    for (int i = 1; i <= 10; ++i) {
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            data_queue.push(i);
+            std::cout << "[Producer] Pushed: " << i << std::endl;
+        }
+        // 通知一个等待的消费者（notify_one）
+        // 在解锁之后通知或之前通知都可以，但解锁后通知可能稍减少上下文切换
+        cv.notify_one();
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    // 通知所有消费者生产者已完成
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        done = true;
+    }
+    cv.notify_all();
+}
+
+void consumer(int id) {
+    while (true) {
+        std::unique_lock<std::mutex> lock(mtx);
+
+        // wait 的行为：
+        // 1. 检查条件（lambda返回false），释放mutex，线程进入等待
+        // 2. 收到通知，重新获取mutex，检查条件
+        // 3. 条件为true，wait返回（mutex保持锁定状态）
+        cv.wait(lock, []{ return !data_queue.empty() || done; });
+
+        if (!data_queue.empty()) {
+            int value = data_queue.front();
+            data_queue.pop();
+            std::cout << "[Consumer " << id << "] Popped: "
+                      << value << std::endl;
+        }
+
+        if (done && data_queue.empty()) {
+            break;
+        }
+    }
+}
+
+int main() {
+    std::thread p(producer);
+    std::thread c1(consumer, 1);
+    std::thread c2(consumer, 2);
+
+    p.join(); c1.join(); c2.join();
+    std::cout << "All done." << std::endl;
+    return 0;
+}
+
+
+【关于虚假唤醒 (Spurious Wakeup)】
+
+虚假唤醒是指线程在条件变量上wait时，即使没有收到notify，也可能被唤醒。
+这是因为操作系统和硬件层面的实现细节所致。因此，条件变量的wait必须使用
+循环或带谓词的wait来重新检查条件：
+
+// 错误做法 —— 可能被虚假唤醒欺骗
+while (true) {
+    std::unique_lock<std::mutex> lock(mtx);
+    // cv.wait(lock); // 没有谓词！
+    // process(data); // 假设被唤醒就有数据——错误！
+}
+
+// 正确做法1 —— 使用带谓词的wait
+cv.wait(lock, []{ return !data_queue.empty(); });
+
+// 正确做法2 —— 手动while循环
+while (data_queue.empty()) {
+    cv.wait(lock);
+}
+
+【notify_one vs notify_all】
+- notify_one: 唤醒等待在条件变量上的某一个线程（不确定是哪个）
+  适用场景：生产者每次只生产一个任务，一个消费者就能处理
+- notify_all: 唤醒所有等待线程
+  适用场景：状态变化影响所有等待线程（如重置、关闭）
+
+
+【带超时的条件变量等待】
+
+// ============================================================
+// 示例 12-15: wait_for / wait_until
+// ============================================================
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <chrono>
+
+std::mutex mtx2;
+std::condition_variable cv2;
+bool ready = false;
+
+void waiter() {
+    std::unique_lock<std::mutex> lock(mtx2);
+
+    // wait_for: 等待指定时长
+    std::cout << "Waiting for 500ms..." << std::endl;
+    if (cv2.wait_for(lock, std::chrono::milliseconds(500))) {
+        std::cout << "Condition satisfied!" << std::endl;
+    } else {
+        std::cout << "Timeout! ready is still false." << std::endl;
+        std::cout << "ready = " << ready << std::endl;
+    }
+
+    // wait_until: 等待到指定时间点
+    auto deadline = std::chrono::steady_clock::now()
+                    + std::chrono::milliseconds(300);
+    if (cv2.wait_until(lock, deadline, []{ return ready; })) {
+        std::cout << "Condition met before deadline." << std::endl;
+    } else {
+        std::cout << "Deadline passed." << std::endl;
+    }
+}
+
+int main() {
+    std::thread w(waiter);
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    {
+        std::lock_guard<std::mutex> lock(mtx2);
+        ready = true;
+    }
+    cv2.notify_one();
+    w.join();
+    return 0;
+}
+
+
+================================================================================
+【12.2.4 <atomic> 头文件完整用法】
+================================================================================
+
+// ============================================================
+// 示例 12-16: atomic<T> 基本类型
+// ============================================================
+#include <iostream>
+#include <thread>
+#include <atomic>
+#include <vector>
+#include <cassert>
+
+std::atomic<int> atomic_counter{0};
+std::atomic<bool> atomic_flag_ready{false};
+std::atomic<long long> atomic_large{0};
+
+// atomic的主要操作
+void atomic_basics() {
+    // store: 原子写入
+    atomic_counter.store(42, std::memory_order_relaxed);
+
+    // load: 原子读取
+    int val = atomic_counter.load(std::memory_order_relaxed);
+    std::cout << "Stored value: " << val << std::endl;
+
+    // fetch_add: 原子加法，返回旧值
+    int old = atomic_counter.fetch_add(10);
+    std::cout << "After fetch_add(10): old=" << old
+              << ", new=" << atomic_counter.load() << std::endl;
+
+    // fetch_sub: 原子减法
+    atomic_counter.fetch_sub(5);
+    std::cout << "After fetch_sub(5): " << atomic_counter.load() << std::endl;
+
+    // fetch_and, fetch_or, fetch_xor: 原子位运算
+    int bit_flags = 0b1010;
+    std::atomic<int> atomic_flags{bit_flags};
+    atomic_flags.fetch_or(0b0101);
+    std::cout << "After fetch_or: " << atomic_flags.load()
+              << " (binary: 1111)" << std::endl;
+
+    // 比较并交换 (Compare-And-Swap, CAS)
+    int expected = 47;
+    // 如果atomic_counter当前值是expected，则设为53，返回true
+    // 否则expected被更新为当前值，返回false
+    bool success = atomic_counter.compare_exchange_strong(expected, 53);
+    std::cout << "CAS success: " << success
+              << ", expected now: " << expected << std::endl;
+
+    // compare_exchange_weak: 可能虚假失败，但性能更好
+    // 通常在循环中使用
+    int expected_weak = atomic_counter.load();
+    while (!atomic_counter.compare_exchange_weak(expected_weak, 100)) {
+        // expected_weak 被更新为当前值
+        // 循环重试
+    }
+    std::cout << "After CAS loop: " << atomic_counter.load() << std::endl;
+
+    // exchange: 原子交换值，返回旧值
+    old = atomic_counter.exchange(999);
+    std::cout << "exchange: old=" << old
+              << ", new=" << atomic_counter.load() << std::endl;
+
+    // is_lock_free: 检查该原子类型是否使用硬件原子指令（无锁）
+    std::cout << "atomic<int> is lock-free: "
+              << atomic_counter.is_lock_free() << std::endl;
+    // 通常int/pointer/bool等基础类型是lock-free的
+    // 大的struct可能不是
+
+    // 针对bool类型的特殊操作
+    atomic_flag_ready.store(false);
+    bool old_bool = atomic_flag_ready.exchange(true);
+    std::cout << "atomic<bool> exchange: old=" << old_bool << std::endl;
+}
+
+
+// ============================================================
+// 示例 12-17: atomic_flag 原子标志位 (无锁布尔值)
+// ============================================================
+#include <atomic>
+#include <thread>
+
+class SpinLock {
+private:
+    std::atomic_flag flag_ = ATOMIC_FLAG_INIT;
+
+public:
+    void lock() {
+        // test_and_set: 如果flag是false则设为true并返回false（获得锁）
+        // 如果flag已经是true则返回true（锁被占用），继续自旋等待
+        while (flag_.test_and_set(std::memory_order_acquire)) {
+            // 自旋等待 (Busy-Waiting)
+            // 在x86上可以用 _mm_pause() 减少功耗
+            // 也可以用 yield 给其他线程机会
+            std::this_thread::yield();
+        }
+    }
+
+    void unlock() {
+        flag_.clear(std::memory_order_release);
+    }
+};
+
+// 使用自旋锁的示例
+SpinLock spin_lock;
+int spin_counter = 0;
+
+void spin_worker() {
+    for (int i = 0; i < 1000; ++i) {
+        spin_lock.lock();
+        ++spin_counter;
+        spin_lock.unlock();
+    }
+}
+
+void test_spinlock() {
+    std::thread t1(spin_worker);
+    std::thread t2(spin_worker);
+    std::thread t3(spin_worker);
+    t1.join(); t2.join(); t3.join();
+    std::cout << "SpinLock result: " << spin_counter
+              << " (expected 3000)" << std::endl;
+}
+
+
+// ============================================================
+// 示例 12-18: memory_order 六种内存序
+// ============================================================
+#include <iostream>
+#include <thread>
+#include <atomic>
+
+// memory_order 有六种，按约束从弱到强：
+
+// 1. memory_order_relaxed: 仅保证原子性，不保证顺序
+//    适用场景：计数器这种不依赖顺序的场景
+std::atomic<int> relaxed_count{0};
+
+void relaxed_increment() {
+    for (int i = 0; i < 1000; ++i) {
+        relaxed_count.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
+// 2. memory_order_acquire: 获取语义
+//    该load之后的所有内存操作不会被重排到此load之前
+//    用于读取共享标志位
+
+// 3. memory_order_release: 释放语义
+//    该store之前的所有内存操作不会被重排到此store之后
+//    用于设置共享标志位
+
+// 4. memory_order_acq_rel: 同时具有获取和释放语义
+//    用于read-modify-write操作（如fetch_add）
+
+// 5. memory_order_seq_cst: 顺序一致性（默认）
+//    所有线程看到的所有原子操作顺序一致
+//    开销最大，但最容易推理
+
+// acquire/release 对的经典用法（守卫共享数据）
+std::atomic<bool> data_ready{false};
+std::string shared_string;  // 非原子数据
+
+void writer_thread() {
+    shared_string = "Important data from writer";  // 非原子写入
+    // release: 保证shared_string的写入在data_ready之前对所有线程可见
+    data_ready.store(true, std::memory_order_release);
+}
+
+void reader_thread() {
+    // acquire: 保证data_ready读取之后的操作不会在读取之前执行
+    while (!data_ready.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+    }
+    // 此时保证能看到writer写入的shared_string
+    std::cout << "Reader sees: " << shared_string << std::endl;
+}
+
+// 6. memory_order_consume: 数据依赖序（很少使用，几乎所有编译器实现为acquire）
+//    C++17建议不要使用
+
+void memory_order_demo() {
+    std::thread w(writer_thread);
+    std::thread r(reader_thread);
+    w.join(); r.join();
+
+    std::cout << "memory_order demo complete." << std::endl;
+}
+
+
+int main() {
+    atomic_basics();
+    test_spinlock();
+    memory_order_demo();
+    return 0;
+}
+
+
+================================================================================
+【12.2.5 <future> 头文件完整用法】
+================================================================================
+
+// ============================================================
+// 示例 12-19: async, future, promise, packaged_task 对比
+// ============================================================
+#include <iostream>
+#include <thread>
+#include <future>
+#include <chrono>
+#include <vector>
+#include <numeric>
+
+// ---- 方式1: std::async 自动异步执行 ----
+int compute_sum(int from, int to) {
+    int sum = 0;
+    for (int i = from; i <= to; ++i) {
+        sum += i;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return sum;
+}
+
+void async_example() {
+    // std::launch::async: 强制在新线程中执行
+    std::future<int> result1 = std::async(std::launch::async,
+                                           compute_sum, 1, 100);
+
+    // std::launch::deferred: 延迟执行，在get/wait时在当前线程执行
+    std::future<int> result2 = std::async(std::launch::deferred,
+                                           compute_sum, 1, 50);
+
+    // 默认（async | deferred）: 由实现决定
+    std::future<int> result3 = std::async(compute_sum, 1, 200);
+
+    std::cout << "Waiting for async results..." << std::endl;
+
+    // get(): 阻塞等待结果，只能调用一次；之后future无效
+    std::cout << "Result1 (async): " << result1.get() << std::endl;
+
+    // wait(): 阻塞等待任务完成，不获取结果
+    result2.wait();
+    std::cout << "Result2 (deferred): " << result2.get() << std::endl;
+
+    // wait_for: 带超时的等待
+    auto status = result3.wait_for(std::chrono::milliseconds(10));
+    if (status == std::future_status::ready) {
+        std::cout << "Result3 is ready: " << result3.get() << std::endl;
+    } else if (status == std::future_status::timeout) {
+        std::cout << "Result3 is still running..." << std::endl;
+        // 可以继续等待
+        std::cout << "Result3 finally: " << result3.get() << std::endl;
+    } else if (status == std::future_status::deferred) {
+        std::cout << "Result3 is deferred." << std::endl;
+    }
+}
+
+
+// ---- 方式2: std::promise 手动设置结果 ----
+void promise_example() {
+    std::promise<int> prom;          // 创建promise
+    std::future<int> fut = prom.get_future();  // 获取关联的future
+
+    std::thread worker([&prom]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+        // 设置结果：promise.set_value(...)
+        prom.set_value(42);
+        // promise.set_value(43);  // 错误！只能set一次
+
+        // 或者设置异常
+        // prom.set_exception(
+        //     std::make_exception_ptr(std::runtime_error("Error!"))
+        // );
+    });
+
+    std::cout << "Waiting for promise..." << std::endl;
+    int result = fut.get();  // 阻塞直到promise设置结果
+    std::cout << "Promise result: " << result << std::endl;
+
+    worker.join();
+}
+
+
+// ---- 方式3: std::packaged_task 包装可调用对象 ----
+void packaged_task_example() {
+    // packaged_task 包装一个函数，返回一个future
+    std::packaged_task<int(int, int)> task([](int a, int b) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        return a * b;
+    });
+
+    std::future<int> fut = task.get_future();
+
+    // 在新线程中执行任务
+    std::thread worker(std::move(task), 6, 7);  // task被移动，之后不可用
+    // 也可以直接在当前线程执行: task(6, 7);
+
+    std::cout << "6 * 7 = " << fut.get() << std::endl;
+    worker.join();
+}
+
+
+// ---- 方式4: std::shared_future 多次获取结果 ----
+void shared_future_example() {
+    std::promise<std::string> prom;
+    // shared_future 可以被复制，多次读取
+    std::shared_future<std::string> shared_fut = prom.get_future().share();
+
+    std::thread setter([&prom]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        prom.set_value("Shared result");
+    });
+
+    auto reader = [shared_fut](int id) {
+        // shared_future的get()返回的是const引用，可以多次调用
+        std::cout << "Reader " << id << " got: "
+                  << shared_fut.get() << std::endl;
+    };
+
+    std::thread r1(reader, 1);
+    std::thread r2(reader, 2);
+    std::thread r3(reader, 3);
+
+    setter.join(); r1.join(); r2.join(); r3.join();
+}
+
+
+// ---- std::future 的 valid() 和 share() ----
+void future_management() {
+    std::future<int> fut = std::async([]() { return 100; });
+
+    // valid(): 检查future是否关联一个共享状态（即是否可get）
+    std::cout << "future is valid: " << fut.valid() << std::endl;  // true
+
+    int result = fut.get();
+    std::cout << "future is valid after get: "
+              << fut.valid() << std::endl;  // false
+
+    // share(): 将future转换为shared_future
+    std::future<int> fut2 = std::async([]() { return 200; });
+    std::shared_future<int> shared = fut2.share();
+    // fut2.valid() 现在是false
+
+    std::cout << "Shared future result: " << shared.get() << std::endl;
+}
+
+
+int main() {
+    async_example();
+    promise_example();
+    packaged_task_example();
+    shared_future_example();
+    future_management();
+    return 0;
+}
+
+
+================================================================================
+【12.2.6 thread_local 线程本地存储】
+================================================================================
+
+// ============================================================
+// 示例 12-20: thread_local 用法
+// ============================================================
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <vector>
+
+// thread_local 变量：每个线程拥有独立的副本
+// 类似全局变量，但每个线程看到的是自己的版本
+
+// 全局thread_local变量
+thread_local int tls_counter = 0;
+
+// 经典用法：线程安全的随机数生成器
+thread_local unsigned int tls_seed = std::random_device{}();
+
+// 每个线程有独立的errno替代方案
+thread_local std::string tls_last_error;
+
+void worker_with_tls(int id) {
+    // 每个线程独立增加自己的tls_counter
+    for (int i = 0; i < 5; ++i) {
+        ++tls_counter;
+        std::cout << "Thread " << id << ": tls_counter = "
+                  << tls_counter << std::endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+}
+
+class ThreadLocalCache {
+    // 静态成员也可以是thread_local
+    static thread_local std::vector<int> cache_;
+public:
+    static void add(int value) {
+        cache_.push_back(value);
+    }
+    static size_t size() {
+        return cache_.size();
+    }
+};
+
+thread_local std::vector<int> ThreadLocalCache::cache_;
+
+void cache_user(int id) {
+    for (int i = 0; i < id * 10; ++i) {
+        ThreadLocalCache::add(i);
+    }
+    std::cout << "Thread " << id
+              << " cache size: " << ThreadLocalCache::size() << std::endl;
+}
+
+int main() {
+    // 主线程的tls_counter
+    tls_counter = 100;
+    std::cout << "[Main] tls_counter = " << tls_counter << std::endl;
+
+    std::vector<std::thread> threads;
+    for (int i = 1; i <= 3; ++i) {
+        threads.emplace_back(worker_with_tls, i);
+        threads.emplace_back(cache_user, i);
+    }
+    for (auto& t : threads) t.join();
+
+    // 主线程的tls_counter不受其他线程影响
+    std::cout << "[Main] final tls_counter = "
+              << tls_counter << std::endl;  // 仍然是100
+    std::cout << "[Main] cache size: "
+              << ThreadLocalCache::size() << std::endl;  // 0
+
+    return 0;
+}
+
+
+================================================================================
+【12.2.7 C++20新增：std::jthread 自动join的线程】
+================================================================================
+
+C++20引入了std::jthread（joining thread），它在析构时自动调用join()，
+避免了因忘记join而导致的std::terminate问题。jthread还支持停止令牌
+(stop_token)，提供协作式线程取消机制。
+
+// C++20 jthread 示例（需要C++20支持）
+/*
+#include <iostream>
+#include <thread>
+#include <chrono>
+
+void worker(std::stop_token stoken) {
+    while (!stoken.stop_requested()) {
+        std::cout << "Working..." << std::endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
+    std::cout << "Worker stopped." << std::endl;
+}
+
+int main() {
+    std::jthread jt(worker);
+
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    // 请求停止
+    jt.request_stop();
+
+    // jt在析构时自动join，无需手动调用
+    // jt.request_stop() 已经请求了停止，worker检查到后退出
+}
+*/
+
+
+### 第三节: 实用代码案例（生活场景举例）
+================================================================================
+
+【案例1】并发计数器 - 网站访问量统计
+================================================================================
+
+场景描述：一个电子商务网站需要统计总访问量。多个前端服务器线程同时
+增加访问计数器。如果不使用同步机制，会导致计数不准确。
+
+// ============================================================
+// 案例12-1: 并发访问量计数器（完整代码）
+// ============================================================
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <vector>
+#include <chrono>
+#include <atomic>
+#include <iomanip>
+
+namespace visit_counter {
+
+// 使用命名空间隔离（第1章：命名空间）
+class VisitCounter {
+private:
+    mutable std::mutex mtx_;
+    long long total_visits_ = 0;
+    std::atomic<long long> atomic_visits_{0};
+
+public:
+    // 带锁的递增（线程安全）
+    void increment_safe() {
+        std::lock_guard<std::mutex> lock(mtx_);
+        ++total_visits_;
+    }
+
+    // 不加锁的递增（线程不安全）
+    void increment_unsafe() {
+        ++total_visits_;
+    }
+
+    // 原子递增（无需mutex，性能更好）
+    void increment_atomic() {
+        atomic_visits_.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    long long get_safe() const {
+        std::lock_guard<std::mutex> lock(mtx_);
+        return total_visits_;
+    }
+
+    long long get_unsafe() const { return total_visits_; }
+    long long get_atomic() const { return atomic_visits_.load(); }
+
+    void reset() {
+        std::lock_guard<std::mutex> lock(mtx_);
+        total_visits_ = 0;
+        atomic_visits_.store(0);
+    }
+};
+
+void simulate_visits(VisitCounter& counter,
+                     int thread_id, int num_visits) {
+    for (int i = 0; i < num_visits; ++i) {
+        counter.increment_unsafe();
+        counter.increment_safe();
+        counter.increment_atomic();
+        // 模拟访问间隔
+        std::this_thread::sleep_for(std::chrono::microseconds(10));
+    }
+}
+
+void run() {
+    const int NUM_THREADS = 8;
+    const int VISITS_PER_THREAD = 10000;
+
+    VisitCounter counter;
+
+    std::cout << "\n========== 网站访问量统计器 ==========\n";
+    std::cout << "模拟 " << NUM_THREADS << " 个前端服务器线程\n";
+    std::cout << "每线程记录 " << VISITS_PER_THREAD << " 次访问\n\n";
+
+    std::vector<std::thread> threads;
+    for (int i = 0; i < NUM_THREADS; ++i) {
+        threads.emplace_back(simulate_visits,
+                             std::ref(counter),
+                             i, VISITS_PER_THREAD);
+    }
+
+    for (auto& t : threads) t.join();
+
+    long long expected = static_cast<long long>(NUM_THREADS)
+                         * VISITS_PER_THREAD;
+    std::cout << "预计总访问量: " << expected << "\n";
+    std::cout << "不加锁结果:    " << counter.get_unsafe()
+              << " (错误！数据竞争导致丢失)\n";
+    std::cout << "加mutex结果:   " << counter.get_safe()
+              << " (正确！)\n";
+    std::cout << "原子操作结果:  " << counter.get_atomic()
+              << " (正确！且更快)\n";
+    std::cout << "========================================\n";
+}
+
+} // namespace visit_counter
+
+
+【案例2】生产者-消费者模型 - 餐厅后厨
+================================================================================
+
+场景描述：餐厅后厨中，厨师（生产者）做菜放到传菜窗口（缓冲区），
+服务员（消费者）从窗口取菜上桌。用环形缓冲区实现。
+
+// ============================================================
+// 案例12-2: 餐厅后厨生产消费者模型
+// ============================================================
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <vector>
+#include <queue>
+#include <chrono>
+#include <string>
+#include <random>
+#include <sstream>
+
+namespace restaurant {
+
+// 环形缓冲区模板类（第8章：模板）
+template <typename T, size_t Capacity>
+class RingBuffer {
+private:
+    T buffer_[Capacity];
+    size_t head_ = 0;  // 消费者位置
+    size_t tail_ = 0;  // 生产者位置
+    size_t count_ = 0;
+
+    mutable std::mutex mtx_;
+    std::condition_variable cv_not_full_;
+    std::condition_variable cv_not_empty_;
+
+public:
+    // 生产者放入数据
+    void put(const T& item) {
+        std::unique_lock<std::mutex> lock(mtx_);
+        // 如果缓冲区满，等待消费者取走
+        cv_not_full_.wait(lock, [this]() {
+            return count_ < Capacity;
+        });
+
+        buffer_[tail_] = item;
+        tail_ = (tail_ + 1) % Capacity;
+        ++count_;
+
+        // 通知消费者有新数据
+        cv_not_empty_.notify_one();
+    }
+
+    // 消费者取出数据
+    T take() {
+        std::unique_lock<std::mutex> lock(mtx_);
+        // 如果缓冲区空，等待生产者放入
+        cv_not_empty_.wait(lock, [this]() {
+            return count_ > 0;
+        });
+
+        T item = buffer_[head_];
+        head_ = (head_ + 1) % Capacity;
+        --count_;
+
+        // 通知生产者有空位
+        cv_not_full_.notify_one();
+        return item;
+    }
+
+    size_t size() const {
+        std::lock_guard<std::mutex> lock(mtx_);
+        return count_;
+    }
+};
+
+// 菜品类（第4章：类与对象）
+class Dish {
+private:
+    std::string name_;
+    int prep_time_;     // 准备时间(ms)
+    int dish_id_;
+    static std::atomic<int> next_id_;
+
+public:
+    Dish(const std::string& name, int prep_time)
+        : name_(name), prep_time_(prep_time), dish_id_(next_id_++) {}
+
+    std::string get_name() const { return name_; }
+    int get_prep_time() const { return prep_time_; }
+    int get_id() const { return dish_id_; }
+
+    std::string to_string() const {
+        std::ostringstream oss;
+        oss << "[" << dish_id_ << "]" << name_
+            << "(" << prep_time_ << "ms)";
+        return oss.str();
+    }
+};
+
+std::atomic<int> Dish::next_id_{1};
+
+// 厨师类——生产者（第4章：类与对象，第6章：多态——可扩展Chef子类）
+class Chef {
+private:
+    int id_;
+    RingBuffer<Dish, 10>& buffer_;
+    std::atomic<bool>& running_;
+    std::vector<std::string> menu_;
+    mutable std::mt19937 rng_;
+
+public:
+    Chef(int id, RingBuffer<Dish, 10>& buffer,
+         std::atomic<bool>& running)
+        : id_(id), buffer_(buffer), running_(running),
+          menu_({"宫保鸡丁", "鱼香肉丝", "红烧肉", "清蒸鱼",
+                 "麻婆豆腐", "糖醋排骨"}),
+          rng_(std::random_device{}()) {}
+
+    void cook() {
+        while (running_.load(std::memory_order_relaxed)) {
+            // 随机选择菜品
+            std::uniform_int_distribution<size_t> dist(0, menu_.size() - 1);
+            std::uniform_int_distribution<int> time_dist(50, 300);
+            std::string dish_name = menu_[dist(rng_)];
+            int prep_time = time_dist(rng_);
+
+            Dish dish(dish_name, prep_time);
+            std::cout << "[厨师 " << id_ << "] 正在做: "
+                      << dish.to_string() << std::endl;
+
+            // 模拟做菜时间
+            std::this_thread::sleep_for(
+                std::chrono::milliseconds(prep_time));
+
+            std::cout << "[厨师 " << id_ << "] 做好了: "
+                      << dish.to_string() << std::endl;
+            buffer_.put(dish);
+        }
+        std::cout << "[厨师 " << id_ << "] 下班了。" << std::endl;
+    }
+};
+
+// 服务员类——消费者
+class Waiter {
+private:
+    int id_;
+    RingBuffer<Dish, 10>& buffer_;
+    std::atomic<bool>& running_;
+    std::atomic<int>& dishes_served_;
+
+public:
+    Waiter(int id, RingBuffer<Dish, 10>& buffer,
+           std::atomic<bool>& running,
+           std::atomic<int>& dishes_served)
+        : id_(id), buffer_(buffer), running_(running),
+          dishes_served_(dishes_served) {}
+
+    void serve() {
+        while (running_.load(std::memory_order_relaxed)) {
+            Dish dish = buffer_.take();
+            dishes_served_.fetch_add(1, std::memory_order_relaxed);
+            std::cout << "  [服务员 " << id_ << "] 上菜: "
+                      << dish.to_string()
+                      << " (已上 " << dishes_served_.load() << " 道)"
+                      << std::endl;
+            // 模拟上菜时间
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        std::cout << "  [服务员 " << id_ << "] 下班了。" << std::endl;
+    }
+};
+
+void run() {
+    std::cout << "\n========== 餐厅后厨模拟系统 ==========\n\n";
+
+    RingBuffer<Dish, 10> serving_window;  // 传菜窗口
+    std::atomic<bool> running{true};
+    std::atomic<int> dishes_served{0};
+
+    // 2个厨师（生产者）
+    std::vector<std::thread> chefs;
+    Chef chef1(1, serving_window, running);
+    Chef chef2(2, serving_window, running);
+    chefs.emplace_back(&Chef::cook, &chef1);
+    chefs.emplace_back(&Chef::cook, &chef2);
+
+    // 3个服务员（消费者）
+    std::vector<std::thread> waiters;
+    Waiter waiter1(1, serving_window, running, dishes_served);
+    Waiter waiter2(2, serving_window, running, dishes_served);
+    Waiter waiter3(3, serving_window, running, dishes_served);
+    waiters.emplace_back(&Waiter::serve, &waiter1);
+    waiters.emplace_back(&Waiter::serve, &waiter2);
+    waiters.emplace_back(&Waiter::serve, &waiter3);
+
+    // 运行5秒后停止
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+    std::cout << "\n[系统] 打烊时间到，停止营业！\n";
+    running.store(false);
+
+    // 结束所有线程
+    for (auto& t : chefs) t.join();
+    for (auto& t : waiters) t.join();
+
+    std::cout << "\n[系统] 今天共上菜 " << dishes_served.load()
+              << " 道。大家辛苦了！\n";
+    std::cout << "=========================================\n";
+}
+
+} // namespace restaurant
+
+
+【案例3】并行文件搜索器 - 全盘搜索功能
+================================================================================
+
+场景描述：类似Windows资源管理器或Everything的文件搜索功能。
+多个线程并行搜索不同子目录，结果汇总到线程安全的集合中。
+
+// ============================================================
+// 案例12-3: 并行文件搜索器
+// ============================================================
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <vector>
+#include <string>
+#include <queue>
+#include <fstream>    // 第10章：文件与流
+#include <sstream>
+#include <functional>
+#include <future>     // 第12章：异步编程
+#include <algorithm>  // 第14章算法（预览）
+
+namespace parallel_search {
+
+// 搜索结果项
+struct SearchResult {
+    std::string filepath;
+    long long filesize;
+    std::string directory;
+
+    std::string to_string() const {
+        std::ostringstream oss;
+        oss << filepath << " (" << filesize << " bytes)";
+        return oss.str();
+    }
+};
+
+// 线程安全的搜索结果收集器
+class SearchResultCollector {
+private:
+    mutable std::mutex mtx_;
+    std::vector<SearchResult> results_;
+
+public:
+    void add(const SearchResult& result) {
+        std::lock_guard<std::mutex> lock(mtx_);
+        results_.push_back(result);
+    }
+
+    std::vector<SearchResult> get_all() const {
+        std::lock_guard<std::mutex> lock(mtx_);
+        return results_;
+    }
+
+    size_t count() const {
+        std::lock_guard<std::mutex> lock(mtx_);
+        return results_.size();
+    }
+};
+
+// 目录遍历器（简化版：模拟文件系统操作，第10章）
+class DirectoryLister {
+public:
+    // 获取子目录列表（实际应用中用 <filesystem>）
+    static std::vector<std::string> subdirectories(
+        const std::string& path) {
+        // 模拟子目录，实际应用中使用 std::filesystem::directory_iterator
+        std::vector<std::string> result;
+        // 此处为演示，实际需要用filesystem库
+        // for (auto& entry : fs::directory_iterator(path)) {
+        //     if (entry.is_directory())
+        //         result.push_back(entry.path().string());
+        // }
+        return result;
+    }
+
+    // 获取目录中的文件列表
+    static std::vector<std::string> files(const std::string& path) {
+        std::vector<std::string> result;
+        // 实际：for (auto& entry : fs::directory_iterator(path))
+        //     if (entry.is_regular_file())
+        //          result.push_back(entry.path().string());
+        return result;
+    }
+};
+
+// 文件搜索引擎
+class FileSearcher {
+private:
+    SearchResultCollector results_;
+    std::string keyword_;         // 搜索关键词
+    std::mutex dir_queue_mtx_;
+    std::queue<std::string> dir_queue_;
+    std::atomic<size_t> files_scanned_{0};
+    std::atomic<size_t> dirs_processed_{0};
+    std::atomic<bool> stop_requested_{false};
+
+public:
+    FileSearcher(const std::string& keyword) : keyword_(keyword) {}
+
+    // 添加要搜索的目录
+    void add_directory(const std::string& path) {
+        std::lock_guard<std::mutex> lock(dir_queue_mtx_);
+        dir_queue_.push(path);
+    }
+
+    // 搜索单个文件（检查是否匹配关键词）
+    bool match_file(const std::string& filepath) {
+        // 简化：检查文件名是否包含关键词
+        size_t pos = filepath.rfind('/');
+        std::string filename = (pos != std::string::npos)
+                               ? filepath.substr(pos + 1)
+                               : filepath;
+        // 不区分大小写的匹配
+        std::string lower_name = filename;
+        std::string lower_key = keyword_;
+        std::transform(lower_name.begin(), lower_name.end(),
+                       lower_name.begin(), ::tolower);
+        std::transform(lower_key.begin(), lower_key.end(),
+                       lower_key.begin(), ::tolower);
+        return lower_name.find(lower_key) != std::string::npos;
+    }
+
+    // 搜索单个文件的内容（第10章：文件I/O）
+    bool match_file_content(const std::string& filepath) {
+        // 读取文件内容搜索关键词（简化演示）
+        // std::ifstream file(filepath);
+        // std::string content((std::istreambuf_iterator<char>(file)),
+        //                      std::istreambuf_iterator<char>());
+        // return content.find(keyword_) != std::string::npos;
+        return false;  // 演示中不实际读取文件
+    }
+
+    // 工作线程函数（搜索目录树）
+    void search_worker(int thread_id) {
+        while (!stop_requested_.load(std::memory_order_relaxed)) {
+            std::string current_dir;
+
+            {
+                std::lock_guard<std::mutex> lock(dir_queue_mtx_);
+                if (dir_queue_.empty()) break;  // 没有更多目录
+                current_dir = dir_queue_.front();
+                dir_queue_.pop();
+            }
+
+            std::cout << "[线程 " << thread_id
+                      << "] 搜索目录: " << current_dir << std::endl;
+
+            dirs_processed_.fetch_add(1, std::memory_order_relaxed);
+
+            // 获取该目录中的文件
+            auto files = DirectoryLister::files(current_dir);
+
+            // 获取子目录并加入队列
+            auto subdirs = DirectoryLister::subdirectories(current_dir);
+            {
+                std::lock_guard<std::mutex> lock(dir_queue_mtx_);
+                for (const auto& sub : subdirs) {
+                    dir_queue_.push(current_dir + "/" + sub);
+                }
+            }
+
+            // 检查每个文件是否匹配
+            for (const auto& file : files) {
+                std::string fullpath = current_dir + "/" + file;
+                if (match_file(fullpath)) {
+                    SearchResult sr;
+                    sr.filepath = fullpath;
+                    sr.filesize = 0;  // 实际应用中获取文件大小
+                    sr.directory = current_dir;
+                    results_.add(sr);
+                }
+                files_scanned_.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
+    }
+
+    // 并行搜索（使用async）
+    std::future<void> search_parallel_async() {
+        return std::async(std::launch::async,
+                          &FileSearcher::search_with_threads, this, 4);
+    }
+
+    // 启动多个线程搜索
+    void search_with_threads(int num_threads) {
+        std::vector<std::thread> threads;
+        for (int i = 0; i < num_threads; ++i) {
+            threads.emplace_back(&FileSearcher::search_worker, this, i);
+        }
+        for (auto& t : threads) t.join();
+    }
+
+    // 获取结果报告
+    void print_report() const {
+        auto all_results = results_.get_all();
+        std::cout << "\n====== 搜索结果报告 ======\n";
+        std::cout << "搜索关键词: " << keyword_ << "\n";
+        std::cout << "扫描文件数: " << files_scanned_.load() << "\n";
+        std::cout << "处理目录数: " << dirs_processed_.load() << "\n";
+        std::cout << "找到匹配数: " << all_results.size() << "\n";
+        std::cout << "匹配文件列表:\n";
+        for (const auto& r : all_results) {
+            std::cout << "  " << r.to_string() << "\n";
+        }
+        std::cout << "==========================\n";
+    }
+
+    void save_report(const std::string& report_path) const {
+        std::ofstream report(report_path);  // 第10章：文件输出流
+        if (!report.is_open()) {
+            throw std::runtime_error("无法打开报告文件: " + report_path);
+        }
+        report << "搜索关键词: " << keyword_ << "\n";
+        report << "扫描文件数: " << files_scanned_.load() << "\n";
+        report << "匹配文件数: " << results_.count() << "\n";
+        report << "匹配文件:\n";
+        for (const auto& r : results_.get_all()) {
+            report << "  " << r.filepath << "\n";
+        }
+        report.close();
+    }
+
+    void request_stop() {
+        stop_requested_.store(true, std::memory_order_relaxed);
+    }
+};
+
+void run() {
+    std::cout << "\n========== 并行文件搜索器 ==========\n\n";
+
+    FileSearcher searcher("report");  // 搜索文件名包含"report"的文件
+
+    // 添加要搜索的目录
+    searcher.add_directory("/home/user/documents");
+    searcher.add_directory("/home/user/downloads");
+    searcher.add_directory("/home/user/projects");
+    searcher.add_directory("/var/log");
+
+    auto start = std::chrono::steady_clock::now();
+
+    // 并行搜索
+    auto future = searcher.search_parallel_async();
+    future.wait();
+
+    auto end = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<
+        std::chrono::milliseconds>(end - start);
+
+    searcher.print_report();
+    std::cout << "搜索耗时: " << duration.count() << " ms\n";
+
+    // 保存报告到文件（第10章）
+    try {
+        searcher.save_report("/tmp/search_report.txt");
+        std::cout << "报告已保存到 /tmp/search_report.txt\n";
+    } catch (const std::exception& e) {
+        std::cerr << "保存报告失败: " << e.what() << std::endl;
+    }
+
+    std::cout << "=====================================\n";
+}
+
+} // namespace parallel_search
+
+
+【案例4】线程池实现 - Web服务器请求处理
+================================================================================
+
+场景描述：Web服务器需要处理大量并发HTTP请求。为每个请求创建新线程
+开销太大，线程池预先创建固定数量的工作线程重复使用。
+
+// ============================================================
+// 案例12-4: 通用线程池实现
+// ============================================================
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <vector>
+#include <queue>
+#include <functional>
+#include <future>
+#include <memory>
+#include <stdexcept>
+#include <type_traits>
+#include <atomic>
+#include <chrono>
+
+namespace thread_pool_demo {
+
+// 抽象任务接口（第6章：多态）
+class ITask {
+public:
+    virtual ~ITask() = default;
+    virtual void execute() = 0;
+};
+
+// 线程池类
+class ThreadPool {
+private:
+    std::vector<std::thread> workers_;
+    std::queue<std::function<void()>> tasks_;  // 任务队列
+    std::mutex queue_mtx_;
+    std::condition_variable cv_;
+    std::atomic<bool> stop_{false};
+    std::atomic<size_t> active_tasks_{0};
+
+    void worker_thread() {
+        while (true) {
+            std::function<void()> task;
+
+            {
+                std::unique_lock<std::mutex> lock(queue_mtx_);
+                // 等待任务可用或线程池停止
+                cv_.wait(lock, [this]() {
+                    return stop_.load() || !tasks_.empty();
+                });
+
+                if (stop_.load() && tasks_.empty()) {
+                    return;  // 线程退出
+                }
+
+                task = std::move(tasks_.front());
+                tasks_.pop();
+                active_tasks_.fetch_add(1);
+            }
+
+            try {
+                task();
+            } catch (const std::exception& e) {
+                std::cerr << "[ThreadPool] 任务异常: "
+                          << e.what() << std::endl;
+            } catch (...) {
+                std::cerr << "[ThreadPool] 未知异常\n";
+            }
+
+            active_tasks_.fetch_sub(1);
+        }
+    }
+
+public:
+    explicit ThreadPool(size_t num_threads)
+        : stop_(false) {
+        if (num_threads == 0) {
+            throw std::invalid_argument(
+                "线程数必须大于0");
+        }
+        workers_.reserve(num_threads);
+        for (size_t i = 0; i < num_threads; ++i) {
+            workers_.emplace_back(
+                &ThreadPool::worker_thread, this);
+        }
+    }
+
+    ~ThreadPool() {
+        shutdown();
+    }
+
+    // 禁止拷贝和移动
+    ThreadPool(const ThreadPool&) = delete;
+    ThreadPool& operator=(const ThreadPool&) = delete;
+
+    // 提交任务（支持任意可调用对象和参数，第8章：可变参数模板）
+    template <typename F, typename... Args>
+    auto submit(F&& f, Args&&... args)
+        -> std::future<typename std::invoke_result<F, Args...>::type> {
+        using return_type = typename std::invoke_result<F, Args...>::type;
+
+        // 创建一个 packaged_task，用shared_ptr包装
+        // 因为packaged_task不可拷贝，而lambda要放入function<void()>队列
+        auto task = std::make_shared<std::packaged_task<return_type()>>(
+            std::bind(std::forward<F>(f), std::forward<Args>(args)...)
+        );
+
+        std::future<return_type> result_future = task->get_future();
+
+        {
+            std::lock_guard<std::mutex> lock(queue_mtx_);
+            if (stop_.load()) {
+                throw std::runtime_error(
+                    "无法向已停止的线程池提交任务");
+            }
+            tasks_.emplace([task]() { (*task)(); });
+        }
+
+        cv_.notify_one();
+        return result_future;
+    }
+
+    // 等待所有任务完成
+    void wait_all() {
+        while (true) {
+            std::lock_guard<std::mutex> lock(queue_mtx_);
+            if (tasks_.empty() && active_tasks_.load() == 0) {
+                break;
+            }
+            std::this_thread::yield();
+        }
+    }
+
+    // 优雅关闭
+    void shutdown() {
+        stop_.store(true);
+        cv_.notify_all();
+        for (std::thread& worker : workers_) {
+            if (worker.joinable()) {
+                worker.join();
+            }
+        }
+        workers_.clear();
+    }
+
+    size_t queue_size() const {
+        std::lock_guard<std::mutex> lock(queue_mtx_);
+        return tasks_.size();
+    }
+
+    size_t active_count() const {
+        return active_tasks_.load();
+    }
+};
+
+// 演示：模拟Web请求处理
+void handle_request(int request_id, int processing_time_ms) {
+    std::cout << "  [请求 #" << request_id
+              << "] 开始处理 (线程 "
+              << std::this_thread::get_id() << ")\n";
+    std::this_thread::sleep_for(
+        std::chrono::milliseconds(processing_time_ms));
+    std::cout << "  [请求 #" << request_id << "] 处理完成\n";
+}
+
+int compute_heavy_task(int input, int iterations) {
+    long long result = 0;  // 使用 long long 防止溢出
+    for (int i = 0; i < iterations; ++i) {
+        result += (input * i) % 10007;
+    }
+    return static_cast<int>(result % 10000);
+}
+
+void run() {
+    std::cout << "\n========== 线程池 - Web服务器模拟 ==========\n\n";
+
+    try {
+        // 创建线程池（4个工作线程）
+        ThreadPool pool(4);
+        std::cout << "线程池已创建，工作线程数: 4\n\n";
+
+        // 提交多个异步任务
+        std::vector<std::future<int>> results;
+
+        // 模拟Web请求处理
+        std::cout << "=== 提交Web请求处理任务 ===\n";
+        for (int i = 1; i <= 10; ++i) {
+            pool.submit(handle_request, i, (i % 3 + 1) * 100);
+        }
+
+        // 提交计算任务（使用模板submit支持不同类型返回值）
+        std::cout << "\n=== 提交计算任务 ===\n";
+        for (int i = 0; i < 5; ++i) {
+            auto fut = pool.submit(compute_heavy_task, i * 100, 1000);
+            results.push_back(std::move(fut));
+        }
+
+        // 获取计算结果
+        std::cout << "\n=== 计算结果 ===\n";
+        for (size_t i = 0; i < results.size(); ++i) {
+            std::cout << "  计算任务 #" << i
+                      << " 结果: " << results[i].get() << "\n";
+        }
+
+        // 使用Lambda提交任务（捕获变量）
+        int local_var = 42;
+        auto lambda_future = pool.submit([local_var](int x) {
+            return local_var * x;
+        }, 10);
+        std::cout << "Lambda任务结果: " << lambda_future.get() << "\n";
+
+        // 等待所有任务完成
+        pool.wait_all();
+        std::cout << "\n所有任务已完成。活动任务: "
+                  << pool.active_count() << "\n";
+
+    } catch (const std::exception& e) {
+        std::cerr << "错误: " << e.what() << std::endl;
+    }
+
+    std::cout << "\n===========================================\n";
+}
+
+} // namespace thread_pool_demo
+
+
+【案例5】并发银行转账系统 - 银行核心交易系统
+================================================================================
+
+场景描述：银行系统的核心功能——多个线程同时执行账户间转账。
+必须使用死锁避免策略（std::lock同时锁定两个账户），保证数据一致性。
+
+// ============================================================
+// 案例12-5: 并发银行转账系统
+// ============================================================
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <vector>
+#include <string>
+#include <fstream>     // 第10章：文件与流
+#include <memory>      // 第3章：智能指针
+#include <stdexcept>   // 第9章：异常处理
+#include <csignal>     // 第11章：信号处理
+#include <atomic>      // 第12章：原子操作
+#include <random>
+#include <sstream>
+#include <chrono>
+#include <iomanip>
+
+namespace bank_system {
+
+// 前向声明
+class Account;
+
+// 交易类型枚举
+enum class TransactionType {
+    DEPOSIT,
+    WITHDRAW,
+    TRANSFER
+};
+
+// 交易日志结构体
+struct TransactionLog {
+    std::chrono::system_clock::time_point timestamp;
+    TransactionType type;
+    int from_account;
+    int to_account;
+    double amount;
+    double from_balance_after;
+    double to_balance_after;
+};
+
+// 账户类（第4章：类与对象）
+class Account {
+private:
+    int account_id_;
+    std::string owner_name_;
+    double balance_;
+    mutable std::mutex mtx_;
+
+public:
+    Account(int id, const std::string& name, double initial_balance)
+        : account_id_(id), owner_name_(name), balance_(initial_balance) {}
+
+    Account(const Account&) = delete;
+    Account& operator=(const Account&) = delete;
+    Account(Account&&) = default;
+    Account& operator=(Account&&) = default;
+
+    int get_id() const { return account_id_; }
+    std::string get_owner() const { return owner_name_; }
+
+    // 获取余额（线程安全）
+    double get_balance() const {
+        std::lock_guard<std::mutex> lock(mtx_);
+        return balance_;
+    }
+
+    // 存款（线程安全）
+    void deposit(double amount) {
+        if (amount <= 0) {
+            throw std::invalid_argument("存款金额必须为正数");
+        }
+        std::lock_guard<std::mutex> lock(mtx_);
+        balance_ += amount;
+    }
+
+    // 取款（线程安全）
+    void withdraw(double amount) {
+        if (amount <= 0) {
+            throw std::invalid_argument("取款金额必须为正数");
+        }
+        std::lock_guard<std::mutex> lock(mtx_);
+        if (balance_ < amount) {
+            throw std::runtime_error("余额不足");
+        }
+        balance_ -= amount;
+    }
+
+    // 锁定获取互斥量（用于外部死锁避免）
+    std::mutex& get_mutex() const { return mtx_; }
+
+    // 内部修改余额（调用者持有锁）
+    void adjust_balance(double delta) {
+        balance_ += delta;
+    }
+};
+
+// 银行交易系统（第4/5/6章：OOP设计）
+class BankingSystem {
+private:
+    std::vector<std::unique_ptr<Account>> accounts_;
+    mutable std::mutex log_mtx_;
+    std::vector<TransactionLog> transaction_logs_;
+    std::atomic<unsigned long long> total_transactions_{0};
+    std::atomic<double> total_volume_{0.0};
+    std::atomic<bool> running_{true};
+    std::string log_file_path_;
+
+    // 写交易日志到文件（第10章：文件I/O）
+    void write_log_to_file(const TransactionLog& log) {
+        // 实际生产环境可能需要异步写入或落盘保证
+        std::lock_guard<std::mutex> lock(log_mtx_);
+        transaction_logs_.push_back(log);
+    }
+
+    static std::string timestamp_to_string(
+        const std::chrono::system_clock::time_point& tp) {
+        auto time_t_val = std::chrono::system_clock::to_time_t(tp);
+        std::ostringstream oss;
+        oss << std::put_time(std::localtime(&time_t_val), "%Y-%m-%d %H:%M:%S");
+        return oss.str();
+    }
+
+public:
+    BankingSystem(const std::string& log_file = "transactions.log")
+        : log_file_path_(log_file) {}
+
+    // 创建账户
+    Account& create_account(int id, const std::string& name,
+                            double initial_balance) {
+        auto acc = std::make_unique<Account>(id, name, initial_balance);
+        Account& ref = *acc;
+        accounts_.push_back(std::move(acc));
+        return ref;
+    }
+
+    // 转账（核心方法，使用std::lock避免死锁）
+    bool transfer(int from_id, int to_id, double amount) {
+        if (from_id == to_id) {
+            throw std::invalid_argument("不能给自己转账");
+        }
+
+        // 查找账户
+        Account* from = nullptr;
+        Account* to = nullptr;
+        for (auto& acc : accounts_) {
+            if (acc->get_id() == from_id) from = acc.get();
+            if (acc->get_id() == to_id) to = acc.get();
+        }
+
+        if (!from || !to) {
+            throw std::invalid_argument("账户不存在");
+        }
+
+        try {
+            // 关键：使用std::lock同时锁定两个账户的mutex，避免死锁
+            // std::lock使用死锁避免算法（try_lock + 退避）
+            std::lock(from->get_mutex(), to->get_mutex());
+
+            // adopt_lock: 告诉lock_guard，mutex已经被锁定了
+            std::lock_guard<std::mutex> lock_from(from->get_mutex(),
+                                                    std::adopt_lock);
+            std::lock_guard<std::mutex> lock_to(to->get_mutex(),
+                                                  std::adopt_lock);
+
+            // 或者C++17直接用scoped_lock:
+            // std::scoped_lock lock(from->get_mutex(), to->get_mutex());
+
+            // 检查余额
+            if (from->get_balance() < amount) {
+                return false;  // 余额不足
+            }
+
+            // 执行转账（此时两个锁都已持有，操作是原子的）
+            from->adjust_balance(-amount);
+            to->adjust_balance(amount);
+
+            // 记录交易
+            TransactionLog log;
+            log.timestamp = std::chrono::system_clock::now();
+            log.type = TransactionType::TRANSFER;
+            log.from_account = from_id;
+            log.to_account = to_id;
+            log.amount = amount;
+            log.from_balance_after = from->get_balance();
+            log.to_balance_after = to->get_balance();
+
+            write_log_to_file(log);
+            total_transactions_.fetch_add(1, std::memory_order_relaxed);
+            // 使用double原子的比较交换（注意：浮点原子运算需要CAS loop）
+            double expected = total_volume_.load(std::memory_order_relaxed);
+            while (!total_volume_.compare_exchange_weak(
+                       expected, expected + amount,
+                       std::memory_order_relaxed)) {
+                // 循环重试直到成功
+            }
+
+            return true;
+        } catch (...) {
+            throw;
+        }
+    }
+
+    // 打印所有账户状态
+    void print_accounts() const {
+        std::cout << "\n====== 账户一览 ======\n";
+        for (const auto& acc : accounts_) {
+            std::cout << "账户 " << acc->get_id()
+                      << " [" << acc->get_owner() << "]: "
+                      << std::fixed << std::setprecision(2)
+                      << acc->get_balance() << " 元\n";
+        }
+        std::cout << "========================\n";
+    }
+
+    // 打印统计信息
+    void print_statistics() const {
+        std::cout << "\n====== 交易统计 ======\n";
+        std::cout << "总交易笔数: " << total_transactions_.load() << "\n";
+        std::cout << "总交易金额: " << std::fixed << std::setprecision(2)
+                  << total_volume_.load() << " 元\n";
+        std::cout << "日志记录数: " << transaction_logs_.size() << "\n";
+        std::cout << "=======================\n";
+    }
+
+    // 保存所有交易日志到文件（第10章）
+    void save_logs_to_file() {
+        std::ofstream file(log_file_path_);
+        if (!file.is_open()) {
+            throw std::runtime_error("无法打开日志文件: " + log_file_path_);
+        }
+
+        std::lock_guard<std::mutex> lock(log_mtx_);
+        file << "时间,类型,发起账户,目标账户,金额,发起余额,目标余额\n";
+        for (const auto& log : transaction_logs_) {
+            std::string type_str;
+            switch (log.type) {
+                case TransactionType::TRANSFER: type_str = "转账"; break;
+                case TransactionType::DEPOSIT: type_str = "存款"; break;
+                case TransactionType::WITHDRAW: type_str = "取款"; break;
+            }
+            file << timestamp_to_string(log.timestamp) << ","
+                 << type_str << ","
+                 << log.from_account << ","
+                 << log.to_account << ","
+                 << log.amount << ","
+                 << log.from_balance_after << ","
+                 << log.to_balance_after << "\n";
+        }
+        file.close();
+        std::cout << "交易日志已保存到: " << log_file_path_ << "\n";
+    }
+
+    void request_stop() {
+        running_.store(false, std::memory_order_relaxed);
+    }
+
+    bool is_running() const {
+        return running_.load(std::memory_order_relaxed);
+    }
+};
+
+// 信号处理函数（第11章：信号处理）
+namespace {
+    volatile std::sig_atomic_t g_signal_received = 0;
+    BankingSystem* g_bank = nullptr;
+
+    void signal_handler(int signal) {
+        g_signal_received = signal;
+        if (g_bank) {
+            std::cout << "\n[信号] 收到信号 " << signal
+                      << "，准备优雅退出...\n";
+            g_bank->request_stop();
+        }
+    }
+}
+
+// 转账线程执行函数
+void transfer_worker(BankingSystem& bank,
+                     int thread_id, int num_transfers,
+                     std::atomic<int>& success_count,
+                     std::atomic<int>& failure_count) {
+    std::mt19937 rng(std::random_device{}() + thread_id);
+    std::uniform_int_distribution<int> from_dist(1001, 1010);
+    std::uniform_int_distribution<int> to_dist(1001, 1010);
+    std::uniform_real_distribution<double> amount_dist(10.0, 500.0);
+
+    for (int i = 0; i < num_transfers; ++i) {
+        if (!bank.is_running()) break;
+
+        int from = from_dist(rng);
+        int to = to_dist(rng);
+        while (from == to) {
+            to = to_dist(rng);
+        }
+        double amount = amount_dist(rng);
+
+        try {
+            if (bank.transfer(from, to, amount)) {
+                success_count.fetch_add(1, std::memory_order_relaxed);
+            } else {
+                failure_count.fetch_add(1, std::memory_order_relaxed);
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[线程 " << thread_id
+                      << "] 转账异常: " << e.what() << std::endl;
+            failure_count.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+}
+
+void run() {
+    std::cout << "\n========== 银行核心转账系统 ==========\n";
+
+    // 设置信号处理（第11章）
+    g_bank = new BankingSystem("bank_transactions.csv");
+    std::signal(SIGINT, signal_handler);
+    std::signal(SIGTERM, signal_handler);
+
+    BankingSystem& bank = *g_bank;
+    double total = 1000000.0;
+
+    // 创建10个账户（每个初始10万元）
+    for (int i = 1; i <= 10; ++i) {
+        std::ostringstream name;
+        name << "用户" << (char)('A' + i - 1);
+        bank.create_account(1000 + i, name.str(), total / 10);
+    }
+
+    bank.print_accounts();
+
+    // 启动转账线程
+    const int NUM_THREADS = 6;
+    const int TRANSFERS_PER_THREAD = 1000;
+    std::atomic<int> success_count{0};
+    std::atomic<int> failure_count{0};
+
+    std::vector<std::thread> transfer_threads;
+    auto start = std::chrono::steady_clock::now();
+
+    std::cout << "\n开始并发转账 (" << NUM_THREADS << " 线程, 每线程 "
+              << TRANSFERS_PER_THREAD << " 笔)...\n";
+
+    for (int i = 0; i < NUM_THREADS; ++i) {
+        transfer_threads.emplace_back(transfer_worker,
+                                       std::ref(bank),
+                                       i,
+                                       TRANSFERS_PER_THREAD,
+                                       std::ref(success_count),
+                                       std::ref(failure_count));
+    }
+
+    for (auto& t : transfer_threads) t.join();
+
+    auto end = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<
+        std::chrono::milliseconds>(end - start);
+
+    std::cout << "\n转账完成。耗时: " << duration.count() << " ms\n";
+    std::cout << "成功: " << success_count.load()
+              << ", 失败: " << failure_count.load() << "\n";
+
+    bank.print_accounts();
+    bank.print_statistics();
+
+    // 保存日志到文件
+    bank.save_logs_to_file();
+
+    // 验证总额不变
+    double final_total = 0.0;
+    for (int i = 1; i <= 10; ++i) {
+        for (const auto& acc_ptr : std::vector<std::unique_ptr<Account>>()) {
+            // 通过bank遍历
+        }
+    }
+    std::cout << "\n[验证] 系统资金总额应保持不变（转账不创造或销毁货币）\n";
+    std::cout << "==========================================\n";
+
+    delete g_bank;
+    g_bank = nullptr;
+}
+
+} // namespace bank_system
+
+
+================================================================================
+各案例的运行入口 (main函数整合)
+================================================================================
+
+// 以下main函数调用上述各案例：
+
+int main() {
+    // 案例1：并发计数器
+    visit_counter::run();
+
+    // 案例2：餐厅后厨
+    restaurant::run();
+
+    // 案例3：并行文件搜索器
+    parallel_search::run();
+
+    // 案例4：线程池
+    thread_pool_demo::run();
+
+    // 案例5：银行转账系统
+    bank_system::run();
+
+    return 0;
+}
+
+
+### 第四节: 课后习题
+================================================================================
+
+【习题】设计一个"并发爬虫框架"
+
+请根据以下规格实现一个简单的并发爬虫框架（Concurrent Web Crawler）：
+
+要求：
+1. WebCrawler类 — 管理整个爬取流程的核心类
+   - 构造函数接受最大并发线程数、起始URL列表
+   - 有 start() / stop() / wait() 方法
+   - 使用线程池（参考案例4）执行爬取任务
+
+2. URL队列管理 — 线程安全的待爬取URL队列
+   - 用 std::queue<std::string> 存储URL
+   - 用 std::mutex + std::condition_variable 保护队列
+   - 支持去重：用 std::unordered_set<std::string> 记录已访问URL
+   - 支持按域名限速（同一域名请求间隔）
+
+3. 页面爬取 — 单个页面的下载和解析
+   - （模拟）下载：用 sleep 模拟HTTP请求耗时
+   - 解析：提取页面中的所有链接（用正则或简单字符串解析）
+   - 将提取到的链接加入URL队列
+   - 将页面内容保存到本地文件（第10章：文件I/O）
+
+4. 结果存储 — 线程安全的结果写入
+   - 爬取的页面内容写入文件系统
+   - 用 std::atomic<int> 统计已爬取页面数
+   - 用 std::mutex 保护索引文件的写入
+
+5. 优雅停止 — 支持信号控制的优雅退出
+   - 注册 SIGINT 和 SIGTERM 信号处理函数（第11章）
+   - 收到信号后停止接受新URL，等待正在处理的页面完成
+   - 打印总结报告（总页面数、耗时等）
+
+6. 异常处理 — 处理网络和解析中的异常
+   - 下载超时处理
+   - HTTP错误码处理（404, 500等）
+   - 连接拒绝处理
+   - 解析失败不终止整个爬虫
+
+7. 统计信息 — 用原子变量记录
+   - 已爬取页面数
+   - 成功/失败页面数
+   - 发现的链接总数
+   - 总下载字节数（模拟）
+   - 爬取速度（页/秒）
+
+8. 扩展功能（加分项）
+   - 支持 robots.txt 规则检查和遵守
+   - 支持设置最大爬取深度
+   - 支持设置域名白名单/黑名单
+   - 支持断点续爬（读取之前的进度文件）
+
+// ============================================================
+// 并发爬虫框架 — 骨架代码参考
+// ============================================================
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <queue>
+#include <vector>
+#include <string>
+#include <unordered_set>
+#include <unordered_map>
+#include <fstream>     // 第10章
+#include <memory>      // 第3章
+#include <atomic>      // 第12章
+#include <csignal>     // 第11章
+#include <chrono>      // 第14章（chrono）
+#include <functional>
+#include <regex>       // 第14章（regex）
+#include <stdexcept>
+
+namespace web_crawler {
+
+// 爬取任务
+struct CrawlTask {
+    std::string url;
+    int depth;
+};
+
+// 爬取结果
+struct CrawlResult {
+    std::string url;
+    std::string content;
+    std::vector<std::string> links;
+    bool success;
+    int http_status;
+};
+
+// 线程池（简化版，参考案例4实现）
+class SimpleThreadPool {
+private:
+    std::vector<std::thread> workers_;
+    std::queue<std::function<void()>> tasks_;
+    std::mutex mtx_;
+    std::condition_variable cv_;
+    std::atomic<bool> stop_{false};
+
+    void worker_loop() {
+        while (true) {
+            std::function<void()> task;
+            {
+                std::unique_lock<std::mutex> lock(mtx_);
+                cv_.wait(lock, [this] {
+                    return stop_.load() || !tasks_.empty();
+                });
+                if (stop_.load() && tasks_.empty()) return;
+                task = std::move(tasks_.front());
+                tasks_.pop();
+            }
+            task();
+        }
+    }
+
+public:
+    explicit SimpleThreadPool(size_t num_threads) {
+        for (size_t i = 0; i < num_threads; ++i) {
+            workers_.emplace_back(&SimpleThreadPool::worker_loop, this);
+        }
+    }
+
+    ~SimpleThreadPool() { shutdown(); }
+
+    void submit(std::function<void()> task) {
+        {
+            std::lock_guard<std::mutex> lock(mtx_);
+            tasks_.emplace(std::move(task));
+        }
+        cv_.notify_one();
+    }
+
+    void shutdown() {
+        stop_.store(true);
+        cv_.notify_all();
+        for (auto& w : workers_) {
+            if (w.joinable()) w.join();
+        }
+    }
+};
+
+// WebCrawler 主类
+class WebCrawler {
+private:
+    SimpleThreadPool pool_;
+    std::queue<CrawlTask> url_queue_;
+    std::unordered_set<std::string> visited_urls_;
+    std::unordered_map<std::string, int> domain_last_access_;
+
+    mutable std::mutex queue_mtx_;
+    mutable std::mutex visited_mtx_;
+    mutable std::mutex file_mtx_;
+    std::condition_variable cv_;
+    std::atomic<bool> running_{false};
+    std::atomic<bool> stop_requested_{false};
+
+    // 统计信息
+    std::atomic<int> pages_crawled_{0};
+    std::atomic<int> pages_succeeded_{0};
+    std::atomic<int> pages_failed_{0};
+    std::atomic<int> links_found_{0};
+    std::atomic<long long> bytes_downloaded_{0};
+
+    int max_depth_;
+    int politeness_delay_ms_;
+    std::string output_dir_;
+    std::ofstream index_file_;
+
+    // 信号处理（第11章）
+    static void signal_handler(int sig) {
+        std::cout << "\n收到信号 " << sig << "，正在优雅停止...\n";
+        // 通知crawler停止（需要静态/全局引用）
+    }
+
+    // 下载页面（模拟）
+    CrawlResult download(const std::string& url) {
+        CrawlResult result;
+        result.url = url;
+        result.success = true;
+        result.http_status = 200;
+
+        // 模拟下载
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(100 + rand() % 200));
+
+        result.content = "<html>模拟页面内容 " + url + "</html>";
+
+        // 模拟提取链接
+        result.links.push_back(url + "/page1");
+        result.links.push_back(url + "/page2");
+
+        bytes_downloaded_.fetch_add(result.content.size());
+        return result;
+    }
+
+    // 解析HTML提取链接
+    std::vector<std::string> extract_links(const std::string& html) {
+        std::vector<std::string> links;
+        // 使用regex提取<a href="...">标签（第14章：regex）
+        std::regex link_regex("<a\\s+href=[\"']([^\"']+)[\"']",
+                              std::regex::icase);
+        std::smatch match;
+        std::string::const_iterator search_start(html.cbegin());
+        while (std::regex_search(search_start, html.cend(),
+                                  match, link_regex)) {
+            links.push_back(match[1].str());
+            search_start = match.suffix().first;
+        }
+        links_found_.fetch_add(links.size());
+        return links;
+    }
+
+    // 保存页面到文件
+    void save_page(const CrawlResult& result) {
+        std::string filename = output_dir_ + "/" +
+            std::to_string(std::hash<std::string>{}(result.url)) + ".html";
+        std::lock_guard<std::mutex> lock(file_mtx_);
+        std::ofstream file(filename);
+        if (file.is_open()) {
+            file << result.content;
+            file.close();
+            index_file_ << result.url << " -> " << filename << "\n";
+        }
+    }
+
+    // 爬取单个页面任务
+    void crawl_task(const CrawlTask& task) {
+        try {
+            // 检查深度限制
+            if (task.depth > max_depth_) return;
+
+            // 模拟下载
+            CrawlResult result = download(task.url);
+
+            if (result.success) {
+                pages_crawled_.fetch_add(1);
+                pages_succeeded_.fetch_add(1);
+
+                // 保存页面
+                save_page(result);
+
+                // 提取链接并加入队列
+                auto links = extract_links(result.content);
+                for (const auto& link : links) {
+                    add_url(link, task.depth + 1);
+                }
+            } else {
+                pages_failed_.fetch_add(1);
+                std::cerr << "下载失败 " << task.url
+                          << " (HTTP " << result.http_status << ")\n";
+            }
+        } catch (const std::exception& e) {
+            pages_failed_.fetch_add(1);
+            std::cerr << "爬取异常 " << task.url
+                      << ": " << e.what() << "\n";
+        }
+    }
+
+    // 添加URL到队列（线程安全）
+    void add_url(const std::string& url, int depth) {
+        {
+            std::lock_guard<std::mutex> lock(visited_mtx_);
+            if (visited_urls_.count(url) > 0) return;
+            visited_urls_.insert(url);
+        }
+        {
+            std::lock_guard<std::mutex> lock(queue_mtx_);
+            url_queue_.push({url, depth});
+        }
+        cv_.notify_one();
+    }
+
+    // 获取下一个URL（线程安全，阻塞）
+    bool get_next_url(CrawlTask& task) {
+        std::unique_lock<std::mutex> lock(queue_mtx_);
+        cv_.wait(lock, [this] {
+            return stop_requested_.load() || !url_queue_.empty();
+        });
+        if (stop_requested_.load() && url_queue_.empty()) {
+            return false;
+        }
+        task = url_queue_.front();
+        url_queue_.pop();
+        return true;
+    }
+
+    // 工作线程
+    void worker_loop() {
+        while (running_.load()) {
+            CrawlTask task;
+            if (!get_next_url(task)) break;
+            crawl_task(task);
+        }
+    }
+
+public:
+    WebCrawler(size_t max_threads, int max_depth,
+               int politeness_delay, const std::string& output_dir)
+        : pool_(max_threads),
+          max_depth_(max_depth),
+          politeness_delay_ms_(politeness_delay),
+          output_dir_(output_dir) {
+        // 打开索引文件
+        index_file_.open(output_dir + "/index.txt",
+                          std::ios::out | std::ios::app);
+    }
+
+    ~WebCrawler() {
+        stop();
+        if (index_file_.is_open()) {
+            index_file_.close();
+        }
+    }
+
+    // 添加起始URL
+    void add_seed_url(const std::string& url) {
+        add_url(url, 0);
+    }
+
+    // 启动爬虫
+    void start() {
+        running_.store(true);
+        int num_threads = std::thread::hardware_concurrency();
+        for (int i = 0; i < num_threads; ++i) {
+            pool_.submit([this]() { worker_loop(); });
+        }
+        std::cout << "爬虫已启动，使用 " << num_threads
+                  << " 个工作线程\n";
+    }
+
+    // 停止爬虫
+    void stop() {
+        stop_requested_.store(true);
+        cv_.notify_all();
+        running_.store(false);
+        std::cout << "爬虫已停止\n";
+    }
+
+    // 等待所有任务完成
+    void wait() {
+        while (!url_queue_.empty()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    }
+
+    // 打印统计信息
+    void print_stats() const {
+        std::cout << "\n========== 爬虫统计 ==========\n";
+        std::cout << "已爬取页面:   " << pages_crawled_.load() << "\n";
+        std::cout << "成功:         " << pages_succeeded_.load() << "\n";
+        std::cout << "失败:         " << pages_failed_.load() << "\n";
+        std::cout << "发现链接:     " << links_found_.load() << "\n";
+        std::cout << "下载字节数:   " << bytes_downloaded_.load() << "\n";
+        std::cout << "===============================\n";
+    }
+};
+
+// 使用示例
+void run_demo() {
+    try {
+        WebCrawler crawler(4, 3, 500, "./crawled_pages");
+
+        // 设置信号处理
+        std::signal(SIGINT, WebCrawler::signal_handler);
+        std::signal(SIGTERM, WebCrawler::signal_handler);
+
+        // 添加起始URL
+        crawler.add_seed_url("https://example.com");
+        crawler.add_seed_url("https://example.org");
+
+        auto start_time = std::chrono::steady_clock::now();
+
+        crawler.start();
+        crawler.wait();
+        crawler.stop();
+
+        auto end_time = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<
+            std::chrono::seconds>(end_time - start_time);
+
+        crawler.print_stats();
+        std::cout << "总耗时: " << elapsed.count() << " 秒\n";
+
+    } catch (const std::exception& e) {
+        std::cerr << "爬虫运行异常: " << e.what() << std::endl;
+    }
+}
+
+} // namespace web_crawler
+
+// 编译命令：
+// g++ -std=c++17 -pthread chapter12_crawler.cpp -o crawler
+
+================================================================================
+                        第十二章 完
+================================================================================

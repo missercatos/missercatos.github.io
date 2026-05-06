@@ -1,0 +1,3004 @@
+================================================================================
+C++ 深化教程 — 第一章: 命名空间 (Namespaces)
+================================================================================
+
+## 章节概述
+
+命名空间（namespace）是 C++ 中一个核心的语言特性，用于组织代码、避免命名冲突。
+随着项目规模的增长，不同的库和模块很可能定义同名函数、类型或变量。命名空间提供
+了一种逻辑分组机制，使得相同名称的实体可以在不同命名空间中共存而不冲突。
+
+本章将从编译器的底层原理出发，深入讲解命名空间在符号表解析、名称修饰（name
+mangling）以及链接过程中的工作机制。然后全面梳理 C++ 中与命名空间相关的所有语法
+特性和标准用法，最后通过三个生活场景案例巩固所学知识。
+
+================================================================================
+### 第一节: 基础示例代码 + 计算机底层原理
+================================================================================
+
+1.1 命名空间的基本概念与示例代码
+---------------------------------
+
+命名空间最基础的用法是用 namespace 关键字定义一个作用域，将其中的标识符与外部
+隔离开来。以下是最基本的示例：
+
+```cpp
+#include <iostream>
+
+// 定义命名空间 A
+namespace A {
+    int value = 10;
+
+    void print() {
+        std::cout << "A::print(), value = " << value << std::endl;
+    }
+
+    class Foo {
+    public:
+        void hello() {
+            std::cout << "Hello from A::Foo" << std::endl;
+        }
+    };
+}
+
+// 定义命名空间 B
+namespace B {
+    int value = 20;
+
+    void print() {
+        std::cout << "B::print(), value = " << value << std::endl;
+    }
+
+    class Foo {
+    public:
+        void hello() {
+            std::cout << "Hello from B::Foo" << std::endl;
+        }
+    };
+}
+
+int main() {
+    // 使用完全限定名访问命名空间成员
+    std::cout << "A::value = " << A::value << std::endl;
+    std::cout << "B::value = " << B::value << std::endl;
+
+    A::print();
+    B::print();
+
+    A::Foo fooA;
+    B::Foo fooB;
+    fooA.hello();
+    fooB.hello();
+
+    return 0;
+}
+```
+
+上面的代码中，A 和 B 两个命名空间中都有名为 value、print、Foo 的成员。如果没有
+命名空间，这些同名标识符将产生编译错误（重定义）。通过 A:: 和 B:: 前缀（完全
+限定名），编译器可以精确区分调用的是哪个命名空间中的实体。
+
+1.2 using 声明 与 using 指令
+-------------------------------
+
+C++ 提供了两种简化命名空间成员访问的方式：using 声明 和 using 指令。它们的
+作用域和效果完全不同，理解二者的区别对于正确使用命名空间至关重要。
+
+```cpp
+#include <iostream>
+
+namespace Data {
+    int x = 100;
+    int y = 200;
+
+    void display() {
+        std::cout << "Data::display()" << std::endl;
+    }
+
+    void process() {
+        std::cout << "Data::process()" << std::endl;
+    }
+}
+
+namespace Extra {
+    int x = 999;
+}
+
+int main() {
+    // === 1. using 声明 ===
+    // 将命名空间中的某个特定成员引入当前作用域
+    using Data::x;        // 将 Data::x 引入当前作用域
+    // using Extra::x;    // 错误！与上面的 using Data::x 冲突
+    using Data::display;  // 将 Data::display 引入当前作用域
+
+    std::cout << "x = " << x << std::endl;   // 直接使用 x，实际是 Data::x
+    display();                                // 直接使用 display()
+
+    // === 2. using 指令 ===
+    // 将整个命名空间的所有成员引入当前作用域
+    {
+        using namespace Data;  // 将 Data 中所有成员引入此块作用域
+        std::cout << "y = " << y << std::endl;   // 直接用 y
+        process();                                // 直接用 process()
+    }
+    // 离开作用域后 using namespace Data 失效
+
+    // std::cout << "y = " << y << std::endl;  // 错误！y 未声明
+
+    return 0;
+}
+```
+
+using 声明 (using Data::x) 好比"引进了某个人"，将该名称精确地注入当前作用域。
+using 指令 (using namespace Data) 好比"打开了整个房间的门"，让该命名空间中所有
+名称在当前作用域都可见。如果外层作用域有同名标识符，局部作用域的 using 声明会
+隐藏外层的名称；但如果外层已经有一个同名变量，再使用 using 指令导入包含同名成员
+的命名空间，则可能产生歧义。
+
+```cpp
+#include <iostream>
+
+namespace A { int x = 1; }
+namespace B { int x = 2; }
+
+int main() {
+    using namespace A;
+    using namespace B;
+
+    // std::cout << x << std::endl;  // 编译错误！x 有歧义
+    std::cout << "A::x = " << A::x << std::endl;
+    std::cout << "B::x = " << B::x << std::endl;
+
+    return 0;
+}
+```
+
+当两个命名空间同时被 using 指令打开，且它们含有同名成员时，直接使用该名称会产生
+歧义。编译器无法判断你指的是哪一个。此时必须使用完全限定名来消除歧义。
+
+1.3 编译器底层原理：符号表解析机制
+-------------------------------------
+
+现在我们深入到编译器的内部。当 C++ 编译器处理源代码时，它维护着一个核心数据结构
+——符号表（Symbol Table）。符号表记录了每个标识符（变量名、函数名、类型名等）的
+信息，包括名称、类型、作用域、存储位置等。
+
+在编译过程中，遇到一个标识符引用（比如调用 foo()）时，编译器执行名称查找（Name
+Lookup），从当前作用域向外层作用域逐级搜索符号表，直到找到匹配的声明。
+
+命名空间在符号表机制中的角色：每个命名空间对应符号表中的一个独立的作用域条目。
+编译器为每个命名空间维护独立的符号表子表（或称为作用域栈中的一层）。当使用
+A::foo 这样的完全限定名时，编译器直接在命名空间 A 的符号表中查找 foo，跳过了
+常规的从内到外的名称查找流程。
+
+```cpp
+// 编译器内部符号表结构的逻辑示意
+//
+// 全局作用域（::）
+//   ├── 命名空间 A
+//   │     ├── int value    → 地址/偏移
+//   │     ├── void print() → 函数签名
+//   │     └── class Foo    → 类定义信息
+//   └── 命名空间 B
+//         ├── int value    → 地址/偏移
+//         ├── void print() → 函数签名
+//         └── class Foo    → 类定义信息
+//
+// main 函数作用域
+//   └── (局部变量等)
+```
+
+编译器采用"两级查找"策略。第一级是普通的非限定名称查找，从当前作用域逐级向外；
+第二级是依赖参数的查找（ADL，Argument-Dependent Lookup），也称为 Koenig 查找。
+当调用一个函数且实参属于某个命名空间时，编译器还会自动在该命名空间中搜索函数。
+
+```cpp
+#include <iostream>
+
+namespace Graphics {
+    class Point {
+    public:
+        int x, y;
+        Point(int a, int b) : x(a), y(b) {}
+    };
+
+    void draw(const Point& p) {
+        std::cout << "Drawing Point(" << p.x << ", " << p.y << ")" << std::endl;
+    }
+}
+
+int main() {
+    Graphics::Point pt(10, 20);
+
+    draw(pt);  // ADL: 因为 pt 是 Graphics::Point 类型，
+               // 编译器会自动在 Graphics 命名空间中查找 draw 函数
+               // 无需写成 Graphics::draw(pt)
+
+    return 0;
+}
+```
+
+这段代码能够编译通过，就是 ADL 机制在起作用。draw 函数虽然没有用 Graphics::
+前缀限定，但因为实参 pt 的类型 Point 定义在 Graphics 命名空间中，编译器会额外
+在 Graphics 中查找 draw。这是 std::cout << "hello" 能够工作的原因——operator<<
+在 std 命名空间中，通过 ADL 被找到。
+
+1.4 Name Mangling（名称修饰/名称改编）
+----------------------------------------
+
+C++ 支持函数重载——同一作用域中可以存在多个同名函数，只要参数类型或数量不同。
+为了实现这一点，编译器必须为每个重载函数生成唯一的符号名称。这个过程称为
+Name Mangling（名称修饰，也叫名称改编）。
+
+Name Mangling 将函数的"自然"名称（源代码中的名称）与函数的类型信息（参数类型、
+返回类型、所属命名空间、类名等）组合编码成一个唯一的字符串。这个字符串就是链接
+器（Linker）看到的符号。
+
+不同编译器采用不同的 Name Mangling 方案：
+- GCC / Clang 使用 Itanium C++ ABI 的 mangling 规则
+- MSVC 使用自己的方案
+- 不同的 mangling 导致不同编译器之间难以相互链接（ABI 不兼容）
+
+以下面的代码为例：
+
+```cpp
+namespace Outer {
+    namespace Inner {
+        void func(int a) { /* ... */ }
+        double func(double a, double b) { return a + b; }
+    }
+}
+
+int main() {
+    Outer::Inner::func(42);
+    Outer::Inner::func(3.14, 2.71);
+    return 0;
+}
+```
+
+在 GCC 下编译后，使用 nm 工具查看目标文件中的符号：
+
+```bash
+$ g++ -c example.cpp -o example.o
+$ nm example.o                    # 查看所有符号
+$ nm -C example.o                 # 使用 -C 进行 demangle (还原可读名称)
+```
+
+在 Itanium ABI 下，上述两个函数在符号表中的名称大致如下：
+
+```
+未修饰前（源代码中的名称）:
+  void Outer::Inner::func(int)
+  double Outer::Inner::func(double, double)
+
+经过 Name Mangling 后:
+  _ZN5Outer5Inner4funcEi          ← 1个 int 参数，返回 void
+  _ZN5Outer5Inner4funcEdd         ← 2个 double 参数，返回 double
+```
+
+我们来逐步解析这个 mangled name 的结构（以 _ZN5Outer5Inner4funcEi 为例）：
+
+```
+_Z           → C++ 符号前缀（Itanium ABI 约定）
+N            → 嵌套名称开始
+  5Outer     → 5个字符的标识符 "Outer"
+  5Inner     → 5个字符的标识符 "Inner"
+  4func      → 4个字符的标识符 "func"
+  E          → 嵌套名称结束
+  i          → 参数类型 int (i 是 int 的缩略编码)
+```
+
+对于第二个函数 _ZN5Outer5Inner4funcEdd：
+```
+_Z N 5Outer 5Inner 4func E d d
+                            ↑ ↑
+                            │ └── 第二个参数 double (d = double)
+                            └──── 第一个参数 double (d = double)
+```
+
+常见的基本类型在 mangling 中的编码：
+- v  → void
+- i  → int
+- f  → float
+- d  → double
+- c  → char
+- b  → bool
+- l  → long
+- P  → 指针前缀（Pointer）
+- R  → 引用前缀（Reference）
+
+如果函数是类的成员函数，则 mangled name 会包含类名和命名空间信息。例如：
+
+```cpp
+namespace NS {
+    class MyClass {
+    public:
+        void method(int, double);
+    };
+}
+// mangled: _ZN2NS7MyClass6methodEid
+// _Z N 2NS 7MyClass 6method E i d
+```
+
+1.5 链接器视角的命名空间符号
+--------------------------------
+
+链接器的任务是解析符号引用、合并各个目标文件（.o 文件）中的代码和数据段。在这个
+阶段，命名空间已经完全"消失"——它们已经被编译器转化为 mangled name 的一部分。
+
+链接器视角下：
+- 全局变量在符号表中以原始名称或带下划线前缀的名称出现
+- C++ 函数在符号表中以 mangled name 出现
+- 命名空间完全由 mangled name 中的字符序列来表示
+- 两个不同命名空间中的同名函数，其 mangled name 不同（因为命名空间前缀不同），
+  因此链接器将它们视为完全不同的符号
+
+当一个 .o 文件引用了外部符号（比如调用了另一个编译单元中定义的函数），链接器
+会遍历所有输入的目标文件，寻找匹配的符号。如果找不到，报"undefined reference"
+（未定义引用）错误；如果找到多个匹配的符号定义，报"multiple definition"（多重
+定义）错误。
+
+```cpp
+// file_a.cpp
+namespace N1 {
+    void sayHello() {
+        // 实现...
+    }
+}
+
+// file_b.cpp
+namespace N2 {
+    void sayHello() {
+        // 不同的实现
+    }
+}
+
+// N1::sayHello 的 mangled name: _ZN2N18sayHelloEv
+// N2::sayHello 的 mangled name: _ZN2N28sayHelloEv
+// 链接器将它们视为两个不同的符号，不会冲突
+```
+
+这就是命名空间能够防止符号冲突的底层本质——它只是给符号名称添加了一个唯一的
+前缀编码。在二进制层面，并不存在真正的"命名空间"结构。
+
+1.6 编译器的符号查找策略：两级查找
+------------------------------------
+
+当编译器遇到以下代码时：
+
+```cpp
+namespace A {
+    class X {};
+    void f(X) { /* ... */ }
+}
+
+int main() {
+    A::X obj;
+    f(obj);  // 这里发生了什么？
+}
+```
+
+编译器的查找过程分为两步：
+
+第一步：普通非限定名称查找
+  从当前作用域（main 函数内部）开始，向外层作用域逐级搜索 f 这个名字。
+  main 内部没有 f → 全局命名空间也没有 f → 普通查找失败。
+
+第二步：参数依赖查找（ADL / Koenig Lookup）
+  因为实参 obj 的类型是 A::X，而 A::X 定义在命名空间 A 中，
+  编译器将命名空间 A 加入搜索列表，在 A 中找到了 f(A::X)。
+  查找成功。
+
+这个两级查找机制使得我们在使用 std::cout << "hello" 时不需要写
+std::operator<<(std::cout, "hello")。因为 std::cout 的类型 std::ostream
+在 std 命名空间中，operator<< 也定义在其中，ADL 自动找到了它。
+
+1.7 命名空间与编译单元的交互
+-------------------------------
+
+C++ 的编译模型是"分离编译"——每个 .cpp 文件（翻译单元）独立编译成目标文件。
+命名空间可以在多个翻译单元中"打开"和"扩展"。同一个命名空间中的声明可以
+分散在不同的文件中：
+
+```cpp
+// header1.h
+namespace MyLib {
+    void funcA();
+}
+
+// header2.h
+namespace MyLib {
+    void funcB();
+}
+
+// 这两个头文件分别被不同的 .cpp 包含后，
+// 它们共同构成了 MyLib 命名空间的内容。
+// 编译器在各自的翻译单元中构建符号表时，
+// MyLib 命名空间包含 funcA 和 funcB 两个实体。
+```
+
+这意味着命名空间是"开放的"——你可以在任何地方向已存在的命名空间添加新成员。
+但这也导致了一个问题：如果在不同翻译单元中定义了同名全局实体（即使是通过
+命名空间扩展），链接时仍然可能发生冲突。
+
+
+================================================================================
+### 第二节: 所有用法大全（标准库/关键字/函数）
+================================================================================
+
+本节全面列举 C++ 中与命名空间相关的所有用法，涵盖 C++98 到 C++17/20 的标准特性。
+
+2.1 命名空间定义 (namespace 关键字)
+-------------------------------------
+
+命名空间是为防止名称冲突而设计的逻辑分组机制。语法：
+
+```cpp
+namespace 名称 {
+    // 声明和定义
+}
+```
+
+示例：基本命名空间定义
+
+```cpp
+namespace Math {
+    const double PI = 3.141592653589793;
+    int add(int a, int b) { return a + b; }
+    int subtract(int a, int b) { return a - b; }
+}
+// 使用: Math::add(3, 5), Math::PI
+```
+
+命名空间可以分多个"片段"定义（开放特性）：
+
+```cpp
+// 第一个片段
+namespace Math {
+    int add(int a, int b) { return a + b; }
+}
+// 第二个片段 - 添加新成员
+namespace Math {
+    int multiply(int a, int b) { return a * b; }
+    int divide(int a, int b) { return b != 0 ? a / b : 0; }
+}
+// 现在 Math 包含 add, multiply, divide
+```
+
+2.2 嵌套命名空间 (Nested Namespace)
+------------------------------------
+
+命名空间可以嵌套定义，形成树形结构。
+
+C++98/03 语法：
+
+```cpp
+namespace Outer {
+    namespace Inner {
+        int value = 42;
+        void func() { /* ... */ }
+    }
+}
+// 访问: Outer::Inner::value, Outer::Inner::func()
+```
+
+C++17 引入了嵌套命名空间的简化语法（紧凑嵌套）：
+
+```cpp
+// C++17 新增: 用 :: 直接定义嵌套命名空间
+namespace Company::Project::Module {
+    class Engine {
+    public:
+        void start() { /* ... */ }
+    };
+}
+// 等价于:
+// namespace Company {
+//     namespace Project {
+//         namespace Module {
+//             class Engine { ... };
+//         }
+//     }
+// }
+// 访问: Company::Project::Module::Engine
+
+// C++20 支持内联嵌套命名空间
+namespace A::inline B::C {
+    // B 是 inline 命名空间
+    // 等价于:
+    // namespace A {
+    //     inline namespace B {
+    //         namespace C { ... }
+    //     }
+    // }
+}
+```
+
+深层嵌套示例：
+
+```cpp
+#include <iostream>
+
+namespace Web {
+    namespace Server {
+        namespace V1 {
+            void handleRequest() {
+                std::cout << "Handling request with V1 API" << std::endl;
+            }
+        }
+        namespace V2 {
+            void handleRequest() {
+                std::cout << "Handling request with V2 API" << std::endl;
+            }
+        }
+    }
+}
+
+int main() {
+    Web::Server::V1::handleRequest();
+    Web::Server::V2::handleRequest();
+    return 0;
+}
+```
+
+2.3 匿名命名空间 (unnamed/anonymous namespace)
+------------------------------------------------
+
+没有名称的命名空间。在 C++ 中替代 static 关键字来实现翻译单元内部的链接
+（internal linkage）。
+
+```cpp
+// 语法: namespace { }  (没有名字)
+namespace {
+    int internal_counter = 0;
+    void helperFunc() {
+        ++internal_counter;
+    }
+    class InternalData {
+    public:
+        int id;
+        InternalData() : id(internal_counter++) {}
+    };
+}
+
+// 等价于（但不完全是）:
+// static int internal_counter = 0;
+// static void helperFunc() { ++internal_counter; }
+
+// 匿名命名空间中的成员具有 internal linkage
+// 只能在本编译单元(.cpp文件)内访问
+// 外部编译单元无法引用这些符号
+```
+
+C++ 标准推荐使用匿名命名空间代替文件作用域的 static 声明。匿名命名空间中的类
+和类型定义也受到保护——这在 static 下做不到（static 只能用于函数和变量）。
+
+匿名命名空间的 Name Mangling 机制：
+
+虽然匿名命名空间没有名称，但编译器必须为它生成一个唯一的内部名称，以确保不同
+编译单元中的匿名命名空间符号不会冲突。GCC 通常使用包含文件名的随机字符串：
+
+```
+// 在 file_a.cpp 中的匿名命名空间
+namespace { int secret = 10; }
+// mangled name 可能是: _ZN12_GLOBAL__N_16secretE
+
+// 在 file_b.cpp 中的匿名命名空间
+namespace { int secret = 20; }
+// mangled name 可能是: _ZN12_GLOBAL__N_27secretE
+// 不同的随机后缀确保两个符号不同
+```
+
+2.4 内联命名空间 (inline namespace, C++11)
+--------------------------------------------
+
+inline namespace 中的成员可以在外层命名空间中直接访问，仿佛它们就在外层命名
+空间中一样。主要用于版本控制。
+
+```cpp
+#include <iostream>
+
+namespace Library {
+    // V1 是当前版本，设为 inline
+    inline namespace V1 {
+        void process() {
+            std::cout << "Library V1 process" << std::endl;
+        }
+    }
+
+    // V2 是旧版本，不是 inline
+    namespace V2 {
+        void process() {
+            std::cout << "Library V2 process" << std::endl;
+        }
+    }
+}
+
+int main() {
+    // 通过 inline，V1 中的成员可以直接通过 Library:: 访问
+    Library::process();     // 调用 V1::process! 相当于 Library::V1::process()
+
+    // 也可以明确指定版本
+    Library::V1::process(); // 显式调用 V1
+    Library::V2::process(); // 显式调用 V2
+
+    return 0;
+}
+```
+
+当库升级时，只需将 inline 关键字移动到新版本的命名空间，即可平滑切换默认版本，
+原有代码无需修改。
+
+```cpp
+namespace Library {
+    namespace V1 {
+        void process() { /* 旧实现 */ }
+    }
+    inline namespace V2 {   // 现在 V2 是默认版本
+        void process() { /* 新实现 */ }
+    }
+}
+// 所有 Library::process() 调用现在自动指向 V2
+```
+
+ADL 也与 inline namespace 配合工作——inline namespace 被视为外层命名空间的
+直接部分。
+
+2.5 命名空间别名 (Namespace Alias)
+-----------------------------------
+
+为长命名空间名称创建简短的别名，提高代码可读性。
+
+```cpp
+// 语法: namespace 别名 = 命名空间名称;
+
+namespace VeryLongCompanyName {
+    namespace SpecificProject {
+        namespace CoreModule {
+            class Engine {
+            public:
+                void run() { /* ... */ }
+            };
+        }
+    }
+}
+
+// 创建别名，简化访问
+namespace Core = VeryLongCompanyName::SpecificProject::CoreModule;
+
+int main() {
+    Core::Engine engine;
+    engine.run();
+    return 0;
+}
+```
+
+命名空间别名的常见应用场景：
+
+```cpp
+#include <iostream>
+
+// Boost 库通常有很深的命名空间层级
+// namespace fs = boost::filesystem;
+
+// C++17 std::filesystem
+namespace fs = std::filesystem;  // 简化文件系统操作
+
+// 根据条件选择不同的命名空间
+namespace LibA { void doWork() { std::cout << "LibA" << std::endl; } }
+namespace LibB { void doWork() { std::cout << "LibB" << std::endl; } }
+
+// 用别名在运行时逻辑相同的情况下切换实现
+namespace ActiveLib = LibA;  // 选择 LibA
+
+int main() {
+    ActiveLib::doWork();  // 输出: LibA
+    return 0;
+}
+```
+
+2.6 using 声明 (using declaration)
+-------------------------------------
+
+精确地引入命名空间中的某个特定名称到当前作用域。
+
+```cpp
+#include <iostream>
+#include <string>
+
+namespace Drawing {
+    class Color {
+    public:
+        int r, g, b;
+        Color(int red, int green, int blue) : r(red), g(green), b(blue) {}
+    };
+
+    std::string toString(const Color& c) {
+        return "rgb(" + std::to_string(c.r) + "," +
+               std::to_string(c.g) + "," + std::to_string(c.b) + ")";
+    }
+
+    void render() {
+        std::cout << "Rendering..." << std::endl;
+    }
+
+    const int DEFAULT_WIDTH = 800;
+    const int DEFAULT_HEIGHT = 600;
+}
+
+int main() {
+    // 逐个引入需要的名称
+    using Drawing::Color;         // 引入类型
+    using Drawing::toString;      // 引入函数
+    using Drawing::DEFAULT_WIDTH; // 引入常量
+
+    Color c(255, 128, 64);        // 直接使用 Color
+    std::cout << toString(c) << std::endl; // 直接使用 toString
+    std::cout << "Width: " << DEFAULT_WIDTH << std::endl;
+
+    // render 没有引入，仍需要完全限定名
+    // render();                   // 错误！
+    Drawing::render();            // 正确
+
+    return 0;
+}
+```
+
+using 声明可以用在任意作用域：全局作用域、命名空间作用域、类作用域（C++11 后
+可以引入基类构造函数）、函数作用域、块作用域。
+
+在类中使用 using 声明（引入基类成员）：
+
+```cpp
+#include <iostream>
+
+class Base {
+public:
+    void func(int x) {
+        std::cout << "Base::func(int) : " << x << std::endl;
+    }
+    void func(double x) {
+        std::cout << "Base::func(double) : " << x << std::endl;
+    }
+};
+
+class Derived : public Base {
+public:
+    // 将基类的两个 func 重载引入派生类作用域
+    using Base::func;
+
+    // 添加新的重载版本
+    void func(const char* s) {
+        std::cout << "Derived::func(const char*) : " << s << std::endl;
+    }
+};
+
+int main() {
+    Derived d;
+    d.func(42);        // 调用 Base::func(int)
+    d.func(3.14);      // 调用 Base::func(double)
+    d.func("hello");   // 调用 Derived::func(const char*)
+
+    // 如果没有 using Base::func; 派生类的 func(const char*) 会隐藏
+    // 基类的所有 func 重载，导致 d.func(42) 和 d.func(3.14) 无法编译
+    return 0;
+}
+```
+
+2.7 using 指令 (using directive)
+----------------------------------
+
+将整个命名空间的所有名称导入当前作用域。
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <string>
+
+namespace Inventory {
+    struct Item {
+        std::string name;
+        int quantity;
+        double price;
+    };
+
+    double calculateTotal(const std::vector<Item>& items) {
+        double total = 0.0;
+        for (const auto& item : items) {
+            total += item.quantity * item.price;
+        }
+        return total;
+    }
+
+    void printReport() {
+        std::cout << "Inventory Report" << std::endl;
+    }
+}
+
+int main() {
+    using namespace std;        // 导入 std 命名空间 (常用于演示，生产代码慎用)
+    using namespace Inventory;  // 导入 Inventory 命名空间
+
+    vector<Item> items = {
+        {"Apple", 10, 1.5},
+        {"Banana", 5, 2.0}
+    };
+
+    cout << "Total: " << calculateTotal(items) << endl;
+    printReport();
+
+    return 0;
+}
+```
+
+注意事项：
+- 永远不要在头文件中写 using namespace std; ——会污染所有包含该头文件的
+  翻译单元的命名空间。
+- 在 .cpp 文件的函数内部使用 using namespace std; 相对安全。
+- 多个 using 指令同时存在时，如果引入同名标识符，可能导致歧义。
+
+2.8 std 命名空间
+------------------
+
+C++ 标准库的所有内容（类型、函数、对象）都定义在 std 命名空间中。
+以下列出常用的标准库组件及其所属的头文件：
+
+```cpp
+// 输入输出
+#include <iostream>   // std::cout, std::cin, std::cerr, std::endl
+#include <iomanip>    // std::setw, std::setprecision, std::fixed
+#include <fstream>    // std::ifstream, std::ofstream, std::fstream
+#include <sstream>    // std::stringstream, std::ostringstream
+
+// 字符串
+#include <string>     // std::string, std::wstring, std::to_string
+
+// 容器
+#include <vector>     // std::vector
+#include <list>       // std::list
+#include <map>        // std::map, std::multimap
+#include <set>        // std::set, std::multiset
+#include <unordered_map>  // std::unordered_map
+#include <unordered_set>  // std::unordered_set
+#include <deque>      // std::deque
+#include <queue>      // std::queue, std::priority_queue
+#include <stack>      // std::stack
+#include <array>      // std::array (C++11)
+
+// 算法
+#include <algorithm>  // std::sort, std::find, std::copy, std::transform
+#include <numeric>    // std::accumulate, std::iota
+#include <iterator>   // std::begin, std::end, std::back_inserter
+
+// 数学
+#include <cmath>      // std::sin, std::cos, std::sqrt, std::pow
+#include <random>     // std::random_device, std::mt19937
+
+// 内存
+#include <memory>     // std::unique_ptr, std::shared_ptr, std::weak_ptr
+#include <new>        // std::nothrow, std::set_new_handler
+
+// 线程
+#include <thread>     // std::thread
+#include <mutex>      // std::mutex, std::lock_guard
+#include <condition_variable> // std::condition_variable
+#include <future>     // std::future, std::promise, std::async
+
+// 文件系统
+#include <filesystem> // std::filesystem::path, std::filesystem::exists (C++17)
+
+// 工具
+#include <utility>    // std::move, std::forward, std::pair, std::swap
+#include <functional> // std::function, std::bind, std::ref
+#include <type_traits>// std::is_same, std::enable_if, std::decay
+#include <tuple>      // std::tuple, std::make_tuple, std::get
+
+// 异常
+#include <exception>  // std::exception, std::runtime_error
+#include <stdexcept>  // std::out_of_range, std::invalid_argument
+```
+
+正确使用方式：始终使用 std:: 前缀或选择性的 using 声明，而非全量导入。
+
+2.9 全局命名空间引用 (::)
+----------------------------
+
+使用 :: 前缀表示全局命名空间（有时称为全局作用域解析运算符）。
+
+```cpp
+#include <iostream>
+
+int value = 100;  // 全局变量
+
+namespace MyLib {
+    int value = 200;  // MyLib 中的 value
+
+    void show() {
+        int value = 300;  // 局部变量
+
+        std::cout << "局部 value: " << value << std::endl;       // 300
+        std::cout << "MyLib::value: " << MyLib::value << std::endl; // 200
+        std::cout << "全局 value: " << ::value << std::endl;     // 100
+    }
+}
+
+int main() {
+    MyLib::show();
+    return 0;
+}
+```
+
+:: 在最前面表示"从全局根命名空间开始查找"。这在以下场景特别有用：
+- 当局部变量隐藏全局变量时
+- 在命名空间内部访问全局函数/变量时
+- 在类中访问全局函数时
+
+```cpp
+#include <iostream>
+
+// 全局函数
+void log(const char* msg) {
+    std::cout << "[GLOBAL LOG] " << msg << std::endl;
+}
+
+namespace App {
+    // 命名空间内部的函数
+    void log(const char* msg) {
+        std::cout << "[APP LOG] " << msg << std::endl;
+    }
+
+    void test() {
+        log("from test");     // 调用 App::log
+        ::log("from test");   // 调用全局 log，注意前缀 ::
+    }
+}
+
+int main() {
+    App::test();
+    return 0;
+}
+```
+
+2.10 命名空间内声明与定义分离
+--------------------------------
+
+命名空间中的函数可以先声明后定义（甚至在不同的文件中）：
+
+```cpp
+// ---- header.h ----
+#ifndef MATHUTIL_H
+#define MATHUTIL_H
+
+namespace MathUtil {
+    double square(double x);
+    double cube(double x);
+    int factorial(int n);
+}
+
+#endif
+
+// ---- source.cpp ----
+#include "header.h"
+
+namespace MathUtil {
+    double square(double x) {
+        return x * x;
+    }
+
+    double cube(double x) {
+        return x * x * x;
+    }
+
+    int factorial(int n) {
+        if (n <= 1) return 1;
+        return n * factorial(n - 1);
+    }
+}
+// 也可以在命名空间外部定义，使用完全限定名:
+// double MathUtil::square(double x) { return x * x; }
+```
+
+2.11 C++20 新增的模块（Modules）与命名空间的关系
+---------------------------------------------------
+
+C++20 引入了模块（module）系统，它提供了一种新的代码组织方式。模块和命名空间
+是互补的：
+
+```cpp
+// C++20 模块示例（概念性示例）
+// export module MyLib.Core;
+
+// export namespace MyLib {      // 导出命名空间中的内容
+//     export class Engine { ... };
+//     export void start() { ... };
+// }
+```
+
+模块负责控制代码的"可见性边界"（哪些代码对外可见），命名空间负责组织"逻辑分组"
+（避免命名冲突）。两者结合使用是推荐的实践。
+
+
+================================================================================
+### 第三节: 实用代码案例（生活场景举例）
+================================================================================
+
+案例一：快递公司包裹管理系统
+----------------------------------------------------------------
+
+生活场景：一家快递公司提供三种快递服务——国内快递、国际快递和同城快递。每种服务
+都有自己的运费计算规则和面单打印方式。公司需要统一的管理系统，用户选择快递类型
+后即能自动调用对应的计算和打印功能。
+
+本案例展示：命名空间隔离同名函数、using 声明选择性引入成员、命名空间别名。
+
+```cpp
+#include <iostream>
+#include <string>
+#include <iomanip>
+
+// ============================================================
+// 命名空间1: 国内快递 (Domestic)
+// ============================================================
+namespace Domestic {
+    const double BASE_RATE = 10.0;      // 起步价
+    const double PER_KG_RATE = 2.0;     // 每公斤单价
+
+    double calculateFee(double weight) {
+        return BASE_RATE + weight * PER_KG_RATE;
+    }
+
+    void printLabel(const std::string& sender,
+                    const std::string& receiver,
+                    const std::string& address,
+                    double weight) {
+        std::cout << "========== 国内快递面单 ==========" << std::endl;
+        std::cout << "寄件人: " << sender << std::endl;
+        std::cout << "收件人: " << receiver << std::endl;
+        std::cout << "地址: " << address << std::endl;
+        std::cout << "重量: " << weight << " kg" << std::endl;
+        std::cout << "运费: ￥" << calculateFee(weight) << std::endl;
+        std::cout << "===================================" << std::endl;
+    }
+}
+
+// ============================================================
+// 命名空间2: 国际快递 (International)
+// ============================================================
+namespace International {
+    const double BASE_RATE = 100.0;     // 起步价（元）
+    const double PER_KG_RATE = 15.0;    // 每公斤单价
+    const double CUSTOMS_FEE = 50.0;    // 报关费
+
+    double calculateFee(double weight) {
+        return BASE_RATE + weight * PER_KG_RATE + CUSTOMS_FEE;
+    }
+
+    void printLabel(const std::string& sender,
+                    const std::string& receiver,
+                    const std::string& address,
+                    double weight) {
+        std::cout << "======= 国际快递面单 (International) =======" << std::endl;
+        std::cout << "Sender: " << sender << std::endl;
+        std::cout << "Receiver: " << receiver << std::endl;
+        std::cout << "Address: " << address << std::endl;
+        std::cout << "Weight: " << weight << " kg" << std::endl;
+        std::cout << "Shipping Fee: ￥" << calculateFee(weight) << std::endl;
+        std::cout << "=============================================" << std::endl;
+    }
+}
+
+// ============================================================
+// 命名空间3: 同城快递 (LocalExpress)
+// ============================================================
+namespace LocalExpress {
+    const double FLAT_RATE = 8.0;  // 同城一口价
+
+    double calculateFee(double weight) {
+        (void)weight;  // 同城快递不看重量
+        return FLAT_RATE;
+    }
+
+    void printLabel(const std::string& sender,
+                    const std::string& receiver,
+                    const std::string& address,
+                    double weight) {
+        std::cout << "========== 同城快递面单 ==========" << std::endl;
+        std::cout << "寄件人: " << sender << std::endl;
+        std::cout << "收件人: " << receiver << std::endl;
+        std::cout << "地址: " << address << std::endl;
+        std::cout << "同城一口价: ￥" << FLAT_RATE << std::endl;
+        std::cout << "===================================" << std::endl;
+    }
+}
+
+// 快递调度系统
+namespace ExpressDispatch {
+    // 用 using 声明选择性引入常用的函数
+    using Domestic::calculateFee;     // 引入特定函数（但不依赖它）
+    using International::calculateFee; // 注意：这里会产生冲突，不能同时 using 两个 calculateFee
+
+    // 正确做法：使用命名空间别名简化长名称
+    namespace Local = LocalExpress;
+
+    void showMenu() {
+        std::cout << "\n╔════════════════════════╗" << std::endl;
+        std::cout << "║   快递服务选择          ║" << std::endl;
+        std::cout << "╠════════════════════════╣" << std::endl;
+        std::cout << "║  1. 国内快递           ║" << std::endl;
+        std::cout << "║  2. 国际快递           ║" << std::endl;
+        std::cout << "║  3. 同城快递           ║" << std::endl;
+        std::cout << "║  0. 退出               ║" << std::endl;
+        std::cout << "╚════════════════════════╝" << std::endl;
+    }
+
+    void processOrder(int choice,
+                      const std::string& sender,
+                      const std::string& receiver,
+                      const std::string& address,
+                      double weight) {
+        switch (choice) {
+            case 1:
+                // 使用完全限定名调用，明确是哪个命名空间的函数
+                Domestic::printLabel(sender, receiver, address, weight);
+                break;
+            case 2:
+                International::printLabel(sender, receiver, address, weight);
+                break;
+            case 3:
+                Local::printLabel(sender, receiver, address, weight);
+                break;
+            default:
+                std::cout << "无效选择!" << std::endl;
+                break;
+        }
+    }
+}
+
+int main() {
+    // 演示：在一个作用域中使用 using 声明
+    {
+        using Domestic::calculateFee;
+        std::cout << "小区内测试: 国内快递3kg运费 = ￥"
+                  << calculateFee(3.0) << std::endl;
+    }
+    // 离开作用域，using 声明失效
+
+    {
+        using International::calculateFee;
+        std::cout << "小区内测试: 国际快递3kg运费 = ￥"
+                  << calculateFee(3.0) << std::endl;
+    }
+
+    // 模拟用户交互
+    ExpressDispatch::showMenu();
+
+    // 模拟处理几笔订单
+    std::cout << "\n>>> 用户A选择了国内快递:" << std::endl;
+    ExpressDispatch::processOrder(1, "张三", "李四", "北京市朝阳区XX路", 2.5);
+
+    std::cout << "\n>>> 用户B选择了国际快递:" << std::endl;
+    ExpressDispatch::processOrder(2, "Wang Wu", "John Smith",
+                                   "123 Main St, New York, USA", 3.0);
+
+    std::cout << "\n>>> 用户C选择了同城快递:" << std::endl;
+    ExpressDispatch::processOrder(3, "赵六", "钱七", "上海市浦东新区YY路", 1.0);
+
+    return 0;
+}
+```
+
+编译运行结果呈现了三个命名空间中的同名函数（calculateFee、printLabel）各自独立
+工作。ExpressDispatch 命名空间通过命名空间别名（namespace Local = LocalExpress）
+简化了长命名空间的引用。代码还演示了 using 声明的块作用域特性。
+
+
+案例二：音乐播放器歌曲管理
+----------------------------------------------------------------
+
+生活场景：开发一个音乐播放器，支持 MP3 和 FLAC 两种音频格式。播放器内部模块按
+功能分层，使用嵌套命名空间组织。随着版本迭代，播放接口有 v1 和 v2 两个版本的
+实现，需要向后兼容——默认使用 v2，但 v1 的旧接口仍可显式调用。
+
+本案例展示：嵌套命名空间、内联命名空间实现版本兼容、不同格式的解码器。
+
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+
+// ============================================================
+// 播放器命名空间层次结构
+// player (根)
+//   ├── audio (音频子系统)
+//   │     ├── mp3 (MP3格式)
+//   │     └── flac (FLAC格式)
+//   └── ui (用户界面)
+// ============================================================
+
+namespace player {
+namespace audio {
+
+    // MP3 解码模块
+    namespace mp3 {
+        struct SongInfo {
+            std::string title;
+            std::string artist;
+            int duration;  // 秒
+            int bitrate;   // kbps
+        };
+
+        void decode(const std::string& filename) {
+            std::cout << "[MP3解码器] 正在解码: " << filename << std::endl;
+            std::cout << "  使用 huffman 熵解码 + IMDCT 变换..." << std::endl;
+        }
+
+        SongInfo parseMetadata(const std::string& filename) {
+            std::cout << "[MP3] 解析元数据: " << filename << std::endl;
+            SongInfo info;
+            info.title = filename;
+            info.artist = "Unknown Artist";
+            info.duration = 240;
+            info.bitrate = 320;
+            return info;
+        }
+    }  // namespace mp3
+
+    // FLAC 解码模块
+    namespace flac {
+        struct SongInfo {
+            std::string title;
+            std::string artist;
+            int duration;
+            int sampleRate;   // Hz
+            int bitDepth;     // bits per sample
+        };
+
+        void decode(const std::string& filename) {
+            std::cout << "[FLAC解码器] 正在解码: " << filename << std::endl;
+            std::cout << "  使用线性预测编码(LPC) 无损重建音频..." << std::endl;
+        }
+
+        SongInfo parseMetadata(const std::string& filename) {
+            std::cout << "[FLAC] 解析元数据: " << filename << std::endl;
+            SongInfo info;
+            info.title = filename;
+            info.artist = "Unknown Artist";
+            info.duration = 300;
+            info.sampleRate = 44100;
+            info.bitDepth = 24;
+            return info;
+        }
+    }  // namespace flac
+
+}  // namespace audio
+
+// 用户界面模块（展示嵌套命名空间的不同访问方式）
+namespace ui {
+
+    void showNowPlaying(const std::string& song) {
+        std::cout << "\n┌────────────────────────────┐" << std::endl;
+        std::cout << "│ ♫ 正在播放: " << song << std::endl;
+        std::cout << "│ ████████████░░░░░░ 70%     │" << std::endl;
+        std::cout << "└────────────────────────────┘" << std::endl;
+    }
+}
+
+}  // namespace player
+
+// ============================================================
+// 版本控制：使用 inline namespace 实现播放引擎的版本兼容
+// ============================================================
+namespace playerEngine {
+
+    // V1 是旧版本
+    namespace V1 {
+        void play(const std::string& file) {
+            std::cout << "[引擎V1] 播放: " << file
+                      << " (使用单线程解码)" << std::endl;
+        }
+        void pause() {
+            std::cout << "[引擎V1] 暂停播放" << std::endl;
+        }
+        void stop() {
+            std::cout << "[引擎V1] 停止播放" << std::endl;
+        }
+    }
+
+    // V2 是新版本，设为 inline —— 默认使用 V2
+    inline namespace V2 {
+        void play(const std::string& file) {
+            std::cout << "[引擎V2] 播放: " << file
+                      << " (使用多线程并行解码)" << std::endl;
+        }
+        void pause() {
+            std::cout << "[引擎V2] 暂停播放 (保存断点)" << std::endl;
+        }
+        void stop() {
+            std::cout << "[引擎V2] 停止播放 (释放缓冲区)" << std::endl;
+        }
+        // V2 新增了 seek 功能
+        void seek(double seconds) {
+            std::cout << "[引擎V2] 跳转到: " << seconds << " 秒" << std::endl;
+        }
+    }
+}
+
+// 方便访问的别名
+namespace Audio = player::audio;
+namespace UI = player::ui;
+
+int main() {
+    std::cout << "╔══════════════════════════════╗" << std::endl;
+    std::cout << "║     音乐播放器 v2.0         ║" << std::endl;
+    std::cout << "╚══════════════════════════════╝\n" << std::endl;
+
+    // 1. 加载 MP3 歌曲 —— 使用完全限定名访问嵌套命名空间
+    {
+        std::string song = "Yesterday.mp3";
+        std::cout << "--- 加载 MP3 歌曲 ---" << std::endl;
+        player::audio::mp3::decode(song);
+        auto info = player::audio::mp3::parseMetadata(song);
+        std::cout << "  歌曲: " << info.title
+                  << " | 码率: " << info.bitrate << " kbps"
+                  << " | 时长: " << info.duration << "s" << std::endl;
+    }
+
+    // 2. 加载 FLAC 歌曲 —— 使用命名空间别名简化
+    {
+        std::string song = "Bohemian_Rhapsody.flac";
+        std::cout << "\n--- 加载 FLAC 歌曲 ---" << std::endl;
+        Audio::flac::decode(song);
+        auto info = Audio::flac::parseMetadata(song);
+        std::cout << "  歌曲: " << info.title
+                  << " | 采样率: " << info.sampleRate << " Hz"
+                  << " | 位深: " << info.bitDepth << "bit"
+                  << " | 时长: " << info.duration << "s" << std::endl;
+    }
+
+    // 3. 版本兼容演示 —— inline namespace 发挥作用
+    {
+        std::cout << "\n--- 播放引擎测试 ---" << std::endl;
+
+        // 默认调用 V2（因为 V2 是 inline）
+        playerEngine::play("Bohemian_Rhapsody.flac");
+        playerEngine::pause();
+        playerEngine::seek(120.0);  // V2 新增的 seek 可直接调用
+        playerEngine::stop();
+
+        // 显式调用 V1（旧版本仍然可用）
+        playerEngine::V1::play("Yesterday.mp3");
+        playerEngine::V1::pause();
+        playerEngine::V1::stop();
+        // playerEngine::V1::seek(60.0);  // 错误！V1 没有 seek
+    }
+
+    // 4. UI 显示
+    UI::showNowPlaying("Bohemian_Rhapsody");
+
+    // 5. 演示 using 声明用于嵌套命名空间
+    {
+        using player::audio::mp3::decode;  // 仅引入 decode 函数
+        decode("test_song.mp3");            // 直接使用
+    }
+
+    return 0;
+}
+```
+
+代码结构说明：
+- `player::audio::mp3` 和 `player::audio::flac` 展示了典型的嵌套命名空间组织方式
+- `inline namespace V2` 使得调用 `playerEngine::play()` 时自动路由到 V2 的实现
+- `namespace Audio = player::audio`（别名）大幅简化了深层嵌套命名空间的访问
+- `using player::audio::mp3::decode` 展示了如何在块作用域中精确导入单个函数
+
+
+案例三：智能家居设备控制系统
+----------------------------------------------------------------
+
+生活场景：一个智能家居系统控制不同房间的灯、空调等设备。内部实现细节（如与硬件
+通信的协议处理）使用匿名命名空间隐藏。设备类型使用 #define 宏定义（初步接触
+预处理器概念，为第二章做铺垫）。使用命名空间别名简化多级命名空间的访问。
+
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+
+// 设备类型宏定义（预处理器初步接触，详见第二章）
+#define DEV_TYPE_LIGHT   1
+#define DEV_TYPE_AC      2
+#define DEV_TYPE_CURTAIN 3
+#define DEV_TYPE_TV      4
+
+// ============================================================
+// 智能家居命名空间
+// SmartHome
+//   ├── LivingRoom (客厅)
+//   ├── Bedroom (卧室)
+//   └── Kitchen (厨房)
+// ============================================================
+
+namespace SmartHome {
+
+    // 设备基类
+    struct Device {
+        int id;
+        int type;
+        std::string name;
+        bool isOn;
+
+        Device(int i, int t, const std::string& n)
+            : id(i), type(t), name(n), isOn(false) {}
+    };
+
+    namespace LivingRoom {
+        Device light1(101, DEV_TYPE_LIGHT, "客厅主灯");
+        Device light2(102, DEV_TYPE_LIGHT, "客厅氛围灯");
+        Device ac(201, DEV_TYPE_AC, "客厅空调");
+    }
+
+    namespace Bedroom {
+        Device light(103, DEV_TYPE_LIGHT, "卧室主灯");
+        Device ac(202, DEV_TYPE_AC, "卧室空调");
+        Device curtain(301, DEV_TYPE_CURTAIN, "卧室窗帘");
+    }
+
+    namespace Kitchen {
+        Device light(104, DEV_TYPE_LIGHT, "厨房灯");
+        Device tv(401, DEV_TYPE_TV, "厨房小电视");
+    }
+
+}  // namespace SmartHome
+
+// ============================================================
+// 控制中心 —— 使用匿名命名空间隐藏内部实现
+// ============================================================
+namespace ControlCenter {
+
+    // 匿名命名空间：内部辅助函数，外部不可见
+    namespace {
+        // 模拟底层硬件通信协议
+        void sendCommandToHardware(int deviceId, int command) {
+            // 实际项目中这里会通过串口、WiFi等与硬件通信
+            std::cout << "  [硬件层] 向设备#" << deviceId
+                      << " 发送命令: " << command << std::endl;
+        }
+
+        // 日志记录（内部使用）
+        void internalLog(const std::string& msg) {
+            std::cout << "  [内部日志] " << msg << std::endl;
+        }
+
+        // 设备类型名称转换
+        const char* getTypeName(int type) {
+            switch (type) {
+                case DEV_TYPE_LIGHT:   return "灯光";
+                case DEV_TYPE_AC:      return "空调";
+                case DEV_TYPE_CURTAIN: return "窗帘";
+                case DEV_TYPE_TV:      return "电视";
+                default:               return "未知";
+            }
+        }
+    }  // 匿名命名空间结束
+
+    // 公开接口：开关设备
+    void turnOn(SmartHome::Device& dev) {
+        if (dev.isOn) {
+            std::cout << "[控制中心] " << dev.name << " 已经开启" << std::endl;
+            return;
+        }
+        dev.isOn = true;
+        internalLog(std::string("开启: ") + dev.name + " (" +
+                    getTypeName(dev.type) + ")");
+        sendCommandToHardware(dev.id, 1);  // 1 = 开启命令
+        std::cout << "[控制中心] √ " << dev.name << " -> 已开启" << std::endl;
+    }
+
+    void turnOff(SmartHome::Device& dev) {
+        if (!dev.isOn) {
+            std::cout << "[控制中心] " << dev.name << " 已经关闭" << std::endl;
+            return;
+        }
+        dev.isOn = false;
+        internalLog(std::string("关闭: ") + dev.name + " (" +
+                    getTypeName(dev.type) + ")");
+        sendCommandToHardware(dev.id, 0);  // 0 = 关闭命令
+        std::cout << "[控制中心] √ " << dev.name << " -> 已关闭" << std::endl;
+    }
+
+    void showStatus(const SmartHome::Device& dev) {
+        std::cout << "  [" << getTypeName(dev.type) << "] "
+                  << dev.name << " (ID:" << dev.id << ") -> "
+                  << (dev.isOn ? "开" : "关") << std::endl;
+    }
+}  // namespace ControlCenter
+
+// 命名空间别名，简化长名称
+namespace LR = SmartHome::LivingRoom;
+namespace BR = SmartHome::Bedroom;
+namespace KT = SmartHome::Kitchen;
+namespace CC = ControlCenter;
+
+// ============================================================
+// 场景模式：一键设置多种设备
+// ============================================================
+namespace SceneMode {
+    void movieMode() {
+        std::cout << "\n>>> 启动【电影模式】" << std::endl;
+        CC::turnOff(LR::light1);
+        CC::turnOff(LR::light2);
+        CC::turnOn(LR::ac);  // 开空调保持舒适
+        CC::turnOff(KT::light);
+        CC::turnOn(KT::tv);
+    }
+
+    void sleepMode() {
+        std::cout << "\n>>> 启动【睡眠模式】" << std::endl;
+        CC::turnOff(BR::light);
+        CC::turnOn(BR::ac);      // 空调开到睡眠模式
+        CC::turnOn(BR::curtain); // 关窗帘
+        CC::turnOff(LR::light1);
+        CC::turnOff(LR::light2);
+    }
+
+    void awayMode() {
+        std::cout << "\n>>> 启动【离家模式】" << std::endl;
+        // 关闭所有设备
+        CC::turnOff(LR::light1);
+        CC::turnOff(LR::light2);
+        CC::turnOff(LR::ac);
+        CC::turnOff(BR::light);
+        CC::turnOff(BR::ac);
+        CC::turnOff(BR::curtain);
+        CC::turnOff(KT::light);
+        CC::turnOff(KT::tv);
+    }
+}
+
+int main() {
+    std::cout << "╔══════════════════════════════╗" << std::endl;
+    std::cout << "║     智 能 家 居 系 统        ║" << std::endl;
+    std::cout << "╚══════════════════════════════╝\n" << std::endl;
+
+    // 使用别名访问设备，代码简洁
+    std::cout << "=== 当前设备状态 ===" << std::endl;
+    CC::showStatus(LR::light1);
+    CC::showStatus(LR::light2);
+    CC::showStatus(LR::ac);
+    CC::showStatus(BR::light);
+    CC::showStatus(BR::ac);
+    CC::showStatus(BR::curtain);
+    CC::showStatus(KT::light);
+    CC::showStatus(KT::tv);
+
+    // 手动控制
+    std::cout << "\n=== 手动控制 ===" << std::endl;
+    CC::turnOn(LR::light1);
+    CC::turnOn(LR::light2);
+    CC::turnOn(BR::light);
+
+    // 执行场景模式
+    SceneMode::movieMode();
+
+    std::cout << "\n=== 电影模式后设备状态 ===" << std::endl;
+    CC::showStatus(LR::light1);
+    CC::showStatus(KT::tv);
+
+    SceneMode::sleepMode();
+    SceneMode::awayMode();
+
+    std::cout << "\n=== 离家模式后设备状态 ===" << std::endl;
+    CC::showStatus(LR::light1);
+    CC::showStatus(BR::ac);
+
+    return 0;
+}
+```
+
+案例三核心知识点总结：
+- **匿名命名空间**（ControlCenter 内部）：将 sendCommandToHardware、internalLog、
+  getTypeName 等内部函数隐藏，外部代码无法调用它们。编译器为匿名命名空间生成
+  唯一的内部名称，确保跨编译单元的安全。
+- **命名空间别名**：`namespace LR = SmartHome::LivingRoom` 大幅缩短了引用路径，
+  代码从 `SmartHome::LivingRoom::light1` 简化为 `LR::light1`。
+- **宏定义**：#define DEV_TYPE_LIGHT 1 等宏定义设备类型，这是预处理器的基本
+  用法，将在第二章详细展开。
+- **完全限定名**：`SmartHome::Device&`、`ControlCenter::turnOn()` 等，清晰地
+  标识了类型和函数的归属命名空间。
+
+
+================================================================================
+### 第四节: 课后习题
+================================================================================
+
+习题：医院管理系统
+--------------------
+
+**场景描述**：
+设计一个医院管理系统，模拟门诊部（Outpatient）、住院部（Inpatient）和药房
+（Pharmacy）三个部门。每个部门有一些同名但功能不同的函数。
+
+**要求实现**：
+
+1. 创建三个命名空间：Outpatient、Inpatient、Pharmacy。
+
+2. 每个命名空间包含以下同名函数：
+   - `registerPatient(const std::string& name)` — 登记/注册患者
+     * Outpatient: 登记门诊患者，分配门诊号（格式: OP-0001）
+     * Inpatient: 登记住院患者，分配床位号和住院号（格式: IP-0001, Bed-01）
+     * Pharmacy: 登记取药患者，核对处方
+   - `queryRecord(const std::string& id)` — 查询患者记录
+     * 每个命名空间查询各自的记录体系
+   - `generateBill(const std::string& id)` — 生成账单
+     * Outpatient: 挂号费 + 检查费 + 药费
+     * Inpatient: 住院天数 × 床位费 + 治疗费 + 药费
+     * Pharmacy: 药品单价 × 数量
+
+3. 创建一个嵌套命名空间 `hospital::admin`，管理医院公共配置：
+   - 医院名称、地址等全局信息
+   - 一个 `getConfig(const std::string& key)` 函数用于读取配置
+
+4. 在 main 函数中：
+   - 使用完全限定名区分三个命名空间的同名函数调用
+   - 使用 using 声明选择性引入最常用的函数
+   - 演示当两个 using 声明引入不同命名空间的同名函数时，若在同一个作用域会导致
+     歧义，需要使用完全限定名解决
+
+5. 可选增强（如果有余力）：
+   - 为 outpatient/inpatient/pharmacy 创建命名空间别名（如 namespace OP = Outpatient）
+   - 在代码中加入注释说明每个函数调用对应的是哪个命名空间
+
+**参考答案框架**（仅提供结构提示，具体实现需要自己完成）：
+
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+#include <map>
+
+// 嵌套命名空间: 公共管理
+namespace hospital {
+    namespace admin {
+        // 公共配置
+        const std::string HOSPITAL_NAME = "XX市人民医院";
+        const std::string HOSPITAL_ADDRESS = "XX市XX路100号";
+
+        std::string getConfig(const std::string& key) {
+            std::map<std::string, std::string> config = {
+                {"name", HOSPITAL_NAME},
+                {"address", HOSPITAL_ADDRESS},
+                {"emergency_phone", "120"},
+                {"billing_system", "v2.1"}
+            };
+            auto it = config.find(key);
+            return it != config.end() ? it->second : "未知配置";
+        }
+    }
+}
+
+// 门诊部
+namespace Outpatient {
+    // 存储门诊患者信息
+    struct PatientRecord {
+        std::string id;       // OP-0001
+        std::string name;
+        std::string department;
+        double fee;           // 总费用
+    };
+
+    std::vector<PatientRecord> records;
+    int patientCounter = 0;
+
+    void registerPatient(const std::string& name) {
+        patientCounter++;
+        std::string id = "OP-" + std::to_string(patientCounter);
+        while (id.length() < 7) {
+            id.insert(3, "0");
+        }
+        PatientRecord r{id, name, "内科", 0.0};
+        records.push_back(r);
+        std::cout << "[门诊部] 患者登记成功: " << name
+                  << " (门诊号: " << id << ")" << std::endl;
+    }
+
+    void queryRecord(const std::string& id) {
+        for (const auto& r : records) {
+            if (r.id == id) {
+                std::cout << "[门诊部] 查询结果: " << r.name
+                          << " | 科室: " << r.department
+                          << " | 费用: " << r.fee << std::endl;
+                return;
+            }
+        }
+        std::cout << "[门诊部] 未找到患者记录: " << id << std::endl;
+    }
+
+    void generateBill(const std::string& id) {
+        for (auto& r : records) {
+            if (r.id == id) {
+                r.fee = 15.0 + 50.0 + 80.0;  // 挂号+检查+药
+                std::cout << "[门诊部] 账单生成: " << r.name
+                          << " | 挂号费15 + 检查费50 + 药费80 = 总计"
+                          << r.fee << "元" << std::endl;
+                return;
+            }
+        }
+    }
+}
+
+// 住院部
+namespace Inpatient {
+    struct PatientRecord {
+        std::string id;
+        std::string name;
+        std::string bedId;
+        int days;
+        double fee;
+    };
+
+    std::vector<PatientRecord> records;
+    int patientCounter = 0;
+
+    void registerPatient(const std::string& name) {
+        patientCounter++;
+        std::string id = "IP-" + std::to_string(patientCounter);
+        while (id.length() < 7) {
+            id.insert(3, "0");
+        }
+        std::string bed = "Bed-" + std::to_string(patientCounter);
+        if (bed.length() < 8) bed.insert(4, "0");
+
+        PatientRecord r{id, name, bed, 0, 0.0};
+        records.push_back(r);
+        std::cout << "[住院部] 患者登记成功: " << name
+                  << " (住院号: " << id << ", " << bed << ")" << std::endl;
+    }
+
+    void queryRecord(const std::string& id) {
+        for (const auto& r : records) {
+            if (r.id == id) {
+                std::cout << "[住院部] 查询结果: " << r.name
+                          << " | 床位: " << r.bedId
+                          << " | 已住天数: " << r.days
+                          << " | 费用: " << r.fee << std::endl;
+                return;
+            }
+        }
+        std::cout << "[住院部] 未找到患者记录: " << id << std::endl;
+    }
+
+    void generateBill(const std::string& id) {
+        for (auto& r : records) {
+            if (r.id == id) {
+                r.days = 5;  // 模拟住院天数
+                r.fee = r.days * 200.0 + 500.0 + 300.0; // 床位+治疗+药
+                std::cout << "[住院部] 账单生成: " << r.name
+                          << " | 床位费" << r.days << "×200 + 治疗费500"
+                          << " + 药费300 = 总计" << r.fee << "元" << std::endl;
+                return;
+            }
+        }
+    }
+}
+
+// 药房
+namespace Pharmacy {
+    struct Prescription {
+        std::string id;
+        std::string patientName;
+        std::string medicineName;
+        int quantity;
+        double unitPrice;
+    };
+
+    std::vector<Prescription> records;
+    int counter = 0;
+
+    void registerPatient(const std::string& name) {
+        counter++;
+        std::string id = "RX-" + std::to_string(counter);
+        while (id.length() < 7) id.insert(3, "0");
+
+        Prescription p{id, name, "", 0, 0.0};
+        records.push_back(p);
+        std::cout << "[药房] 处方登记成功: " << name
+                  << " (处方号: " << id << ")" << std::endl;
+    }
+
+    void addMedicine(const std::string& id,
+                     const std::string& medicine,
+                     int quantity,
+                     double unitPrice) {
+        for (auto& r : records) {
+            if (r.id == id) {
+                r.medicineName = medicine;
+                r.quantity = quantity;
+                r.unitPrice = unitPrice;
+                std::cout << "[药房] 添加药品: " << medicine
+                          << " ×" << quantity
+                          << " @" << unitPrice << "元" << std::endl;
+                return;
+            }
+        }
+    }
+
+    void queryRecord(const std::string& id) {
+        for (const auto& r : records) {
+            if (r.id == id) {
+                std::cout << "[药房] 处方查询: " << r.patientName
+                          << " | 药品: " << r.medicineName
+                          << " | 数量: " << r.quantity
+                          << " | 单价: " << r.unitPrice << std::endl;
+                return;
+            }
+        }
+        std::cout << "[药房] 未找到处方: " << id << std::endl;
+    }
+
+    void generateBill(const std::string& id) {
+        for (const auto& r : records) {
+            if (r.id == id) {
+                double total = r.quantity * r.unitPrice;
+                std::cout << "[药房] 账单: " << r.patientName
+                          << " | " << r.medicineName
+                          << " ×" << r.quantity
+                          << " @" << r.unitPrice
+                          << " = 总计" << total << "元" << std::endl;
+                return;
+            }
+        }
+    }
+}
+
+// 命名空间别名
+namespace OP = Outpatient;
+namespace IP = Inpatient;
+namespace RX = Pharmacy;
+
+int main() {
+    std::cout << "╔══════════════════════════════╗" << std::endl;
+    std::cout << "║       医 院 管 理 系 统     ║" << std::endl;
+    std::cout << "╚══════════════════════════════╝\n" << std::endl;
+
+    // 使用嵌套命名空间获取公共配置
+    std::cout << "=== 医院信息 ===" << std::endl;
+    std::cout << "名称: " << hospital::admin::getConfig("name") << std::endl;
+    std::cout << "地址: " << hospital::admin::getConfig("address") << std::endl;
+    std::cout << "计费系统: "
+              << hospital::admin::getConfig("billing_system") << std::endl;
+
+    // 1. 完全限定名区分同名函数调用
+    std::cout << "\n=== 患者登记 ===" << std::endl;
+    Outpatient::registerPatient("张三");   // 门诊登记
+    Inpatient::registerPatient("李四");    // 住院登记
+    Pharmacy::registerPatient("王五");     // 药房登记（取药）
+
+    // 2. 使用 using 声明简化常用函数调用
+    {
+        using Outpatient::queryRecord;
+        using Outpatient::generateBill;
+
+        std::cout << "\n=== 门诊查询 ===" << std::endl;
+        queryRecord("OP-0001");
+        generateBill("OP-0001");
+    }
+    // 离开作用域后 using 声明失效
+
+    // 3. 使用命名空间别名访问
+    std::cout << "\n=== 住院查询 ===" << std::endl;
+    IP::queryRecord("IP-0001");
+    IP::generateBill("IP-0001");
+
+    // 4. 药房操作
+    std::cout << "\n=== 药房操作 ===" << std::endl;
+    RX::addMedicine("RX-0001", "阿莫西林胶囊", 3, 25.5);
+    RX::queryRecord("RX-0001");
+    RX::generateBill("RX-0001");
+
+    // 5. 演示同名函数使用完全限定名区分
+    std::cout << "\n=== 汇总报告 ===" << std::endl;
+    Outpatient::queryRecord("OP-0001");   // 门诊记录
+    Inpatient::queryRecord("IP-0001");    // 住院记录 —— 同名但不同实现
+    Pharmacy::queryRecord("RX-0001");     // 药房记录 —— 同名但不同实现
+
+    return 0;
+}
+```
+
+**考察要点**：
+- 命名空间的定义与基本使用
+- 嵌套命名空间的访问（hospital::admin）
+- using 声明与 using 指令的正确使用方式和作用域理解
+- 完全限定名解决命名冲突
+- 命名空间别名的应用
+
+================================================================================
+### 补充知识：进阶主题
+================================================================================
+
+5.1 ADL（参数依赖查找）深入
+----------------------------
+
+ADL（Argument-Dependent Lookup）又称为 Koenig 查找，是 C++ 名称查找规则中
+一个重要且常常令人困惑的部分。前面在 1.3 节中做了简要介绍，这里深入展开。
+
+**ADL 的完整规则：**
+
+当进行非限定函数调用（即函数名前面没有命名空间限定符）时，编译器会在以下
+命名空间中搜索函数：
+
+1. 所有实参类型所属的命名空间
+2. 实参类型的基类所属的命名空间
+3. 如果实参是类模板特化，该模板的类型参数所属的命名空间也会被搜索
+
+```cpp
+#include <iostream>
+#include <string>
+
+// 演示 ADL 的复杂案例
+namespace N {
+    struct S {};
+    void f(S) { std::cout << "N::f(S)" << std::endl; }
+    void g(S) { std::cout << "N::g(S)" << std::endl; }
+}
+
+namespace M {
+    struct T : N::S {};  // 继承自 N::S
+    void h(N::S) { std::cout << "M::h(N::S)" << std::endl; }
+}
+
+void f(N::S) { std::cout << "::f(N::S)" << std::endl; }  // 全局函数
+
+int main() {
+    N::S s;
+    M::T t;
+
+    f(s);  // ADL 会搜索 N（因为实参类型 N::S 在 N 中）
+           // 同时普通查找也会找到 ::f
+           // 两个都匹配 → 歧义 → 编译错误！
+
+    // 正确做法：使用完全限定名消除歧义
+    N::f(s);   // 明确调用 N::f
+    ::f(s);    // 明确调用全局 f
+
+    g(t);  // ADL: 实参 t 的类型是 M::T，它继承自 N::S
+           // ADL 会搜索 M（T 的类型所属命名空间）和 N（基类 S 的命名空间）
+           // 找到了 N::g(S)，因为 T 可以隐式转换为 S
+           // 输出: N::g(S)
+
+    return 0;
+}
+```
+
+**ADL 为什么存在？**
+
+ADL 最经典的动机是让运算符重载能够自然工作：
+
+```cpp
+#include <iostream>
+#include <string>
+
+int main() {
+    std::string s = "Hello";
+
+    // 这行代码背后的 ADL:
+    std::cout << s << std::endl;
+
+    // 等价于:
+    // operator<<(std::cout, s)
+    // operator<< 在 std 命名空间中定义
+    // 因为 std::cout 的类型 std::ostream 在 std 中
+    // 并且 s 的类型 std::string 也在 std 中
+    // ADL 自动在 std 中找到了 operator<<
+
+    // 如果没有 ADL，你必须写成:
+    // std::operator<<(std::cout, s);
+    // std::operator<<(std::cout, std::endl);
+
+    return 0;
+}
+```
+
+**ADL 的两面性：方便 vs 陷阱**
+
+```cpp
+#include <iostream>
+#include <algorithm>
+#include <vector>
+
+namespace Library {
+    struct Container {
+        std::vector<int> data;
+    };
+
+    void swap(Container& a, Container& b) {
+        std::cout << "Library::swap (自定义版本)" << std::endl;
+        a.data.swap(b.data);
+    }
+}
+
+int main() {
+    Library::Container c1, c2;
+
+    // 推荐的标准写法（利用了 ADL）:
+    using std::swap;
+    swap(c1, c2);  // ADL 找到 Library::swap → 优先调用自定义版本
+    // 如果没有自定义 swap，则回退到 std::swap
+
+    // 错误写法：
+    // std::swap(c1, c2);  // 强制使用 std::swap，绕过 ADL
+    //                       // 可能不是最优的（大容器可能触发深拷贝）
+
+    return 0;
+}
+```
+
+C++ 标准库大量依赖 ADL——std::swap 的惯用法就是最经典的例子。你写的每个类
+如果需要高效的交换操作，都应该在自己的命名空间中提供一个非成员 swap 函数，
+这样 ADL 就能自动找到它。
+
+5.2 命名空间与模板的交互
+--------------------------
+
+命名空间和模板都是 C++ 的核心特性，两者配合使用时有一些值得注意的细节。
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <typeinfo>
+
+// 在不同命名空间中定义同名模板类
+namespace A {
+    template<typename T>
+    class Wrapper {
+    public:
+        T value;
+        Wrapper(T v) : value(v) {}
+        void show() const {
+            std::cout << "A::Wrapper<" << typeid(T).name()
+                      << ">::value = " << value << std::endl;
+        }
+    };
+}
+
+namespace B {
+    template<typename T>
+    class Wrapper {
+    public:
+        T value;
+        Wrapper(T v) : value(v) {}
+        void show() const {
+            std::cout << "B::Wrapper<" << typeid(T).name()
+                      << ">::value = " << value << std::endl;
+        }
+    };
+}
+
+int main() {
+    A::Wrapper<int> wa(42);
+    B::Wrapper<int> wb(100);
+
+    wa.show();
+    wb.show();
+
+    // 模板和命名空间的配合——特化
+    // 可以在命名空间中对模板进行特化
+    return 0;
+}
+```
+
+**命名空间中的模板特化：**
+
+```cpp
+#include <iostream>
+
+namespace MyLib {
+    template<typename T>
+    struct Traits {
+        static const char* name() { return "unknown"; }
+    };
+
+    // 特化（必须在同一个命名空间中）
+    template<>
+    struct Traits<int> {
+        static const char* name() { return "int"; }
+    };
+
+    template<>
+    struct Traits<double> {
+        static const char* name() { return "double"; }
+    };
+}
+
+int main() {
+    std::cout << MyLib::Traits<float>::name() << std::endl;   // unknown
+    std::cout << MyLib::Traits<int>::name() << std::endl;     // int
+    std::cout << MyLib::Traits<double>::name() << std::endl;  // double
+    return 0;
+}
+```
+
+**两阶段名称查找（Two-Phase Lookup）与命名空间：**
+
+模板中的名称查找分为两个阶段：
+- 第一阶段：解析模板定义时，查找不依赖模板参数的名称
+- 第二阶段：模板实例化时，查找依赖模板参数的名称
+
+```cpp
+#include <iostream>
+
+void print(int x) {
+    std::cout << "全局 print(int): " << x << std::endl;
+}
+
+namespace MySpace {
+    struct Data { int info; };
+
+    void print(const Data& d) {
+        std::cout << "MySpace::print(Data): " << d.info << std::endl;
+    }
+
+    template<typename T>
+    void process(T arg) {
+        print(42);       // 第一阶段查找：不依赖 T，找到全局 print(int)
+        print(arg);      // 第二阶段查找：依赖 T，实例化时才决定
+                         // 如果 T=Data，ADL 会找到 MySpace::print(Data)
+    }
+}
+
+int main() {
+    MySpace::Data d{999};
+    MySpace::process(d);
+    // 输出:
+    // 全局 print(int): 42          ← 第一阶段的结果
+    // MySpace::print(Data): 999    ← 第二阶段 ADL 的结果
+
+    return 0;
+}
+```
+
+5.3 大型项目中命名空间组织的最佳实践
+--------------------------------------
+
+**原则一：用命名空间模拟目录结构**
+
+```cpp
+// 目录: src/network/tcp/
+// 头文件: src/network/tcp/connection.h
+
+namespace company {
+namespace project {
+namespace network {
+namespace tcp {
+
+class Connection {
+public:
+    void connect(const std::string& host, int port);
+    void disconnect();
+    void send(const std::vector<char>& data);
+    std::vector<char> receive();
+};
+
+} // namespace tcp
+} // namespace network
+} // namespace project
+} // namespace company
+
+// C++17 简化写法:
+// namespace company::project::network::tcp { ... }
+```
+
+**原则二：头文件中永远不要 using namespace X;**
+
+```cpp
+// ❌ 错误做法 (header.h)
+#pragma once
+#include <string>
+#include <vector>
+using namespace std;  // 非常糟糕！污染所有包含此头文件的翻译单元
+
+// ✅ 正确做法 (header.h)
+#pragma once
+#include <string>
+#include <vector>
+
+namespace MyLib {
+    // 在命名空间内部可以使用 using 声明
+    using std::string;
+    using std::vector;
+
+    class DataStore {
+    public:
+        vector<string> getItems();  // 简洁
+    };
+}
+```
+
+**原则三：匿名命名空间用于文件内的隐藏实现**
+
+```cpp
+// mylib.cpp
+#include "mylib.h"
+
+namespace MyLib {
+
+    // 外部不可见的内部函数和数据
+    namespace {
+        // 缓存
+        std::map<int, std::string> cache;
+
+        // 内部辅助函数
+        bool isValidId(int id) {
+            return id > 0 && id < 1000000;
+        }
+
+        std::string generateKey(int id) {
+            return "key_" + std::to_string(id);
+        }
+
+        // 内部类型
+        struct InternalStats {
+            int cacheHits = 0;
+            int cacheMisses = 0;
+        };
+        InternalStats stats;
+    }
+
+    // 公开接口
+    std::string query(int id) {
+        if (!isValidId(id)) {
+            throw std::invalid_argument("Invalid ID");
+        }
+        std::string key = generateKey(id);
+        auto it = cache.find(key);
+        if (it != cache.end()) {
+            ++stats.cacheHits;
+            return it->second;
+        }
+        ++stats.cacheMisses;
+        // ... 实际查询逻辑
+        return "";
+    }
+
+}  // namespace MyLib
+```
+
+**原则四：使用 inline namespace 进行版本兼容**
+
+这是 C++ 标准库本身使用的技术：
+
+```cpp
+// 模拟 std::string 的版本演进
+namespace std {
+    inline namespace __cxx11 {
+        class string { /* C++11 新实现 */ };
+    }
+    namespace __cxx98 {
+        class string { /* C++98 旧实现 */ };
+    }
+}
+// std::string 默认指向 std::__cxx11::string
+// 但可以通过链接器参数切换到 std::__cxx98::string
+```
+
+**原则五：命名空间别名改善可读性**
+
+```cpp
+// 在 .cpp 文件顶部集中定义别名
+namespace fs = std::filesystem;
+namespace chrono = std::chrono;
+namespace net = company::project::network;
+namespace tcp = company::project::network::tcp;
+namespace json = nlohmann;  // 第三方库
+
+// 如果 C++17 的嵌套语法不够用，使用传统嵌套
+namespace myapp {
+    namespace core { /* ... */ }
+    namespace ui { /* ... */ }
+    namespace data { /* ... */ }
+}
+
+// 用别名统一暴露
+namespace core = myapp::core;
+namespace ui = myapp::ui;
+namespace data = myapp::data;
+```
+
+5.4 using 声明在类中的继承使用（深入）
+----------------------------------------
+
+C++11 起，using 声明不仅可以用于命名空间，还可以用于类中引入基类的构造函数
+和成员函数：
+
+```cpp
+#include <iostream>
+#include <string>
+
+// 基类有多个构造函数
+class Vehicle {
+public:
+    Vehicle() : speed_(0) {
+        std::cout << "Vehicle()" << std::endl;
+    }
+    Vehicle(int s) : speed_(s) {
+        std::cout << "Vehicle(" << s << ")" << std::endl;
+    }
+    Vehicle(const std::string& name, int s)
+        : name_(name), speed_(s) {
+        std::cout << "Vehicle(\"" << name_ << "\", " << speed_ << ")" << std::endl;
+    }
+
+    void drive() { std::cout << "Driving at " << speed_ << std::endl; }
+
+protected:
+    int speed_ = 0;
+    std::string name_;
+};
+
+// 使用 using 声明继承基类的所有构造函数
+class Car : public Vehicle {
+public:
+    using Vehicle::Vehicle;  // 继承 Vehicle 的所有构造函数！
+
+    // 添加自己的方法
+    void honk() { std::cout << "Beep beep!" << std::endl; }
+};
+
+// 使用 using 声明改变基类成员的访问级别
+class Base {
+public:
+    void pubMethod() { std::cout << "public" << std::endl; }
+protected:
+    void protMethod() { std::cout << "protected" << std::endl; }
+private:
+    void privMethod() { std::cout << "private" << std::endl; }
+};
+
+class Derived : private Base {  // 私有继承
+public:
+    using Base::pubMethod;   // 提升为 public
+    // using Base::protMethod; // 提升为 public（但只能访问 protected 成员）
+    // using Base::privMethod; // 错误！不能访问基类私有成员
+};
+
+int main() {
+    // 使用基类的构造函数：
+    Car c1;                       // Vehicle()
+    Car c2(120);                  // Vehicle(120)
+    Car c3("Tesla", 150);         // Vehicle("Tesla", 150)
+
+    c1.drive();
+    c3.drive();
+    c3.honk();
+
+    // 使用提升后的访问级别：
+    Derived d;
+    d.pubMethod();   // OK! 虽然私有继承，但 using 声明提升了它的访问级别
+    // d.protMethod(); // 错误！不能从 Derived 访问 Base 的 protected 方法
+
+    return 0;
+}
+```
+
+5.5 跨文件命名空间的符号冲突与解决
+------------------------------------
+
+当两个独立的第三方库在全局命名空间中定义了同名的全局函数时，即使你的代码
+使用了命名空间，链接时仍可能产生冲突。这是因为 C 链接规则下（extern "C"），
+符号名没有被 mangling。
+
+```cpp
+// library_a.cpp - 第三方库A
+extern "C" {
+    void init() {
+        // 库A的初始化
+    }
+}
+
+// library_b.cpp - 第三方库B
+extern "C" {
+    void init() {
+        // 库B的初始化 ← 符号冲突！
+    }
+}
+
+// 解决方案1: 封装到命名空间中（如果库使用 C++ 编译）
+namespace LibA {
+    void init() { /* ... */ }
+}
+
+namespace LibB {
+    void init() { /* ... */ }
+}
+
+// 解决方案2: 使用 dlopen/dlsym 动态加载（Linux）
+// void* handle_a = dlopen("liba.so", RTLD_LAZY);
+// void (*init_a)() = (void(*)())dlsym(handle_a, "init");
+// void* handle_b = dlopen("libb.so", RTLD_LAZY);
+// void (*init_b)() = (void(*)())dlsym(handle_b, "init");
+
+// 解决方案3: 使用 objcopy --redefine-sym 重命名符号
+// $ objcopy --redefine-sym init=liba_init library_a.o
+// $ objcopy --redefine-sym init=libb_init library_b.o
+```
+
+5.6 命名空间与 extern "C" 的关系
+------------------------------------
+
+extern "C" 告诉编译器使用 C 语言链接规范（不使用 name mangling）。当在
+C++ 命名空间中声明 extern "C" 函数时，函数属于该命名空间但使用 C 链接：
+
+```cpp
+#include <iostream>
+
+namespace Native {
+    extern "C" {
+        void c_func(int x) {
+            std::cout << "Native::c_func(" << x << ")" << std::endl;
+        }
+
+        int c_add(int a, int b) {
+            return a + b;
+        }
+    }
+}
+
+// 函数属于 Native 命名空间（C++ 层面的作用域）
+// 但使用 C 链接（符号名不被 mangling）
+
+// 在 C 代码中不能写 Native::c_func(42)
+// 只能写 c_func(42)（因为 C 没有命名空间）
+
+int main() {
+    Native::c_func(42);           // C++ 层面使用完全限定名
+    int sum = Native::c_add(3, 5); // C++ 层面使用完全限定名
+
+    // 编译后:
+    // Native::c_func 的符号名就是 c_func（没有 mangling）
+    // Native::c_add  的符号名就是 c_add  （没有 mangling）
+
+    // 但如果有另一个 extern "C" 函数也叫 c_func 在另一个命名空间:
+    // namespace Other { extern "C" { void c_func(int); } }
+    // 这将导致链接错误！两个函数有相同的 C 符号名
+
+    return 0;
+}
+```
+
+这是一个危险的组合：extern "C" 禁用了 name mangling，使得不同命名空间中
+的同名 extern "C" 函数在链接时产生冲突。
+
+5.7 编译器诊断：查看命名空间对符号的影响
+------------------------------------------
+
+实验中可以用以下命令深入观察命名空间在二进制层面的表现：
+
+```bash
+# 创建一个包含多个命名空间的测试文件
+cat > ns_test.cpp << 'EOF'
+namespace A {
+    void func(int) {}
+    namespace B {
+        void func(double) {}
+    }
+}
+namespace A {
+    namespace C {
+        void func(char) {}
+    }
+}
+void func(long) {}
+EOF
+
+# 编译但不链接
+g++ -c ns_test.cpp -o ns_test.o
+
+# 查看符号表中的 mangled names
+nm ns_test.o
+
+# 输出示例:
+# 0000000000000000 T _Z1funci       ← ::func(int)
+# 000000000000000b T _Z1funcl       ← ::func(long)
+# 0000000000000016 T _ZN1A4funcEd   ← A::func(double)... 等等
+# 0000000000000021 T _ZN1A4funcEi   ← A::func(int)
+# 0000000000000032 T _ZN1A1B4funcEd ← A::B::func(double)
+# 000000000000002c T _ZN1A1C4funcEc ← A::C::func(char)
+
+# 用 demangle 查看可读名称
+nm -C ns_test.o
+
+# 只显示 C++ 符号
+nm --demangle ns_test.o
+
+# 查看所有符号（包括调试符号）
+readelf -s ns_test.o
+
+# 查看节信息
+objdump -h ns_test.o
+```
+
+这些工具可以帮助你直观理解编译器如何把命名空间信息编码到符号名称中。
+
+
+================================================================================
+### 章节总结
+================================================================================
+
+本章的核心要点：
+
+1. **命名空间是编译期的逻辑分组机制**，在链接时完全转化为 mangled name 的前缀
+   编码。命名空间在二进制层面"不存在"——它只是符号名称的一部分。
+
+2. **using 声明**（using N::name）和 **using 指令**（using namespace N）的区别：
+   - using 声明：精确引入单个名称，像声明了一个该名称的别名
+   - using 指令：打开整个命名空间的"门"，所有名称在当前作用域可见
+
+3. **匿名命名空间**实现了 file-local 链接（替代 C 的 static），且能用于类型定义。
+
+4. **内联命名空间**（inline namespace）实现了版本化的默认接口选择。
+
+5. **命名空间别名**（namespace Short = Long::Nested::Name）简化了深层嵌套的访问。
+
+6. **ADL（参数依赖查找）** 使得运算符重载和标准库函数可以自然工作，但也可能带来
+   意想不到的函数匹配。理解 ADL 是高级 C++ 编程的必备知识。
+
+7. **最佳实践**：永远不要在头文件中使用 using namespace；优先使用完全限定名；
+   在 .cpp 文件内部可以适当使用 using 声明简化代码。
+
+在后续章节中，你将看到命名空间如何与预处理器宏（第二章）、动态内存管理（第三章）、
+类与对象（第四章）、模板（第八章）等特性配合使用。
+
+================================================================================
+### 深入讨论：命名空间的更多细节
+================================================================================
+
+6.1 命名空间版本的"静态链接"
+
+命名空间在编译期完成解析后，链接时只有 mangled name 参与。理解这一点有助于
+理解以下几个常见问题：
+
+**问题1：为什么不能在不同 .cpp 中定义相同命名空间中的相同函数？**
+
+```cpp
+// file_a.cpp
+namespace MyLib {
+    void process() { /* 实现A */ }  // mangled: _ZN5MyLib7processEv
+}
+
+// file_b.cpp
+namespace MyLib {
+    void process() { /* 实现B */ }  // mangled: _ZN5MyLib7processEv
+}
+// 链接错误: multiple definition of 'MyLib::process()'
+// 两个编译单元生成了完全相同的 mangled name
+```
+
+**问题2：为什么匿名命名空间可以？**
+
+```cpp
+// file_a.cpp
+namespace {
+    void process() { /* 实现A */ }
+    // mangled: _ZN12_GLOBAL__N_17processEv  (GCC)
+}
+
+// file_b.cpp
+namespace {
+    void process() { /* 实现B */ }
+    // mangled: _ZN12_GLOBAL__N_27processEv  (GCC, 不同的随机后缀)
+}
+// 不同的 mangled name → 没有冲突！
+```
+
+6.2 命名空间可见性控制（符号导出）
+
+在构建共享库（.so / .dylib / .dll）时，符号的可见性非常重要。GCC 和 Clang
+支持 `__attribute__((visibility("default")))` 控制哪些符号对外可见。
+
+```cpp
+// 默认隐藏所有符号，只导出指定命名空间中的符号
+
+// 编译选项: -fvisibility=hidden
+
+// 标记命名空间中的所有符号为可见
+namespace MyPublicAPI {
+    __attribute__((visibility("default")))
+    void publicFunction();
+
+    __attribute__((visibility("default")))
+    class PublicClass {
+    public:
+        void method();
+    };
+}
+
+// 简化方式：使用宏
+#ifdef _WIN32
+    #define API_EXPORT __declspec(dllexport)
+    #define API_IMPORT __declspec(dllimport)
+#else
+    #define API_EXPORT __attribute__((visibility("default")))
+    #define API_IMPORT
+#endif
+
+namespace MyLib {
+    API_EXPORT void exportedFunc();
+    void internalFunc();  // 对外隐藏
+}
+```
+
+这展示了命名空间与预处理器宏（第二章知识）在实际项目中的配合使用。
+
+6.3 使用 stl/c++filt 解码 mangled name
+
+当你看到目标文件或错误信息中的 mangled name 时，可以使用工具还原：
+
+```bash
+# 使用 c++filt 解码
+$ echo '_ZN5Outer5Inner4funcEi' | c++filt
+# 输出: Outer::Inner::func(int)
+
+$ echo '_ZNKSt6vectorIiSaIiEE4sizeEv' | c++filt
+# 输出: std::vector<int, std::allocator<int>>::size() const
+
+# 解码整个目标文件的符号
+$ nm -C mylib.o | head -20
+
+# 或先 nm 再 c++filt
+$ nm mylib.o | grep ' T ' | cut -d' ' -f3- | c++filt
+```
+
+6.4 命名空间的深层嵌套与编译器的限制
+
+ANSI C++ 标准没有明确规定命名空间的最大嵌套深度，但编译器有实际的限制。
+一般来说，不建议超过 3-4 层。如果需要更深的层次结构，考虑使用扁平的命名
+约定或将深层部分提取到独立文件中。
+
+```cpp
+// ❌ 过度嵌套（难以维护）
+namespace a::b::c::d::e::f::g {
+    void func();
+}
+// 调用: a::b::c::d::e::f::g::func();
+
+// ✅ 合理嵌套
+namespace Company::Project::Module {
+    void func();
+}
+// 调用: Company::Project::Module::func();
+
+// 如果确实需要深层级，用别名扁平化
+namespace PM = Company::Project::Module;
+PM::func();
+```
+
+6.5 标准库命名空间的内部组织
+
+C++ 标准库内部也广泛使用命名空间来组织代码。了解标准库的结构有助于理解
+大型 C++ 项目的组织方式：
+
+```
+std                     ← 标准命名空间（用户可见）
+├── __detail            ← 实现细节（用户不应直接使用）
+├── placeholders        ← std::placeholders::_1, _2...
+├── chrono              ← C++11 时间库
+├── filesystem          ← C++17 文件系统库
+├── literals            ← 用户自定义字面量
+│   ├── string_literals ← 如 "hello"s
+│   ├── chrono_literals ← 如 5h + 30min
+│   └── string_view_literals ← 如 "hello"sv
+├── ranges              ← C++20 范围库
+│   └── views           ← 视图适配器
+├── execution           ← C++17 执行策略
+├── pmr                 ← C++17 多态内存资源
+└── regex_constants     ← 正则表达式常量
+```
+
+标准库使用嵌套命名空间将相关功能分组，用 inline namespace 实现版本管理
+（如 std::__cxx11::string）。
+
+6.6 命名空间与动态链接库（DLL/SO）的交互
+
+当 C++ 代码通过动态库暴露接口时，命名空间的使用需要特别注意 ABI 兼容性：
+
+```cpp
+// mylib.h — 动态库的头文件
+#pragma once
+
+#ifdef _WIN32
+    #ifdef MYLIB_EXPORTS
+        #define MYLIB_API __declspec(dllexport)
+    #else
+        #define MYLIB_API __declspec(dllimport)
+    #endif
+#else
+    #define MYLIB_API __attribute__((visibility("default")))
+#endif
+
+namespace MyLib {
+
+    // 导出的类（跨 DLL 边界使用）
+    class MYLIB_API Engine {
+    public:
+        Engine();
+        virtual ~Engine();
+        virtual void start() = 0;     // 纯虚函数接口更安全
+        virtual void stop() = 0;
+        static Engine* create();      // 工厂函数
+    };
+
+    // 导出的自由函数
+    MYLIB_API int getVersion();
+    MYLIB_API const char* getLibraryName();
+
+}  // namespace MyLib
+```
+
+跨动态库边界时，使用纯虚接口（Abstract Base Class + Factory）比直接导出
+具体类更安全，因为避免了不同编译器 ABI 的差异。
+
+6.7 命名空间在模板元编程中的角色
+
+在模板元编程中，命名空间同样用于组织和隔离类型计算：
+
+```cpp
+#include <iostream>
+#include <type_traits>
+
+namespace meta {
+
+    // 编译期条件选择
+    template<bool Cond, typename T, typename F>
+    struct conditional {
+        using type = F;
+    };
+
+    template<typename T, typename F>
+    struct conditional<true, T, F> {
+        using type = T;
+    };
+
+    template<bool Cond, typename T, typename F>
+    using conditional_t = typename conditional<Cond, T, F>::type;
+
+    // 编译期整数常量
+    template<int N>
+    struct int_constant {
+        static constexpr int value = N;
+    };
+
+    // 类型列表
+    template<typename... Types>
+    struct type_list {};
+
+    // 获取类型列表的长度
+    template<typename List>
+    struct length;
+
+    template<typename... Types>
+    struct length<type_list<Types...>>
+        : int_constant<sizeof...(Types)> {};
+
+}  // namespace meta
+
+// 命名空间隔离了元编程工具，避免污染全局命名空间
+int main() {
+    using meta::conditional_t;
+    using meta::int_constant;
+    using meta::type_list;
+
+    // 编译期条件选择
+    using T1 = conditional_t<(sizeof(int) > sizeof(short)), int, short>;
+    static_assert(std::is_same_v<T1, int>, "应该选 int");
+
+    // 类型列表长度
+    using MyTypes = type_list<int, double, char, float>;
+    constexpr int n = meta::length<MyTypes>::value;
+    std::cout << "类型列表长度: " << n << std::endl;  // 4
+
+    return 0;
+}
+```
+
+6.8 在大型项目中用命名空间管理 API 兼容性
+
+```cpp
+// api_v1.h
+namespace MyAPI {
+    namespace v1 {
+        struct User {
+            std::string name;
+            int age;
+        };
+
+        User* createUser(const std::string& name, int age);
+        void deleteUser(User* user);
+        void setEmail(User* user, const std::string& email);  // v1 就有
+    }
+
+    // 默认使用最新版本（inline）
+    inline namespace v2 {
+        struct User {
+            std::string name;
+            int age;
+            std::string email;  // v2 新增字段
+        };
+
+        User* createUser(const std::string& name, int age,
+                        const std::string& email = "");
+        void deleteUser(User* user);
+        // v2 中的 User 已经包含 email，所以不再需要 setEmail
+    }
+}
+
+// 使用方式：
+// MyAPI::createUser("Alice", 25, "alice@example.com") → 使用 v2
+// MyAPI::v1::createUser("Bob", 30) → 显式使用 v1
+```
+
+通过命名空间的版本层次，可以在保持 API 演进的同时提供向后兼容性。
+
+6.9 编译器和链接器正确处理命名空间的验证实验
+
+创建一个测试来验证你对命名空间在编译链接层面表现的理解：
+
+```cpp
+// experiment.cpp
+#include <iostream>
+#include <string>
+
+// 命名空间 A
+namespace A {
+    int value = 1;
+    void print(const std::string& prefix) {
+        std::cout << prefix << "A::print, value=" << value << std::endl;
+    }
+}
+
+// 命名空间 B
+namespace B {
+    int value = 2;
+    void print(const std::string& prefix) {
+        std::cout << prefix << "B::print, value=" << value << std::endl;
+    }
+}
+
+// 全局的 value 和 print
+int value = 3;
+void print(const std::string& prefix) {
+    std::cout << prefix << "全局 print, value=" << value << std::endl;
+}
+
+int main() {
+    std::cout << "符号表实验开始" << std::endl;
+
+    // 1. 完全限定调用 → 编译器直接跳转到对应命名空间的符号
+    A::print("完全限定");   // 直接在 A 中查找 print → _ZN1A5printERKNSt7...
+    B::print("完全限定");   // 直接在 B 中查找 print → _ZN1B5printERKNSt7...
+    ::print("完全限定");    // 全局 print → _Z5printRKNSt7...
+
+    // 2. 使用 using 声明 → 在当前作用域创建别名
+    {
+        using A::value;     // 在块作用域引入 A::value
+        std::cout << "using A::value = " << value << std::endl;  // 1
+        // 此时 value 指向 A::value（隐藏了外层的全局 value）
+    }
+
+    // 3. using 指令 → 打开整个命名空间
+    {
+        using namespace B;  // 将 B 的所有名称引入此块
+        // print("using namespace");  // 歧义！全局有 print，B 也有 print
+        B::print("明确指定");  // 使用完全限定名消除歧义
+    }
+
+    // 4. 观察 name mangling 的差异
+    // 编译后查看:
+    // $ nm -C experiment.o | grep print
+    // 输出应显示不同命名空间中的 print 有不同的 mangled name
+
+    return 0;
+}
+```
+
+编译并观察：
+```bash
+# 编译为目标文件
+g++ -c experiment.cpp -o experiment.o
+
+# 查看符号
+nm -C experiment.o | grep -E "value|print"
+
+# 你会看到类似：
+# 0000000000000000 D A::value          ← A 的 value
+# 0000000000000004 D B::value          ← B 的 value
+# 0000000000000008 D ::value           ← 全局 value
+# 0000000000000000 T A::print(...)     ← A 的 print
+# 000000000000001b T B::print(...)     ← B 的 print
+# 0000000000000036 T ::print(...)      ← 全局 print
+# 它们是内存中完全独立的实体！
+
+================================================================================
+### 学习检查清单
+================================================================================
+
+在进入下一章之前，请确认你已经掌握以下知识点：
+
+□ 能写出基本的 namespace 定义并与 using 声明/指令配合使用
+□ 理解 using 声明（引入单个名称）和 using 指令（引入整个命名空间）的区别
+□ 知道何时用完全限定名（如 std::cout），何时可以用 using 声明简化
+□ 理解为什么不能在头文件中使用 using namespace
+□ 能用嵌套命名空间组织模块化的代码
+□ 理解 C++17 的 namespace A::B::C 简化语法
+□ 能用 inline namespace 实现 API 版本兼容
+□ 能用匿名命名空间替代文件作用域的 static 声明
+□ 能用命名空间别名简化深层命名空间的访问
+□ 理解 ADL（参数依赖查找）的规则和动机
+□ 能解释 name mangling 的基本原理，知道如何用 nm/c++filt 查看符号
+□ 理解编译器符号表中命名空间是如何被编码的
+□ 能使用 :: 前缀访问全局命名空间
+□ 理解命名空间与模板的两阶段查找
+□ 知道如何用命名空间组织大型项目的目录结构
+
+以下是在 Linux 下验证你理解的终端实验：
+
+```bash
+# 创建测试文件
+cat > ns_final_test.cpp << 'ENDOFFILE'
+#include <iostream>
+
+// 实验1: 基本的命名空间隔离
+namespace A { int x = 1; void f() { std::cout << "A::f" << std::endl; } }
+namespace B { int x = 2; void f() { std::cout << "B::f" << std::endl; } }
+
+// 实验2: 匿名命名空间
+namespace { int secret = 42; }
+
+// 实验3: 嵌套+内联
+namespace Outer {
+    inline namespace V1 {
+        void g() { std::cout << "Outer::V1::g" << std::endl; }
+    }
+    namespace V2 {
+        void g() { std::cout << "Outer::V2::g" << std::endl; }
+    }
+}
+
+int main() {
+    A::f();
+    B::f();
+    std::cout << "A::x=" << A::x << ", B::x=" << B::x << std::endl;
+    std::cout << "secret=" << secret << std::endl;
+
+    Outer::g();       // 调用 V1 (inline)
+    Outer::V2::g();   // 显式调用 V2
+
+    using namespace A;
+    f();              // A::f → ADL 也影响到这里（但此处直接查找到 A::f）
+    // f();            // 如果同时 using namespace B; 这会有歧义
+
+    return 0;
+}
+ENDOFFILE
+
+# 编译并运行
+g++ -std=c++17 ns_final_test.cpp -o ns_final_test
+./ns_final_test
+
+# 查看编译后的符号
+g++ -c ns_final_test.cpp -o ns_final_test.o
+nm -C ns_final_test.o | grep -E "f|g|x|secret"
+
+# 预期看到类似于:
+# 0000000000000000 T A::f()
+# 0000000000000015 T B::f()
+# 0000000000000000 D A::x
+# 0000000000000004 D B::x
+# 0000000000000008 d (anonymous namespace)::secret
+# 000000000000002a T Outer::V1::g()
+# 000000000000003f T Outer::V2::g()
+# 注意: V1::g 出现在命名空间 Outer 的符号中，但调用 Outer::g() 即指向它
+```
+
+如果你能够独立完成以上实验并解释每个输出，说明你已经扎实掌握了命名空间。
+接下来可以进入第二章——预处理器，学习 C++ 编译的第一阶段。
+```

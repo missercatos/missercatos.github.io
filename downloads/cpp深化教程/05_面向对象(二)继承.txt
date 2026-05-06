@@ -1,0 +1,2510 @@
+================================================================================
+  C++ 深化教程：第五章 面向对象(二) —— 继承
+================================================================================
+
+【本章目标】
+  1. 掌握继承的基本语法和三种继承方式
+  2. 理解派生类构造/析构的执行顺序
+  3. 深入理解派生类对象内存布局和向上转型
+  4. 掌握多重继承、菱形继承及虚继承解决方案
+  5. 通过5个生活场景案例综合运用继承与前4章知识
+
+================================================================================
+
+                            === 第一节：基础示例代码 + 计算机底层原理 ===
+================================================================================
+
+一、继承基础语法：从图形类开始
+------------------------------------
+
+继承是面向对象编程的三大核心机制之一。通过继承，派生类可以复用基类的
+成员变量和成员函数，并在此基础上添加新的功能。
+
+【示例1-1】基类Shape与派生类Circle：
+
+```cpp
+#include <iostream>
+#include <string>
+#include <cmath>
+
+// 基类
+class Shape {
+protected:               // protected成员：派生类可访问，外部不可访问
+    double x, y;         // 坐标
+    std::string color;
+
+public:
+    Shape(double xVal, double yVal, const std::string& c)
+        : x(xVal), y(yVal), color(c) {
+        std::cout << "[Shape] 构造于 (" << x << ", " << y
+                  << ") 颜色: " << color << std::endl;
+    }
+
+    ~Shape() {
+        std::cout << "[Shape] 析构" << std::endl;
+    }
+
+    void move(double dx, double dy) {
+        x += dx;
+        y += dy;
+        std::cout << "[Shape] 移动到 (" << x << ", " << y << ")" << std::endl;
+    }
+
+    // const成员函数
+    double getX() const { return x; }
+    double getY() const { return y; }
+    const std::string& getColor() const { return color; }
+
+    void setColor(const std::string& c) { color = c; }
+};
+
+// 派生类：public继承
+class Circle : public Shape {
+private:
+    double radius;
+
+public:
+    Circle(double xVal, double yVal, const std::string& c, double r)
+        : Shape(xVal, yVal, c),   // 必须调用基类构造函数
+          radius(r) {
+        std::cout << "[Circle] 构造 半径: " << radius << std::endl;
+    }
+
+    ~Circle() {
+        std::cout << "[Circle] 析构 半径: " << radius << std::endl;
+    }
+
+    double area() const {
+        return M_PI * radius * radius;
+    }
+
+    double perimeter() const {
+        return 2 * M_PI * radius;
+    }
+
+    double getRadius() const { return radius; }
+
+    // 重定义基类的move函数（不是重写，因为没有virtual）
+    void move(double dx, double dy) {
+        // 可以调用基类的move
+        Shape::move(dx, dy);  // 调用基类版本
+        std::cout << "[Circle] 也移动了 半径: " << radius << std::endl;
+    }
+
+    void print() const {
+        std::cout << "圆形{" << color << "} 中心(" << x << "," << y
+                  << ") 半径" << radius
+                  << " 面积" << area() << std::endl;
+    }
+};
+
+// 另一个派生类
+class Rectangle : public Shape {
+private:
+    double width, height;
+
+public:
+    Rectangle(double xVal, double yVal, const std::string& c,
+              double w, double h)
+        : Shape(xVal, yVal, c), width(w), height(h) {
+        std::cout << "[Rectangle] 构造 " << width << "x" << height << std::endl;
+    }
+
+    ~Rectangle() {
+        std::cout << "[Rectangle] 析构" << std::endl;
+    }
+
+    double area() const { return width * height; }
+    double getWidth() const { return width; }
+    double getHeight() const { return height; }
+};
+
+int main() {
+    std::cout << "===== 构造阶段 =====" << std::endl;
+    Circle c(100, 200, "red", 50);
+    std::cout << std::endl;
+
+    Rectangle r(0, 0, "blue", 100, 60);
+    std::cout << std::endl;
+
+    // 访问基类成员
+    c.print();
+    std::cout << "圆形的x坐标: " << c.getX() << std::endl;
+
+    // 调用基类的move
+    c.move(10, 20);
+
+    // 调用派生类的方法
+    std::cout << "圆形面积: " << c.area() << std::endl;
+    std::cout << "矩形面积: " << r.area() << std::endl;
+
+    std::cout << "\n===== 析构阶段 =====" << std::endl;
+    return 0;
+    // 析构顺序：Rectangle → Shape, 然后 Circle → Shape
+}
+/* 输出顺序（体现了构造链和析构链）：
+===== 构造阶段 =====
+[Shape] 构造于 (100, 200) 颜色: red
+[Circle] 构造 半径: 50
+
+[Shape] 构造于 (0, 0) 颜色: blue
+[Rectangle] 构造 100x60
+
+===== 析构阶段 =====
+[Rectangle] 析构              ← 先派生类析构
+[Shape] 析构                  ← 后基类析构
+[Circle] 析构                 ← 先派生类析构
+[Shape] 析构                  ← 后基类析构
+*/
+```
+
+================================================================================
+
+二、计算机底层原理：继承的内存布局
+------------------------------------
+
+【原理2-1】派生类对象在内存中的布局
+
+派生类对象在内存中包含一个完整的基类子对象（base class subobject），
+它与派生类新增的成员连续排列。
+
+以下面两个类为例：
+
+```cpp
+class Base {
+public:
+    int baseVal;        // 4 bytes
+    char baseChar;      // 1 byte
+    // [padding: 3 bytes]
+    // 基类子对象大小: 8 bytes
+};
+
+class Derived : public Base {
+public:
+    int derivedVal;     // 4 bytes
+    double derivedDbl;  // 8 bytes
+    // [padding: 4 bytes] 最终对齐到8字节边界
+};
+```
+
+派生类 Derived 对象的内存布局（64位系统）：
+
+  偏移量    内容                     所属
+  ─────────────────────────────────────────
+  0x00    baseVal (4 bytes)       ← 基类子对象开始
+  0x04    baseChar (1 byte)
+  0x05    [padding: 3 bytes]
+  0x08    derivedVal (4 bytes)    ← 派生类成员开始
+  0x0C    [padding: 4 bytes]
+  0x10    derivedDbl (8 bytes)
+  ─────────────────────────────────────────
+  总大小: 24 bytes = sizeof(Base)=8 + padding=4 + derivedVal=4 + padding=4 +
+                     derivedDbl=8
+  基类部分在前，派生类部分在后！
+
+用代码验证：
+
+```cpp
+#include <iostream>
+
+class Base {
+public:
+    int baseVal;
+    char baseChar;
+};
+
+class Derived : public Base {
+public:
+    int derivedVal;
+    double derivedDbl;
+};
+
+int main() {
+    std::cout << "sizeof(Base): " << sizeof(Base) << std::endl;       // 8
+    std::cout << "sizeof(Derived): " << sizeof(Derived) << std::endl; // 24
+
+    Derived d;
+    // 对象d的地址 和 其中基类子对象的地址相同
+    std::cout << "&d: " << &d << std::endl;
+    std::cout << "&d.baseVal: " << &d.baseVal << std::endl;
+    // 两者相等！证明基类子对象位于派生类对象的起始位置
+
+    return 0;
+}
+```
+
+【原理2-2】向上转型（Upcasting）—— 指针/引用的隐式转换
+
+由于基类子对象位于派生类对象的起始位置，将派生类指针转换为基类指针在
+地址层面是零开销的：
+
+```cpp
+class Animal {
+public:
+    int age;  // 0x00
+};
+
+class Dog : public Animal {
+public:
+    int breedID;   // 0x04
+    double weight; // 0x08
+};
+
+// 向上转型：
+Dog dog;
+dog.age = 5;
+dog.breedID = 10;
+
+Animal* animalPtr = &dog;  // 隐式向上转型
+// animalPtr 和 &dog 指向相同的内存地址（地址值相同）
+// 但 animalPtr 的静态类型是 Animal*，只能访问Animal的成员
+
+// 底层原理：
+// dog对象内存布局: [age=4B][padding=4B][breedID=4B][weight=8B]
+// animalPtr 指向起始地址，等同于指向基类子对象
+// 编译器限制只能访问前8字节（Animal的范围）
+
+// 安全规则：
+// 向上转型永远是安全的 —— 每个Dog都是Animal
+// 向下转型需要 dynamic_cast（第6章） —— Animal不一定是Dog
+```
+
+【原理2-3】构造链与析构链
+
+```cpp
+#include <iostream>
+
+class GrandParent {
+public:
+    GrandParent()  { std::cout << "GrandParent 构造" << std::endl; }
+    ~GrandParent() { std::cout << "GrandParent 析构" << std::endl; }
+};
+
+class Parent : public GrandParent {
+public:
+    Parent()  { std::cout << "  Parent 构造" << std::endl; }
+    ~Parent() { std::cout << "  Parent 析构" << std::endl; }
+};
+
+class Child : public Parent {
+public:
+    Child()  { std::cout << "    Child 构造" << std::endl; }
+    ~Child() { std::cout << "    Child 析构" << std::endl; }
+};
+
+int main() {
+    Child c;
+    return 0;
+}
+/* 输出：
+GrandParent 构造   ← 最远祖先先构造
+  Parent 构造      ← 然后直接基类
+    Child 构造     ← 最后派生类构造
+    Child 析构     ← 先派生类析构
+  Parent 析构      ← 然后直接基类
+GrandParent 析构   ← 最后最远祖先
+*/
+
+// 规则：
+// 构造顺序：基类 → 派生类（从祖先到后代）
+// 析构顺序：派生类 → 基类（从后代到祖先，正好相反）
+// 就好像盖房子：先打地基（基类），再建高层（派生类）
+// 拆房子：先拆高层，再拆地基
+```
+
+构造链的三阶段（每个类的构造函数执行时）：
+  1. 基类构造函数执行（初始化基类子对象）
+  2. 成员变量初始化（按声明顺序执行初始化列表）
+  3. 构造函数体执行
+
+【原理2-4】不同继承方式对可访问性的影响
+
+C++提供三种继承方式：public、protected、private。它们影响基类成员
+在派生类中的访问级别。
+
+  继承方式  │ 基类public成员在派生类中 │ 基类protected成员在派生类中 │ 基类private成员在派生类中
+  ─────────┼───────────────────────┼───────────────────────────┼─────────────────────────
+  public    │ 保持public            │ 保持protected               │ 不可访问
+  protected │ 变为protected         │ 保持protected               │ 不可访问
+  private   │ 变为private           │ 变为private                 │ 不可访问
+
+```cpp
+class Base {
+public:
+    int pub;
+protected:
+    int prot;
+private:
+    int priv;  // 无论如何都无法被派生类直接访问
+};
+
+class PublicDerived : public Base {
+    // pub  仍然是 public
+    // prot 仍然是 protected
+    // priv 不可访问
+public:
+    void test() {
+        pub = 10;   // OK，仍是public
+        prot = 20;  // OK，仍是protected
+        // priv = 30;  // 错误！private成员不可访问
+    }
+};
+
+class ProtectedDerived : protected Base {
+    // pub  变为 protected
+    // prot 变为 protected
+    // priv 不可访问
+public:
+    void test() {
+        pub = 10;   // OK，现在是protected
+        prot = 20;  // OK，仍是protected
+    }
+};
+
+class PrivateDerived : private Base {
+    // pub  变为 private
+    // prot 变为 private
+    // priv 不可访问
+public:
+    void test() {
+        pub = 10;   // OK，现在是private
+        prot = 20;  // OK，现在是private
+    }
+};
+```
+
+继承方式选择指南：
+  public 继承    — "is-a"关系，最常用（Dog is an Animal）
+  private 继承   — "implemented-in-terms-of"（用基类实现派生类，组合的替代方案）
+  protected 继承 — 极少使用，除非确实需要控制子孙的访问
+
+【原理2-5】重新定义（Redefining）vs 重写（Overriding）
+
+这是两个容易混淆的概念：
+
+```cpp
+class Base {
+public:
+    void show() { std::cout << "Base::show()" << std::endl; }
+    virtual void display() { std::cout << "Base::display()" << std::endl; }
+};
+
+class Derived : public Base {
+public:
+    // 重新定义（Redefining）——非虚函数
+    void show() { std::cout << "Derived::show()" << std::endl; }
+    // 重写（Overriding）——virtual函数，第6章详述
+    void display() override { std::cout << "Derived::display()" << std::endl; }
+};
+
+int main() {
+    Derived d;
+    d.show();           // 调用Derived::show()（静态绑定）
+    d.Base::show();     // 显式调用Base::show()
+
+    Base* ptr = &d;
+    ptr->show();        // 调用Base::show()！因为show不是虚函数
+    ptr->display();     // 调用Derived::display()！因为display是虚函数（动态绑定）
+    return 0;
+}
+```
+
+重定义的问题：
+  在派生类中定义与基类同名的非虚函数，会隐藏基类的所有同名函数（包括重载版本）
+  → 称为"名称隐藏"（Name Hiding）
+
+================================================================================
+
+                            === 第二节：所有用法大全（标准库/关键字/函数） ===
+================================================================================
+
+2.1 继承语法与三种继承方式
+------------------------------------
+
+```cpp
+// 基类
+class Vehicle {
+public:
+    void start() { std::cout << "Vehicle started" << std::endl; }
+protected:
+    int speed;
+private:
+    std::string vin;  // 车辆识别号
+};
+
+// Public继承（最常用）
+class Car : public Vehicle {
+    // start()  → public
+    // speed    → protected
+    // vin      → 不可访问
+};
+
+// Protected继承
+class Boat : protected Vehicle {
+    // start()  → protected
+    // speed    → protected
+    // vin      → 不可访问
+};
+
+// Private继承
+class Bicycle : private Vehicle {
+    // start()  → private
+    // speed    → private
+    // vin      → 不可访问
+};
+```
+
+2.2 派生类构造函数——调用基类构造
+------------------------------------
+
+```cpp
+#include <iostream>
+#include <string>
+
+class Person {
+protected:
+    std::string name;
+    int age;
+public:
+    Person(const std::string& n, int a) : name(n), age(a) {
+        std::cout << "Person(" << name << ", " << age << ") constructed\n";
+    }
+};
+
+class Teacher : public Person {
+private:
+    std::string subject;
+    int experience;
+public:
+    // 派生类构造函数必须调用基类构造函数
+    Teacher(const std::string& n, int a,
+            const std::string& sub, int exp)
+        : Person(n, a),      // 调用基类构造
+          subject(sub),
+          experience(exp) {
+        std::cout << "Teacher(" << name << ", "
+                  << subject << ") constructed\n";
+    }
+
+    // 可以显式调用多个基类构造函数（多重继承时）
+    // 也可以委托本类的其他构造函数
+    Teacher(const std::string& n, int a, const std::string& sub)
+        : Teacher(n, a, sub, 0) { }  // 委托构造（C++11）
+};
+
+class Professor : public Teacher {
+private:
+    bool tenured;
+public:
+    Professor(const std::string& n, int a, const std::string& sub,
+              int exp, bool t)
+        : Teacher(n, a, sub, exp), tenured(t) {
+        std::cout << "Professor constructed\n";
+    }
+};
+```
+
+初始化顺序（不可改变）：
+  1. 虚基类（如果有，第3章详述）——按深度优先、从左到右
+  2. 直接非虚基类——按继承声明顺序
+  3. 本类的成员变量——按声明顺序
+  4. 构造函数体
+
+2.3 继承中的析构函数
+------------------------------------
+
+```cpp
+#include <iostream>
+
+class Base {
+public:
+    Base()  { std::cout << "Base::Base()\n"; }
+    ~Base() { std::cout << "Base::~Base()\n"; }
+};
+
+class Derived : public Base {
+private:
+    int* dynamicData;
+public:
+    Derived() : dynamicData(new int[100]) {
+        std::cout << "Derived::Derived()\n";
+    }
+
+    // 析构函数自动先调用派生类的析构体，再调用基类析构
+    ~Derived() {
+        delete[] dynamicData;
+        std::cout << "Derived::~Derived()\n";
+    }
+};
+
+// 重要：如果基类指针指向派生类对象，且通过基类指针delete：
+// Base* ptr = new Derived();
+// delete ptr;  // 如果~Base()不是虚析构函数，则只调用~Base()
+//              // 导致dynamicData泄漏！
+// 解决方案 → 第6章：虚析构函数
+```
+
+析构顺序（保证）：
+  1. 本类析构函数体执行
+  2. 本类成员变量按声明逆序析构
+  3. 直接非虚基类按声明逆序析构
+  4. 虚基类析构
+
+2.4 重定义与名称隐藏（Name Hiding）
+------------------------------------
+
+```cpp
+class Base {
+public:
+    void func(int x)       { std::cout << "Base::func(int)\n"; }
+    void func(double x)    { std::cout << "Base::func(double)\n"; }
+    void func(int x, int y){ std::cout << "Base::func(int,int)\n"; }
+};
+
+class Derived : public Base {
+public:
+    // 只重定义一个版本，会隐藏基类的所有func重载！
+    void func(int x) { std::cout << "Derived::func(int)\n"; }
+};
+
+int main() {
+    Derived d;
+    d.func(10);           // OK: 调用 Derived::func(int)
+    // d.func(3.14);      // 错误！Base::func(double)被隐藏了！
+    // d.func(10, 20);    // 错误！Base::func(int,int)被隐藏了！
+
+    d.Base::func(3.14);   // 可以显式调用基类版本
+    d.Base::func(10, 20); // 可以显式调用基类版本
+    return 0;
+}
+```
+
+2.5 using声明在继承中改变访问级别
+------------------------------------
+
+```cpp
+class Base {
+protected:
+    void helperFunc() { std::cout << "Protected helper\n"; }
+    int value;
+public:
+    void publicFunc() { std::cout << "Public function\n"; }
+    void overloaded(int x) { std::cout << "overloaded(int)\n"; }
+    void overloaded(double x) { std::cout << "overloaded(double)\n"; }
+};
+
+class Derived : private Base {  // 私有继承，所有基类成员变为private
+public:
+    // using声明提升访问级别
+    using Base::publicFunc;     // publicFunc 在Derived中变为 public
+    using Base::value;          // value 在Derived中变为 public
+
+    // using声明解决名称隐藏问题——导入基类的所有重载版本
+    using Base::overloaded;
+
+    void overloaded(int x) {   // 重写一个版本
+        std::cout << "Derived::overloaded(int)\n";
+    }
+    // 现在既可以用Derived的版本，也可以用基类的double版本
+};
+
+int main() {
+    Derived d;
+    d.publicFunc();      // OK（using声明提升了访问级别）
+    d.value = 42;        // OK（using声明提升了访问级别）
+    d.overloaded(10);    // Derived::overloaded(int)
+    d.overloaded(3.14);  // Base::overloaded(double) — using声明使其可见！
+    return 0;
+}
+```
+
+2.6 多重继承与菱形继承问题
+------------------------------------
+
+【多重继承】
+
+```cpp
+#include <iostream>
+
+class Flyable {
+public:
+    void fly() { std::cout << "Flying" << std::endl; }
+};
+
+class Swimmable {
+public:
+    void swim() { std::cout << "Swimming" << std::endl; }
+};
+
+// 多重继承
+class Duck : public Flyable, public Swimmable {
+public:
+    void quack() { std::cout << "Quack!" << std::endl; }
+};
+
+int main() {
+    Duck d;
+    d.fly();    // 从Flyable继承
+    d.swim();   // 从Swimmable继承
+    d.quack();  // Duck自己的方法
+    return 0;
+}
+```
+
+【菱形继承问题】
+
+```cpp
+class Animal {
+public:
+    int age;
+    Animal() : age(0) { std::cout << "Animal()\n"; }
+};
+
+class Mammal : public Animal {
+    // 包含一个 Animal 子对象
+};
+
+class Bird : public Animal {
+    // 包含另一个 Animal 子对象！
+};
+
+// 菱形继承：Bat同时通过Mammal和Bird继承Animal
+//          Animal
+//         /      \
+//     Mammal    Bird
+//         \      /
+//           Bat
+class Bat : public Mammal, public Bird {
+public:
+    // Bat中有两个age成员！ Mammal::age 和 Bird::age
+    void printAge() {
+        // std::cout << age;     // 错误！不明确，哪个age？
+        std::cout << Mammal::age << std::endl;  // 必须显式指定路径
+    }
+};
+```
+
+【虚继承（virtual inheritance）——解决菱形继承】
+
+```cpp
+class Animal {
+public:
+    int age;
+    Animal() : age(0) { std::cout << "Animal()\n"; }
+};
+
+// 虚继承：保证在最终派生类中只有一份Animal子对象
+class Mammal : virtual public Animal {
+    // ...
+};
+
+class Bird : virtual public Animal {
+    // ...
+};
+
+// 现在Bat中只有一个Animal子对象！
+class Bat : public Mammal, public Bird {
+public:
+    void printAge() {
+        std::cout << age << std::endl;  // OK！只有一个age
+    }
+};
+
+// 虚继承的内存布局变化：
+// 普通继承：基类子对象内嵌在派生类中
+// 虚继承：派生类中存储一个指向共享基类子对象的指针（vbptr），
+//         基类子对象放在对象末尾
+// 这带来了间接访问的开销，因此只在必要时使用虚继承
+```
+
+虚继承的注意事项：
+  1. 虚基类的构造函数由最派生类（Most Derived class）负责调用
+  2. 虚基类先于任何非虚基类初始化
+  3. 虚继承增加了对象大小（额外的vbptr指针）
+
+2.7 final关键字阻止继承 (C++11)
+------------------------------------
+
+```cpp
+// final类——不能被继承
+class Singleton final {
+public:
+    static Singleton& getInstance() {
+        static Singleton instance;
+        return instance;
+    }
+private:
+    Singleton() = default;
+};
+
+// class DerivedSingleton : public Singleton {};  // 错误！不能继承final类
+
+// final也可用于虚函数（详见第6章）
+class Base {
+public:
+    virtual void doSomething() = 0;  // 纯虚函数
+    virtual void cannotOverride() final { }  // 不能被重写的虚函数
+};
+
+class Derived : public Base {
+public:
+    void doSomething() override { }  // OK
+    // void cannotOverride() override { }  // 错误！final函数不能重写
+};
+```
+
+================================================================================
+
+                            === 第三节：实用代码案例（生活场景举例） ===
+================================================================================
+
+案例1：图形绘制系统基础（Shape/Circle/Rectangle）
+------------------------------------
+
+【生活场景】画图软件（如Windows画图、Photoshop）的图形管理层。
+基类定义通用属性（位置、颜色），派生类定义具体形状。
+
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+#include <memory>
+#include <cmath>
+#include <iomanip>
+
+// ====== 调试宏（第2章知识）======
+#ifdef DRAW_DEBUG
+    #define DRAW_LOG(msg) std::cout << "[DRAW] " << msg << std::endl
+#else
+    #define DRAW_LOG(msg)
+#endif
+
+namespace graphics {
+
+// ====== 基类：Shape ======
+class Shape {
+protected:
+    double x, y;           // 图形坐标（左上角或中心）
+    std::string color;     // 颜色
+    int lineWidth;         // 线宽
+    static int shapeCount; // 图形总数
+
+public:
+    Shape(double xVal, double yVal, const std::string& c, int lw = 1)
+        : x(xVal), y(yVal), color(c), lineWidth(lw) {
+        shapeCount++;
+        DRAW_LOG("Shape created: (" + std::to_string(x) + "," +
+                 std::to_string(y) + ") " + c);
+    }
+
+    Shape(const Shape& other)
+        : x(other.x), y(other.y), color(other.color),
+          lineWidth(other.lineWidth) {
+        shapeCount++;
+        DRAW_LOG("Shape copied");
+    }
+
+    virtual ~Shape() {
+        shapeCount--;
+        DRAW_LOG("Shape destroyed");
+    }
+
+    // ====== 基本操作 ======
+    void move(double dx, double dy) {
+        x += dx;
+        y += dy;
+    }
+
+    void setColor(const std::string& c) { color = c; }
+    void setLineWidth(int lw) { lineWidth = lw; }
+
+    // const成员函数
+    double getX() const { return x; }
+    double getY() const { return y; }
+    const std::string& getColor() const { return color; }
+    int getLineWidth() const { return lineWidth; }
+
+    virtual double area() const = 0;      // 纯虚函数——第6章详述
+    virtual double perimeter() const = 0; // 纯虚函数
+    virtual void draw() const = 0;        // 纯虚函数
+
+    virtual void printInfo() const {
+        std::cout << "Shape{" << color << "} at (" << x << "," << y
+                  << ") lineWidth=" << lineWidth;
+    }
+
+    static int getShapeCount() { return shapeCount; }
+};
+
+int Shape::shapeCount = 0;
+
+// ====== 派生类：Circle ======
+class Circle : public Shape {
+private:
+    double radius;
+
+public:
+    Circle(double xVal, double yVal, const std::string& c, double r, int lw = 1)
+        : Shape(xVal, yVal, c, lw), radius(r) {
+        DRAW_LOG("Circle: radius=" + std::to_string(radius));
+    }
+
+    double area() const override {
+        return M_PI * radius * radius;
+    }
+
+    double perimeter() const override {
+        return 2 * M_PI * radius;
+    }
+
+    void draw() const override {
+        std::cout << "绘制圆形: 中心(" << x << "," << y
+                  << ") 半径" << radius << " 颜色" << color
+                  << " 面积" << std::fixed << std::setprecision(2) << area()
+                  << std::endl;
+    }
+
+    void printInfo() const override {
+        Shape::printInfo();
+        std::cout << " type=Circle radius=" << radius
+                  << " area=" << area() << std::endl;
+    }
+
+    double getRadius() const { return radius; }
+    void setRadius(double r) { radius = r; }
+};
+
+// ====== 派生类：Rectangle ======
+class Rectangle : public Shape {
+private:
+    double width, height;
+
+public:
+    Rectangle(double xVal, double yVal, const std::string& c,
+              double w, double h, int lw = 1)
+        : Shape(xVal, yVal, c, lw), width(w), height(h) {
+        DRAW_LOG("Rectangle: " + std::to_string(width) + "x" +
+                 std::to_string(height));
+    }
+
+    double area() const override {
+        return width * height;
+    }
+
+    double perimeter() const override {
+        return 2 * (width + height);
+    }
+
+    void draw() const override {
+        std::cout << "绘制矩形: 左上角(" << x << "," << y
+                  << ") 宽" << width << " 高" << height
+                  << " 颜色" << color << " 面积" << area() << std::endl;
+    }
+
+    void printInfo() const override {
+        Shape::printInfo();
+        std::cout << " type=Rectangle " << width << "x" << height
+                  << " area=" << area() << std::endl;
+    }
+
+    double getWidth() const { return width; }
+    double getHeight() const { return height; }
+};
+
+// ====== 派生类：Triangle ======
+class Triangle : public Shape {
+private:
+    double base, triHeight;  // 底边长和高度
+
+public:
+    Triangle(double xVal, double yVal, const std::string& c,
+             double b, double h, int lw = 1)
+        : Shape(xVal, yVal, c, lw), base(b), triHeight(h) {
+        DRAW_LOG("Triangle: base=" + std::to_string(base) +
+                 " height=" + std::to_string(triHeight));
+    }
+
+    double area() const override {
+        return 0.5 * base * triHeight;
+    }
+
+    double perimeter() const override {
+        // 简化：等腰三角形近似
+        double halfBase = base / 2.0;
+        double side = std::sqrt(halfBase * halfBase +
+                                triHeight * triHeight);
+        return base + 2 * side;
+    }
+
+    void draw() const override {
+        std::cout << "绘制三角形: 顶点(" << x << "," << y
+                  << ") 底" << base << " 高" << triHeight
+                  << " 颜色" << color << " 面积" << area() << std::endl;
+    }
+
+    void printInfo() const override {
+        Shape::printInfo();
+        std::cout << " type=Triangle base=" << base
+                  << " height=" << triHeight << " area=" << area()
+                  << std::endl;
+    }
+};
+
+}  // namespace graphics
+
+// ========== 演示代码 ==========
+int main() {
+    using namespace graphics;
+
+    std::cout << "===== 画图软件图形管理系统 =====\n" << std::endl;
+
+    // 使用基类指针管理所有图形
+    std::vector<Shape*> shapes;
+
+    // 添加图形
+    shapes.push_back(new Circle(100, 100, "red", 50));
+    shapes.push_back(new Rectangle(0, 0, "blue", 200, 100));
+    shapes.push_back(new Triangle(300, 200, "green", 80, 60));
+    shapes.push_back(new Circle(400, 300, "yellow", 30, 3));
+    shapes.push_back(new Rectangle(150, 250, "purple", 120, 80));
+
+    std::cout << "图形总数: " << Shape::getShapeCount() << std::endl;
+
+    // 遍历绘制所有图形
+    std::cout << "\n--- 绘制所有图形 ---" << std::endl;
+    for (const auto& shape : shapes) {
+        shape->draw();
+    }
+
+    // 计算总面积
+    std::cout << "\n--- 统计 ---" << std::endl;
+    double totalArea = 0.0;
+    for (const auto& shape : shapes) {
+        totalArea += shape->area();
+        shape->printInfo();
+    }
+    std::cout << "总面积: " << totalArea << std::endl;
+
+    // 查找并操作特定图形
+    std::cout << "\n--- 移动所有图形 ---" << std::endl;
+    for (auto& shape : shapes) {
+        shape->move(50, 30);  // 所有图形向右下移动
+        std::cout << "  移动到 (" << shape->getX() << "," << shape->getY()
+                  << ")" << std::endl;
+    }
+
+    // 释放内存
+    for (auto& shape : shapes) {
+        delete shape;
+    }
+
+    return 0;
+}
+```
+
+知识点融入：
+  - 继承体系（Shape → Circle/Rectangle/Triangle）
+  - 构造链（派生类调用基类构造）
+  - 纯虚函数（virtual = 0，第6章铺垫）
+  - 向上转型（指针数组存储派生类对象）
+  - static成员（图形计数）
+  - const成员函数
+  - 命名空间 graphics
+  - 调试宏（第2章）
+  - 基类指针管理派生类（第3章动态内存）
+
+================================================================================
+
+案例2：电子产品分类系统（Product继承体系）
+------------------------------------
+
+【生活场景】电商平台需要管理各种电子产品。基类Product定义通用属性，
+派生类分别管理手机、笔记本电脑等具体产品。使用智能指针管理产品对象。
+
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+#include <memory>
+#include <iomanip>
+
+// ====== 调试宏 ======
+#define PRODUCT_DEBUG 0
+#if PRODUCT_DEBUG
+    #define P_LOG(msg) std::cout << "[PRODUCT] " << msg << std::endl
+#else
+    #define P_LOG(msg)
+#endif
+
+namespace ecommerce {
+
+// ====== 基类：Product ======
+class Product {
+// 使用不同继承方式展示了不同访问效果
+public:
+    Product(const std::string& n, double p, const std::string& b)
+        : name(n), price(p), brand(b) {
+        P_LOG("Product created: " + name);
+    }
+
+    virtual ~Product() {
+        P_LOG("Product destroyed: " + name);
+    }
+
+    // const getter 函数
+    const std::string& getName()  const { return name; }
+    double getPrice()             const { return price; }
+    const std::string& getBrand() const { return brand; }
+
+    virtual void display() const {
+        std::cout << std::left
+                  << std::setw(20) << name
+                  << std::setw(12) << brand
+                  << "$" << std::setw(10) << std::fixed
+                  << std::setprecision(2) << price;
+    }
+
+    virtual std::string getCategory() const = 0;  // 纯虚函数
+
+    void applyDiscount(double percent) {
+        price *= (1.0 - percent / 100.0);
+    }
+
+protected:  // protected: 派生类可以访问
+    std::string name;
+    double price;
+    std::string brand;
+    static int totalProducts;
+};
+
+int Product::totalProducts = 0;
+
+// ====== 派生类：Phone（public继承）======
+class Phone : public Product {
+private:
+    int batteryCapacity;    // mAh
+    double screenSize;      // 英寸
+
+public:
+    Phone(const std::string& n, double p, const std::string& b,
+          int batt, double scr)
+        : Product(n, p, b), batteryCapacity(batt), screenSize(scr) {
+        totalProducts++;
+        P_LOG("Phone created: " + name);
+    }
+
+    ~Phone() {
+        totalProducts--;
+    }
+
+    void display() const override {
+        Product::display();
+        std::cout << " | 电池:" << batteryCapacity << "mAh"
+                  << " 屏幕:" << screenSize << "\""
+                  << " [" << getCategory() << "]" << std::endl;
+    }
+
+    std::string getCategory() const override {
+        return "智能手机";
+    }
+
+    int getBattery() const { return batteryCapacity; }
+    double getScreenSize() const { return screenSize; }
+};
+
+// ====== 派生类：Laptop（public继承）======
+class Laptop : public Product {
+private:
+    std::string cpu;
+    int ram;          // GB
+    int storage;      // GB
+
+public:
+    Laptop(const std::string& n, double p, const std::string& b,
+           const std::string& cPU, int r, int s)
+        : Product(n, p, b), cpu(cPU), ram(r), storage(s) {
+        totalProducts++;
+        P_LOG("Laptop created: " + name);
+    }
+
+    ~Laptop() {
+        totalProducts--;
+    }
+
+    void display() const override {
+        Product::display();
+        std::cout << " | CPU:" << cpu << " RAM:" << ram
+                  << "GB 存储:" << storage << "GB"
+                  << " [" << getCategory() << "]" << std::endl;
+    }
+
+    std::string getCategory() const override {
+        return "笔记本电脑";
+    }
+};
+
+// ====== 使用基类指针管理派生类对象 ======
+void displayCatalog(const std::vector<std::unique_ptr<Product>>& catalog) {
+    std::cout << "\n===== 产品目录 =====" << std::endl;
+    std::cout << std::left
+              << std::setw(22) << "产品名称"
+              << std::setw(12) << "品牌"
+              << std::setw(12) << "价格"
+              << "规格" << std::endl;
+    std::cout << std::string(70, '-') << std::endl;
+
+    for (const auto& product : catalog) {
+        product->display();
+    }
+    std::cout << "总计: " << catalog.size() << " 件商品" << std::endl;
+}
+
+}  // namespace ecommerce
+
+// ========== 演示代码 ==========
+int main() {
+    using namespace ecommerce;
+
+    // 使用unique_ptr管理产品（动态内存自动释放）
+    std::vector<std::unique_ptr<Product>> catalog;
+
+    // 添加各类产品
+    catalog.push_back(std::make_unique<Phone>(
+        "iPhone 15 Pro",   999.99,  "Apple",   3274, 6.1));
+    catalog.push_back(std::make_unique<Phone>(
+        "Galaxy S24",       799.99,  "Samsung", 4000, 6.2));
+    catalog.push_back(std::make_unique<Laptop>(
+        "MacBook Pro 14",   1999.99, "Apple",   "M3 Pro",  18, 512));
+    catalog.push_back(std::make_unique<Laptop>(
+        "ThinkPad X1",      1499.99, "Lenovo",  "i7-1365U", 16, 1024));
+    catalog.push_back(std::make_unique<Phone>(
+        "Pixel 8",          699.99,  "Google",  4575, 6.2));
+    catalog.push_back(std::make_unique<Laptop>(
+        "XPS 15",           1899.99, "Dell",    "i9-13900H", 32, 1024));
+
+    displayCatalog(catalog);
+
+    // 基类函数操作所有产品
+    std::cout << "\n===== 全场9折促销 =====" << std::endl;
+    for (auto& product : catalog) {
+        double oldPrice = product->getPrice();
+        product->applyDiscount(10.0);  // 9折
+        std::cout << product->getName() << ": $"
+                  << oldPrice << " → $"
+                  << product->getPrice() << std::endl;
+    }
+
+    // 重新显示更新后的目录
+    displayCatalog(catalog);
+
+    return 0;
+    // unique_ptr自动释放所有产品内存
+}
+```
+
+知识点融入：
+  - 继承体系（Product → Phone/Laptop）
+  - 纯虚函数（getCategory()）
+  - unique_ptr管理堆对象（第4章）
+  - const成员函数
+  - 命名空间 ecommerce
+  - 调试宏
+  - protected访问控制
+  - 向上转型（unique_ptr<Product>存储派生类对象）
+
+================================================================================
+
+案例3：公司薪资管理系统（Employee继承体系）
+------------------------------------
+
+【生活场景】公司HR部门需要管理各类员工的薪资计算。
+不同职位（经理、销售、实习生）的薪资计算公式不同。
+使用继承实现代码复用，为多态做铺垫。
+
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+#include <memory>
+#include <iomanip>
+
+// ====== 调试宏 ======
+#define HR_DEBUG 1
+#if HR_DEBUG
+    #define HR_LOG(msg) std::cout << "[HR] " << msg << std::endl
+#else
+    #define HR_LOG(msg)
+#endif
+
+namespace company {
+
+// ====== 基类：Employee ======
+class Employee {
+protected:
+    std::string name;
+    std::string employeeID;
+    double baseSalary;          // 基础工资
+    int yearsOfService;         // 工龄
+
+    static int totalEmployees;
+
+public:
+    Employee(const std::string& n, const std::string& id,
+             double base, int years)
+        : name(n), employeeID(id), baseSalary(base),
+          yearsOfService(years) {
+        totalEmployees++;
+        HR_LOG("Employee hired: " + name + " (" + id + ")");
+    }
+
+    virtual ~Employee() {
+        totalEmployees--;
+        HR_LOG("Employee left: " + name);
+    }
+
+    // ====== 访问器 ======
+    const std::string& getName()       const { return name; }
+    const std::string& getID()         const { return employeeID; }
+    double getBaseSalary()             const { return baseSalary; }
+    int getYearsOfService()            const { return yearsOfService; }
+
+    // 计算薪资——每个派生类有自己的实现
+    virtual double calculateSalary() const {
+        // 基础薪资 + 工龄津贴（每年增加2%）
+        return baseSalary * (1.0 + yearsOfService * 0.02);
+    }
+
+    virtual std::string getRole() const = 0;  // 纯虚函数
+
+    virtual void display() const {
+        std::cout << std::left
+                  << std::setw(15) << name
+                  << std::setw(10) << employeeID
+                  << std::setw(12) << getRole()
+                  << "$" << std::fixed << std::setprecision(2)
+                  << std::setw(10) << calculateSalary();
+    }
+
+    static int getTotalEmployees() { return totalEmployees; }
+};
+
+int Employee::totalEmployees = 0;
+
+// ====== 派生类：Manager（经理）======
+class Manager : public Employee {
+private:
+    double managementAllowance;   // 管理津贴
+    int teamSize;                 // 管理团队人数
+
+public:
+    Manager(const std::string& n, const std::string& id,
+            double base, int years, double allowance, int team)
+        : Employee(n, id, base, years),
+          managementAllowance(allowance), teamSize(team) {
+        HR_LOG("Manager created: " + n);
+    }
+
+    // 经理薪资 = 基础薪资 + 工龄津贴 + 管理津贴 + 团队奖金
+    double calculateSalary() const override {
+        double base = Employee::calculateSalary();
+        // 管理津贴 + 团队奖金（每人500元）
+        return base + managementAllowance + teamSize * 500.0;
+    }
+
+    std::string getRole() const override {
+        return "经理";
+    }
+
+    void display() const override {
+        Employee::display();
+        std::cout << " (管理" << teamSize << "人)";
+        std::cout << std::endl;
+    }
+};
+
+// ====== 派生类：SalesPerson（销售）======
+class SalesPerson : public Employee {
+private:
+    double commissionRate;      // 提成比例（如0.05 = 5%）
+    double monthlySales;        // 月销售额
+
+public:
+    SalesPerson(const std::string& n, const std::string& id,
+                double base, int years, double rate, double sales)
+        : Employee(n, id, base, years),
+          commissionRate(rate), monthlySales(sales) {
+        HR_LOG("SalesPerson created: " + n);
+    }
+
+    // 销售薪资 = 基础薪资 + 工龄津贴 + 销售提成
+    double calculateSalary() const override {
+        double base = Employee::calculateSalary();
+        return base + monthlySales * commissionRate;
+    }
+
+    std::string getRole() const override {
+        return "销售";
+    }
+
+    void display() const override {
+        Employee::display();
+        std::cout << " (销售额$" << monthlySales << ")";
+        std::cout << std::endl;
+    }
+};
+
+// ====== 派生类：Intern（实习生）======
+class Intern : public Employee {
+private:
+    double stipend;   // 实习补贴（固定）
+    std::string school;
+
+public:
+    Intern(const std::string& n, const std::string& id,
+           double base, int years, double stip, const std::string& sch)
+        : Employee(n, id, base, years), stipend(stip), school(sch) {
+        HR_LOG("Intern created: " + n);
+    }
+
+    // 实习生没有工龄津贴，只有固定补贴
+    double calculateSalary() const override {
+        return baseSalary + stipend;  // 直接使用基础薪资 + 补贴
+    }
+
+    std::string getRole() const override {
+        return "实习生";
+    }
+
+    void display() const override {
+        Employee::display();
+        std::cout << " (" << school << ")";
+        std::cout << std::endl;
+    }
+};
+
+}  // namespace company
+
+// ========== 演示代码 ==========
+int main() {
+    using namespace company;
+
+    std::cout << "===== 公司薪资管理系统 =====\n" << std::endl;
+
+    // 使用基类指针管理所有员工
+    std::vector<std::unique_ptr<Employee>> payroll;
+
+    payroll.push_back(std::make_unique<Manager>(
+        "Alice Wang", "E001", 15000.0, 5, 5000.0, 8));
+    payroll.push_back(std::make_unique<Manager>(
+        "Bob Li",     "E002", 12000.0, 3, 3000.0, 4));
+    payroll.push_back(std::make_unique<SalesPerson>(
+        "Charlie Zhang", "E003", 8000.0, 2, 0.05, 50000.0));
+    payroll.push_back(std::make_unique<SalesPerson>(
+        "Diana Chen", "E004", 8000.0, 1, 0.05, 80000.0));
+    payroll.push_back(std::make_unique<Intern>(
+        "Edward Liu", "E005", 3000.0, 0, 2000.0, "清华大学"));
+    payroll.push_back(std::make_unique<Intern>(
+        "Fiona Wu",   "E006", 3000.0, 0, 2000.0, "北京大学"));
+
+    // 打印薪资表
+    std::cout << std::left
+              << std::setw(15) << "姓名"
+              << std::setw(10) << "工号"
+              << std::setw(12) << "职位"
+              << std::setw(12) << "薪资"
+              << "备注" << std::endl;
+    std::cout << std::string(70, '-') << std::endl;
+
+    double totalPayroll = 0.0;
+    for (const auto& emp : payroll) {
+        emp->display();
+        totalPayroll += emp->calculateSalary();
+    }
+
+    std::cout << std::string(70, '-') << std::endl;
+    std::cout << "员工总数: " << Employee::getTotalEmployees() << std::endl;
+    std::cout << "月度薪资总额: $" << std::fixed << std::setprecision(2)
+              << totalPayroll << std::endl;
+
+    // 统计各部门薪资
+    std::cout << "\n===== 各部门薪资统计 =====" << std::endl;
+    double managerTotal = 0, salesTotal = 0, internTotal = 0;
+    for (const auto& emp : payroll) {
+        if (emp->getRole() == "经理")
+            managerTotal += emp->calculateSalary();
+        else if (emp->getRole() == "销售")
+            salesTotal += emp->calculateSalary();
+        else if (emp->getRole() == "实习生")
+            internTotal += emp->calculateSalary();
+    }
+    std::cout << "管理部: $" << managerTotal << std::endl;
+    std::cout << "销售部: $" << salesTotal << std::endl;
+    std::cout << "实习生: $" << internTotal << std::endl;
+
+    return 0;
+}
+```
+
+知识点融入：
+  - 继承体系（Employee → Manager/SalesPerson/Intern）
+  - 构造链
+  - 虚函数的使用（calculateSalary, getRole）
+  - 使用using声明改变访问级别（Employee基类函数）
+  - 命名空间 company
+  - unique_ptr 管理动态内存
+  - 调试宏
+  - 向上转型
+
+================================================================================
+
+案例4：大学人员管理系统（多重继承 + 菱形继承）
+------------------------------------
+
+【生活场景】大学需要管理学生、教师和助教（既是学生又是教师）。
+展示多重继承和菱形继承问题，并用虚继承解决。
+
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+#include <memory>
+#include <iomanip>
+
+// ====== 调试宏 ======
+#define UNI_DEBUG 1
+#if UNI_DEBUG
+    #define U_LOG(msg) std::cout << "[大学] " << msg << std::endl
+#else
+    #define U_LOG(msg)
+#endif
+
+namespace university {
+
+// ====== 根基类：Person（虚基类）======
+class Person {
+protected:
+    std::string name;
+    int age;
+    std::string idNumber;    // 身份证号
+    std::string address;
+
+    static int personCount;
+
+public:
+    Person(const std::string& n, int a, const std::string& id,
+           const std::string& addr)
+        : name(n), age(a), idNumber(id), address(addr) {
+        personCount++;
+        U_LOG("Person created: " + name);
+    }
+
+    virtual ~Person() {
+        personCount--;
+        U_LOG("Person destroyed: " + name);
+    }
+
+    const std::string& getName() const { return name; }
+    int getAge() const { return age; }
+    const std::string& getID() const { return idNumber; }
+
+    virtual void displayInfo() const {
+        std::cout << name << " (" << age << "岁) ID:" << idNumber
+                  << " 地址:" << address;
+    }
+
+    virtual std::string getRole() const = 0;
+
+    static int getPersonCount() { return personCount; }
+};
+
+int Person::personCount = 0;
+
+// ====== Student：虚继承Person ======
+class Student : virtual public Person {
+protected:
+    std::string studentID;
+    std::string major;
+    int gradeYear;              // 入学年份
+    double gpa;
+
+    static int studentCount;
+
+public:
+    Student(const std::string& n, int a, const std::string& id,
+            const std::string& addr,
+            const std::string& sid, const std::string& maj,
+            int gy, double g)
+        : Person(n, a, id, addr),
+          studentID(sid), major(maj), gradeYear(gy), gpa(g) {
+        studentCount++;
+        U_LOG("Student created: " + n + " (" + sid + ")");
+    }
+
+    ~Student() {
+        studentCount--;
+    }
+
+    void study() const {
+        std::cout << name << " 正在学习 " << major << "..." << std::endl;
+    }
+
+    void displayInfo() const override {
+        Person::displayInfo();
+        std::cout << " 学号:" << studentID
+                  << " 专业:" << major
+                  << " GPA:" << std::fixed << std::setprecision(1) << gpa;
+    }
+
+    std::string getRole() const override { return "学生"; }
+
+    const std::string& getStudentID() const { return studentID; }
+    double getGPA() const { return gpa; }
+
+    static int getStudentCount() { return studentCount; }
+};
+
+int Student::studentCount = 0;
+
+// ====== Teacher：虚继承Person ======
+class Teacher : virtual public Person {
+protected:
+    std::string teacherID;
+    std::string department;
+    std::string title;          // 职称
+    double salary;
+
+    static int teacherCount;
+
+public:
+    Teacher(const std::string& n, int a, const std::string& id,
+            const std::string& addr,
+            const std::string& tid, const std::string& dept,
+            const std::string& ttl, double sal)
+        : Person(n, a, id, addr),
+          teacherID(tid), department(dept), title(ttl), salary(sal) {
+        teacherCount++;
+        U_LOG("Teacher created: " + n + " (" + tid + ")");
+    }
+
+    ~Teacher() {
+        teacherCount--;
+    }
+
+    void teach() const {
+        std::cout << name << "(" << title << ") 在 " << department
+                  << " 系授课" << std::endl;
+    }
+
+    void displayInfo() const override {
+        Person::displayInfo();
+        std::cout << " 教师号:" << teacherID
+                  << " 系别:" << department
+                  << " 职称:" << title;
+    }
+
+    std::string getRole() const override { return "教师"; }
+
+    const std::string& getTeacherID() const { return teacherID; }
+    const std::string& getTitle() const { return title; }
+
+    static int getTeacherCount() { return teacherCount; }
+};
+
+int Teacher::teacherCount = 0;
+
+// ====== TeachingAssistant：多重继承Student和Teacher ======
+// 两个基类都虚继承自Person——只有一个Person子对象！
+class TeachingAssistant : public Student, public Teacher {
+private:
+    std::string courseAssisting;    // 助教的课程
+    int hoursPerWeek;               // 每周工作时间
+
+    static int taCount;
+
+public:
+    // 作为最派生类，TA必须负责构造虚基类Person
+    TeachingAssistant(const std::string& n, int a,
+                      const std::string& id, const std::string& addr,
+                      const std::string& sid, const std::string& maj,
+                      int gy, double g,
+                      const std::string& tid, const std::string& dept,
+                      const std::string& ttl, double sal,
+                      const std::string& course, int hours)
+        : Person(n, a, id, addr),    // 必须显式构造虚基类！
+          Student(n, a, id, addr, sid, maj, gy, g),
+          Teacher(n, a, id, addr, tid, dept, ttl, sal),
+          courseAssisting(course), hoursPerWeek(hours) {
+        taCount++;
+        U_LOG("TeachingAssistant created: " + n);
+    }
+
+    ~TeachingAssistant() {
+        taCount--;
+    }
+
+    void assistCourse() const {
+        std::cout << name << " 正在助教课程: " << courseAssisting
+                  << " (每周" << hoursPerWeek << "小时)" << std::endl;
+    }
+
+    void displayInfo() const override {
+        std::cout << "【助教】";
+        Person::displayInfo();  // 只有一个Person子对象！
+        std::cout << "\n  学号:" << studentID
+                  << " 专业:" << major
+                  << " GPA:" << std::fixed << std::setprecision(1) << gpa;
+        std::cout << "\n  教师号:" << teacherID
+                  << " 系别:" << department
+                  << " 职称:" << title;
+        std::cout << "\n  助教课程:" << courseAssisting
+                  << " 周工作时长:" << hoursPerWeek << "h";
+        std::cout << std::endl;
+    }
+
+    std::string getRole() const override { return "助教"; }
+
+    static int getTACount() { return taCount; }
+};
+
+int TeachingAssistant::taCount = 0;
+
+// ====== 大学管理 ======
+void displayAllPersonnel(
+    const std::vector<std::shared_ptr<Person>>& personnel) {
+    std::cout << "\n===== 大学人员名单 =====" << std::endl;
+    for (const auto& person : personnel) {
+        person->displayInfo();
+        std::cout << " [" << person->getRole() << "]" << std::endl;
+    }
+}
+
+}  // namespace university
+
+// ========== 演示代码 ==========
+int main() {
+    using namespace university;
+
+    std::cout << "===== 大学人员管理系统 =====\n" << std::endl;
+
+    // 使用shared_ptr管理所有人员
+    std::vector<std::shared_ptr<Person>> personnel;
+
+    // 创建学生
+    auto alice = std::make_shared<Student>(
+        "Alice Wang", 20, "110101200001010001", "北京市海淀区",
+        "2024001", "计算机科学", 2024, 3.8);
+    personnel.push_back(alice);
+
+    auto bob = std::make_shared<Student>(
+        "Bob Li", 21, "110101200101010002", "上海市浦东新区",
+        "2023001", "数学", 2023, 3.5);
+    personnel.push_back(bob);
+
+    // 创建教师
+    auto profZhao = std::make_shared<Teacher>(
+        "赵教授", 45, "110101197901010003", "北京市",
+        "T001", "计算机科学", "教授", 25000.0);
+    personnel.push_back(profZhao);
+
+    auto profQian = std::make_shared<Teacher>(
+        "钱副教授", 38, "110101198601010004", "上海市",
+        "T002", "数学", "副教授", 18000.0);
+    personnel.push_back(profQian);
+
+    // 创建助教（同时是学生和教师）
+    auto taCharlie = std::make_shared<TeachingAssistant>(
+        "Charlie Zhang", 24, "110101199901010005", "北京市",
+        "2020001", "计算机科学", 2020, 3.9,
+        "T003", "计算机科学", "助教", 8000.0,
+        "C++程序设计", 12);
+    personnel.push_back(taCharlie);
+
+    auto taDiana = std::make_shared<TeachingAssistant>(
+        "Diana Chen", 23, "110101200001010006", "上海市",
+        "2021001", "数学", 2021, 3.7,
+        "T004", "数学", "助教", 8000.0,
+        "高等数学", 10);
+    personnel.push_back(taDiana);
+
+    // 显示所有人员
+    displayAllPersonnel(personnel);
+
+    // 统计
+    std::cout << "\n===== 大学统计 =====" << std::endl;
+    std::cout << "总人数: " << Person::getPersonCount() << std::endl;
+    std::cout << "学生数: " << Student::getStudentCount() << std::endl;
+    std::cout << "教师数: " << Teacher::getTeacherCount() << std::endl;
+    std::cout << "助教数: " << TeachingAssistant::getTACount() << std::endl;
+
+    // 展示行为
+    std::cout << "\n===== 行为演示 =====" << std::endl;
+    alice->study();
+    profZhao->teach();
+    taCharlie->study();     // Charlie作为学生在学习
+    taCharlie->teach();     // Charlie作为教师在授课
+    taCharlie->assistCourse();  // Charlie作为助教在辅导
+
+    // 展示虚继承的好处：不明确的访问问题不会出现
+    std::cout << "\n===== 虚继承验证 =====" << std::endl;
+    std::cout << "TA Charlie的名字: " << taCharlie->getName() << std::endl;
+    std::cout << "TA Charlie的年龄: " << taCharlie->getAge() << std::endl;
+    // 如果没有虚继承，上面两行会报"ambiguous"错误！
+    // 因为会有两个Person子对象（一个来自Student，一个来自Teacher）
+    // 虚继承保证只有一个Person子对象
+
+    return 0;
+}
+```
+
+知识点融入：
+  - 多重继承（TeachingAssistant同时继承Student和Teacher）
+  - 菱形继承问题（Student和Teacher都继承Person）
+  - 虚继承virtual解决菱形继承
+  - 最派生类需要显式构造虚基类
+  - shared_ptr管理对象（第4章）
+  - static成员统计
+  - 命名空间 university
+  - 调试宏
+  - 构造链（基类构造顺序）
+
+================================================================================
+
+案例5：游戏角色系统（Character继承体系 + final）
+------------------------------------
+
+【生活场景】RPG游戏的角色管理。基类Character定义通用属性（HP/MP/位置），
+派生类Warrior/Mage/Archer各有独特技能。使用final阻止特定类被进一步派生。
+
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+#include <memory>
+#include <iomanip>
+
+// ====== 调试宏记录创建/销毁 ======
+#define GAME_DEBUG 1
+#if GAME_DEBUG
+    #define G_LOG(msg) std::cout << "[GAME] " << msg << std::endl
+#else
+    #define G_LOG(msg)
+#endif
+
+namespace game {
+
+// ====== 坐标结构体 ======
+struct Position {
+    double x, y;
+    Position(double xVal = 0, double yVal = 0) : x(xVal), y(yVal) {}
+    void display() const {
+        std::cout << "(" << x << ", " << y << ")";
+    }
+};
+
+// ====== 基类：Character ======
+class Character {
+protected:
+    std::string name;
+    int level;
+    int hp;              // 生命值
+    int maxHp;
+    int mp;              // 魔法值/能量
+    int maxMp;
+    Position position;
+
+    static int characterCount;
+
+public:
+    Character(const std::string& n, int lv, int health, int magic,
+              double px, double py)
+        : name(n), level(lv),
+          hp(health), maxHp(health),
+          mp(magic), maxMp(magic),
+          position(px, py) {
+        characterCount++;
+        G_LOG("Character created: " + name + " (Lv." +
+              std::to_string(level) + ")");
+    }
+
+    virtual ~Character() {
+        characterCount--;
+        G_LOG("Character destroyed: " + name);
+    }
+
+    // ====== 通用行为 ======
+    void move(double dx, double dy) {
+        position.x += dx;
+        position.y += dy;
+        std::cout << name << " 移动到";
+        position.display();
+        std::cout << std::endl;
+    }
+
+    void takeDamage(int damage) {
+        hp -= damage;
+        if (hp < 0) hp = 0;
+        std::cout << name << " 受到 " << damage << " 点伤害! ";
+        if (hp == 0) {
+            std::cout << name << " 阵亡了..." << std::endl;
+        } else {
+            std::cout << "剩余HP: " << hp << "/" << maxHp << std::endl;
+        }
+    }
+
+    void heal(int amount) {
+        hp += amount;
+        if (hp > maxHp) hp = maxHp;
+        std::cout << name << " 恢复了 " << amount << " 点HP "
+                  << "(HP: " << hp << "/" << maxHp << ")" << std::endl;
+    }
+
+    // ====== 虚函数——第6章多态做准备 ======
+    virtual void attack(Character& target) = 0;
+    virtual void specialSkill(Character& target) = 0;
+    virtual std::string getClassName() const = 0;
+
+    // ====== 信息显示 ======
+    virtual void displayStatus() const {
+        std::cout << std::left
+                  << "[" << std::setw(10) << name << "]"
+                  << " Lv." << std::setw(3) << level
+                  << " HP:" << std::setw(5) << (std::to_string(hp) + "/"
+                                               + std::to_string(maxHp))
+                  << " MP:" << std::setw(5) << (std::to_string(mp) + "/"
+                                               + std::to_string(maxMp))
+                  << " 位置:";
+        position.display();
+    }
+
+    // ====== Getter ======
+    const std::string& getName() const { return name; }
+    int getHP() const { return hp; }
+    int getMaxHP() const { return maxHp; }
+    int getMP() const { return mp; }
+
+    static int getCharacterCount() { return characterCount; }
+};
+
+int Character::characterCount = 0;
+
+// ====== 派生类：Warrior（战士）======
+class Warrior : public Character {
+private:
+    int strength;           // 力量——影响物理攻击
+    std::string weapon;     // 武器名称
+
+public:
+    Warrior(const std::string& n, int lv, int health,
+            double px, double py, int str, const std::string& wpn)
+        : Character(n, lv, health, 50, px, py),  // 战士魔法值固定50
+          strength(str), weapon(wpn) {
+        G_LOG("Warrior created: " + n + " wielding " + weapon);
+    }
+
+    // 普通攻击——力量 * 等级 / 2
+    void attack(Character& target) override {
+        int damage = strength * level / 2;
+        std::cout << name << " 挥舞 " << weapon << " 攻击!"
+                  << " (-" << damage << ")" << std::endl;
+        target.takeDamage(damage);
+    }
+
+    // 必杀技——旋风斩
+    void specialSkill(Character& target) override {
+        if (mp < 30) {
+            std::cout << name << " 的MP不足! 无法使用旋风斩" << std::endl;
+            return;
+        }
+        mp -= 30;
+        int damage = strength * level;
+        std::cout << name << " 发动 -旋风斩-! ";
+        std::cout << "(-" << damage << ")" << std::endl;
+        target.takeDamage(damage);
+    }
+
+    std::string getClassName() const override { return "战士"; }
+
+    void displayStatus() const override {
+        Character::displayStatus();
+        std::cout << " 力量:" << strength
+                  << " 武器:" << weapon << std::endl;
+    }
+};
+
+// ====== 派生类：Mage（法师）======
+class Mage : public Character {
+private:
+    int intelligence;       // 智力——影响魔法攻击
+
+public:
+    Mage(const std::string& n, int lv, int health, int magic,
+         double px, double py, int intel)
+        : Character(n, lv, health, magic, px, py),
+          intelligence(intel) {
+        G_LOG("Mage created: " + n);
+    }
+
+    // 普通攻击——魔法弹
+    void attack(Character& target) override {
+        int damage = intelligence * level / 3;
+        std::cout << name << " 释放魔法弹! (-" << damage << ")" << std::endl;
+        target.takeDamage(damage);
+    }
+
+    // 必杀技——暴风雪
+    void specialSkill(Character& target) override {
+        if (mp < 50) {
+            std::cout << name << " 的MP不足! 无法使用暴风雪" << std::endl;
+            return;
+        }
+        mp -= 50;
+        int damage = intelligence * level * 2;
+        std::cout << name << " 发动 -暴风雪-! ";
+        std::cout << "(-" << damage << ")" << std::endl;
+        target.takeDamage(damage);
+    }
+
+    std::string getClassName() const override { return "法师"; }
+
+    void displayStatus() const override {
+        Character::displayStatus();
+        std::cout << " 智力:" << intelligence << std::endl;
+    }
+};
+
+// ====== 派生类：Archer（弓箭手）——final类，不能再派生 ======
+class Archer final : public Character {
+private:
+    int agility;          // 敏捷——影响攻击力和闪避
+    int arrowCount;       // 箭矢数量
+
+public:
+    Archer(const std::string& n, int lv, int health,
+           double px, double py, int agi, int arrows)
+        : Character(n, lv, health, 80, px, py),
+          agility(agi), arrowCount(arrows) {
+        G_LOG("Archer created: " + n + " arrows:" +
+              std::to_string(arrowCount));
+    }
+
+    void attack(Character& target) override {
+        if (arrowCount <= 0) {
+            std::cout << name << " 箭用完了!" << std::endl;
+            return;
+        }
+        arrowCount--;
+        int damage = agility * level / 2;
+        std::cout << name << " 张弓射箭! 剩余箭数:" << arrowCount
+                  << " (-" << damage << ")" << std::endl;
+        target.takeDamage(damage);
+    }
+
+    // 必杀技——箭雨
+    void specialSkill(Character& target) override {
+        if (mp < 40 || arrowCount < 5) {
+            std::cout << name << " 的MP/箭数不足! 无法使用箭雨" << std::endl;
+            return;
+        }
+        mp -= 40;
+        arrowCount -= 5;
+        int damage = agility * level * 3;
+        std::cout << name << " 发动 -箭雨-! ";
+        std::cout << "(-" << damage << ")" << std::endl;
+        target.takeDamage(damage);
+    }
+
+    std::string getClassName() const override { return "弓箭手"; }
+
+    void displayStatus() const override {
+        Character::displayStatus();
+        std::cout << " 敏捷:" << agility
+                  << " 箭数:" << arrowCount << std::endl;
+    }
+};
+
+// 下面这行会编译错误（Archer是final类）：
+// class Sniper : public Archer {};
+
+}  // namespace game
+
+// ========== 演示代码 ==========
+int main() {
+    using namespace game;
+
+    std::cout << "===== RPG游戏角色系统 =====\n" << std::endl;
+
+    // 创建角色（基类指针数组管理）
+    std::vector<std::unique_ptr<Character>> party;
+
+    party.push_back(std::make_unique<Warrior>(
+        "亚瑟", 15, 300, 0.0, 0.0, 25, "圣剑"));
+    party.push_back(std::make_unique<Mage>(
+        "梅林", 15, 180, 300, 10.0, 5.0, 30));
+    party.push_back(std::make_unique<Archer>(
+        "罗宾", 15, 220, 15.0, 10.0, 22, 50));
+    party.push_back(std::make_unique<Warrior>(
+        "兰斯洛特", 12, 260, 5.0, 5.0, 20, "长枪"));
+
+    // 显示角色状态
+    std::cout << "--- 角色状态 ---" << std::endl;
+    for (const auto& ch : party) {
+        ch->displayStatus();
+    }
+    std::cout << "队伍人数: " << Character::getCharacterCount() << std::endl;
+
+    // 战斗演示
+    std::cout << "\n--- 战斗开始! ---" << std::endl;
+
+    // 假设有一个怪物作为目标
+    auto dragon = std::make_unique<Warrior>(
+        "恶龙", 20, 1000, 0.0, 50.0, 40, "龙爪");
+
+    std::cout << "\n敌人!" << std::endl;
+    dragon->displayStatus();
+
+    std::cout << "\n--- 第1回合 ---" << std::endl;
+    party[0]->attack(*dragon);           // 亚瑟普通攻击
+    party[1]->attack(*dragon);           // 梅林魔法攻击
+    party[2]->specialSkill(*dragon);     // 罗宾放箭雨
+    party[3]->attack(*dragon);           // 兰斯洛特攻击
+
+    std::cout << "\n--- 第2回合 ---" << std::endl;
+    party[0]->specialSkill(*dragon);     // 亚瑟旋风斩
+    party[1]->specialSkill(*dragon);     // 梅林暴风雪
+    party[2]->attack(*dragon);           // 罗宾普通攻击
+
+    std::cout << "\n战斗后恶龙状态:" << std::endl;
+    dragon->displayStatus();
+
+    // 治疗
+    std::cout << "\n--- 治疗 ---" << std::endl;
+    party[0]->heal(50);
+    party[1]->heal(30);
+
+    // 移动
+    std::cout << "\n--- 移动到下一个区域 ---" << std::endl;
+    for (auto& ch : party) {
+        ch->move(1, 0);
+    }
+
+    return 0;
+}
+```
+
+知识点融入：
+  - 继承体系（Character → Warrior/Mage/Archer）
+  - final类（Archer final）阻止进一步派生
+  - 纯虚函数（第6章多态做准备）
+  - 虚函数基础（dynamic dispatch的概念）
+  - unique_ptr管理角色
+  - 基类指针管理派生类对象
+  - static成员统计
+  - 构造链
+  - 命名空间 game
+  - 调试宏
+  - 成员初始化列表
+
+================================================================================
+
+                            === 第四节：课后习题 ===
+================================================================================
+
+习题：设计一个"交通工具继承体系" Vehicle
+======================================================
+
+【生活场景】
+一家交通管理软件开发公司需要设计各种交通工具的类层次结构。
+系统需要管理不同类型的车辆，并能够计算每辆车的燃油效率、排放等级等。
+
+【要求】
+
+1. 基类：Vehicle（抽象基类）
+   属性：
+   - brand:        品牌 (std::string)
+   - model:        型号 (std::string)
+   - year:         生产年份 (int)
+   - fuelEfficiency: 燃油效率 L/100km (double)
+   纯虚函数：
+   - displayInfo() const = 0:  显示车辆信息
+   虚函数：
+   - calculateAnnualFuel(int km) const:  计算年耗油量
+   - getEmissionLevel() const:  获取排放等级（返回字符串）
+
+2. 派生类 Car（public继承Vehicle）
+   新增属性：
+   - numSeats:     座位数 (int)
+   - hasSunroof:   是否有天窗 (bool)
+   重写 displayInfo()
+   重写 calculateAnnualFuel()（根据座位数调整：座位越多，空调耗油越多）
+
+3. 派生类 Motorcycle（public继承Vehicle）
+   新增属性：
+   - hasSidecar:   是否有边斗 (bool)
+   - engineCC:     发动机排量 (int)
+   重写 displayInfo()
+   重写 calculateAnnualFuel()
+
+4. 派生类 Truck（public继承Vehicle）
+   新增属性：
+   - maxLoad:      最大载重量(吨) (double)
+   - transportHazardous: 是否运输危险品 (bool)
+   重写 displayInfo()
+   重写 calculateAnnualFuel()（载重量影响油耗）
+   重写 getEmissionLevel()（危险品运输车辆排放等级更严格）
+
+5. ElectricCar（多级继承：public继承Car，final类）
+   新增属性：
+   - batteryCapacity: 电池容量 kWh (double)
+   - range:           续航里程 km (double)
+   重写 displayInfo()
+   重写 calculateAnnualFuel()（电动车耗油为0，改为计算年耗电量）
+   重写 getEmissionLevel()（电动车排放等级为"零排放"）
+   使用 final 修饰类，阻止进一步派生
+
+6. 主函数要求：
+   - 创建至少5个不同类型的车辆对象
+   - 使用基类指针数组（vector<Vehicle*> 或 vector<unique_ptr<Vehicle>>）管理
+   - 遍历数组，多态调用每个车辆的 displayInfo()
+   - 计算所有车辆的总年耗油量（假设每辆车年行驶20000km）
+   - 演示构造链和析构链（输出构造和析构信息）
+
+【提示】
+- 构造链：Car的构造函数需要显式调用Vehicle的构造函数
+- ElectricCar的构造函数链：ElectricCar → Car → Vehicle
+- final关键字用于ElectricCar，阻止被进一步继承
+- 注意虚析构函数的使用（虽然这是第6章的重点，但可以先了解其重要性）
+- 燃油效率单位为 L/100km
+- 年耗油量 = fuelEfficiency * annualKm / 100
+
+【评分要点】
+- 基类Vehicle设计合理（抽象类、虚函数） (+2分)
+- 多级继承正确（ElectricCar 继承 Car 继承 Vehicle） (+2分)
+- final正确使用 (+1分)
+- 构造链正确（派生类调用基类构造） (+1分)
+- displayInfo()多态行为正确 (+2分)
+- 基类指针管理派生类对象 (+1分)
+- calculateAnnualFuel()各自正确重写 (+1分)
+- 代码风格和注释 (+1分)
+- main函数演示完整 (+1分)
+总分：12分
+
+================================================================================
+
+                            === 附：深入理解与实践要点 ===
+================================================================================
+
+一、继承的替代方案：组合 vs 继承
+------------------------------------
+
+组合（Composition）通常优于继承。C++中，当两个类之间是"has-a"关系时，
+应该使用组合而非继承。
+
+```cpp
+// ❌ 不好的继承使用——"has-a"关系不该用继承
+class Engine { /*...*/ };
+class Car : public Engine {  // Car IS-A Engine？不合理！
+    // 语义错误
+};
+
+// ✅ 正确的组合使用——"has-a"关系
+class Engine { /*...*/ };
+class Car {
+    Engine engine;  // Car HAS-A Engine —— 语义正确
+    // ...
+};
+
+// 使用场景决策：
+// 继承(IS-A):  Dog IS-A Animal,  Circle IS-A Shape
+// 组合(HAS-A): Car HAS-A Engine,  Person HAS-A Address
+// 当不确定时，优先使用组合——更低耦合、更灵活
+```
+
+【组合优于继承的原因】
+1. 组合的耦合度更低——修改组合对象的内部不影响外部类
+2. 组合更灵活——可以在运行时更换组合对象
+3. 继承增加类层次复杂性，降低代码可维护性
+4. 继承暴露基类的实现细节（特别是protected成员）
+5. 组合支持"策略模式"——通过更换组合的对象来改变行为
+
+```cpp
+// 策略模式示例：用组合替换继承
+#include <iostream>
+#include <memory>
+
+// 策略接口（组合方式实现多态行为）
+class FlyBehavior {
+public:
+    virtual void fly() = 0;
+    virtual ~FlyBehavior() = default;
+};
+
+class FlyWithWings : public FlyBehavior {
+public:
+    void fly() override { std::cout << "Flying with wings!" << std::endl; }
+};
+
+class NoFly : public FlyBehavior {
+public:
+    void fly() override { std::cout << "Cannot fly." << std::endl; }
+};
+
+class Duck {
+private:
+    std::unique_ptr<FlyBehavior> flyBehavior;  // 组合
+public:
+    Duck(std::unique_ptr<FlyBehavior> fb)
+        : flyBehavior(std::move(fb)) { }
+
+    void performFly() {
+        flyBehavior->fly();  // 委托给组合对象
+    }
+
+    void setFlyBehavior(std::unique_ptr<FlyBehavior> fb) {
+        flyBehavior = std::move(fb);  // 运行时更换行为！
+    }
+};
+
+// 这样Duck不需要复杂的继承层次，通过组合实现灵活的行为变化
+```
+
+二、protected继承与private继承的实际用途
+------------------------------------
+
+```cpp
+// private继承：实现"用基类实现"（implemented-in-terms-of）
+// 一个类想要复用基类的实现，但不暴露基类的接口
+
+class Timer {
+public:
+    void start() { /* ... */ }
+    void stop()  { /* ... */ }
+    int elapsed() const { return 0; }
+};
+
+// ❌ 使用public继承——暴露了Timer的所有接口
+class Stopwatch_public : public Timer {
+    // 用户可以通过Stopwatch调用start()/stop()/elapsed()
+    // 但这些名字对秒表来说可能语义不对
+};
+
+// ✅ 使用private继承——隐藏Timer接口
+class Stopwatch : private Timer {
+public:
+    void begin() { start(); }         // 暴露合适的接口名
+    void end()   { stop(); }
+    int  result() const { return elapsed(); }
+
+    // 选择性暴露某些基类接口
+    using Timer::elapsed;  // 将elapsed提升为public
+};
+
+// 等效的组合实现（通常更推荐）：
+class Stopwatch_composition {
+    Timer timer;
+public:
+    void begin() { timer.start(); }
+    void end()   { timer.stop(); }
+    int  result() const { return timer.elapsed(); }
+};
+```
+
+三、继承中的名称查找（Name Lookup）规则
+------------------------------------
+
+C++的名称查找在继承层次中遵循以下规则：
+
+```cpp
+class Base {
+public:
+    void func(int)  { std::cout << "Base::func(int)\n"; }
+    void func(double){ std::cout << "Base::func(double)\n"; }
+};
+
+class Intermediate : public Base {
+public:
+    // 如果在Intermediate中定义了任何名为func的函数，
+    // Base中所有名为func的函数都会被隐藏！
+    void func(char) { std::cout << "Intermediate::func(char)\n"; }
+};
+
+class Derived : public Intermediate {
+public:
+    void func(long) { std::cout << "Derived::func(long)\n"; }
+};
+
+int main() {
+    Derived d;
+    d.func(10);         // Derived::func(long) — int可转为long
+    d.func('a');        // Derived::func(long) — char可转为long
+                        // Intermediate::func(char)被隐藏了！
+    // d.func(3.14);    // 错误！Base的所有func都被隐藏了
+    d.Base::func(3.14); // 必须显式调用Base版本
+
+    // 使用using解决名称隐藏
+    // 在Derived中添加: using Intermediate::func;
+    // 在Intermediate中添加: using Base::func;
+    return 0;
+}
+
+// 名称查找的规则：编译器找到第一个匹配的名称后就停止向上查找
+// 规则顺序：派生类 → 直接基类 → 间接基类 → ...
+// 一旦在某层找到同名函数（不论参数），就停止向上查找
+// 这就是"名称隐藏"（Name Hiding）和"函数隐藏"（Function Hiding）
+```
+
+四、继承中的构造与析构——常见陷阱
+------------------------------------
+
+```cpp
+#include <iostream>
+#include <string>
+
+class Base {
+protected:
+    std::string resource;
+public:
+    // 注意：构造函数体中可能抛出异常！
+    Base(const std::string& name) : resource(name) {
+        std::cout << "Base::Base() for " << resource << std::endl;
+    }
+
+    // 虚析构函数——如果此类作为基类使用
+    virtual ~Base() {
+        std::cout << "Base::~Base() for " << resource << std::endl;
+    }
+};
+
+class Derived : public Base {
+    int* dynamicArray;
+    size_t size;
+public:
+    Derived(const std::string& name, size_t n)
+        : Base(name),    // 如果这里抛异常，Derived不会构造
+          size(n),
+          dynamicArray(new int[n]) {  // 如果这里抛异常，Base会自动析构
+        std::cout << "Derived::Derived() allocating " << n << " ints"
+                  << std::endl;
+        // 风险：如果下面代码抛异常，需要确保资源清理
+    }
+
+    ~Derived() override {
+        delete[] dynamicArray;
+        std::cout << "Derived::~Derived() freed " << size << " ints"
+                  << std::endl;
+    }
+
+    // 规则：使用RAII管理资源，避免在构造函数/析构函数中手动处理复杂逻辑
+};
+
+// ⚠️ 在构造/析构函数中调用虚函数的陷阱：
+class Base2 {
+public:
+    Base2() {
+        std::cout << "Base2::Base2()" << std::endl;
+        process();  // 调用的是Base2::process()，不是Derived2::process()！
+    }
+    virtual void process() { std::cout << "Base2::process()" << std::endl; }
+    virtual ~Base2() {
+        std::cout << "Base2::~Base2()" << std::endl;
+        process();  // 同样调用Base2::process()
+    }
+};
+
+class Derived2 : public Base2 {
+public:
+    Derived2() { std::cout << "Derived2::Derived2()" << std::endl; }
+    void process() override {
+        std::cout << "Derived2::process()" << std::endl;
+    }
+};
+
+// 原因：构造/析构时vptr指向当前类的vtable，
+// 而不是最终派生类的vtable。这是C++标准规定的行为，
+// 防止访问未初始化的派生类成员。
+```
+
+五、多重继承的构造顺序详解
+------------------------------------
+
+```cpp
+#include <iostream>
+
+class A {
+public:
+    A() { std::cout << "A()" << std::endl; }
+};
+
+class B {
+public:
+    B() { std::cout << "B()" << std::endl; }
+};
+
+class C : virtual public A {  // C虚继承A
+public:
+    C() { std::cout << "C()" << std::endl; }
+};
+
+class D : virtual public A {  // D虚继承A
+public:
+    D() { std::cout << "D()" << std::endl; }
+};
+
+class E : public B {          // E非虚继承B
+public:
+    E() { std::cout << "E()" << std::endl; }
+};
+
+// 复杂的多重继承层次：
+//      A (virtual)
+//     / \
+//    C   D    B
+//    |   |   /
+//    |   |  /
+//     \  | /
+//       F
+// (C和D虚继承A, E普通继承B)
+class F : public C, public D, public E {
+public:
+    F() { std::cout << "F()" << std::endl; }
+};
+
+// 构造顺序：
+// 1. 虚基类A（因为C和D虚继承A，A由最派生类F构造）
+// 2. 非虚直接基类，按声明顺序：C, D, E
+//    - C(A已构造) → 只构造C自身部分
+//    - D(A已构造) → 只构造D自身部分
+//    - E → 先构造B(非虚基类)，再构造E自身
+// 3. F自己的成员
+// 4. F的构造函数体
+//
+// 输出：
+// A()
+// C()
+// D()
+// B()
+// E()
+// F()
+
+// 析构顺序：严格与构造顺序相反
+// F() → E() → B() → D() → C() → A()
+```
+
+================================================================================
+
+                            === 学习检查清单 ===
+================================================================================
+
+在继续学习第六章之前，请确认你已掌握：
+  □ 三种继承方式(public/protected/private)的区别和选择原则
+  □ 派生类构造/析构的执行顺序（构造链：基类→派生类，析构链：反向）
+  □ 派生类对象内存布局（基类子对象在派生类起始位置）
+  □ 向上转型(upcasting)的安全性和零开销原理
+  □ using声明在继承中的两种用途（改变访问级别、解决名称隐藏）
+  □ 多重继承的语法和菱形继承问题的成因
+  □ 虚继承(virtual)解决菱形继承的原理和代价
+  □ final关键字阻止类继承和虚函数重写
+  □ 继承vs组合的选择原则（IS-A vs HAS-A）
+
+================================================================================
+                       第五章完 —— 继续学习第六章：多态与虚函数
+================================================================================
