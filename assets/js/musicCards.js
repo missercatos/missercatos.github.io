@@ -8,8 +8,8 @@
         { title: '永恒呼吸', artist: '塞壬唱片', src: 'assets/music/永恒呼吸.mp3', filename: '永恒呼吸.mp3' },
         { title: '永世のクレイドル', artist: '鈴華ゆう子', src: 'assets/music/永世のクレイドル-鈴華ゆう子.mp3', filename: '永世のクレイドル-鈴華ゆう子.mp3' },
         { title: 'MY ALL', artist: '浜崎あゆみ', src: 'assets/music/MY ALL-浜崎あゆみ.mp3', filename: 'MY ALL-浜崎あゆみ.mp3' },
-        { title: '春弦', artist: '塞壬唱片-MSR,横山克', src: 'assets/music/春弦-塞壬唱片-MSR,横山克.mp3', filename: '春弦-塞壬唱片-MSR,横山克.mp3' },
-        { title: '浸春芜', artist: '塞壬唱片-MSR,宋柏,十音,解伟苓', src: 'assets/music/浸春芜-塞壬唱片-MSR,宋柏,十音,解伟苓.mp3', filename: '浸春芜-塞壬唱片-MSR,宋柏,十音,解伟苓.mp3' }
+        { title: '殉道之人', artist: '塞壬唱片-MSR,Erik Castro', src: 'assets/music/殉道之人-塞壬唱片-MSR,Erik Castro.mp3', filename: '殉道之人-塞壬唱片-MSR,Erik Castro.mp3' },
+        { title: 'Somniomancer [null set]', artist: '塞壬唱片-MSR,Crywolf', src: 'assets/music/Somniomancer [null set]-塞壬唱片-MSR,Crywolf.mp3', filename: 'Somniomancer [null set]-塞壬唱片-MSR,Crywolf.mp3' }
     ];
 
     const BASE_SPEED = 135; // px/s（数字雨 540px/s 的 0.25 倍）

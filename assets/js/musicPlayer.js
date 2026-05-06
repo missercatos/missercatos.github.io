@@ -21,7 +21,9 @@ window.musicPlayer = (function() {
         { title: "春弦-塞壬唱片", src: "assets/music/春弦-塞壬唱片-MSR,横山克.mp3" },
         { title: "MY ALL", src: "assets/music/MY ALL-浜崎あゆみ.mp3" },
         { title: "永世のクレイドル", src: "assets/music/永世のクレイドル-鈴華ゆう子.mp3" },
-        { title: "浸春芜", src: "assets/music/浸春芜-塞壬唱片-MSR,宋柏,十音,解伟苓.mp3" }
+        { title: "浸春芜", src: "assets/music/浸春芜-塞壬唱片-MSR,宋柏,十音,解伟苓.mp3" },
+        { title: "殉道之人", src: "assets/music/殉道之人-塞壬唱片-MSR,Erik Castro.mp3" },
+        { title: "Somniomancer [null set]", src: "assets/music/Somniomancer [null set]-塞壬唱片-MSR,Crywolf.mp3" }
     ];
 
     let currentTrackIndex = 0;
