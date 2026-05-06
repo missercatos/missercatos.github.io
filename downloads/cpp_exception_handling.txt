@@ -1,0 +1,417 @@
+================================================================================
+                    C++ 异常处理完全讲解
+================================================================================
+
+目录:
+  一、为什么需要异常处理
+  二、异常处理的替代方法
+  三、基本语法格式 (try / catch / throw)
+  四、抛出异常 (throw) 详解
+  五、捕获异常的原理 (栈展开 Stack Unwinding)
+  六、异常规格说明 (Exception Specification) 与 noexcept
+  七、标准库异常类体系 (std::exception 及其子类)
+  八、定义新的异常类
+  九、最佳实践与注意事项
+
+================================================================================
+一、为什么需要异常处理
+================================================================================
+
+传统C语言使用"错误码返回" (return -1, return NULL, errno等) 来处理错误，但这有严重的局限性:
+
+1. 错误码与正常返回值混在一起: 调用者必须手动检查每个返回值是否为错误码，
+   代码中充满 if 判断，导致核心逻辑被淹没。
+   【示例】传统写法:
+     int result = doSomething();
+     if (result < 0) { handle_error(); return -1; }
+     int result2 = doMore();
+     if (result2 < 0) { handle_error(); return -1; }
+     // 核心逻辑才两行，但错误处理占了四行
+
+2. 错误传递需要层层返回: 深层的函数必须把错误码传递给它的调用者，
+   调用者再传递给更上层，每一层都要写转发逻辑。
+
+3. 构造函数无法返回错误码: 构造函数没有返回值，无法通过返回值通知失败。
+   这也是C++引入异常的核心理由之一。
+
+4. 操作符重载 (operator=, operator+ 等) 不易返回错误码: 重载操作符通常
+   返回引用或新对象，没有位置放错误码。
+
+5. 资源泄漏风险: 如果错误发生在资源分配之后但尚未释放时，手动释放每个
+   已分配的资源非常容易出错。
+
+C++ 异常机制的本质:
+  将"错误发生"与"错误处理"在代码中分离开来，让业务逻辑保持清晰，
+  同时通过RAII (Resource Acquisition Is Initialization) 保证资源的自动释放。
+
+================================================================================
+二、异常处理的替代方法
+================================================================================
+
+方法一: 错误码返回 (C风格)
+  int func(int *out_result) {
+      if (fail) return -1;  // 错误码
+      *out_result = 42;
+      return 0;             // 成功
+  }
+  缺点: 返回值区分错误码与数据，代码冗长；构造函数不可用。
+
+方法二: std::optional<T> / std::expected<T,E> (C++17/23)
+  std::optional<int> div(int a, int b) {
+      if (b == 0) return std::nullopt;
+      return a / b;
+  }
+  // C++23:
+  std::expected<int, std::string> div(int a, int b) {
+      if (b == 0) return std::unexpected("division by zero");
+      return a / b;
+  }
+  优点: 类型安全，语义明确。
+  缺点: 调用者仍需手动检查；不适合深层调用链；构造函数不可用。
+
+方法三: std::error_code / std::error_condition (C++11)
+  与 system_error 配合使用，适合与操作系统交互的场景。
+
+方法四: abort() / std::terminate / assert
+  直接终止程序，只适用于"不可恢复的致命错误"。
+
+方法五: setjmp / longjmp (C语言)
+  非局部跳转。在C++中强烈不推荐，因为不会调用析构函数，导致资源泄漏。
+
+总结:
+  - 对于"可预见"且"高频"的错误 (如输入校验)，使用返回值/optional/expected。
+  - 对于"不应该发生"的逻辑错误，可使用异常或assert。
+  - 对于"构造函数失败"、"深层调用链某处出错"等场景，异常是最自然、最安全的方案。
+
+================================================================================
+三、基本语法格式 (try / catch / throw)
+================================================================================
+
+基本语法:
+
+  try {
+      // 可能抛出异常的代码
+      if (something_wrong) {
+          throw std::runtime_error("something went wrong");
+      }
+      // 如果抛出异常，后续代码不再执行
+  }
+  catch (const std::runtime_error& e) {
+      // 处理特定类型的异常
+      std::cerr << "Caught: " << e.what() << std::endl;
+  }
+  catch (const std::exception& e) {
+      // 捕获所有标准库异常
+      std::cerr << "Standard exception: " << e.what() << std::endl;
+  }
+  catch (...) {
+      // 捕获所有类型的异常 (通常是最兜底的)
+      std::cerr << "Unknown exception" << std::endl;
+  }
+
+关键点:
+  - try 块: 标记要监控的代码区域
+  - catch 块: 按顺序匹配异常类型，找到第一个匹配的就执行
+  - catch 的匹配规则: 与函数重载不同，它按类型精确匹配 + 派生类→基类匹配
+  - catch(...) 兜底捕获一切，但拿不到异常对象
+  - catch 参数应使用 const 引用 (避免拷贝切片 slicing)
+  - throw 可以抛出任意类型 (int, const char*, 类对象等)，但推荐抛std::exception子类
+
+================================================================================
+四、抛出异常 (throw) 详解
+================================================================================
+
+语法:
+  throw expression;       // 抛出异常对象
+  throw;                  // 仅用于catch块内，重新抛出当前异常 (rethrow)
+
+1. throw expression:
+   - 表达式会被求值，结果被复制 (或移动) 到一个特殊的内存区域 (异常存储区)
+   - 然后开始栈展开 (stack unwinding) 过程
+   - 原始对象的生命周期结束 (如果是局部变量)，但catch块中的引用绑定到存储区的副本
+
+2. throw; (重新抛出):
+   - 只能在 catch 块或其调用的函数中使用
+   - 将当前捕获的异常原封不动地重新抛出
+   - 保留异常对象的原始类型 (不会发生切片)
+
+示例:
+  void foo() {
+      throw MyException("from foo");   // 抛出, MyException对象被复制到异常存储区
+  }
+
+  void bar() {
+      try {
+          foo();
+      } catch (...) {
+          std::cout << "Logging...\n";
+          throw;   // 重新抛出, 让上层调用者处理
+      }
+  }
+
+注意:
+  - 不要在析构函数中抛出异常。如果析构函数在栈展开期间被调用时又抛异常，
+    程序会直接调用 std::terminate()。
+  - C++11起，析构函数默认是 noexcept(true)。
+
+================================================================================
+五、捕获异常的原理 (栈展开 Stack Unwinding)
+================================================================================
+
+当 throw 语句执行时，C++运行时执行以下步骤:
+
+1. 【创建异常对象】
+   将 throw 的表达式的值复制/移动到异常存储区。
+   异常存储区是独立于栈的一块内存，由编译器管理。
+
+2. 【栈展开 Stack Unwinding】
+   从 throw 点开始，沿调用链向上逐个销毁各栈帧中的局部对象:
+   - 按构造的逆序依次调用每个局部对象的析构函数
+   - 这让 RAII 对象能自动释放资源 (锁、文件句柄、动态内存等)
+   - 这就是"异常安全"的基础
+
+3. 【查找匹配的catch】
+   每展开一个调用层级，就检查该层的 try 块是否有可匹配的 catch:
+   - 匹配规则: 类别精确匹配 或 catch的参数类型是异常类型的基类
+   - 第一个匹配的 catch 被执行
+   - catch(...) 匹配任何类型的异常
+
+4. 【如果找不到匹配的catch】
+   继续向上展开，直到 main() 函数。如果 main 也没有捕获，则调用
+   std::terminate() 终止程序。
+
+栈展开示意图:
+
+  main()                        [无catch, 继续向上]
+    └─ outerFunc()              [无catch, 继续向上]
+         └─ innerFunc()         [有try-catch, 捕获到]
+              └─ deepestFunc()  ← 这里 throw
+
+  执行顺序:
+    1. deepestFunc 抛出异常
+    2. deepestFunc 中已构造的局部对象被逆序析构 (栈展开)
+    3. innerFunc 中 deepestFunc调用点之后的局部对象被逆序析构
+    4. innerFunc 的 catch 匹配成功，执行catch块
+    5. outerFunc 和 main 继续正常执行 (从 innerFunc的catch块之后继续)
+
+================================================================================
+六、异常规格说明 (Exception Specification) 与 noexcept
+================================================================================
+
+【C++11 之前的动态异常规格 (已废弃, C++17中移除)】:
+  void func() throw(int, std::runtime_error);  // 只允许抛 int 和 runtime_error
+  void func() throw();                          // 不允许抛出任何异常
+  这是动态规格说明: 运行时检查，如果抛出了不允许的类型 → std::unexpected()
+
+  为什么废弃:
+  - 运行时检查性能开销大
+  - 没法在编译期检查错误
+  - throw() 语法已用 noexcept 替代
+
+【C++11 引入的 noexcept 说明符】:
+  noexcept 是"编译器可见的承诺"——表示该函数不抛出异常:
+
+  void func() noexcept;           // 承诺不抛异常 (等价于 noexcept(true))
+  void func() noexcept(true);     // 同上
+  void func() noexcept(false);    // 可能抛异常 (这是默认)
+  
+  template<class T>
+  void func() noexcept(noexcept(T()));  // 根据T的默认构造是否noexcept来决定
+
+  noexcept 的规则:
+  1. 如果 noexcept 函数真的抛出了异常 → 直接调用 std::terminate() (非局部跳转)
+  2. 编译器可以基于 noexcept 做优化 (eg. 不必生成栈展开代码)
+  3. 移动构造/移动赋值标记为 noexcept 时，std::vector 等在扩容时才会使用移动
+     (否则会拷贝，因为拷贝的异常安全性更好保证)
+
+【noexcept 运算符】:
+  noexcept(expression) 是编译期运算符，返回 bool:
+    true: 表达式不会抛出异常
+    false: 表达式可能抛出异常
+
+  示例:
+  static_assert(noexcept(1 + 2));            // true, 基本算术不抛异常
+  static_assert(!noexcept(throw 1));         // false
+  static_assert(noexcept(std::vector<int>{}.size()));  // true (size() 是 noexcept)
+
+【常用准则】:
+  - 析构函数: 隐式 noexcept，绝不要抛异常
+  - swap 函数: 通常 noexcept
+  - 移动构造/移动赋值: 尽量 noexcept
+  - 简单 getter/setter: 基本操作不抛异常，用 noexcept
+  - 会分配内存/可能失败的操作: 不要标记 noexcept
+
+================================================================================
+七、标准库异常类体系 (std::exception 及其子类)
+================================================================================
+
+标准库异常类统一继承自 std::exception，提供了 what() 虚函数。
+
+继承体系 (C++标准, 在 <stdexcept> 和 <exception> 中定义):
+
+  std::exception                    (基类, <exception>)
+  ├── std::logic_error              (逻辑错误, 可在编译期检测)
+  │   ├── std::invalid_argument     (无效参数)
+  │   ├── std::domain_error         (数学定义域错误, 如 sqrt(-1))
+  │   ├── std::length_error         (超出最大长度, 如 vector::resize 过大)
+  │   └── std::out_of_range         (索引越界, 如 vector::at)
+  │
+  ├── std::runtime_error            (运行时错误, 运行期才可检测)
+  │   ├── std::range_error          (计算结果超出范围)
+  │   ├── std::overflow_error       (算术溢出)
+  │   ├── std::underflow_error      (算术下溢)
+  │   ├── std::system_error         (系统错误, C++11, 携带 error_code)
+  │   │   └── std::ios_base::failure (I/O流错误)
+  │   │
+  │   └── std::filesystem::filesystem_error  (文件系统错误, C++17)
+  │
+  ├── std::bad_alloc                (new 分配内存失败, 继承自exception)
+  ├── std::bad_cast                 (dynamic_cast 引用类型转换失败)
+  ├── std::bad_any_cast             (std::any 转换失败, C++17)
+  ├── std::bad_optional_access      (std::optional 无值访问, C++17)
+  ├── std::bad_typeid               (对空指针做 typeid)
+  ├── std::bad_exception            (异常规格违反, 少见)
+  ├── std::bad_function_call        (调用空 std::function)
+  └── std::bad_weak_ptr             (weak_ptr 创建 shared_ptr 失败)
+
+常用子类详解:
+
+  1. std::runtime_error
+     用途: 只能在运行时检测到的错误
+     示例: throw std::runtime_error("failed to open file");
+     
+  2. std::logic_error
+     用途: 程序逻辑错误, 理论上可在编译期/测试期检测
+     示例: throw std::invalid_argument("age must be positive");
+     
+  3. std::out_of_range
+     用途: 索引越界
+     示例: v.at(v.size());  // 抛出 out_of_range
+     
+  4. std::bad_alloc
+     用途: new 分配失败
+     示例: new int[GIANT_SIZE];  // 内存不足时抛出
+
+  5. std::system_error (C++11)
+     用途: 包装操作系统错误码
+     包含: std::error_code 和 std::error_condition
+     
+  6. std::invalid_argument
+     用途: 参数不满足前置条件
+
+每个异常类都有构造函数:
+  - exception() noexcept;
+  - exception(const char* what_arg);
+  - exception(const string& what_arg);  (C++11起)
+
+what() 虚函数:
+  virtual const char* what() const noexcept;
+  返回描述错误的字符串 (由异常对象管理生命周期)
+
+================================================================================
+八、定义新的异常类
+================================================================================
+
+自定义异常应继承自 std::exception 或其子类:
+
+方法一: 继承 std::exception (简单)
+------------------------------------
+
+  class MyException : public std::exception {
+  private:
+      std::string msg_;
+  public:
+      explicit MyException(const std::string& msg) : msg_(msg) {}
+      const char* what() const noexcept override {
+          return msg_.c_str();
+      }
+  };
+
+方法二: 继承 std::runtime_error (推荐)
+----------------------------------------
+  runtime_error 已经内置了字符串存储和 what() 实现:
+
+  class NetworkException : public std::runtime_error {
+  public:
+      explicit NetworkException(const std::string& msg)
+          : std::runtime_error(msg) {}
+  };
+
+方法三: 携带额外信息
+---------------------
+
+  class FileException : public std::runtime_error {
+  private:
+      std::string filename_;
+      int line_;
+  public:
+      FileException(const std::string& msg,
+                    const std::string& file,
+                    int line)
+          : std::runtime_error(msg),
+            filename_(file), line_(line) {}
+
+      const std::string& filename() const { return filename_; }
+      int line_number() const { return line_; }
+
+      // 重写 what 以包含更多信息 (可选)
+      const char* what() const noexcept override {
+          // 注意: 需要管理 buffer 生命周期
+          thread_local static std::string full_msg;
+          full_msg = filename_ + ":" + std::to_string(line_)
+                     + " - " + std::runtime_error::what();
+          return full_msg.c_str();
+      }
+  };
+
+================================================================================
+九、最佳实践与注意事项
+================================================================================
+
+1. 【按引用捕获】
+   总是用 const& 捕获异常，避免对象切片 (slicing):
+     catch (const std::exception& e)  // 正确
+     catch (std::exception e)         // 错误: 发生拷贝切片
+
+2. 【捕获顺序: 先派生, 后基类】
+   因为 catch 按顺序匹配，如果先写 catch(std::exception&)，
+   后面的 catch(std::runtime_error&) 永远不会执行:
+     catch (const std::runtime_error& e) { ... }  // 先派生
+     catch (const std::exception& e) { ... }       // 后基类
+
+3. 【构造函数中的异常】
+   构造函数失败必须抛异常 (它没有返回值)。已构造完成的成员和基类
+   会自动析构，未构造的不会析构。这就是RAII的保障。
+
+4. 【析构函数绝不抛异常】
+   默认 noexcept，不要手动抛。如果析构必须在try中处理潜在异常，
+   在 catch 中"吞掉"异常，绝不重新抛出。
+
+5. 【异常安全三级别】
+   - 基本保证: 不发生资源泄漏，但对象状态可能被改变
+   - 强保证:   要么成功要么不变 (commit-or-rollback)
+   - 不抛保证: noexcept, 绝对不会失败
+
+6. 【RAII + 异常 = 自动释放】
+   使用智能指针 (unique_ptr, shared_ptr)、lock_guard、fstream 等
+   RAII 对象，让析构函数自动清理，无需手动try-catch。
+
+7. 【不要滥用异常】
+   异常不应用于流程控制 (如正常结束循环)。异常的开销主要在throw时，
+   正常路径 (不抛) 的性能几乎不受影响。但频繁throw会显著降低性能。
+
+8. 【noexcept 用于移动操作】
+   std::vector 扩容时检查移动构造是否是 noexcept，
+   如果不是则回退到拷贝构造以保证强异常安全。
+   因此自定义类型的移动构造应尽量标记 noexcept。
+
+9. 【不要抛出指针】
+   throw new std::runtime_error("msg");  // 错误: 抛的是指针, 谁负责delete?
+   throw std::runtime_error("msg");       // 正确: 抛的是值, 自动管理
+
+10.【不要在 throw 和 try 块之间进行复杂的操作】
+   throw 之后的代码不会执行，不要放在那里。
+
+================================================================================
+                        全文完
+================================================================================

@@ -1,0 +1,1193 @@
+================================================================================
+          Docker + BlackArch 完整安装与配置教程
+================================================================================
+
+目录
+----
+一、Docker 基础
+  1.1 什么是 Docker
+  1.2 Docker 核心概念
+  1.3 Docker 安装 (Ubuntu/Debian)
+  1.4 Docker 基本操作命令
+  1.5 Docker 镜像管理
+  1.6 Docker 容器管理
+  1.7 Docker 数据卷管理
+  1.8 Docker 网络管理
+  1.9 Dockerfile 编写基础
+
+二、BlackArch 基础
+  2.1 什么是 BlackArch
+  2.2 BlackArch 工具分类
+  2.3 BlackArch 包管理 (pacman)
+
+三、Docker 中安装 BlackArch
+  3.1 拉取 BlackArch 镜像
+  3.2 创建并运行容器
+  3.3 在容器中安装工具
+  3.4 自定义 Dockerfile 构建
+  3.5 使用 docker-compose 管理
+
+四、网络配置
+  4.1 Docker 网络模式详解
+  4.2 主机网络模式 (host)
+  4.3 桥接网络模式 (bridge)
+  4.4 自定义网络
+  4.5 端口映射
+  4.6 VPN/代理穿透配置
+
+五、高级配置
+  5.1 挂载宿主机目录
+  5.2 容器权限配置
+  5.3 容器资源限制
+  5.4 容器持久化
+  5.5 多容器协作
+
+六、常见问题与排错
+
+
+================================================================================
+一、Docker 基础
+================================================================================
+
+1.1 什么是 Docker
+------------------
+Docker 是一个开源的应用容器引擎，可以将应用程序及其依赖打包到一个
+轻量级、可移植的容器中，在任何 Linux 系统上运行。
+
+容器 vs 虚拟机：
+  - 容器共享宿主机内核，启动快，资源占用小
+  - 虚拟机模拟完整操作系统，资源占用大，启动慢
+
+1.2 Docker 核心概念
+---------------------
+  - 镜像 (Image)    ：只读模板，用于创建容器
+  - 容器 (Container) ：镜像的运行实例
+  - 仓库 (Registry)  ：存放镜像的服务器 (如 Docker Hub)
+  - Dockerfile       ：构建镜像的脚本
+  - 数据卷 (Volume)  ：持久化数据存储
+  - 网络 (Network)   ：容器间通信
+
+1.3 Docker 安装 (Ubuntu/Debian)
+---------------------------------
+
+方法一：官方脚本安装
+  curl -fsSL https://get.docker.com | bash
+
+方法二：APT 安装
+  # 卸载旧版本
+  sudo apt-get remove docker docker-engine docker.io containerd runc
+
+  # 更新包索引
+  sudo apt-get update
+
+  # 安装依赖
+  sudo apt-get install -y \
+      ca-certificates \
+      curl \
+      gnupg \
+      lsb-release
+
+  # 添加 Docker 官方 GPG 密钥
+  sudo mkdir -p /etc/apt/keyrings
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
+      sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+
+  # 添加仓库
+  echo \
+    "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+    https://download.docker.com/linux/ubuntu \
+    $(lsb_release -cs) stable" | \
+    sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+  # 安装 Docker Engine
+  sudo apt-get update
+  sudo apt-get install -y docker-ce docker-ce-cli containerd.io \
+      docker-buildx-plugin docker-compose-plugin
+
+  # 验证安装
+  sudo docker --version
+  sudo docker run hello-world
+
+配置非 root 用户使用 Docker：
+  sudo usermod -aG docker $USER
+  newgrp docker
+  # 或注销后重新登录
+
+  # 测试
+  docker run hello-world
+
+启动与设置开机自启：
+  sudo systemctl start docker
+  sudo systemctl enable docker
+  sudo systemctl status docker
+
+
+1.4 Docker 基本操作命令
+--------------------------
+
+查看信息：
+  docker version          # 查看 Docker 版本
+  docker info             # 查看系统级信息
+  docker system df        # 查看磁盘使用情况
+  docker stats            # 查看容器资源使用 (实时)
+  docker top <容器名>      # 查看容器内进程
+
+常用标志：
+  -d    后台运行
+  -it   交互模式 + 分配伪终端
+  --rm  退出后自动删除容器
+  --name <名字>  指定容器名称
+  -v <宿主机>:<容器>  挂载目录
+  -p <宿主机>:<容器>  端口映射
+  -e <KEY>=<VALUE>  设置环境变量
+  --network <模式>  指定网络模式
+  --restart <策略>  重启策略 (no/always/on-failure/unless-stopped)
+  --cap-add <能力>  授予容器能力
+  --privileged      授予所有特权
+  --memory <值>     限制内存 (如 2g)
+  --cpus <值>       限制 CPU (如 2.0)
+
+
+1.5 Docker 镜像管理
+--------------------
+
+  docker images                        # 列出本地镜像
+  docker pull <镜像名>:<标签>           # 拉取镜像
+  docker search <关键词>               # 搜索镜像
+  docker rmi <镜像名>                   # 删除镜像
+  docker rmi -f <镜像名>               # 强制删除镜像
+  docker image prune                   # 清理无标签镜像
+  docker image prune -a                # 清理所有未使用镜像
+  docker tag <源镜像> <新标签>          # 给镜像打标签
+  docker save -o <文件名.tar> <镜像名>  # 导出镜像
+  docker load -i <文件名.tar>          # 导入镜像
+  docker history <镜像名>              # 查看镜像构建历史
+  docker inspect <镜像名>              # 查看镜像详细信息
+
+
+1.6 Docker 容器管理
+--------------------
+
+创建与运行：
+  docker run <镜像名>                   # 运行容器
+  docker run -d <镜像名>                # 后台运行
+  docker run -it <镜像名> /bin/bash     # 交互式运行
+  docker run --name <名字> <镜像名>     # 指定名称运行
+
+容器操作：
+  docker ps                            # 查看运行中容器
+  docker ps -a                         # 查看所有容器 (含停止的)
+  docker start <容器名>                 # 启动已停止的容器
+  docker stop <容器名>                  # 停止运行中的容器
+  docker restart <容器名>              # 重启容器
+  docker pause <容器名>                 # 暂停容器
+  docker unpause <容器名>              # 恢复暂停的容器
+  docker rm <容器名>                    # 删除容器
+  docker rm -f <容器名>                 # 强制删除运行中的容器
+  docker rename <旧名> <新名>           # 重命名容器
+  docker update <选项> <容器名>         # 更新容器配置
+
+进入容器：
+  docker exec -it <容器名> /bin/bash    # 进入运行中的容器
+  docker attach <容器名>               # 连接容器主进程
+
+日志与信息：
+  docker logs <容器名>                  # 查看容器日志
+  docker logs -f <容器名>               # 跟踪日志输出
+  docker logs --tail 100 <容器名>       # 查看最近 100 行日志
+  docker logs --since 1h <容器名>       # 查看最近 1 小时日志
+  docker inspect <容器名>               # 查看容器详细信息
+  docker port <容器名>                  # 查看端口映射
+
+
+1.7 Docker 数据卷管理
+-----------------------
+
+什么是数据卷：
+  数据卷是用于持久化容器数据的机制，即使容器被删除，数据仍然保留。
+
+Volume (命名卷)：
+  docker volume create <卷名>           # 创建卷
+  docker volume ls                     # 列出所有卷
+  docker volume inspect <卷名>          # 查看卷详细信息
+  docker volume rm <卷名>               # 删除卷
+  docker volume prune                  # 清理未使用的卷
+
+  # 使用示例
+  docker run -v <卷名>:/容器内路径 <镜像>
+
+Bind Mount (绑定挂载)：
+  # 使用示例
+  docker run -v /宿主机路径:/容器内路径 <镜像>
+  docker run -v /home/user/data:/data <镜像>
+  docker run -v $(pwd):/workspace <镜像>     # 挂载当前目录
+
+tmpfs Mount (内存挂载)：
+  # 数据存储在内存中，容器停止后消失
+  docker run --tmpfs /容器内路径 <镜像>
+
+共享其他容器的数据卷：
+  docker run --volumes-from <源容器名> <新镜像>
+
+备份与恢复：
+  # 备份
+  docker run --rm -v <卷名>:/data -v $(pwd):/backup \
+      alpine tar czf /backup/backup.tar.gz -C /data .
+
+  # 恢复
+  docker run --rm -v <卷名>:/data -v $(pwd):/backup \
+      alpine tar xzf /backup/backup.tar.gz -C /data
+
+
+1.8 Docker 网络管理
+--------------------
+
+  docker network ls                          # 列出网络
+  docker network inspect <网络名>             # 查看网络详情
+  docker network create <网络名>              # 创建自定义网络
+  docker network create --driver bridge <名称>  # 指定驱动创建
+  docker network create --subnet 172.20.0.0/16 <名称>  # 指定子网
+  docker network rm <网络名>                  # 删除网络
+  docker network prune                       # 清理未使用网络
+  docker network connect <网络名> <容器名>     # 将容器接入网络
+  docker network disconnect <网络名> <容器名>  # 将容器断开网络
+
+
+1.9 Dockerfile 编写基础
+------------------------
+
+Dockerfile 常用指令：
+  FROM <镜像>              # 基础镜像
+  RUN <命令>               # 在构建时执行命令
+  CMD ["可执行文件","参数"] # 容器启动时默认命令
+  ENTRYPOINT ["命令"]      # 容器入口点
+  ENV <KEY>=<VALUE>         # 设置环境变量
+  WORKDIR <路径>            # 设置工作目录
+  COPY <源> <目标>           # 复制文件到镜像
+  ADD <源> <目标>            # 复制并支持 tar 自动解压
+  EXPOSE <端口>             # 声明端口 (仅声明，不映射)
+  VOLUME <路径>             # 声明数据卷
+  USER <用户名>             # 指定运行用户
+  ARG <变量>                # 构建参数
+
+示例 Dockerfile：
+  FROM alpine:latest
+  LABEL maintainer="user@example.com"
+  RUN apk add --no-cache python3 py3-pip
+  WORKDIR /app
+  COPY requirements.txt .
+  RUN pip install -r requirements.txt
+  COPY . .
+  EXPOSE 8000
+  CMD ["python3", "app.py"]
+
+构建镜像：
+  docker build -t <镜像名>:<标签> <Dockerfile所在目录>
+  docker build -t myapp:v1 .
+  docker build --no-cache -t myapp:v1 .   # 不使用缓存
+
+
+================================================================================
+二、BlackArch 基础
+================================================================================
+
+2.1 什么是 BlackArch
+---------------------
+BlackArch 是一个基于 Arch Linux 的渗透测试和安全研究发行版。
+包含超过 2800 个安全工具，覆盖渗透测试、数字取证、逆向工程等领域。
+
+官网：https://blackarch.org/
+GitHub：https://github.com/BlackArch
+仓库地址：https://github.com/BlackArch/blackarch
+
+2.2 BlackArch 工具分类 (部分)
+--------------------------------
+
+  blackarch-anti-forensics      # 反取证工具
+  blackarch-automation          # 自动化工具
+  blackarch-backdoor            # 后门工具
+  blackarch-binary              # 二进制分析
+  blackarch-bluetooth           # 蓝牙工具
+  blackarch-code-audit          # 代码审计
+  blackarch-cracker             # 密码破解
+  blackarch-crypto              # 密码学
+  blackarch-database            # 数据库工具
+  blackarch-debugger            # 调试器
+  blackarch-decompiler          # 反编译器
+  blackarch-defensive           # 防御工具
+  blackarch-disassembler        # 反汇编
+  blackarch-dos                 # DoS 工具
+  blackarch-drone               # 无人机安全
+  blackarch-exploitation        # 渗透利用
+  blackarch-fingerprint         # 指纹识别
+  blackarch-firmware            # 固件分析
+  blackarch-forensic            # 数字取证
+  blackarch-fuzzer              # Fuzz 测试
+  blackarch-hardware            # 硬件入侵
+  blackarch-honeypot            # 蜜罐
+  blackarch-keylogger           # 键盘记录
+  blackarch-malware             # 恶意软件分析
+  blackarch-misc                # 杂项工具
+  blackarch-mobile              # 移动安全
+  blackarch-networking          # 网络工具
+  blackarch-nfc                 # NFC 工具
+  blackarch-packer              # 加壳工具
+  blackarch-proxy               # 代理工具
+  blackarch-radio               # 无线电工具
+  blackarch-recon               # 信息侦察
+  blackarch-reversing           # 逆向工程
+  blackarch-scanner             # 扫描器
+  blackarch-sniffer             # 嗅探器
+  blackarch-social              # 社会工程学
+  blackarch-spoof               # 欺骗工具
+  blackarch-stego               # 隐写工具
+  blackarch-threat-model       # 威胁建模
+  blackarch-tunnel              # 隧道工具
+  blackarch-voip                # VoIP 工具
+  blackarch-webapp              # Web 应用测试
+  blackarch-windows             # Windows 安全工具
+  blackarch-wireless            # 无线安全 (WiFi/BT/RFID)
+
+查看所有分类：
+  pacman -Sg | grep blackarch-
+
+2.3 BlackArch 包管理 (pacman)
+-------------------------------
+
+pacman 是 Arch Linux 的包管理器，BlackArch 完全兼容。
+
+基本操作：
+  pacman -S <包名>       # 安装软件包
+  pacman -Syu            # 更新整个系统 (同步数据库+升级)
+  pacman -Sy             # 仅同步软件包数据库
+  pacman -Su             # 仅升级已安装的包
+  pacman -R <包名>       # 卸载软件包 (保留依赖)
+  pacman -Rs <包名>      # 卸载软件包及其依赖 (不被其他包使用的)
+  pacman -Rsc <包名>     # 卸载软件包及其所有依赖
+  pacman -Q              # 查看所有已安装的包
+  pacman -Q | wc -l      # 查看已安装包总数
+  pacman -Q | grep <关键词>   # 搜索已安装的包
+  pacman -Ss <关键词>    # 在仓库中搜索包
+  pacman -Si <包名>      # 查看包详细信息
+  pacman -Sc             # 清理未安装的包缓存
+  pacman -Scc            # 清理所有包缓存
+  pacman -S --needed <包名>  # 仅安装尚未安装的包
+  pacman -Sg <组名>      # 查看组内包含的包
+
+yay / paru (AUR 助手)：
+  yay -S <包名>          # 从 AUR 安装
+  yay -Syu               # 更新所有包 (包括 AUR)
+  yay -Ps                # 系统信息
+
+常用工具安装示例：
+  pacman -S nmap                    # 端口扫描
+  pacman -S metasploit             # 渗透测试框架
+  pacman -S wireshark              # 抓包分析
+  pacman -S burpsuite              # Web 漏洞扫描
+  pacman -S hydra                  # 暴力破解
+  pacman -S john                   # John the Ripper 密码破解
+  pacman -S aircrack-ng            # WiFi 破解
+  pacman -S sqlmap                 # SQL 注入工具
+  pacman -S gobuster               # 目录扫描
+  pacman -S ffuf                   # Web Fuzz 工具
+  pacman -S nikto                  # Web 服务器扫描
+  pacman -S dirb                   # 目录爆破
+  pacman -S netcat                 # 网络工具瑞士军刀
+
+
+================================================================================
+三、Docker 中安装 BlackArch
+================================================================================
+
+3.1 拉取 BlackArch 镜像
+------------------------
+
+官方镜像：
+  docker pull blackarch/blackarch
+
+可用的镜像标签：
+  docker search blackarch           # 搜索可用镜像
+
+其他相关镜像：
+  docker pull archlinux/archlinux   # 基础 Arch Linux (可作为起点)
+  docker pull kalilinux/kali-rolling # Kali Linux (类似选择)
+
+网络问题 (国内用户)：
+  # 配置 Docker 镜像加速器
+  sudo mkdir -p /etc/docker
+  sudo tee /etc/docker/daemon.json <<-'EOF'
+  {
+    "registry-mirrors": [
+      "https://mirror.ccs.tencentyun.com",
+      "https://docker.mirrors.ustc.edu.cn"
+    ]
+  }
+  EOF
+  sudo systemctl daemon-reload
+  sudo systemctl restart docker
+
+  # 验证
+  docker info | grep -A 5 "Registry Mirrors"
+
+
+3.2 创建并运行容器
+-------------------
+
+基础运行：
+  docker run -it --name blackarch blackarch/blackarch
+
+指定工作目录：
+  docker run -it --name blackarch \
+      -w /root \
+      blackarch/blackarch
+
+完整配置运行：
+  docker run -it -d \
+      --name blackarch \
+      --hostname blackarch \
+      --network host \
+      --privileged \
+      --cap-add NET_ADMIN \
+      --cap-add SYS_PTRACE \
+      --cap-add SYS_ADMIN \
+      -v /home/$USER/blackarch-data:/data \
+      -v /home/$USER/blackarch-tools:/tools \
+      -e DISPLAY=$DISPLAY \
+      -e LANG=en_US.UTF-8 \
+      blackarch/blackarch
+
+运行后进入：
+  docker exec -it blackarch /bin/bash
+
+参数说明：
+  --hostname <名称>        # 设置容器主机名
+  --privileged             # 授予所有内核能力 (渗透测试通常需要)
+  --cap-add NET_ADMIN      # 网络管理权限 (抓包/扫描)
+  --cap-add SYS_PTRACE     # 进程跟踪权限 (调试/注入)
+  --cap-add SYS_ADMIN      # 系统管理权限
+  -e DISPLAY=$DISPLAY      # 图形界面支持 (需要 X11)
+  -e LANG=en_US.UTF-8      # 语言设置
+
+
+3.3 在容器中安装工具
+---------------------
+
+更新系统：
+  pacman -Syu --noconfirm
+
+安装 BlackArch 仓库 (如果是最小镜像)：
+  # 下载 strap.sh
+  curl -O https://blackarch.org/strap.sh
+
+  # 检查签名 (可选)
+  sha1sum strap.sh
+
+  # 执行安装 (需要 root 权限)
+  chmod +x strap.sh
+  ./strap.sh
+
+  # 同步包数据库
+  pacman -Syy
+
+安装全部工具 (约 50GB+)：
+  pacman -S blackarch
+
+安装特定分类 (推荐)：
+  pacman -S blackarch-webapp blackarch-scanner blackarch-exploitation
+
+安装常用工具集合：
+  pacman -S --needed \
+      nmap \
+      metasploit \
+      wireshark-cli \
+      sqlmap \
+      hydra \
+      john \
+      gobuster \
+      ffuf \
+      nikto \
+      dirb \
+      aircrack-ng \
+      hashcat \
+      burpsuite \
+      python python-pip \
+      ruby \
+      go \
+      git \
+      vim \
+      tmux
+
+批量安装脚本 (保存为 install-tools.sh)：
+  #!/bin/bash
+  pacman -Syu --noconfirm
+  pacman -S --noconfirm base-devel git vim tmux zsh
+  pacman -S --noconfirm nmap metasploit sqlmap hydra john
+  pacman -S --noconfirm gobuster ffuf nikto dirb
+  pacman -S --noconfirm python python-pip ruby go
+  pacman -S --noconfirm wireshark-cli tcpdump netcat
+  pacman -S --noconfirm hashcat aircrack-ng
+  echo "===> 工具安装完成 <==="
+
+
+3.4 自定义 Dockerfile 构建
+---------------------------
+
+创建 Dockerfile：
+  FROM blackarch/blackarch
+
+  # 更新系统并安装工具
+  RUN pacman -Syu --noconfirm && \
+      pacman -S --noconfirm \
+          nmap metasploit sqlmap hydra john \
+          gobuster ffuf nikto wireshark-cli \
+          python python-pip ruby go git vim tmux && \
+      pacman -Scc --noconfirm
+
+  # 设置工作目录
+  WORKDIR /data
+
+  # 创建挂载点
+  VOLUME ["/data", "/tools", "/wordlists"]
+
+  # 环境变量
+  ENV LANG=en_US.UTF-8
+  ENV TERM=xterm-256color
+
+  # 启动 Shell
+  CMD ["/bin/bash"]
+
+构建镜像：
+  docker build -t my-blackarch .
+
+运行自定义镜像：
+  docker run -it --name my-blackarch \
+      -v /home/$USER/blackarch-data:/data \
+      -v /home/$USER/wordlists:/wordlists \
+      my-blackarch
+
+
+3.5 使用 docker-compose 管理
+------------------------------
+
+安装 docker-compose：
+  # 方式一：使用 Docker 插件版
+  docker compose version
+
+  # 方式二：单独安装
+  sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" \
+      -o /usr/local/bin/docker-compose
+  sudo chmod +x /usr/local/bin/docker-compose
+
+创建 docker-compose.yml：
+  version: "3.8"
+
+  services:
+    blackarch:
+      image: blackarch/blackarch
+      container_name: blackarch
+      hostname: blackarch
+      stdin_open: true
+      tty: true
+      privileged: true
+      network_mode: host
+      cap_add:
+        - NET_ADMIN
+        - SYS_PTRACE
+        - SYS_ADMIN
+      volumes:
+        - ./data:/data
+        - ./tools:/tools
+        - ./wordlists:/wordlists
+        - /tmp/.X11-unix:/tmp/.X11-unix:ro
+      environment:
+        - DISPLAY=${DISPLAY}
+        - LANG=en_US.UTF-8
+      working_dir: /data
+      restart: unless-stopped
+      command: /bin/bash
+
+启动：
+  docker compose up -d
+  docker exec -it blackarch /bin/bash
+
+停止：
+  docker compose down
+
+重启：
+  docker compose restart
+
+查看日志：
+  docker compose logs -f
+
+
+================================================================================
+四、网络配置 (重点)
+================================================================================
+
+4.1 Docker 网络模式详解
+------------------------
+
+Docker 支持 5 种网络模式：
+
+| 模式      | 说明                                           |
+|-----------|------------------------------------------------|
+| bridge    | 默认桥接模式，每个容器有独立 IP，通过 NAT 访问外网  |
+| host      | 主机模式，容器直接使用宿主机网络栈                |
+| none      | 无网络，容器完全隔离                             |
+| overlay   | 跨多台 Docker 宿主机的覆盖网络 (Swarm 模式)      |
+| macvlan   | 为容器分配物理 MAC 地址，直接接入物理网络          |
+
+查看当前网络：
+  docker network ls
+
+查看容器使用的网络：
+  docker inspect <容器名> | grep -A 20 NetworkSettings
+
+4.2 主机网络模式 (host) -- 推荐用于渗透测试
+----------------------------------------------
+
+特点：
+  - 容器与宿主机共享网络命名空间
+  - 容器可以直接使用宿主机的所有网络接口 (eth0, wlan0 等)
+  - 不需要端口映射 (-p 无效)
+  - 性能最好，延迟最低
+  - 适合需要直接访问物理网卡的工具 (nmap, tcpdump 等)
+
+使用方法：
+  docker run --network host blackarch/blackarch
+
+docker-compose 写法：
+  services:
+    blackarch:
+      image: blackarch/blackarch
+      network_mode: host
+
+验证：
+  # 进入容器后查看网络
+  ip addr show
+  ip route show
+
+  # 应该能看到宿主机的网络接口
+
+注意事项：
+  - 端口冲突：容器内的服务端口会直接占用宿主机端口
+  - 安全风险：容器与宿主机网络完全连通
+  - 不支持 Windows/macOS 上的 Docker Desktop (Linux only)
+
+
+4.3 桥接网络模式 (bridge) -- 默认模式
+----------------------------------------
+
+特点：
+  - Docker 创建虚拟网桥 docker0 (默认 172.17.0.0/16)
+  - 容器通过 NAT 访问外网
+  - 需要使用 -p 进行端口映射
+
+默认桥接网络：
+  docker run -p 8080:80 blackarch/blackarch
+
+查看桥接详情：
+  docker network inspect bridge
+  iptables -t nat -L -n
+
+自定义桥接网络 (推荐)：
+  # 创建自定义网络
+  docker network create \
+      --driver bridge \
+      --subnet 192.168.100.0/24 \
+      --gateway 192.168.100.1 \
+      blackarch-net
+
+  # 使用自定义网络运行容器
+  docker run -it --network blackarch-net \
+      --ip 192.168.100.10 \
+      --name blackarch1 \
+      blackarch/blackarch
+
+  # 启动第二个容器 (同一网络内可直接通信)
+  docker run -it --network blackarch-net \
+      --ip 192.168.100.20 \
+      --name blackarch2 \
+      blackarch/blackarch
+
+  # 测试容器间通信
+  docker exec blackarch1 ping 192.168.100.20
+
+docker-compose 方式：
+  version: "3.8"
+  services:
+    blackarch:
+      image: blackarch/blackarch
+      networks:
+        blackarch-net:
+          ipv4_address: 192.168.100.10
+
+    target:
+      image: ubuntu:latest
+      networks:
+        blackarch-net:
+          ipv4_address: 192.168.100.20
+
+  networks:
+    blackarch-net:
+      driver: bridge
+      ipam:
+        config:
+          - subnet: 192.168.100.0/24
+            gateway: 192.168.100.1
+
+
+4.4 自定义网络详解
+-------------------
+
+创建多个子网：
+  docker network create \
+      --driver bridge \
+      --subnet 10.10.1.0/24 \
+      lab-net
+
+创建带 IPv6 的网络：
+  docker network create \
+      --driver bridge \
+      --subnet 2001:db8:1::/64 \
+      --ipv6 \
+      lab-net-v6
+
+挂载网络接口：
+  # 给予容器管理网卡的权限
+  docker run --cap-add NET_ADMIN ... blackarch/blackarch
+
+  # 或开启特权模式
+  docker run --privileged ... blackarch/blackarch
+
+容器中创建虚拟网卡：
+  ip link add dummy0 type dummy
+  ip addr add 10.10.1.1/24 dev dummy0
+  ip link set dummy0 up
+
+使用 macvlan 直接接入物理网络：
+  docker network create -d macvlan \
+      --subnet 192.168.1.0/24 \
+      --gateway 192.168.1.1 \
+      -o parent=eth0 \
+      macvlan-net
+
+  docker run --network macvlan-net \
+      --ip 192.168.1.200 \
+      blackarch/blackarch
+
+
+4.5 端口映射
+--------------
+
+映射单个端口：
+  docker run -p 8080:80 blackarch/blackarch
+  # 宿主机 8080 -> 容器 80
+
+映射多个端口：
+  docker run -p 8080:80 -p 8443:443 -p 2222:22 blackarch/blackarch
+
+映射到指定宿主机 IP：
+  docker run -p 127.0.0.1:8080:80 blackarch/blackarch
+
+映射端口范围：
+  docker run -p 8000-8010:8000-8010 blackarch/blackarch
+
+随机映射 (使用 -P 配合 EXPOSE)：
+  docker run -P blackarch/blackarch
+  docker port <容器名>       # 查看实际映射的端口
+
+
+4.6 VPN/代理穿透配置
+---------------------
+
+方法一：使用宿主机 VPN (推荐)
+
+  在宿主机启动 VPN：
+    sudo openvpn --config /path/to/config.ovpn
+
+  使用 host 网络模式运行容器：
+    docker run --network host blackarch/blackarch
+
+  容器内流量自动走宿主机的 VPN 隧道。
+
+方法二：容器内运行 VPN
+
+  # 容器需要 --privileged 或 --cap-add NET_ADMIN
+  docker run -it --privileged \
+      --cap-add NET_ADMIN \
+      --device /dev/net/tun \
+      -v /path/to/vpn-config:/vpn \
+      blackarch/blackarch
+
+  # 容器内安装并启动 OpenVPN
+  pacman -S openvpn
+  openvpn --config /vpn/config.ovpn
+
+docker-compose 方式：
+  services:
+    blackarch:
+      image: blackarch/blackarch
+      privileged: true
+      cap_add:
+        - NET_ADMIN
+      devices:
+        - /dev/net/tun
+      volumes:
+        - ./vpn:/vpn
+      network_mode: host
+
+方法三：通过代理容器转发流量
+
+  # 创建代理容器 (如 shadowsocks/v2ray/clash)
+  docker run -d --name proxy \
+      --restart always \
+      v2ray/official
+
+  # BlackArch 容器通过代理容器上网
+  docker run --network container:proxy \
+      blackarch/blackarch
+
+方法四：手动设置容器代理
+
+  # 容器内执行
+  export http_proxy=http://宿主机IP:代理端口
+  export https_proxy=http://宿主机IP:代理端口
+  export all_proxy=socks5://宿主机IP:代理端口
+
+  # 持久化 (写入 ~/.bashrc)
+  echo 'export http_proxy=http://172.17.0.1:7890' >> ~/.bashrc
+  echo 'export https_proxy=http://172.17.0.1:7890' >> ~/.bashrc
+
+
+================================================================================
+五、高级配置
+================================================================================
+
+5.1 挂载宿主机目录
+-------------------
+
+基本挂载：
+  docker run -v /宿主机路径:/容器路径 blackarch/blackarch
+
+挂载多个目录：
+  docker run \
+      -v /home/$USER/blackarch/data:/data \
+      -v /home/$USER/blackarch/tools:/tools \
+      -v /home/$USER/wordlists:/wordlists \
+      -v /home/$USER/blackarch/results:/results \
+      blackarch/blackarch
+
+只读挂载：
+  docker run -v /宿主机路径:/容器路径:ro blackarch/blackarch
+
+挂载当前目录：
+  docker run -v $(pwd):/workspace blackarch/blackarch
+
+挂载 X11 套接字 (图形界面)：
+  docker run -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
+      -e DISPLAY=$DISPLAY \
+      blackarch/blackarch
+
+  # 运行图形工具测试
+  apt-get install -y x11-apps
+  xeyes
+
+挂载 Docker 套接字 (容器内操控 Docker)：
+  docker run -v /var/run/docker.sock:/var/run/docker.sock \
+      blackarch/blackarch
+
+挂载硬件设备：
+  docker run --device /dev/sdb:/dev/sdb blackarch/blackarch
+
+5.2 容器权限配置
+-----------------
+
+能力 (Capabilities) 对照表：
+  --cap-add NET_ADMIN      # 网络配置 (ifconfig, iptables, tcpdump)
+  --cap-add SYS_PTRACE     # 进程调试 (strace, gdb, 注入)
+  --cap-add SYS_ADMIN      # 系统管理 (mount, swapon)
+  --cap-add SYS_RAWIO      # 原始 I/O (直接访问磁盘)
+  --cap-add NET_RAW        # 使用 RAW/PACKET socket (nmap 扫描)
+  --cap-add NET_BROADCAST  # 网络广播
+  --cap-add AUDIT_WRITE    # 写入审计日志
+  --cap-add DAC_OVERRIDE   # 绕过文件权限检查
+  --cap-add SYS_RESOURCE   # 修改资源限制
+  --cap-add SYS_MODULE     # 加载/卸载内核模块
+  --cap-add SYSLOG         # 读取内核日志
+  --cap-add IPC_LOCK       # 锁定内存 (密码破解使用)
+
+渗透测试推荐权限：
+  docker run --privileged \
+      --cap-add NET_ADMIN \
+      --cap-add NET_RAW \
+      --cap-add SYS_PTRACE \
+      --cap-add SYS_ADMIN \
+      blackarch/blackarch
+
+
+5.3 容器资源限制
+------------------
+
+限制内存：
+  --memory 4g             # 最大内存 4GB
+  --memory 512m           # 最大内存 512MB
+  --memory-swap 8g        # 内存+交换空间
+  --memory-swappiness 0   # 尽量不使用交换空间
+
+限制 CPU：
+  --cpus 2.0              # 最多使用 2 个 CPU 核心
+  --cpuset-cpus 0-3       # 绑定到 CPU 0-3
+  --cpu-shares 512        # CPU 权重 (默认 1024)
+  --cpus 0.5              # 最多使用 50% 单核
+
+限制磁盘 I/O：
+  --device-write-bps /dev/sda:10mb    # 写速度限制
+  --device-read-bps /dev/sda:10mb     # 读速度限制
+
+限制 PID 数量：
+  --pids-limit 100
+
+综合示例 (用于密码破解等重负载场景)：
+  docker run -it \
+      --memory 8g \
+      --memory-swap 16g \
+      --cpus 4.0 \
+      --pids-limit 500 \
+      -v /home/$USER/wordlists:/wordlists \
+      blackarch/blackarch
+
+
+5.4 容器持久化
+---------------
+
+自动重启策略：
+  --restart no              # 默认，不自动重启
+  --restart always          # 总是重启
+  --restart on-failure      # 非正常退出时重启
+  --restart unless-stopped  # 除非手动停止，否则重启
+
+示例：
+  docker run -d --restart always --name blackarch blackarch/blackarch
+
+更新重启策略：
+  docker update --restart unless-stopped blackarch
+
+commit 保存容器为镜像：
+  # 先配置好容器环境
+  docker exec blackarch bash -c "pacman -S nmap metasploit"
+
+  # 保存为镜像
+  docker commit blackarch my-blackarch:custom
+  docker images | grep my-blackarch
+
+  # 此后可以从镜像启动
+  docker run -it my-blackarch:custom
+
+export/import 容器为文件：
+  # 导出容器
+  docker export blackarch > blackarch.tar
+  docker export blackarch | gzip > blackarch.tar.gz
+
+  # 导入为镜像
+  docker import blackarch.tar my-blackarch:exported
+  cat blackarch.tar.gz | docker import - my-blackarch:exported
+
+
+5.5 多容器协作
+--------------
+
+典型测试环境 (docker-compose.yml)：
+  version: "3.8"
+
+  services:
+    # 渗透测试工具容器
+    attacker:
+      image: my-blackarch
+      container_name: attacker
+      privileged: true
+      networks:
+        pentest-net:
+          ipv4_address: 192.168.200.10
+      volumes:
+        - ./data:/data
+        - ./tools:/tools
+        - ./wordlists:/wordlists
+      depends_on:
+        - target-web
+        - target-db
+
+    # 靶机 Web
+    target-web:
+      image: vulnerables/web-dvwa
+      container_name: target-web
+      networks:
+        pentest-net:
+          ipv4_address: 192.168.200.20
+
+    # 靶机数据库
+    target-db:
+      image: mysql:5.7
+      container_name: target-db
+      environment:
+        MYSQL_ROOT_PASSWORD: password123
+        MYSQL_DATABASE: dvwa
+      networks:
+        pentest-net:
+          ipv4_address: 192.168.200.30
+
+  networks:
+    pentest-net:
+      driver: bridge
+      ipam:
+        config:
+          - subnet: 192.168.200.0/24
+            gateway: 192.168.200.1
+
+启动测试环境：
+  docker compose up -d
+  docker exec -it attacker /bin/bash
+
+  # 在 attacker 容器内进行渗透测试
+  nmap -sV -p- 192.168.200.20
+  nikto -h http://192.168.200.20
+  sqlmap -u "http://192.168.200.20/vulnerabilities/sqli/?id=1" --dbs
+
+
+================================================================================
+六、常见问题与排错
+================================================================================
+
+Q1: docker: permission denied
+A:   sudo usermod -aG docker $USER
+     newgrp docker
+
+Q2: 容器内无法上网
+A:   检查 DNS 配置：
+     echo "nameserver 8.8.8.8" > /etc/resolv.conf
+     echo "nameserver 1.1.1.1" >> /etc/resolv.conf
+
+     或启动容器时指定 DNS：
+     docker run --dns 8.8.8.8 --dns 1.1.1.1 blackarch/blackarch
+
+Q3: 镜像下载慢 / 超时
+A:   配置国内镜像加速器 (参见 3.1 节)
+
+Q4: pacman 更新报错 "signature is unknown trust"
+A:   # 更新密钥环
+     pacman -Sy archlinux-keyring
+     pacman-key --populate archlinux
+     pacman-key --refresh-keys
+     pacman -Syu
+
+Q5: nmap 扫描结果不完整 (raw socket)
+A:   使用 --privileged 或 --cap-add NET_RAW
+     docker run --privileged blackarch/blackarch
+     nmap -sS target
+
+Q6: 容器停止后数据丢失
+A:   使用数据卷持久化：
+     docker run -v /宿主机路径:/data blackarch/blackarch
+
+Q7: 容器内时间不同步
+A:   # 挂载宿主机时区文件
+     docker run -v /etc/localtime:/etc/localtime:ro blackarch/blackarch
+
+     # 或设置环境变量
+     docker run -e TZ=Asia/Shanghai blackarch/blackarch
+
+Q8: 如何减少镜像体积
+A:   # 清理 pacman 缓存
+     pacman -Scc
+
+     # 使用多阶段构建
+     # 安装后删除不必要的文件
+
+     # 导出时压缩
+     docker save blackarch/blackarch | gzip > blackarch.tar.gz
+
+Q9: 容器报错 "operation not permitted"
+A:   添加对应 capability 或使用 --privileged：
+     docker run --cap-add NET_ADMIN --cap-add SYS_PTRACE blackarch/blackarch
+
+Q10: 如何备份/迁移 BlackArch 容器
+A:   # 方案一：commit 为新镜像
+     docker commit blackarch my-blackarch:backup
+     docker save my-blackarch:backup | gzip > blackarch-backup.tar.gz
+
+     # 迁移到另一台机器
+     docker load < blackarch-backup.tar.gz
+
+     # 方案二：数据卷备份
+     tar czf blackarch-data.tar.gz -C /home/$USER blackarch-data
+     # 复制到新机器解压后重新挂载
+
+
+================================================================================
+附录 A：一键部署脚本
+================================================================================
+
+#!/bin/bash
+# 文件名: setup-blackarch.sh
+# 一键部署 BlackArch Docker 环境
+
+set -e
+
+echo "===> 1. 创建目录结构"
+mkdir -p ~/blackarch/{data,tools,wordlists,results}
+
+echo "===> 2. 拉取 BlackArch 镜像"
+docker pull blackarch/blackarch
+
+echo "===> 3. 启动容器"
+docker run -d --name blackarch \
+    --hostname blackarch \
+    --restart unless-stopped \
+    --privileged \
+    --cap-add NET_ADMIN \
+    --cap-add NET_RAW \
+    --cap-add SYS_PTRACE \
+    -v ~/blackarch/data:/data \
+    -v ~/blackarch/tools:/tools \
+    -v ~/blackarch/wordlists:/wordlists \
+    -v ~/blackarch/results:/results \
+    -v /etc/localtime:/etc/localtime:ro \
+    -e LANG=en_US.UTF-8 \
+    blackarch/blackarch \
+    sleep infinity
+
+echo "===> 4. 更新系统 (可能需要几分钟)"
+docker exec blackarch pacman -Syu --noconfirm
+
+echo "===> 5. 安装常用工具"
+docker exec blackarch pacman -S --noconfirm \
+    nmap metasploit sqlmap hydra john \
+    gobuster ffuf nikto wireshark-cli tcpdump netcat \
+    python python-pip ruby go git vim tmux zsh
+
+echo "===> 安装完成！"
+echo "进入容器: docker exec -it blackarch /bin/bash"
+echo "启动容器: docker start blackarch"
+echo "停止容器: docker stop blackarch"
+
+
+================================================================================
+附录 B：快捷命令别名 (加入 ~/.bashrc)
+================================================================================
+
+# BlackArch Docker 快捷命令
+
+alias ba-start='docker start blackarch'
+alias ba-stop='docker stop blackarch'
+alias ba-restart='docker restart blackarch'
+alias ba-enter='docker exec -it blackarch /bin/bash'
+alias ba-logs='docker logs blackarch'
+alias ba-ps='docker ps -a --filter name=blackarch'
+alias ba-update='docker exec blackarch pacman -Syu --noconfirm'
+alias ba-clean='docker exec blackarch pacman -Scc --noconfirm'
+
+
+================================================================================
+文档版本: 1.0
+最后更新: 2026-05-06
+================================================================================

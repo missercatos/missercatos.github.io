@@ -6,6 +6,37 @@
         "type": "BASH",
         "size": "250 b",
         "path": "downloads/virtmanager.sh"
-    }
-    
+    },
+           {
+        "name": "Docker_BlackArch_教程.txt",
+        "title": "docker-blackarch教程",
+        "description": "介绍了如何在linux系统里配备容器并安装和使用blackarch",
+        "type": "TXT",
+        "size": "351 kb",
+        "path": "downloads/Docker_BlackArch_教程.txt"
+    },
+           {
+        "name": "downloads/Love2D_开发教程.txt",
+        "title": "love2d开发教程",
+        "description": "介绍了如何使用love2d进行游戏开发",
+        "type": "TXT",
+        "size": "400 kb",
+        "path": "downloads/Love2D_开发教程.txt"
+    },
+           {
+        "name": "downloads/Love2D_语法进阶教程.txt",
+        "title": "love2d语法进阶教程",
+        "description": "介绍了love2d的高级语法和特性",
+        "type": "TXT",
+        "size": "500 kb",
+        "path": "downloads/Love2D_语法进阶教程.txt"
+    },
+              {
+          "name": "downloads/raylib_nvim_tutorial.txt",
+          "title": "raylib与nvim开发教程",
+          "description": "介绍了如何使用raylib和nvim进行游戏开发",
+          "type": "TXT",
+          "size": "600 kb",
+          "path": "downloads/raylib_nvim_tutorial.txt"
+     }
 ]

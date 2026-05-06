@@ -1,0 +1,890 @@
+================================================================================
+    Raylib C++ 游戏开发 + Neovim 环境配置完全教程
+================================================================================
+
+作者环境: Arch Linux (rolling) / Neovim + LazyVim / g++ 16.1.1 / Raylib 6.0.0
+更新日期: 2026-05-05
+
+================================================================================
+目录
+================================================================================
+  1. Neovim 配置 Raylib C++ 开发环境
+  2. Raylib 游戏项目文件结构
+  3. Raylib 编译、启动与测试
+  4. Raylib 库体系与功能详解
+  5. 需求完善与补充建议
+  附A. 完整示例：20行入门游戏
+  附B. 常用快捷键速查
+  附C. 故障排查 FAQ
+
+================================================================================
+一、Neovim 配置 Raylib C++ 开发环境
+================================================================================
+
+你的 Neovim 使用的是 LazyVim 发行版，插件管理器为 lazy.nvim。
+配置插件目录: ~/.config/nvim/lua/plugins/
+
+1.1  基础 C++ 开发支持（通常 LazyVim 已默认配置）
+----------------------------------------------------------------------
+
+LazyVim 导入 extras.lang.cpp 即可自动获得:
+  - clangd LSP (自动补全、跳转、诊断)
+  - treesitter 语法高亮
+  - nvim-cmp 代码补全
+  - conform.nvim 代码格式化
+
+确认你的 ~/.config/nvim/lua/config/lazy.lua 中有:
+
+    { import = "lazyvim.plugins.extras.lang.cpp" },
+
+如果没有，请在 ~/.config/nvim/lua/plugins/cpp.lua 新建文件:
+
+    return {
+      { import = "lazyvim.plugins.extras.lang.cpp" },
+    }
+
+然后重启 nvim，:MasonInstall clangd 安装 LSP。
+
+1.2  创建 Raylib 专用配置文件
+----------------------------------------------------------------------
+
+新建文件: ~/.config/nvim/lua/plugins/raylib.lua
+
+内容如下:
+
+    return {
+      -- ============ 1. 安装 raylib-cpp C++ 包装库头文件 ============
+      -- raylib-cpp 是官方 C++ wrapper，封装了 OOP 风格的类
+      -- 使用 Mason 安装 clangd 并配置 include path
+      {
+        "neovim/nvim-lspconfig",
+        opts = {
+          servers = {
+            clangd = {
+              -- 让 clangd 识别 raylib 和 raylib-cpp 头文件
+              init_options = {
+                -- 如果用了 compile_commands.json，clangd 会自动处理
+                -- 这里做兜底
+                fallbackFlags = {
+                  "-I/usr/include",
+                },
+              },
+            },
+          },
+        },
+      },
+
+      -- ============ 2. 编译运行快捷键 ============
+      -- 方案A: 使用 overseer.nvim (任务运行器，推荐)
+      {
+        "stevearc/overseer.nvim",
+        cmd = { "OverseerOpen", "OverseerRun", "OverseerBuild" },
+        keys = {
+          { "<F5>", "<cmd>OverseerRun<cr>",           desc = "运行 raylib 游戏" },
+          { "<leader>cb", "<cmd>OverseerBuild<cr>",   desc = "编译" },
+          { "<leader>cr", "<cmd>OverseerRun<cr>",     desc = "编译并运行" },
+          { "<leader>co", "<cmd>OverseerOpen<cr>",    desc = "打开任务面板" },
+        },
+        opts = {
+          task_list = {
+            direction = "bottom",
+            min_height = 10,
+            max_height = 25,
+          },
+        },
+      },
+
+      -- ============ 3. DAP 调试支持 (可选) ============
+      {
+        "mfussenegger/nvim-dap",
+        dependencies = {
+          {
+            "jay-babu/mason-nvim-dap.nvim",
+            opts = {
+              ensure_installed = { "codelldb" },
+            },
+          },
+        },
+        keys = {
+          { "<F9>",   function() require("dap").toggle_breakpoint() end, desc = "断点" },
+          { "<F10>",  function() require("dap").step_over() end,        desc = "单步跳过" },
+          { "<F11>",  function() require("dap").step_into() end,        desc = "单步进入" },
+          { "<S-F5>", function() require("dap").terminate() end,        desc = "停止调试" },
+        },
+        config = function()
+          local dap = require("dap")
+          dap.adapters.codelldb = {
+            type = "server",
+            port = "${port}",
+            executable = {
+              command = "/home/a/.local/share/nvim/mason/bin/codelldb",
+              args = { "--port", "${port}" },
+            },
+          }
+          dap.configurations.cpp = {
+            {
+              name = "Launch raylib game",
+              type = "codelldb",
+              request = "launch",
+              program = function()
+                return vim.fn.input("Path to executable: ", vim.fn.getcwd() .. "/build/", "file")
+              end,
+              cwd = "${workspaceFolder}",
+              stopOnEntry = false,
+            },
+          }
+        end,
+      },
+
+      -- ============ 4. LuaSnip 代码片段 (可选，加速开发) ============
+      {
+        "L3MON4D3/LuaSnip",
+        keys = {
+          { "<C-j>", function() require("luasnip").jump(1) end, mode = { "i", "s" } },
+        },
+        config = function()
+          local ls = require("luasnip")
+          -- 添加 raylib 模板代码片段
+          ls.add_snippets("cpp", {
+            -- 片段: main 函数框架
+            ls.parser.parse_snippet("rmain", [[
+    #include "raylib.h"
+
+    int main() {
+        const int screenWidth = 800;
+        const int screenHeight = 450;
+
+        InitWindow(screenWidth, screenHeight, "${1:Game Title}");
+        SetTargetFPS(60);
+
+        while (!WindowShouldClose()) {
+            ${2:// Update}
+
+            BeginDrawing();
+            ClearBackground(RAYWHITE);
+
+            ${3:// Draw}
+            DrawText("Hello Raylib!", 190, 200, 20, LIGHTGRAY);
+
+            EndDrawing();
+        }
+
+        CloseWindow();
+        return 0;
+    }
+            ]]),
+            -- 片段: raylib-cpp 版本
+            ls.parser.parse_snippet("rcppm", [[
+    #include "raylib-cpp.hpp"
+
+    int main() {
+        raylib::Window window(800, 450, "${1:Game Title}");
+        window.SetTargetFPS(60);
+
+        while (!window.ShouldClose()) {
+            window.BeginDrawing();
+            window.ClearBackground(RAYWHITE);
+
+            ${2:// Draw here}
+
+            window.EndDrawing();
+        }
+
+        return 0;
+    }
+            ]]),
+            -- 片段: 游戏类框架
+            ls.parser.parse_snippet("rgame", [[
+    #include "raylib-cpp.hpp"
+
+    class Game {
+    public:
+        Game(int width, int height, const char* title)
+            : window(width, height, title) {
+            window.SetTargetFPS(60);
+        }
+
+        void Run() {
+            while (!window.ShouldClose()) {
+                Update();
+                Draw();
+            }
+        }
+
+    private:
+        raylib::Window window;
+
+        void Update() {
+            ${1:// Update logic}
+        }
+
+        void Draw() {
+            window.BeginDrawing();
+            window.ClearBackground(RAYWHITE);
+            ${2:// Draw calls}
+            window.EndDrawing();
+        }
+    };
+
+    int main() {
+        Game game(800, 450, "My Game");
+        game.Run();
+        return 0;
+    }
+            ]]),
+          })
+        end,
+      },
+    }
+
+注意: 这只是推荐的插件组合，可以根据需要增减。最核心的是 overseer.nvim
+      用于一键编译运行。如果不想装这么多插件，最简单的方案是直接在终端用
+      make 或 g++ 编译，nvim 内用 :!./build/game 运行。
+
+1.3  快速验证配置
+----------------------------------------------------------------------
+
+打开一个 .cpp 文件，输入 rmain 然后按 Tab/C-j 展开片段。
+如果补全、跳转正常，说明 LSP 配置成功。
+
+================================================================================
+二、Raylib 游戏项目文件结构
+================================================================================
+
+2.1  入门级结构（单文件项目，适合学习）
+----------------------------------------------------------------------
+
+    mygame/
+    ├── main.cpp          # 游戏全部代码
+    ├── Makefile          # 编译脚本
+    └── assets/           # 资源目录
+        ├── textures/     # 图片 (png, jpg)
+        ├── sounds/       # 音效 (wav, ogg)
+        ├── fonts/        # 字体 (ttf)
+        └── shaders/      # 着色器 (glsl)
+
+2.2  进阶级结构（多文件项目，适合中等规模）
+----------------------------------------------------------------------
+
+    mygame/
+    ├── CMakeLists.txt        # CMake 构建文件
+    ├── Makefile              # 备选 Make 构建
+    ├── src/
+    │   ├── main.cpp          # 入口 + 初始化
+    │   ├── Game.hpp          # Game 类声明
+    │   ├── Game.cpp          # Game 类实现（游戏循环）
+    │   ├── Player.hpp
+    │   ├── Player.cpp
+    │   ├── Enemy.hpp
+    │   ├── Enemy.cpp
+    │   ├── Bullet.hpp
+    │   ├── Bullet.cpp
+    │   └── Utils.hpp         # 工具函数
+    ├── assets/
+    │   ├── textures/
+    │   │   ├── player.png
+    │   │   └── enemy.png
+    │   ├── sounds/
+    │   │   ├── shoot.wav
+    │   │   └── bgm.ogg
+    │   ├── fonts/
+    │   │   └── custom.ttf
+    │   └── shaders/
+    │       ├── glow.fs
+    │       └── blur.fs
+    ├── build/                # 编译输出（加入 .gitignore）
+    └── .gitignore
+
+2.3  文件职责说明
+----------------------------------------------------------------------
+
+    main.cpp     - 程序入口，创建 Game 实例并调用 Run()
+    Game.hpp/cpp - 核心游戏循环、状态管理
+    Player.hpp/cpp, Enemy.hpp/cpp 等 - 实体类，包含位置、渲染、碰撞逻辑
+    Utils.hpp    - 数学工具、随机数、常量定义
+
+注意: main.cpp 并不是唯一文件。随着项目复杂化，你必然需要拆分成多文件。
+      这是 C++ 工程的基本习惯。
+
+================================================================================
+三、Raylib 编译、启动与测试
+================================================================================
+
+你的 Raylib 6.0.0 已安装在 /usr/，pkg-config 可用。
+
+3.1  方法一：直接用 g++ 编译（最快）
+----------------------------------------------------------------------
+
+    # 进入项目目录
+    cd ~/mygame
+
+    # 编译 (pkg-config 自动获取头文件和库路径)
+    g++ main.cpp -o game $(pkg-config --cflags --libs raylib) -lm
+
+    # 如果找不到 pkg-config，手动指定:
+    g++ main.cpp -o game -I/usr/include -L/usr/lib -lraylib -lm -lpthread -ldl
+
+    # 运行
+    ./game
+
+常用额外选项:
+    -std=c++17     使用 C++17 标准
+    -O2            优化编译
+    -g             调试符号
+    -Wall -Wextra  显示所有警告
+    -fsanitize=address  内存错误检测
+
+完整命令:
+    g++ -std=c++17 -O2 -g -Wall -Wextra main.cpp -o game \
+        $(pkg-config --cflags --libs raylib) && ./game
+
+3.2  方法二：使用 Makefile（推荐，一次配置永久使用）
+----------------------------------------------------------------------
+
+在项目根目录新建 Makefile:
+
+    # ---- 变量 ----
+    CXX       = g++
+    CXXFLAGS  = -std=c++17 -O2 -g -Wall -Wextra
+    LDFLAGS   = $(shell pkg-config --libs raylib) -lm
+    CFLAGS    = $(shell pkg-config --cflags raylib)
+
+    TARGET    = game
+    SRCDIR    = src
+    BUILDDIR  = build
+
+    # 自动搜索 src/ 下所有 .cpp 文件
+    SOURCES   = $(wildcard $(SRCDIR)/*.cpp)
+    OBJECTS   = $(patsubst $(SRCDIR)/%.cpp, $(BUILDDIR)/%.o, $(SOURCES))
+
+    # ---- 目标 ----
+    all: $(TARGET)
+
+    $(TARGET): $(OBJECTS)
+    	$(CXX) $^ -o $@ $(LDFLAGS)
+    	@echo "编译完成: ./$(TARGET)"
+
+    $(BUILDDIR)/%.o: $(SRCDIR)/%.cpp
+    	@mkdir -p $(BUILDDIR)
+    	$(CXX) $(CXXFLAGS) $(CFLAGS) -c $< -o $@
+
+    run: all
+    	./$(TARGET)
+
+    clean:
+    	rm -rf $(BUILDDIR) $(TARGET)
+
+    .PHONY: all run clean
+
+使用方法:
+    make          # 编译
+    make run      # 编译并运行
+    make clean    # 清理
+
+3.3  方法三：使用 CMake（最专业，适合大型项目）
+----------------------------------------------------------------------
+
+CMakeLists.txt:
+
+    cmake_minimum_required(VERSION 3.16)
+    project(MyGame LANGUAGES CXX)
+
+    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+    # 查找 raylib
+    find_package(raylib REQUIRED)
+    # 如果上面找不到，用 pkg-config 查找:
+    # find_package(PkgConfig REQUIRED)
+    # pkg_check_modules(RAYLIB REQUIRED raylib)
+
+    # 收集源文件
+    file(GLOB_RECURSE SOURCES src/*.cpp src/*.hpp)
+
+    # 生成可执行文件
+    add_executable(game ${SOURCES})
+
+    # 链接 raylib
+    target_link_libraries(game PRIVATE raylib)
+
+    # 复制 assets 到 build 目录
+    add_custom_command(
+        TARGET game POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/assets $<TARGET_FILE_DIR:game>/assets
+    )
+
+使用方法:
+    mkdir build && cd build
+    cmake .. -DCMAKE_BUILD_TYPE=Debug
+    cmake --build . -j$(nproc)
+    ./game
+
+3.4  在 Neovim 内一键编译运行
+----------------------------------------------------------------------
+
+配置了 overseer.nvim 后:
+
+  方法1: 在 nvim 终端直接运行 (最直接):
+        :terminal make run
+
+  方法2: 用 overseer:
+        <F5>                -> 编译并运行
+        <leader>cr          -> 编译并运行
+        <leader>cb          -> 仅编译
+
+  方法3: 用 Makefile + vim 命令:
+        :make               -> 编译
+        :!./game            -> 运行
+        :make run           -> 编译+运行
+
+  方法4: 配置快速编译键（最便捷）:
+        在 ~/.config/nvim/lua/config/keymaps.lua 中添加:
+
+        vim.keymap.set("n", "<F5>", function()
+          vim.cmd("w")
+          vim.cmd("make run")
+        end, { desc = "编译并运行 Raylib 游戏" })
+
+3.5  测试验证
+----------------------------------------------------------------------
+
+创建一个最小测试文件 test.cpp:
+
+    #include "raylib.h"
+
+    int main() {
+        InitWindow(800, 600, "Test Window");
+        while (!WindowShouldClose()) {
+            BeginDrawing();
+            ClearBackground(RAYWHITE);
+            DrawText("Raylib 环境配置成功!", 200, 280, 20, BLACK);
+            EndDrawing();
+        }
+        CloseWindow();
+        return 0;
+    }
+
+编译运行:
+    g++ test.cpp -o test $(pkg-config --cflags --libs raylib) && ./test
+
+看到白色窗口和文字即证明一切正常。
+
+================================================================================
+四、Raylib 库体系与功能详解
+================================================================================
+
+Raylib 本质上是一个 C 语言库，但完全兼容 C++。另外有官方 C++ 包装库
+raylib-cpp 提供 OOP 风格接口。下面分别介绍。
+
+4.1  Raylib 核心模块
+----------------------------------------------------------------------
+
+Raylib 内部按功能划分为多个模块，每个模块对应一组头文件/功能:
+
+┌──────────────────┬──────────────────────────────────────────────────┐
+│ 模块名           │ 功能                                             │
+├──────────────────┼──────────────────────────────────────────────────┤
+│ rcore            │ 窗口管理、输入处理、时间、相机、文件IO           │
+│                  │ InitWindow(), CloseWindow(), WindowShouldClose() │
+│                  │ IsKeyDown(), GetMousePosition(), GetFrameTime()  │
+├──────────────────┼──────────────────────────────────────────────────┤
+│ rlgl             │ OpenGL 底层封装（通常不需要直接使用）            │
+│                  │ 着色器加载、纹理上传、顶点缓冲区                 │
+├──────────────────┼──────────────────────────────────────────────────┤
+│ shapes           │ 2D 形状绘制                                     │
+│                  │ DrawRectangle(), DrawCircle(), DrawLine()        │
+│                  │ DrawRectangleRounded(), DrawTriangle()           │
+│                  │ DrawEllipse(), DrawRing(), DrawPoly()            │
+├──────────────────┼──────────────────────────────────────────────────┤
+│ textures         │ 图片/纹理加载与绘制                              │
+│                  │ LoadTexture(), UnloadTexture(), DrawTexture()    │
+│                  │ LoadImage(), ImageResize(), ExportImage()        │
+│                  │ ImageDrawPixel(), ImageCrop()                    │
+├──────────────────┼──────────────────────────────────────────────────┤
+│ text             │ 文字渲染                                        │
+│                  │ DrawText(), DrawTextEx(), MeasureText()          │
+│                  │ LoadFont(), UnloadFont(), DrawFPS()              │
+├──────────────────┼──────────────────────────────────────────────────┤
+│ models           │ 3D 模型加载与绘制                                │
+│                  │ LoadModel(), DrawModel(), DrawCube(), DrawSphere()│
+│                  │ LoadModelFromMesh(), GenMeshCube()               │
+├──────────────────┼──────────────────────────────────────────────────┤
+│ raudio           │ 音频系统                                        │
+│                  │ LoadSound(), PlaySound(), LoadMusicStream()      │
+│                  │ SetMasterVolume(), PauseMusicStream()            │
+│                  │ 支持: WAV, MP3, OGG, FLAC, XM, MOD              │
+├──────────────────┼──────────────────────────────────────────────────┤
+│ rmath            │ 数学工具（2D/3D 向量、矩阵、碰撞检测）          │
+│                  │ Vector2, Vector3, Matrix, Quaternion             │
+│                  │ CheckCollisionRecs(), CheckCollisionCircles()    │
+│                  │ Vector2Add(), MatrixMultiply()                   │
+├──────────────────┼──────────────────────────────────────────────────┤
+│ rcamera          │ 相机系统（3D 第一/三人称、自由视角）            │
+│                  │ UpdateCamera(), SetCameraMode()                  │
+│                  │ CAMERA_FREE, CAMERA_FIRST_PERSON, CAMERA_ORBITAL │
+├──────────────────┼──────────────────────────────────────────────────┤
+│ rshapes          │ 3D 形状绘制（与 shapes 模块不同）                │
+│                  │ DrawCube(), DrawSphere(), DrawCylinder()         │
+│                  │ DrawPlane(), DrawGrid()                          │
+├──────────────────┼──────────────────────────────────────────────────┤
+│ rgestures        │ 手势识别（触屏）                                │
+│                  │ 移动端: 点击、双击、拖动、缩放、滑动             │
+└──────────────────┴──────────────────────────────────────────────────┘
+
+4.2  Raylib 核心函数分类速查
+----------------------------------------------------------------------
+
+【窗口】
+  InitWindow(w, h, "title")   创建窗口
+  CloseWindow()               关闭窗口
+  WindowShouldClose()         是否点击了关闭按钮 (返回bool)
+  IsWindowReady()             窗口是否初始化完成
+  SetTargetFPS(60)            设置目标帧率
+  GetFrameTime()              获取一帧的时间(秒)，用于帧率无关运动
+  SetConfigFlags(flags)       设置窗口标志 (FLAG_VSYNC_HINT 等)
+
+【输入】
+  IsKeyDown(KEY_W)            按键是否按住
+  IsKeyPressed(KEY_SPACE)     按键是否刚按下 (仅第一帧为true)
+  IsKeyReleased(KEY_ESC)      按键是否刚释放
+  GetKeyPressed()             获取刚按下的键
+  IsMouseButtonDown(MOUSE_LEFT_BUTTON)
+  GetMousePosition()          返回 Vector2 鼠标坐标
+  GetMouseWheelMove()         鼠标滚轮值
+
+【绘制】
+  BeginDrawing()              开始绘制 (必须调用)
+  EndDrawing()                结束绘制 (必须调用)
+  ClearBackground(COLOR)      清屏
+
+【颜色】
+  RAYWHITE, BLACK, RED, GREEN, BLUE, YELLOW, ORANGE, PURPLE, PINK ...
+  GRAY, DARKGRAY, LIGHTGRAY, MAROON, LIME, GOLD, SKYBLUE ...
+  Color{ r, g, b, a }        自定义 RGBA 颜色 (每个分量0-255)
+  Fade(color, alpha)          改变透明度
+
+【2D 绘制】
+  DrawPixel(x, y, color)                        画点
+  DrawLine(x1, y1, x2, y2, color)               画线
+  DrawCircle(x, y, radius, color)               画圆
+  DrawRectangle(x, y, w, h, color)              画矩形
+  DrawRectangleRounded(rect, roundness, seg, c) 画圆角矩形
+  DrawTexture(texture, x, y, WHITE)             绘制纹理
+  DrawTexturePro(texture, src, dst, origin, rot, tint)  完整纹理绘制
+
+【文字】
+  DrawText("text", x, y, fontSize, color)       绘制文字
+  DrawFPS(x, y)                                 显示 FPS (调试用)
+  MeasureText("text", fontSize)                 测量文字宽度
+  LoadFont("font.ttf")                          加载字体
+
+【资源加载】
+  LoadTexture("file.png")                       加载纹理
+  LoadSound("file.wav")                         加载音效
+  LoadMusicStream("file.ogg")                   加载音乐流
+  UnloadTexture(tex)                            释放纹理
+  PlaySound(sound)                              播放音效
+  PlayMusicStream(music)                        播放音乐
+
+【数学】
+  CheckCollisionRecs(rec1, rec2)                AABB 矩形碰撞
+  CheckCollisionCircles(c1, r1, c2, r2)        圆碰撞
+  CheckCollisionPointRec(point, rec)            点与矩形
+  Vector2Add(v1, v2)                           向量加法
+  Vector2Scale(v, scale)                       向量缩放
+  Vector2Length(v)                             向量长度
+  GetRandomValue(min, max)                     随机整数
+
+4.3  Raylib-CPP：C++ 面向对象包装库
+----------------------------------------------------------------------
+
+raylib-cpp 是官方维护的 header-only C++ 封装，将 raylib C API 包装成类。
+
+【安装方法】(你当前未安装，以下为安装步骤)
+
+法1: 用包管理器 (推荐)
+    yay -S raylib-cpp          # Arch AUR
+
+法2: 手动下载 (最简单)
+    mkdir -p ~/libs
+    git clone https://github.com/RobLoach/raylib-cpp.git ~/libs/raylib-cpp
+    # 编译时添加头文件路径:
+    g++ main.cpp -o game -I~/libs/raylib-cpp/include $(pkg-config --cflags --libs raylib)
+
+法3: 作为子模块
+    cd mygame
+    git submodule add https://github.com/RobLoach/raylib-cpp.git external/raylib-cpp
+    # CMake:
+    add_subdirectory(external/raylib-cpp)
+    target_link_libraries(game PRIVATE raylib-cpp)
+
+【使用对比】
+
+原生 raylib C 风格:
+    #include "raylib.h"
+    Texture2D tex = LoadTexture("player.png");
+    DrawTexture(tex, 100, 100, WHITE);
+    UnloadTexture(tex);
+
+raylib-cpp OOP 风格:
+    #include "raylib-cpp.hpp"
+    raylib::Texture tex("player.png");
+    tex.Draw(100, 100);
+    // 析构函数自动释放
+
+主要类:
+    raylib::Window          窗口管理
+    raylib::Color           颜色
+    raylib::Vector2 / 3     向量 (支持运算符重载 + - * /)
+    raylib::Rectangle       矩形
+    raylib::Texture         纹理 (RAII 自动释放)
+    raylib::Sound           音效
+    raylib::Music           音乐流
+    raylib::Font            字体
+    raylib::Camera2D/3D     相机
+    raylib::Shader          着色器
+    raylib::RenderTexture   渲染纹理
+    raylib::Model           3D 模型
+    raylib::Mesh            网格
+    raylib::AudioDevice     音频设备 (初始化+销毁)
+
+推荐: 学完基础后用 raylib-cpp，代码更整洁，RAII 避免内存泄漏。
+
+================================================================================
+五、需求完善与补充建议
+================================================================================
+
+你提出的 4 个问题覆盖了环境配置、项目结构、编译运行、库功能，但以下方面
+也应纳入教程以形成完整的开发闭环:
+
+5.1  补充内容
+----------------------------------------------------------------------
+
+① 调试方案
+   - 在 nvim 中集成 CodeLLDB/GDB 调试器
+   - 设置断点、查看变量、单步执行
+   - 已在 1.2 节中配置了 nvim-dap + codelldb
+
+② 项目模板 / 脚手架
+   - 建议用脚本来生成新项目骨架，一键创建目录和文件
+   - 示例脚本 gen_game.sh:
+
+       #!/bin/bash
+       NAME=$1
+       mkdir -p $NAME/{src,assets/{textures,sounds,fonts,shaders},build}
+       cat > $NAME/src/main.cpp << 'CPP'
+       #include "raylib.h"
+       int main() {
+           InitWindow(800, 450, "Game");
+           SetTargetFPS(60);
+           while (!WindowShouldClose()) {
+               BeginDrawing();
+               ClearBackground(RAYWHITE);
+               EndDrawing();
+           }
+           CloseWindow();
+           return 0;
+       }
+       CPP
+       # ... 复制 CMakeLists.txt / Makefile 模板
+       echo "Project $NAME created!"
+
+   - 使用方法:
+       chmod +x gen_game.sh
+       ./gen_game.sh my_new_game
+
+③ 版本控制
+   - 强烈建议用 git 管理游戏项目
+   - .gitignore 模板:
+
+       build/
+       *.o
+       *.out
+       game       # 可执行文件
+       .cache/
+
+④ 常用第三方扩展库
+   - raygui     - Raylib 风格的即时模式 GUI (按钮、滑动条、列表)
+   - rres       - 资源打包（将多个资源打包成一个文件）
+   - physac     - 2D 物理引擎
+   - raymath    - 数学扩展 (已内置在 raylib)
+   - rmem       - 内存管理
+
+   安装 raygui:
+       wget https://raw.githubusercontent.com/raysan5/raygui/master/src/raygui.h \
+            -O ~/libs/raygui.h
+
+⑤ 学习路径建议
+   1. 单文件入门: 理解游戏循环 -> 绘制图形 -> 处理输入 -> 播放声音
+   2. 多文件重构: 分离 Game / Player / Enemy 类
+   3. 进阶主题: 碰撞检测、粒子效果、状态机、地图系统
+   4. 发布: 静态链接、资源嵌入、跨平台编译
+
+5.2  你的要求是否完善
+----------------------------------------------------------------------
+
+  ✅ 问题1: nvim 配置 raylib 开发环境        -> 已完善 (1.1-1.3)
+  ✅ 问题2: 游戏项目文件结构                 -> 已完善 (2.1-2.3)
+  ✅ 问题3: 如何编译启动测试                 -> 已完善 (3.1-3.5)
+  ✅ 问题4: raylib 有哪些 C++ 库             -> 已完善 (4.1-4.3)
+  ✅ 补充项: 调试、脚手架、版本控制、扩展库  -> 已添加 (5.1)
+
+  总体评估: 你原始 4 个问题的覆盖面已经不错，但缺少调试和版本控制
+           等方面的考虑。以上补充已弥补这些缺口，形成了一个完整的
+           从零到发布游戏的教程。
+
+================================================================================
+附A. 完整示例：Pong 风格的入门游戏 (约80行)
+================================================================================
+
+// 文件: src/main.cpp
+// 编译: g++ -std=c++17 -O2 src/main.cpp -o pong $(pkg-config --cflags --libs raylib)
+
+#include "raylib.h"
+#include <cmath>
+
+const int SCREEN_W = 800;
+const int SCREEN_H = 450;
+const int PADDLE_W = 20;
+const int PADDLE_H = 80;
+const int BALL_SIZE = 12;
+const float PADDLE_SPEED = 400.0f;
+const float BALL_SPEED = 350.0f;
+
+int main() {
+    InitWindow(SCREEN_W, SCREEN_H, "Pong");
+    SetTargetFPS(60);
+
+    // 球拍位置
+    float leftPaddleY  = SCREEN_H / 2.0f - PADDLE_H / 2.0f;
+    float rightPaddleY = SCREEN_H / 2.0f - PADDLE_H / 2.0f;
+
+    // 球
+    Vector2 ballPos = { SCREEN_W / 2.0f, SCREEN_H / 2.0f };
+    Vector2 ballDir = { BALL_SPEED, BALL_SPEED * 0.5f };
+
+    int leftScore = 0, rightScore = 0;
+
+    while (!WindowShouldClose()) {
+        float dt = GetFrameTime();
+
+        // ---- 输入 ----
+        if (IsKeyDown(KEY_W)) leftPaddleY -= PADDLE_SPEED * dt;
+        if (IsKeyDown(KEY_S)) leftPaddleY += PADDLE_SPEED * dt;
+        if (IsKeyDown(KEY_UP)) rightPaddleY -= PADDLE_SPEED * dt;
+        if (IsKeyDown(KEY_DOWN)) rightPaddleY += PADDLE_SPEED * dt;
+
+        // 边界限制
+        if (leftPaddleY < 0) leftPaddleY = 0;
+        if (leftPaddleY > SCREEN_H - PADDLE_H) leftPaddleY = SCREEN_H - PADDLE_H;
+        if (rightPaddleY < 0) rightPaddleY = 0;
+        if (rightPaddleY > SCREEN_H - PADDLE_H) rightPaddleY = SCREEN_H - PADDLE_H;
+
+        // ---- 球移动 ----
+        ballPos.x += ballDir.x * dt;
+        ballPos.y += ballDir.y * dt;
+
+        // 上下壁反弹
+        if (ballPos.y < 0 || ballPos.y > SCREEN_H - BALL_SIZE)
+            ballDir.y = -ballDir.y;
+
+        // 左球拍碰撞
+        if (ballPos.x <= PADDLE_W &&
+            ballPos.y + BALL_SIZE >= leftPaddleY &&
+            ballPos.y <= leftPaddleY + PADDLE_H) {
+            ballDir.x = -ballDir.x * 1.05f;
+            ballPos.x = PADDLE_W;
+        }
+
+        // 右球拍碰撞
+        if (ballPos.x + BALL_SIZE >= SCREEN_W - PADDLE_W &&
+            ballPos.y + BALL_SIZE >= rightPaddleY &&
+            ballPos.y <= rightPaddleY + PADDLE_H) {
+            ballDir.x = -ballDir.x * 1.05f;
+            ballPos.x = SCREEN_W - PADDLE_W - BALL_SIZE;
+        }
+
+        // 得分
+        if (ballPos.x < 0) { rightScore++; ballPos = {SCREEN_W/2.0f, SCREEN_H/2.0f}; }
+        if (ballPos.x > SCREEN_W) { leftScore++; ballPos = {SCREEN_W/2.0f, SCREEN_H/2.0f}; }
+
+        // ---- 绘制 ----
+        BeginDrawing();
+        ClearBackground(BLACK);
+
+        DrawRectangle(0, leftPaddleY, PADDLE_W, PADDLE_H, WHITE);
+        DrawRectangle(SCREEN_W - PADDLE_W, rightPaddleY, PADDLE_W, PADDLE_H, WHITE);
+        DrawRectangle(ballPos.x, ballPos.y, BALL_SIZE, BALL_SIZE, WHITE);
+
+        // 中线
+        for (int i = 0; i < SCREEN_H; i += 20)
+            DrawRectangle(SCREEN_W / 2 - 1, i, 2, 10, DARKGRAY);
+
+        // 分数
+        DrawText(TextFormat("%d", leftScore), SCREEN_W/4, 20, 40, GRAY);
+        DrawText(TextFormat("%d", rightScore), SCREEN_W*3/4, 20, 40, GRAY);
+        DrawFPS(10, 10);
+
+        EndDrawing();
+    }
+
+    CloseWindow();
+    return 0;
+}
+
+================================================================================
+附B. 常用快捷键速查
+================================================================================
+
+Neovim 内:
+  <F5>             编译并运行 (需配置 overseer 或 keymap)
+  <leader>cb       编译
+  <leader>cr       运行
+  <leader>co       打开任务面板
+  <F9>             切换断点 (需 nvim-dap)
+  <F10>            单步跳过
+  <C-j>            跳转到 LuaSnip 片段占位符
+
+终端:
+  g++ main.cpp -o game $(pkg-config --cflags --libs raylib) && ./game
+  make run
+  cmake --build build && ./build/game
+
+================================================================================
+附C. 故障排查 FAQ
+================================================================================
+
+Q: 编译时找不到 raylib.h
+A: 确认 raylib 已安装: pkg-config --modversion raylib
+   如未安装: sudo pacman -S raylib
+
+Q: 运行时报 "ERROR: GLFW: Failed to initialize Window"
+A: 可能是缺少图形驱动或没有 X11/Wayland 环境。
+   检查: glxinfo | grep "OpenGL version"
+
+Q: clangd 没有补全提示
+A: 检查是否生成了 compile_commands.json:
+   cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON  (CMake)
+   bear -- make                               (Make + bear工具)
+   将生成的 compile_commands.json 放在项目根目录即可。
+
+Q: 窗口一闪而过
+A: 确保代码中有 while(!WindowShouldClose()) 循环。
+
+Q: 编译成功但运行没窗口（SSH 环境）
+A: Raylib 需要图形环境。SSH 下无法使用。
+   如果远程开发，需用 X11 转发: ssh -X user@host
+
+Q: raylib-cpp 头文件找不到
+A: 用上述方法安装 raylib-cpp，并在编译时加 -I 路径。
+   例如: -I~/libs/raylib-cpp/include
+
+Q: 如何静态链接 raylib (发布用)
+A: sudo pacman -S raylib
+   编译时加: -static -lraylib
+   或者用 raylib 源码自行编译静态库。
+
+================================================================================
+                        教程结束
+================================================================================

@@ -1,0 +1,1710 @@
+================================================================================
+                  Love2D 语法进阶教程：函数详解·项目架构·窍门
+================================================================================
+
+================================================================================
+第一章：Love2D 核心函数详解
+================================================================================
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【1.1 love.graphics —— 图形模块】
+
+  -- 坐标系：左上角为 (0,0)，x 向右增大，y 向下增大
+
+  ● love.graphics.newImage(path)
+    加载图像，返回 Image 对象。
+    支持格式：PNG, JPG, TGA, BMP, DDS, KTX, HDR, PPM/PGM/PBM
+    local img = love.graphics.newImage("player.png")
+
+  ● love.graphics.draw(drawable, x, y, r, sx, sy, ox, oy, kx, ky)
+    通用绘制函数，接受 Image / Quad / Canvas / ParticleSystem。
+    参数：
+      drawable  -- 要绘制的对象
+      x, y      -- 屏幕坐标
+      r         -- 旋转角（弧度）
+      sx, sy    -- 缩放比例（可用负值翻转）
+      ox, oy    -- 原点偏移（旋转/缩放锚点，相对于图像左上角）
+      kx, ky    -- 剪切因子（skew）
+    示例：
+      -- 以图像中心为锚点，放大一倍，旋转45度
+      love.graphics.draw(img, 400, 300, math.pi/4, 2, 2,
+        img:getWidth()/2, img:getHeight()/2)
+
+  ● love.graphics.newQuad(x, y, w, h, sw, sh)
+    从大图中裁剪矩形区域，用于精灵帧。
+    参数：
+      x, y  -- 裁剪起点
+      w, h  -- 裁剪尺寸
+      sw,sh -- 原图总尺寸（img:getDimensions()）
+    示例：
+      local quad = love.graphics.newQuad(0, 0, 32, 32, img:getDimensions())
+
+  ● love.graphics.setColor(r, g, b, a)
+    设置全局色调（影响后续所有绘制）。
+    默认值：(1, 1, 1, 1) —— 白色不透明
+    范围：0~1
+    示例：
+      love.graphics.setColor(1, 0, 0)       -- 红色
+      love.graphics.setColor(1, 1, 1, 0.5)  -- 半透明白色
+      -- 对图像着色
+      love.graphics.setColor(0.2, 0.6, 1)   -- 蓝调
+      love.graphics.draw(img, 0, 0)
+      love.graphics.setColor(1, 1, 1)       -- 恢复
+
+  ● love.graphics.clear(r, g, b, a)
+    清空屏幕，填充颜色。默认黑色。
+    示例：love.graphics.clear(0.1, 0.15, 0.2)  -- 深蓝灰背景
+
+  ● love.graphics.setBackgroundColor(r, g, b, a)
+    与 clear 的区别：clear 需在 draw 开头调用，setBackgroundColor 只需设一次。
+
+━━━ 几何绘制 ━━━
+
+  ● love.graphics.rectangle(mode, x, y, w, h, rx, ry)
+    mode: "fill" 填充 / "line" 线框
+    rx, ry: 圆角半径（可选，需 love 11.2+）
+    示例：
+      love.graphics.rectangle("fill", 10, 10, 100, 50)     -- 填充矩形
+      love.graphics.rectangle("line", 10, 10, 100, 50)     -- 线框矩形
+      love.graphics.rectangle("fill", 10, 10, 100, 50, 10, 10) -- 圆角矩形
+
+  ● love.graphics.circle(mode, x, y, radius)
+    示例：
+      love.graphics.circle("fill", 400, 300, 30)   -- 实心圆
+      love.graphics.circle("line", 400, 300, 30)   -- 空心圆
+      -- 圆分为多个线段数（手动指定精度）
+      love.graphics.circle("line", 400, 300, 30, 6)  -- 六边形
+
+  ● love.graphics.ellipse(mode, x, y, rx, ry)
+    椭圆。
+    示例：love.graphics.ellipse("fill", 400, 300, 80, 40)
+
+  ● love.graphics.line(x1, y1, x2, y2, ...)
+    连续折线。
+    示例：love.graphics.line(100, 100, 200, 80, 300, 120)
+
+  ● love.graphics.polygon(mode, vertices...)
+    多边形。
+    示例：love.graphics.polygon("fill", 400, 100, 350, 200, 450, 200)
+
+  ● love.graphics.arc(mode, x, y, radius, angle1, angle2, segments)
+    圆弧/扇形。
+    mode: "fill" 扇形 / "line" 弧线
+    示例：
+      love.graphics.arc("fill", 400, 300, 50, 0, math.pi)     -- 半圆
+      love.graphics.arc("line", 400, 300, 50, 0, math.pi*1.5) -- 3/4圆弧
+
+  ● love.graphics.points(x1, y1, x2, y2, ...)
+    画点。需先设 love.graphics.setPointSize(n)。
+
+━━━ 文字绘制 ━━━
+
+  ● love.graphics.newFont(path, size, hinting)
+    创建字体。不传 path 使用内置默认字体。
+    示例：
+      local font = love.graphics.newFont("FiraCode.ttf", 18)
+      love.graphics.setFont(font)
+
+  ● love.graphics.print(text, x, y, r, sx, sy, ox, oy, kx, ky)
+    绘制单行文字。
+    示例：love.graphics.print("Score: "..score, 10, 10)
+
+  ● love.graphics.printf(text, x, y, limit, align, r, sx, sy, ...)
+    多行文字，自动换行。
+    align: "left" / "center" / "right" / "justify"
+    示例：
+      love.graphics.printf("很长的文字会自动\n换行显示",
+        100, 100, 300, "center")
+
+  ● font:getWidth(text) / font:getHeight()
+    获取文字尺寸，用于居中。
+    示例：
+      local w = font:getWidth("Game Over")
+      love.graphics.print("Game Over", 400 - w/2, 300)
+
+━━━ 画布与离屏渲染 ━━━
+
+  ● love.graphics.newCanvas(w, h)
+    创建离屏画布，可先将内容渲染到 canvas 再绘制到屏幕。
+    用途：后处理特效、UI 层、固定分辨率渲染。
+    示例：
+      local canvas = love.graphics.newCanvas(480, 320)
+      function love.draw()
+        love.graphics.setCanvas(canvas)
+        -- 在 canvas 上绘制
+        drawGame()
+        love.graphics.setCanvas()
+        -- 将 canvas 缩放绘制到屏幕
+        love.graphics.draw(canvas, 0, 0, 0,
+          love.graphics.getWidth()/480,
+          love.graphics.getHeight()/320)
+      end
+
+━━━ 变换矩阵 ━━━
+
+  ● love.graphics.push() / love.graphics.pop()
+    保存/恢复当前图形状态（变换、颜色、混合模式等）。
+    嵌套使用，必须成对出现。
+
+  ● love.graphics.translate(dx, dy)
+    平移坐标系。
+
+  ● love.graphics.scale(sx, sy)
+    缩放坐标系。
+
+  ● love.graphics.rotate(angle)
+    旋转坐标系。
+
+  ● love.graphics.shear(kx, ky)
+    剪切变换。
+
+  ● love.graphics.origin()
+    重置所有变换。
+
+  综合示例——绘制环绕行星：
+    function love.draw()
+      love.graphics.push()
+      love.graphics.translate(400, 300)          -- 移到屏幕中心
+      love.graphics.circle("fill", 0, 0, 30)     -- 太阳
+
+      love.graphics.rotate(angle)                -- 旋转
+      love.graphics.circle("fill", 120, 0, 10)   -- 行星（距离120）
+      love.graphics.pop()
+    end
+
+━━━ 混合模式与着色器 ━━━
+
+  ● love.graphics.setBlendMode(mode, alphaMode)
+    常用 mode：
+      "alpha"       -- 默认，标准透明度混合
+      "add"         -- 加法混合（发光/火焰效果）
+      "subtract"    -- 减法混合
+      "multiply"    -- 乘法混合（阴影）
+      "replace"     -- 直接替换
+      "screen"      -- 增亮
+    示例：
+      love.graphics.setBlendMode("add")
+      love.graphics.draw(light, 400, 300)
+      love.graphics.setBlendMode("alpha")
+
+  ● love.graphics.setShader(shader)
+    应用自定义着色器。
+    示例：
+      local shader = love.graphics.newShader([[
+        vec4 effect(vec4 color, Image tex, vec2 uv, vec2 screen_pos) {
+          vec4 pixel = Texel(tex, uv);
+          // 灰度化
+          float gray = dot(pixel.rgb, vec3(0.299, 0.587, 0.114));
+          return vec4(gray, gray, gray, pixel.a) * color;
+        }
+      ]])
+
+━━━ 其他图形函数 ━━━
+
+  ● love.graphics.getWidth() / love.graphics.getHeight()
+    获取窗口尺寸。
+
+  ● love.graphics.getDimensions()
+    返回 width, height。
+
+  ● love.graphics.setLineWidth(n)
+    设置线宽（影响 line/线框模式）。
+
+  ● love.graphics.setLineStyle(style)
+    "smooth"（默认）/ "rough"（复古锯齿线）。
+
+  ● love.graphics.setPointSize(n)
+    设置点大小。
+
+  ● love.graphics.setScissor(x, y, w, h)
+    设置裁剪区域（矩形外的内容不渲染）。
+    love.graphics.setScissor() -- 取消裁剪。
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【1.2 love.keyboard / love.mouse —— 输入模块】
+
+  ● love.keyboard.isDown(key)
+    检测按键是否被按住（须在 love.update 中调用）。
+    key 名称对照：
+      字母："a"~"z"       方向："up" "down" "left" "right"
+      数字："0"~"9"       修改："lshift" "rshift" "lctrl" "rctrl"
+      功能："f1"~"f12"    "lalt" "ralt" "lgui" "rgui"
+      特殊："space" "return" "escape" "backspace"
+            "tab" "capslock" "numlock" "scrolllock"
+
+  ● love.keyboard.isScancodeDown(scancode)
+    按物理键位检测（不受键盘布局影响），适合 WASD。
+    常用 scancode："w" "a" "s" "d" "q" "e" "1"~"9"
+    示例：
+      if love.keyboard.isScancodeDown("w") then moveUp() end
+
+  ● love.keyboard.setKeyRepeat(enabled)
+    是否允许按住时重复触发 keypressed 回调。
+
+  ● love.mouse.getPosition()
+    返回 mx, my。
+
+  ● love.mouse.isDown(button)
+    button: 1=左键, 2=右键, 3=中键, 4=侧键1, 5=侧键2
+
+  ● love.mouse.setVisible(bool)
+    显示/隐藏光标。
+
+  ● love.mouse.setGrabbed(bool)
+    锁定/释放光标（FPS 游戏用）。
+
+  ● love.mouse.setCursor(cursor)
+    设置自定义光标。cursor = love.mouse.newCursor(img, hotx, hoty)
+
+  ● love.mouse.getX() / love.mouse.getY()
+    单独获取 x 或 y。
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【1.3 love.audio —— 音频模块】
+
+  ● love.audio.newSource(path_or_data, type)
+    type 选择：
+      "static"  -- 短音效（全部解码到内存，可同时播放多个实例）
+      "stream"  -- 长音乐（流式解码，内存占用小）
+    示例：
+      local sfx = love.audio.newSource("shoot.ogg", "static")
+      local bgm = love.audio.newSource("music.ogg", "stream")
+
+  ● Source 对象方法：
+    sfx:play()               -- 播放
+    sfx:stop()               -- 停止
+    sfx:pause()              -- 暂停
+    sfx:resume()             -- 继续
+    sfx:clone()              -- 克隆（static 可多实例同时播放）
+    sfx:setVolume(0~1)       -- 音量
+    sfx:setPitch(0.5~2)     -- 音调（速度）
+    sfx:setLooping(bool)     -- 循环
+    sfx:isPlaying()
+    sfx:isPaused()
+    sfx:tell()               -- 当前播放位置（秒）
+    sfx:seek(seconds)        -- 跳转到指定位置
+    sfx:getDuration()        -- 总时长
+
+  ● love.audio.setVolume(0~1)
+    全局音量。
+
+  ● love.audio.play(source)
+    love.audio.newSource 的快捷版，立即播放。
+    示例：love.audio.play(sfx)
+
+  ● 音效管理技巧——
+    用表池化音效，避免重复 newSource：
+      local sounds = {
+        shoot = love.audio.newSource("shoot.wav", "static"),
+        jump  = love.audio.newSource("jump.wav",  "static"),
+      }
+      function play(name)
+        sounds[name]:clone():play()
+      end
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【1.4 love.filesystem —— 文件系统模块】
+
+  所有路径相对于项目根目录（或 .love 内部）。
+  存档路径：~/.local/share/love/<identity>/
+
+  ● love.filesystem.read(name, size)
+    读取文件全部内容为字符串。
+    示例：local data = love.filesystem.read("config.json")
+
+  ● love.filesystem.write(name, data, size)
+    写入字符串到文件（仅在存档目录下可写）。
+
+  ● love.filesystem.append(name, data)
+    追加内容。
+
+  ● love.filesystem.getInfo(path, filter)
+    返回文件/目录信息表 {type, size, modtime} 或 nil。
+    filter: "file" / "directory"
+    示例：
+      if love.filesystem.getInfo("save.dat") then
+        loadSave()
+      end
+
+  ● love.filesystem.getSaveDirectory()
+    获取存档根目录绝对路径。
+
+  ● love.filesystem.getWorkingDirectory()
+    获取工作目录。
+
+  ● love.filesystem.createDirectory(name)
+    创建目录。
+
+  ● love.filesystem.remove(name)
+    删除文件/空目录。
+
+  ● love.filesystem.getDirectoryItems(dir)
+    列出目录内容，返回文件名表。
+    示例：
+      for _, f in ipairs(love.filesystem.getDirectoryItems("levels")) do
+        loadLevel(f)
+      end
+
+  ● love.filesystem.load(name)
+    加载并运行 .lua 文件。
+    示例：love.filesystem.load("level1.lua")()
+
+  ● love.filesystem.mount(path, mountpoint, appendToPath)
+    挂载 .zip / .love 文件。
+    示例：love.filesystem.mount("dlc.zip", "dlc")
+
+  ● love.filesystem.setIdentity(name)
+    设置存档目录标识（须在 love.load 前调用，建议放 conf.lua）。
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【1.5 love.timer —— 时间模块】
+
+  ● love.timer.getDelta()
+    返回上一帧到当前帧的秒数（同 update 中的 dt）。
+
+  ● love.timer.getFPS()
+    返回当前帧率。
+
+  ● love.timer.getTime()
+    返回自游戏启动以来的秒数（高精度微秒）。
+
+  ● love.timer.step()
+    返回两帧之间的实际时间（不缩放）。
+
+  ● love.timer.sleep(seconds)
+    暂停指定秒数（阻塞）。
+
+  ● love.timer.getAverageDelta()
+    返回平均 dt 值。
+
+  实用示例——用 getTime 实现一次性定时器：
+    local fireTime = 0
+    function shoot()
+      if love.timer.getTime() - fireTime > 0.3 then  -- 冷却0.3秒
+        fireTime = love.timer.getTime()
+        createBullet()
+      end
+    end
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【1.6 love.math —— 数学模块】
+
+  相比标准 math 库，额外提供：
+
+  ● love.math.random() / love.math.random(min, max)
+    与 math.random 类似，但自动种子且多平台一致。
+
+  ● love.math.randomNormal(stddev, mean)
+    正态分布随机数。
+
+  ● love.math.setRandomSeed(seed)
+    设置随机种子（可复现的随机）。
+
+  ● love.math.getRandomSeed()
+    获取当前种子。
+
+  ● love.math.noise(x, y, z, w)
+    Perlin 噪声值 [0~1]，适合地形生成/粒子运动。
+    示例：
+      local n = love.math.noise(x * 0.01, y * 0.01, time)
+      angle = n * math.pi * 2
+
+  ● love.math.newRandomGenerator(seed)
+    独立随机数生成器（不影响全局）。适合并行生成。
+    示例：
+      local rng = love.math.newRandomGenerator(12345)
+      local x = rng:random(0, 100)
+
+  ● love.math.newBezierCurve(vertices)
+    贝塞尔曲线，用于平滑运动。
+    示例：
+      local curve = love.math.newBezierCurve(
+        {0,0}, {100,0}, {200,100}, {300,100}
+      )
+      local x, y = curve:evaluate(t)  -- t ∈ [0,1]
+
+  ● love.math.triangulate(polygon)
+    将凹多边形三角化，返回三角形列表。
+
+  ● love.math.isConvex(vertices)
+    判断多边形是否凸。
+
+  ● love.math.gammaToLinear(c) / love.math.linearToGamma(c)
+    色彩空间转换。
+
+  ● love.math.compress(data, format)
+    压缩字符串。"lz4" / "zlib" / "gzip"
+
+  ● love.math.decompress(data, format)
+    解压。
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【1.7 love.image —— 图像数据处理】
+
+  ● love.image.newImageData(w, h)
+    创建空白图像数据。
+
+  ● love.image.newImageData(path)
+    从文件加载图像数据。
+
+  ● ImageData 方法：
+    imgData:getPixel(x, y)     -- 返回 r,g,b,a (0~1)
+    imgData:setPixel(x, y, r, g, b, a)
+    imgData:getWidth() / imgData:getHeight()
+    imgData:getDimensions()
+    imgData:mapPixel(function(x, y, r, g, b, a) return r,g,b,a end)
+    imgData:paste(source, x, y, sx, sy, sw, sh)
+    imgData:encode(format)     -- "png" / "tga" 返回 Blob
+
+  ● 从 ImageData 创建 Image：
+    local img = love.graphics.newImage(imgData)
+
+  ● 实用示例——生成纯色方块：
+    local data = love.image.newImageData(32, 32)
+    for y = 0, 31 do for x = 0, 31 do
+      data:setPixel(x, y, 1, 0.5, 0, 1)
+    end end
+    local img = love.graphics.newImage(data)
+
+  ● 高级——像素级碰撞检测：
+    function pixelCollision(ax, ay, aImg, bx, by, bImg)
+      local aData, bData = aImg:getData(), bImg:getData()
+      -- 裁剪重叠区域逐一比较 alpha...
+    end
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【1.8 love.data —— 数据打包】
+
+  ● love.data.pack("data", "z", table)
+    将 Lua 表打包为二进制字符串。
+    "z" 表示用 zlib 压缩；省略则不压缩。
+    示例：
+      local bin = love.data.pack("data", "z", {score=100, lives=3})
+
+  ● love.data.unpack(binary, "z")
+    解包为 Lua 表。
+
+  ● love.data.encode(type, source, format)
+    type: "string" / "file" / "FileData"
+    示例：love.data.encode("string", "hello", "base64")
+
+  ● love.data.decode(type, source, format)
+    示例：love.data.decode("string", "aGVsbG8=", "base64")
+
+  ● love.data.hash(algorithm, data) 或 love.data.hash(algorithm, FileData)
+    计算哈希。
+    algorithm: "md5" / "sha1" / "sha224" / "sha256" / "sha384" / "sha512"
+    示例：local sig = love.data.hash("sha256", saveData)
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【1.9 love.joystick —— 手柄模块】
+
+  ● love.joystick.getJoysticks()
+    返回已连接手柄列表。
+
+  ● joystick:isGamepad()
+    是否被识别为标准游戏手柄。
+
+  ● joystick:getAxis(axis)
+    axis: 1=左X, 2=左Y, 3=右X, 4=右Y, 5=LT, 6=RT
+
+  ● joystick:isGamepadDown(button)
+    button: "a" "b" "x" "y" "back" "guide" "start"
+            "leftstick" "rightstick" "leftshoulder" "rightshoulder"
+            "dpup" "dpdown" "dpleft" "dpright"
+
+  ● joystick:getGamepadAxis(axis)
+    "leftx" "lefty" "rightx" "righty" "triggerleft" "triggerright"
+
+  ● joystick:setVibration(left, right, duration)
+    震动反馈（0~1 强度）。
+    示例：joy:setVibration(0.5, 0.3, 0.2)  -- 左强右弱，持续0.2秒
+
+  ● 回调函数：
+    love.joystickadded(joystick)
+    love.joystickremoved(joystick)
+    love.gamepadpressed(joystick, button)
+    love.gamepadreleased(joystick, button)
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【1.10 love.system / love.window —— 系统模块】
+
+  ● love.system.getOS()
+    返回 "Windows" / "OS X" / "Linux" / "Android" / "iOS"
+
+  ● love.system.getProcessorCount()
+    CPU 核心数。
+
+  ● love.system.openURL(url)
+    在默认浏览器中打开网址。
+    示例：love.system.openURL("https://love2d.org")
+
+  ● love.system.getClipboardText()
+  ● love.system.setClipboardText(text)
+
+  ● love.system.vibrate(seconds)
+    移动设备震动（桌面无效）。
+
+  ● love.window.setTitle(title)
+    设置窗口标题。
+
+  ● love.window.setMode(width, height, flags)
+    动态修改窗口属性。
+    flags = {fullscreen=true, resizable=true, vsync=1, msaa=4, ...}
+
+  ● love.window.getMode()
+    返回 width, height, flags。
+
+  ● love.window.setFullscreen(bool, fstype)
+    fstype: "desktop" / "exclusive"
+
+  ● love.window.setIcon(imagedata)
+    设置窗口图标。
+    示例：love.window.setIcon(love.image.newImageData("icon.png"))
+
+  ● love.window.showMessageBox(title, message, type, attachtowindow)
+    type: "info" / "warning" / "error"
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【1.11 love.thread —— 多线程模块】
+
+  ● love.thread.newThread(name, arg1, arg2, ...)
+    从单独 .lua 文件创建线程。
+    线程间通过 Channel 通信。
+    示例：
+      local thread = love.thread.newThread("worker.lua")
+
+  ● love.thread.newChannel()
+    创建通信信道。
+    示例：
+      local channel = love.thread.newChannel()
+      thread:start(channel)   -- 把 channel 传给线程
+
+  ● channel:push(value) / channel:demand() / channel:pop()
+    push 压入，demand 阻塞等待，pop 非阻塞。
+
+  ● 线程中的 love 模块大多不可用（仅 love.filesystem, love.data, love.math 等）。
+    图形/音频/物理不能在线程中使用。
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【1.12 love.event —— 事件系统】
+
+  ● love.event.push(name, a, b, c, ...)
+    向事件队列压入事件。
+
+  ● love.event.poll()
+    自定义事件循环（高级用法）。
+
+  ● love.event.quit(exitStatus)
+    退出程序，可选退出状态码。
+
+  ● love.event.wait()
+    等待事件（在特殊事件循环中使用）。
+
+  ● 事件名称列表：
+    "quit" "focus" "resize" "visible"
+    "keypressed" "keyreleased" "textinput" "textediting"
+    "mousepressed" "mousereleased" "mousemoved" "wheelmoved"
+    "joystickadded" "joystickremoved"
+    "gamepadpressed" "gamepadreleased"
+    "touchpressed" "touchreleased" "touchmoved"
+    "directorydropped" "filedropped" "lowmemory"
+    "displayrotated" "gamepadaxis" "joystickaxis"
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【1.13 love.video —— 视频播放】
+
+  Love 11.5 支持 Ogg Theora 视频。
+  ● love.graphics.newVideo(path_or_file, settings)
+    支持：.ogv (Theora 编码)
+    不支持：.mp4
+
+    示例：
+      local video = love.graphics.newVideo("intro.ogv")
+      video:play()
+      function love.draw()
+        love.graphics.draw(video, 0, 0)
+      end
+
+  ● video:play() / video:pause() / video:seek(sec)
+  ● video:tell() -- 当前播放位置
+  ● video:isPlaying()
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【1.14 love.sound —— 音效数据处理】
+
+  可编程生成波形。
+  ● love.sound.newSoundData(samples, rate, bitdepth, channels)
+    示例——生成 440Hz 正弦波：
+      local rate = 44100
+      local freq = 440
+      local duration = 1
+      local samples = rate * duration
+      local data = love.sound.newSoundData(samples, rate, 16, 1)
+      for i = 0, samples - 1 do
+        local t = i / rate
+        data:setSample(i, math.sin(2 * math.pi * freq * t))
+      end
+      local source = love.audio.newSource(data)
+      source:play()
+
+  ● SoundData 方法：
+    :getSample(i) / :setSample(i, value)
+    :getSampleCount() / :getSampleRate() / :getDuration()
+
+================================================================================
+第二章：不同游戏类型的项目结构与函数选择
+================================================================================
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【2.1 平台跳跃游戏 (Platformer)】
+
+  项目结构：
+    platformer/
+    ├── main.lua
+    ├── conf.lua
+    ├── src/
+    │   ├── player.lua          ← 玩家（移动/跳跃/状态机）
+    │   ├── physics.lua         ← 碰撞检测（推荐 bump.lua）
+    │   ├── level.lua           ← 关卡加载与渲染
+    │   ├── camera.lua          ← 跟随玩家的相机
+    │   ├── enemy.lua           ← 敌人 AI
+    │   ├── collectible.lua     ← 金币/道具
+    │   └── particles.lua       ← 特效
+    ├── assets/
+    │   ├── images/
+    │   │   ├── tiles/          ← 瓦片素材
+    │   │   ├── player/         ← 玩家精灵帧
+    │   │   └── bg/             ← 背景层
+    │   ├── maps/               ← Tiled 导出的 .lua 地图
+    │   └── sounds/
+    └── lib/
+        ├── bump.lua            ← AABB 碰撞
+        └── anim8.lua           ← 动画管理
+
+  关键函数选择：
+    碰撞：love.physics 太重；推荐 AABB 手动检测或 bump.lua
+    地图：STI 库加载 Tiled 地图 + love.graphics.draw(tileBatch)
+         或用 love.graphics.newImage + Quad 手动绘制瓦片
+    动画：anim8 库（精灵帧动画）
+    相机：手动 translate + scale，或 gamera 库
+    存档：love.filesystem + JSON/MessagePack
+
+  核心语法模式——状态机：
+    player.state = "idle"  -- "idle" / "run" / "jump" / "fall" / "attack"
+    local states = {
+      idle = function() ... end,
+      run  = function() ... end,
+      jump = function() ... end,
+    }
+    function player:update(dt)
+      states[self.state]()
+    end
+
+  核心语法模式——重力与跳跃：
+    player.vy = player.vy + gravity * dt     -- 重力
+    player.y  = player.y  + player.vy * dt   -- 位置
+    if player:onGround() then
+      player.vy = 0
+      if love.keyboard.isDown("space") then
+        player.vy = -jumpForce
+      end
+    end
+
+  核心语法模式——瓦片碰撞（逐轴检测）：
+    -- 先水平移动再检测，解决卡墙角问题
+    player.x = player.x + player.vx * dt
+    resolveCollisionX(player, tiles)
+    player.y = player.y + player.vy * dt
+    resolveCollisionY(player, tiles)
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【2.2 弹幕射击游戏 (Bullet Hell / Shoot 'em Up)】
+
+  项目结构：
+    shmup/
+    ├── main.lua
+    ├── src/
+    │   ├── world.lua           ← 世界管理（更新顺序、碰撞检测）
+    │   ├── entity.lua          ← 实体基类（位置、速度、生存标志）
+    │   ├── player.lua          ← 自机
+    │   ├── bullet.lua          ← 弹幕（敌弹/自弹）
+    │   ├── enemy.lua           ← 敌机
+    │   ├── pattern.lua         ← 弹幕脚本（数学弹幕生成）
+    │   ├── item.lua            ← 掉落道具
+    │   └── hud.lua             ← 分数、残机等 UI
+    ├── assets/
+    └── lib/
+        ├── class.lua           ← OOP
+        └── lume.lua            ← 工具函数
+
+  关键函数选择：
+    碰撞：圆形碰撞（半径检测比 AABB 更精准），循环遍历实体列表
+    粒子：love.graphics.newParticleSystem（爆炸、尾焰）
+    数学：大量使用 love.math 的三角函数，弹幕用极坐标
+    渲染：批量绘制时用 SpriteBatch
+
+  核心语法模式——实体池化（避免 GC）：
+    local bulletPool = {}
+    function spawnBullet(x, y, angle, speed)
+      local b = table.remove(bulletPool)
+      if not b then b = {} end
+      b.x, b.y = x, y
+      b.vx = math.cos(angle) * speed
+      b.vy = math.sin(angle) * speed
+      b.active = true
+      table.insert(bullets, b)
+    end
+    function killBullet(b)
+      b.active = false
+      table.insert(bulletPool, b)  -- 回收到池
+    end
+
+  核心语法模式——弹幕生成器（极坐标）：
+    -- 圆形弹幕
+    for i = 0, n - 1 do
+      local angle = i * (2 * math.pi / n) + offset
+      spawnBullet(x, y, angle, 200)
+    end
+    -- 螺旋弹幕
+    angle = angle + 0.1  -- 每帧递增
+    spawnBullet(x, y, angle, 150)
+
+  核心语法模式——世界更新管道：
+    function world:update(dt)
+      -- 1. 生成阶段（添加新实体到待处理列表）
+      -- 2. 更新阶段（所有实体的 update）
+      -- 3. 移除阶段（标记 dead 的实体）
+      for i = #bullets, 1, -1 do
+        if bullets[i].dead then table.remove(bullets, i) end
+      end
+    end
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【2.3 RPG / 冒险游戏】
+
+  项目结构：
+    rpg/
+    ├── main.lua
+    ├── src/
+    │   ├── game.lua            ← 游戏总状态管理
+    │   ├── state.lua           ← 状态机（地图/战斗/菜单/对话）
+    │   ├── player.lua          ← 玩家数据（HP/MP/装备/技能）
+    │   ├── map.lua             ← 地图（瓦片 + 事件触发）
+    │   ├── npc.lua             ← NPC + 对话系统
+    │   ├── battle.lua          ← 战斗系统
+    │   ├── inventory.lua       ← 背包
+    │   ├── dialogue.lua        ← 对话树
+    │   ├── quest.lua           ← 任务系统
+    │   └── menu.lua            ← 菜单 UI
+    ├── data/                   ← 游戏数据（JSON/Lua表）
+    │   ├── items.lua
+    │   ├── skills.lua
+    │   ├── enemies.lua
+    │   └── maps/
+    └── assets/
+
+  关键函数选择：
+    碰撞：简单的 AABB 触发区域（进入某个区域触发事件/战斗）
+    存档：JSON 格式 + love.filesystem
+    地图：网格坐标系统，用 x/gridSize 计算网格位置
+    UI：love.graphics 手动绘制（矩形+文字），不用 HTML
+
+  核心语法模式——多层游戏状态：
+    local GameState = {
+      map     = require("src.map"),
+      battle  = require("src.battle"),
+      menu    = require("src.menu"),
+      shop    = require("src.shop"),
+    }
+    local current = "map"
+    local states = {}  -- 状态栈
+
+    function pushState(name)
+      table.insert(states, { name = name })  -- 保存旧状态
+      current = name
+    end
+    function popState()
+      local prev = table.remove(states)
+      current = prev and prev.name or "map"
+    end
+    function love.update(dt)
+      GameState[current]:update(dt)
+    end
+    function love.draw()
+      GameState[current]:draw()
+    end
+
+  核心语法模式——数据驱动设计：
+    -- data/items.lua
+    return {
+      potion = {
+        name = "药水", type = "consumable",
+        effect = { hp = 30 },
+        description = "恢复30点HP",
+        price = 10,
+      },
+      sword = {
+        name = "铁剑", type = "weapon",
+        atk = 15,
+        description = "普通的铁剑",
+        price = 50,
+      },
+    }
+
+  核心语法模式——事件触发器：
+    -- 地图上某个格子的事件
+    local triggers = {
+      { x=5, y=8, action=function() pushState("dialogue") end },
+      { x=10, y=3, action=function() startBattle("goblin") end },
+    }
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【2.4 物理益智/模拟游戏 (Angry Birds / Sandbox)】
+
+  项目结构：
+    physics_puzzle/
+    ├── main.lua
+    ├── src/
+    │   ├── world.lua           ← love.physics 世界管理
+    │   ├── body.lua            ← 物理物体工厂
+    │   ├── joint.lua           ← 关节管理
+    │   ├── input.lua           ← 拖拽/点击输入处理
+    │   └── level.lua           ← 关卡数据
+    ├── data/
+    │   └── levels/
+    └── lib/
+        ├── classic.lua         ← OOP（物理物体继承）
+        └── json.lua
+
+  关键函数选择：
+    物理：love.physics（Box2D），必须使用 setMeter 设置缩放比例
+    关节：mouseJoint（拖拽）、distanceJoint（连接）、
+          weldJoint（焊接）、revoluteJoint（旋转）、prismaticJoint（滑动）
+    输入：mouseJoint + setTarget 实现拖拽
+
+  核心语法模式——物理对象工厂：
+    function createBox(x, y, w, h, bodyType)
+      local body = love.physics.newBody(world, x, y, bodyType)
+      local shape = love.physics.newRectangleShape(w, h)
+      local fixture = love.physics.newFixture(body, shape)
+      fixture:setUserData({ type = "box" })
+      return body
+    end
+
+  核心语法模式——鼠标拖拽物理物体：
+    local mouseJoint = nil
+    function love.mousepressed(mx, my, b)
+      if b ~= 1 then return end
+      for _, body in ipairs(bodies) do
+        for _, fixture in ipairs(body:getFixtures()) do
+          if fixture:testPoint(mx, my) then
+            mouseJoint = love.physics.newMouseJoint(body, mx, my)
+            break
+          end
+        end
+      end
+    end
+    function love.mousereleased(mx, my, b)
+      if mouseJoint then mouseJoint:destroy(); mouseJoint = nil end
+    end
+    function love.update(dt)
+      if mouseJoint then
+        mouseJoint:setTarget(love.mouse.getPosition())
+      end
+      world:update(dt)
+    end
+
+  核心语法模式——物理世界缩放：
+    -- Box2D 假定 1 单位 = 1 米，需要缩放像素到物理单位
+    local meter = 32  -- 1米 = 32像素
+    -- 创建物体时：pos/meter, size/meter
+    -- 绘制时：pos*meter
+    local body = love.physics.newBody(world, x/meter, y/meter, "dynamic")
+    love.graphics.draw(img, body:getX()*meter, body:getY()*meter)
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【2.5 卡牌/策略游戏】
+
+  项目结构：
+    cardgame/
+    ├── main.lua
+    ├── src/
+    │   ├── state.lua           ← 游戏状态机
+    │   ├── card.lua            ← 卡牌类（属性+效果）
+    │   ├── deck.lua            ← 牌组管理
+    │   ├── hand.lua            ← 手牌区域
+    │   ├── board.lua           ← 棋盘/场地
+    │   ├── player.lua          ← 玩家数据
+    │   ├── ai.lua              ← AI 对手
+    │   └── ui.lua              ← 拖拽卡牌、高亮等UI
+    ├── data/
+    │   └── cards.lua           ← 所有卡牌数据定义
+    └── assets/
+
+  关键函数选择：
+    碰撞：无物理，全部是鼠标检测 + 区域判断
+    渲染：love.graphics.draw + 层级排序（z-order）
+    动画：flux 补间库（卡牌移动、翻转动画）
+    UI：lots-of-cards（手动写的点击拖拽逻辑）
+
+  核心语法模式——卡牌数据与效果分离：
+    -- data/cards.lua
+    return {
+      fireball = {
+        name = "火球术", cost = 3, type = "spell",
+        effect = function(caster, target)
+          target:damage(8)
+        end,
+        targetType = "enemy",
+      },
+      heal = {
+        name = "治疗", cost = 2, type = "spell",
+        effect = function(caster, target)
+          target:heal(5)
+        end,
+        targetType = "ally",
+      },
+    }
+
+  核心语法模式——延时动画链：
+    -- 使用 flux 库
+    flux.to(card, 0.3, { x = targetX, y = targetY })
+      :ease("backout")
+      :oncomplete(function()
+        card.played = true
+        nextPhase()
+      end)
+
+  核心语法模式——网格棋盘：
+    local grid = {}
+    for y = 1, rows do
+      grid[y] = {}
+      for x = 1, cols do
+        grid[y][x] = nil  -- 空单元格
+      end
+    end
+    function getCell(mx, my)
+      return math.floor((mx - offsetX) / cellSize) + 1,
+             math.floor((my - offsetY) / cellSize) + 1
+    end
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【2.6 节奏游戏 (Rhythm Game)】
+
+  项目结构：
+    rhythm/
+    ├── main.lua
+    ├── src/
+    │   ├── song.lua            ← 歌曲数据（BPM, 拍点序列）
+    │   ├── note.lua            ← 音符对象
+    │   ├── lane.lua            ← 轨道管理
+    │   ├── hitbox.lua          ← 判定区域
+    │   ├── judge.lua           ← 判定系统（perfect/great/miss）
+    │   ├── ui.lua              ← 连击、分数显示
+    │   └── result.lua          ← 结算画面
+    └── assets/
+        └── songs/
+
+  关键函数选择：
+    音频：love.audio（"stream" 音乐 + "static" 音效）
+    时间：love.timer 所有时间计算用音频位置（不用帧 dt）
+    渲染：love.graphics.draw + 音符沿 y 轴移动
+    同步：基于音频播放位置而非帧时间，避免帧率波动影响。
+
+  核心语法模式——基于音频位置同步：
+    local music = love.audio.newSource("song.ogg", "stream")
+    local songTime = 0  -- 当前歌曲精确时间
+    function love.update(dt)
+      songTime = music:tell("samples") / music:getSampleRate()
+      -- 用 songTime 计算所有音符位置，不用 dt
+    end
+    function drawNote(note)
+      local y = (note.time - songTime) * scrollSpeed + hitY
+      if y < -100 then note.missed = true end
+      love.graphics.rectangle("fill", laneX, y, w, h)
+    end
+
+  核心语法模式——拍点预生成：
+    -- chart.lua
+    return {
+      { time = 1.0,  lane = 1 },
+      { time = 1.5,  lane = 2 },
+      { time = 2.0,  lane = 1 },
+      { time = 3.0,  lane = 3 },
+      -- ...
+    }
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【2.7 Roguelike / 地牢爬行游戏】
+
+  项目结构：
+    roguelike/
+    ├── main.lua
+    ├── src/
+    │   ├── ecs.lua             ← 实体组件系统（ECS）
+    │   ├── systems/            ← 各系统
+    │   │   ├── movement.lua
+    │   │   ├── combat.lua
+    │   │   ├── ai.lua
+    │   │   ├── render.lua
+    │   │   └── input.lua
+    │   ├── components/         ← 组件数据
+    │   │   ├── position.lua
+    │   │   ├── health.lua
+    │   │   ├── combat.lua
+    │   │   └── sprite.lua
+    │   ├── dungeon.lua         ← 地牢生成（BSP/迷宮/噪声）
+    │   ├── fov.lua             ← 视野计算
+    │   └── turn.lua            ← 回合管理
+    └── assets/
+
+  关键函数选择：
+    渲染：方形网格 + 字体字符（传统 roguelike），或精灵图
+    地图：2D 数组 grid[y][x]，BSP 或 Drunkard's Walk 生成
+    视野：Shadow Casting 算法（递归视线计算）
+    碰撞：网格级碰撞（grid[y][x] 是否可通行）
+
+  核心语法模式——ECS 轻量实现：
+    local entities = {}
+    local nextID = 1
+
+    function createEntity()
+      local e = { id = nextID }
+      nextID = nextID + 1
+      table.insert(entities, e)
+      return e
+    end
+
+    function addComponent(e, name, data)
+      e[name] = data
+    end
+
+    -- 系统逐个处理
+    for _, e in ipairs(entities) do
+      if e.position and e.movement then
+        movementSystem(e)
+      end
+    end
+
+  核心语法模式——BSP 地牢生成：
+    function BSP(x, y, w, h, depth)
+      if depth <= 0 then
+        createRoom(x, y, w, h)
+        return
+      end
+      if w > h then
+        local split = love.math.random(x + w*0.3, x + w*0.7)
+        BSP(x, y, split-x, h, depth-1)
+        BSP(split, y, x+w-split, h, depth-1)
+        createCorridor(split, y+math.random(2,h-2), split+1, ...)
+      else
+        -- 垂直分割同理
+      end
+    end
+
+  核心语法模式——回合调度器：
+    -- 最简单的回合制：玩家行动 → 敌人行动 → 玩家行动...
+    -- 或速度制：每个实体有 speed，累积到阈值则行动
+    function takeTurn(entity)
+      entity.energy = entity.energy + entity.speed
+      while entity.energy >= 100 do
+        entity.energy = entity.energy - 100
+        entity:act()
+      end
+    end
+
+================================================================================
+第三章：Lua + Love2D 语法窍门与设计模式
+================================================================================
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【3.1 用表实现命名参数】
+
+  -- 函数参数太多时，改用表传参，提升可读性
+  -- ❌ 差：记不住参数顺序
+  function createBullet(x, y, angle, speed, damage, lifetime, sprite, color)
+  end
+
+  -- ✅ 好：命名清晰，可省略可选参数
+  function createBullet(params)
+    local b = {
+      x     = params.x or 0,
+      y     = params.y or 0,
+      angle = params.angle or 0,
+      speed = params.speed or 300,
+      dmg   = params.dmg or 1,
+      life  = params.life or 3,
+      img   = params.img or defaultBullet,
+      color = params.color or { 1, 1, 1 },
+    }
+    return b
+  end
+
+  createBullet { x=400, y=300, angle=math.pi/2, speed=500, dmg=5 }
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【3.2 表作为轻量"类"的三种写法】
+
+  写法一：闭包风格（私有变量，无 self）——
+    function newPlayer(x, y)
+      local posX, posY = x, y        -- 私有变量
+      local speed = 200
+      return {
+        getX    = function() return posX end,
+        move    = function(dt, dir)  posX = posX + speed * dt * dir end,
+        draw    = function() love.graphics.rectangle("fill", posX, posY, 32,32) end,
+      }
+    end
+
+  写法二：元表风格（经典 OOP 模拟）——
+    local Player = {}
+    Player.__index = Player
+
+    function Player:new(x, y)
+      return setmetatable({ x = x, y = y, speed = 200 }, self)
+    end
+
+    function Player:move(dt, dir)
+      self.x = self.x + self.speed * dt * dir
+    end
+
+    -- 继承
+    local Boss = setmetatable({}, Player)
+    Boss.__index = Boss
+    function Boss:new(x, y)
+      local b = Player:new(x, y)
+      setmetatable(b, self)
+      b.phase = 1
+      return b
+    end
+
+  写法三：纯表风格（最简单，无继承）——
+    return {
+      x = 0, y = 0,
+      update = function(self, dt) self.x = self.x + 100 * dt end,
+      draw   = function(self) love.graphics.circle("fill", self.x, self.y, 16) end,
+    }
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【3.3 用信号/事件系统解耦】
+
+  避免各模块直接互相调用，用事件总线解耦：
+
+    local Event = {}
+    local listeners = {}
+
+    function Event:on(name, fn)
+      listeners[name] = listeners[name] or {}
+      table.insert(listeners[name], fn)
+    end
+
+    function Event:emit(name, ...)
+      local fns = listeners[name]
+      if not fns then return end
+      for _, fn in ipairs(fns) do
+        fn(...)
+      end
+    end
+
+  -- 使用：
+    Event:on("player_died", function() showGameOver() end)
+    Event:on("player_died", function() playSound("death") end)
+    Event:emit("player_died")
+
+  -- 比硬编码 player.die() → gameover.show() → audio.play()
+  -- 更灵活，添加新响应不需改旧代码
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【3.4 惰性图像加载（避免启动卡顿）】
+
+  -- 不一次性加载所有素材，按需加载并缓存
+
+  local imageCache = {}
+
+  function getImage(path)
+    if imageCache[path] then return imageCache[path] end
+    local img = love.graphics.newImage(path)
+    imageCache[path] = img
+    return img
+  end
+
+  -- 而非：local allIMGs = { img1=newImage(...), img2=newImage(...), ... }
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【3.5 require 缓存与热重载】
+
+  -- require 会在 package.loaded 中缓存模块，修改后不生效
+  -- 开发期间用此技巧强制重载：
+
+  function reloadModule(name)
+    package.loaded[name] = nil
+    return require(name)
+  end
+
+  function love.keypressed(key)
+    if key == "f5" then  -- 按 F5 重载所有游戏模块
+      player = reloadModule("src.player")()
+      enemy  = reloadModule("src.enemy")()
+      print("Modules reloaded!")
+    end
+  end
+
+  -- 进阶：监听文件修改自动重载（配合 love2d.nvim）
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【3.6 协程实现过场动画 / 对话序列】
+
+  -- 用 Lua 协程把异步流程写成同步代码
+
+  local co
+
+  function love.load()
+    co = coroutine.create(scene1)
+  end
+
+  function scene1()
+    -- 等待 2 秒
+    wait(2)
+    showText("很久很久以前...")
+    wait(1)
+    fadeOut()
+    wait(0.5)
+    changeLevel("level1")
+  end
+
+  function wait(seconds)
+    local t = 0
+    while t < seconds do
+      t = t + coroutine.yield()
+    end
+  end
+
+  function love.update(dt)
+    if co and coroutine.status(co) ~= "dead" then
+      coroutine.resume(co, dt)
+    end
+  end
+
+  -- 优点：逻辑线性可读，无需状态机或计时器散落各处
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【3.7 用 __call 元方法做函数式工厂】
+
+  local BulletFactory = {}
+  BulletFactory.__index = BulletFactory
+
+  function BulletFactory:new(img, speed)
+    return setmetatable({ img = img, speed = speed }, self)
+  end
+
+  function BulletFactory:spawn(x, y, angle)
+    return { x = x, y = y, angle = angle,
+             vx = math.cos(angle) * self.speed,
+             vy = math.sin(angle) * self.speed,
+             img = self.img }
+  end
+
+  -- 用 __call 让工厂可像函数一样调用
+  BulletFactory.__call = function(self, x, y, angle)
+    return self:spawn(x, y, angle)
+  end
+
+  local fireball = BulletFactory:new(fb_img, 400)
+  local b = fireball(100, 200, math.pi/4)  -- 直接用函数调用
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【3.8 用 Canvas 做分层渲染】
+
+  -- 不同层独立绘制，互不干扰（背景/游戏层/UI层）
+
+  local layers = {
+    bg    = love.graphics.newCanvas(),
+    game  = love.graphics.newCanvas(),
+    ui    = love.graphics.newCanvas(),
+  }
+
+  function love.draw()
+    -- 背景层（少更新，大部分时间不重绘）
+    love.graphics.setCanvas(layers.bg)
+    love.graphics.clear()
+    drawBackground()
+    love.graphics.setCanvas()
+
+    -- 游戏层（每帧更新）
+    love.graphics.setCanvas(layers.game)
+    love.graphics.clear()
+    drawEntities()
+    love.graphics.setCanvas()
+
+    -- UI 层（位置固定，不受相机影响）
+    love.graphics.setCanvas(layers.ui)
+    love.graphics.clear()
+    drawHUD()
+    love.graphics.setCanvas()
+
+    -- 合成到屏幕（按顺序叠加）
+    love.graphics.draw(layers.bg)
+    love.graphics.draw(layers.game)
+    love.graphics.draw(layers.ui)
+  end
+
+  -- Canvas 也可以应用不同 shader 做后处理
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【3.9 调色板与颜色管理】
+
+  -- 不要到处硬编码颜色值，集中管理
+
+  local Colors = {
+    white    = { 1, 1, 1 },
+    black    = { 0, 0, 0 },
+    red      = { 1, 0, 0 },
+    green    = { 0.2, 0.8, 0.3 },
+    blue     = { 0.2, 0.4, 1 },
+    dark     = { 0.1, 0.12, 0.18 },
+    ui_bg    = { 0.15, 0.15, 0.2, 0.9 },
+    hp_bar   = { 1, 0.2, 0.2 },
+    mp_bar   = { 0.2, 0.5, 1 },
+  }
+
+  function setColor(col, alpha)
+    love.graphics.setColor(col[1], col[2], col[3],
+      alpha or col[4] or 1)
+  end
+
+  setColor(Colors.hp_bar)
+  love.graphics.rectangle("fill", ...)
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【3.10 屏幕震动效果】
+
+  -- 简单的相机抖动，被击中时触发
+
+  local shake = { intensity = 0, duration = 0, timer = 0 }
+
+  function triggerShake(intensity, duration)
+    shake.intensity = intensity
+    shake.duration = duration
+    shake.timer = 0
+  end
+
+  function love.update(dt)
+    if shake.timer < shake.duration then
+      shake.timer = shake.timer + dt
+    else
+      shake.intensity = 0
+    end
+  end
+
+  function love.draw()
+    local sx, sy = 0, 0
+    if shake.intensity > 0 then
+      sx = love.math.random(-shake.intensity, shake.intensity)
+      sy = love.math.random(-shake.intensity, shake.intensity)
+    end
+    love.graphics.push()
+    love.graphics.translate(sx, sy)
+    drawGame()
+    love.graphics.pop()
+  end
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【3.11 实体生命周期安全遍历】
+
+  -- 在循环中添加/删除元素会导致跳过或越界
+  -- 正确做法：反向遍历 + dead 标记
+
+  function world:update(dt)
+    -- 更新阶段
+    for _, e in ipairs(self.entities) do
+      e:update(dt)
+    end
+    -- 移除阶段（反向遍历安全删除）
+    for i = #self.entities, 1, -1 do
+      if self.entities[i].dead then
+        table.remove(self.entities, i)
+      end
+    end
+  end
+
+  -- 或使用两个列表：
+  function world:update(dt)
+    local alive = {}
+    for _, e in ipairs(self.entities) do
+      e:update(dt)
+      if not e.dead then table.insert(alive, e) end
+    end
+    self.entities = alive
+  end
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【3.12 回调注册表 —— 无侵入式扩展】
+
+  -- 有时你不想修改核心代码，只想插入一些行为
+  -- 用回调表实现"钩子"：
+
+  local hooks = {
+    onDamage = {},    -- 受到伤害时调用
+    onKill   = {},    -- 击杀敌人时
+    onLevelUp = {},   -- 升级时
+  }
+
+  function registerHook(event, fn)
+    table.insert(hooks[event], fn)
+  end
+
+  function callHooks(event, ...)
+    for _, fn in ipairs(hooks[event]) do
+      fn(...)
+    end
+  end
+
+  -- 使用
+  registerHook("onDamage", function(victim, amount)
+    spawnDamageNumber(victim.x, victim.y, amount)
+  end)
+  registerHook("onDamage", function(victim, amount)
+    triggerShake(5, 0.1)
+  end)
+
+  function damage(target, amount)
+    target.hp = target.hp - amount
+    callHooks("onDamage", target, amount)
+    if target.hp <= 0 then
+      callHooks("onKill", target)
+    end
+  end
+
+  -- 新的视觉效果/音效只需加钩子，不改核心逻辑
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【3.13 序列化 / 深拷贝】
+
+  -- Lua 表没有内建深拷贝
+
+  function deepcopy(orig)
+    local orig_type = type(orig)
+    local copy
+    if orig_type == "table" then
+      copy = {}
+      for k, v in next, orig do
+        copy[deepcopy(k)] = deepcopy(v)
+      end
+      setmetatable(copy, deepcopy(getmetatable(orig)))
+    else
+      copy = orig
+    end
+    return copy
+  end
+
+  -- 存档时常用
+  local save = deepcopy(gameState)
+
+  -- 更快的方案：JSON 序列化 → 反序列化
+  -- 但不能处理函数/用户数据；适合纯数据存档
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【3.14 插值 / 缓动公式速查】
+
+  -- 手写插值，不依赖第三方库
+
+  -- 线性
+  function lerp(a, b, t) return a + (b - a) * t end
+
+  -- 缓入（平方）
+  function easeInQuad(a, b, t)
+    return a + (b - a) * t * t
+  end
+
+  -- 缓出
+  function easeOutQuad(a, b, t)
+    return a + (b - a) * t * (2 - t)
+  end
+
+  -- 缓入缓出
+  function easeInOutQuad(a, b, t)
+    t = t * 2
+    if t < 1 then return a + (b - a) / 2 * t * t end
+    t = t - 1
+    return a + (b - a) / 2 * (1 - t * (t - 2))
+  end
+
+  -- 弹性缓出
+  function easeOutElastic(a, b, t)
+    if t == 0 or t == 1 then return a + (b - a) * t end
+    local p = 0.3
+    local s = p / 4
+    return a + (b - a) * (math.pow(2, -10 * t)
+      * math.sin((t - s) * (2 * math.pi) / p) + 1)
+  end
+
+  -- 使用：
+  local progress = 0  -- 逐渐从 0 到 1
+  progress = math.min(1, progress + dt * 0.5)  -- 持续 2 秒
+  local y = easeOutElastic(startY, endY, progress)
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【3.15 LuaJIT 性能优化要点】
+
+  1. 局部化全局变量：
+     -- ❌ 慢：每帧访问全局
+     function love.draw()
+       love.graphics.draw(love.graphics.newImage("player.png"), 400, 300)
+     end
+     -- ✅ 快：局部引用
+     local draw = love.graphics.draw
+     local newImage = love.graphics.newImage
+     function love.draw()
+       draw(newImage("player.png"), 400, 300)
+     end
+
+  2. 避免在循环中创建表：
+     for i = 1, 1000 do
+       local t = { x=i, y=i*2 }  -- 每次分配新表
+     end
+     -- 改为
+     local t = {}
+     for i = 1, 1000 do
+       t.x, t.y = i, i*2
+     end
+
+  3. 字符串拼接用 table.concat：
+     -- ❌
+     local s = ""
+     for i = 1, 100 do s = s .. tostring(i) .. "," end
+     -- ✅
+     local parts = {}
+     for i = 1, 100 do parts[i] = tostring(i) end
+     local s = table.concat(parts, ",")
+
+  4. 用 ipairs 而不是 pairs 遍历数组：
+     for i, v in ipairs(arr) do ... end  -- 更快
+
+  5. 常量用表索引：
+     local COLORS = { RED=1, GREEN=2, BLUE=3 }
+     -- 比直接用字符串做 key 更快
+
+  6. 避免不必要的函数调用（内联热点代码）：
+     -- 循环内的小函数可以手动展开
+
+  7. Canvas 开销大，非必要时不要每帧 clear/重绘；
+     静态 UI 层可以复用旧 Canvas。
+
+  8. SpriteBatch 用于大量相同纹理的渲染：
+     local batch = love.graphics.newSpriteBatch(img, 1000)
+     batch:add(x1, y1)
+     batch:add(x2, y2)
+     love.graphics.draw(batch)
+
+  9. love.physics: 减少 dynamic body 数量，static/kinematic 更省。
+
+  10. FFI: 大量计算用 C 侧循环处理，减少 Lua↔C 调用次数。
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+【3.16 调试与防御式编程】
+
+  -- 1. 严格模式（在 main.lua 顶部）：
+     -- Love 11 默认带严格模式，可加：
+     -- love.filesystem.setRequirePath("?.lua")
+
+  -- 2. 断言防御：
+     function setHP(entity, value)
+       assert(type(value) == "number" and value >= 0,
+         "HP must be non-negative number, got: " .. tostring(value))
+       entity.hp = value
+     end
+
+  -- 3. 安全 require（模块不存在时降级）：
+     local ok, mod = pcall(require, "optional_module")
+     if not ok then mod = fallback end
+
+  -- 4. 在 love.draw 中捕获错误防止崩溃：
+     function love.draw()
+       local ok, err = pcall(drawAll)
+       if not ok then
+         love.graphics.setColor(1, 0, 0)
+         love.graphics.print("ERROR: " .. tostring(err), 10, 10)
+       end
+     end
+
+  -- 5. 性能分析框：
+     local function profile(name, fn)
+       local start = love.timer.getTime()
+       fn()
+       local elapsed = love.timer.getTime() - start
+       if elapsed > 0.001 then  -- 超过 1ms 才打印
+         print(string.format("[PROFILE] %s: %.2f ms", name, elapsed * 1000))
+       end
+     end
+
+     profile("collision", function()
+       checkAllCollisions()
+     end)
+
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+================================================================================
+                            附录：模块速查对照表
+================================================================================
+
+  Module             用途                    常用函数数      适用游戏类型
+  ─────────────────  ─────────────────────  ─────────────    ──────────────
+  love.graphics      渲染（图像/几何/文字）  50+              所有
+  love.keyboard      键盘输入                5                所有
+  love.mouse         鼠标输入                6                所有
+  love.audio         音频播放                5+Source方法     所有
+  love.physics       Box2D物理              40+              益智/模拟/平台
+  love.math          数学/噪声/随机          15+              所有
+  love.timer         时间/帧率               8                所有
+  love.filesystem    文件IO/存档             15+              所有
+  love.image         图像数据处理            5+ImageData      工具/编辑器
+  love.sound         声音数据处理            2+SoundData      音频工具
+  love.data          数据打包/哈希           6                存档/网络
+  love.joystick      手柄支持                10+              主机/全平台
+  love.window        窗口管理                5                PC
+  love.system        系统功能                6                PC
+  love.event         事件系统                5                高级
+  love.thread        多线程                  5                性能优化
+  love.video         视频播放                3                过场动画
+
+================================================================================
+                        祝开发顺利！
+================================================================================
