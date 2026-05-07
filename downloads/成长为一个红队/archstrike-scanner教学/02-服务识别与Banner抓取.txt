@@ -1,0 +1,781 @@
+================================================================================
+模块：服务识别与Banner抓取
+工具组：archstrike-scanner (amap, unicornscan, etc.)
+目标读者：红队成员
+================================================================================
+
+【学习目标】
+1. 掌握 amap 的应用层服务识别与Banner抓取技术
+2. 掌握 unicornscan 的TCP/UDP快速探测技术
+3. 理解非标准端口服务的识别策略
+4. 设计全面的分层扫描与Banner抓取工作流
+5. 实践：对实验网络执行完整的服务识别
+
+【工具清单】
+- amap:            应用映射工具，识别非标准端口上的服务
+- unicornscan:     TCP/UDP高速探测与Banner抓取
+- nmap (参考):     服务版本探测 (-sV)
+- masscan (参考):  高速端口发现
+
+【前置概念】
+
+端口扫描告诉你"哪个端口是开放的"，但无法告诉你"上面运行着什么服务"。
+在渗透测试中，服务识别是决定攻击路径的关键步骤。
+
+传统思维：端口号 = 服务类型（22=SSH, 80=HTTP, 443=HTTPS）
+实际场景：管理员可能将SSH运行在64221端口，将HTTP运行在8080端口，
+将RDP运行在33890端口。——端口号不可信！
+
+amap 的设计哲学：
+"不要假设端口决定服务。发送各种触发数据包（HTTP请求、SSL握手、SSH握手
+等），分析响应来确定真正的服务。"
+
+unicornscan 的定位：
+"更快的nmap替代品，专注于UDP扫描和高速TCP Banner抓取。
+在扫描大量UDP端口时比nmap快100倍以上。"
+
+================================================================================
+第一部分：amap — 应用映射与Banner抓取
+================================================================================
+
+amap (Application MAPper) 是专业的服务识别工具。与 nmap -sV 不同，
+amap 采用更激进的服务指纹识别方式，发送更多类型的触发数据包。
+
+--- 1.1 安装 ---
+
+  sudo pacman -S amap     # ArchStrike 仓库
+
+  验证：
+  amap --version
+  man amap
+
+--- 1.2 基本使用 ---
+
+  对单个目标端口做服务识别：
+  amap -bqv 192.168.1.100 80
+
+  参数说明：
+  -b   抓取Banner（banner）
+  -q   静默模式，不输出连接过程
+  -v   详细输出（与 -b 组合显示完整banner）
+
+  输出示例：
+  amap v5.4 started at 2024-06-15 09:00:00 - APPLICATION MAPPER
+
+  Protocol on 192.168.1.100:80/tcp matches http
+  Protocol on 192.168.1.100:80/tcp matches http-apache-2
+  Unrecognized response:
+  HTTP/1.1 200 OK
+  Date: Sat, 15 Jun 2024 09:00:00 GMT
+  Server: Apache/2.4.41 (Ubuntu)
+  Content-Type: text/html
+  ...
+
+  识别结果解读：
+  - "matches http" → 服务识别为HTTP
+  - "matches http-apache-2" → 精确识别为Apache 2.x
+  - "Unrecognized response" → 捕获到的完整原始banner数据
+
+--- 1.3 批量扫描 ---
+
+  扫描单个目标多个端口：
+  amap -bqv 192.168.1.100 22 80 443 8080 3306 3389
+
+  从文件批量扫描：
+  amap -bqv -i targets.txt 22 80 443 8080
+
+  targets.txt 格式（每行一个IP）：
+  192.168.1.1
+  192.168.1.2
+  192.168.1.100
+
+  扫描端口范围：
+  amap -bqv 192.168.1.100 1-1000
+  amap -bqv 192.168.1.100 8000-9000
+
+--- 1.4 高级触发模式 ---
+
+  amap 通过发送多种触发数据包来识别服务。可以指定触发方式：
+
+  【-M / --modus 触发模式】
+
+  强制发送HTTP GET请求：
+  amap -bqvH 192.168.1.100 8080
+
+  参数详解：
+  -H   发送HTTP GET请求以触发HTTP响应
+       发送: GET / HTTP/1.0\r\n\r\n
+
+  如果默认检测没识别出来，手动指定触发器：
+
+  amap -M 192.168.1.100 445
+  # 发送空连接（默认）
+  # 适合: SMB, FTP, SSH 等会自动发送banner的服务
+
+  amap -H 192.168.1.100 8080
+  # 发送HTTP请求
+  # 适合: HTTP, HTTPS (需升级TLS), Tomcat, Jetty
+
+  amap -S 192.168.1.100 443
+  # 发送SSL/TLS ClientHello
+  # 适合: HTTPS, SMTPS, IMAPS, POP3S, RDP(SSL)
+
+  amap -U 192.168.1.100 161
+  # 发送UDP探测包
+  # 适合: SNMP, DNS, NTP
+
+  amap -N 192.168.1.100 21
+  # 发送空行（换行符 \r\n）
+  # 适合: 需要换行触发的协议
+
+  【完整的组合示例】
+
+  对未知服务做全面探测（组合多种触发器）：
+  amap -bqvHM 192.168.1.100 9999
+
+  实际操作流程：
+  Step 1: 先用 -M 空连接尝试
+    amap -bqvM 192.168.1.100 9999
+    观察是否有默认banner
+
+  Step 2: 如果没有识别，尝试HTTP请求
+    amap -bqvH 192.168.1.100 9999
+    观察是否像HTTP服务
+
+  Step 3: 如果仍无结果，尝试SSL握手
+    amap -bqvS 192.168.1.100 9999
+    观察是否为TLS加密服务
+
+  Step 4: 如果还是无结果，使用自定义触发
+    # 通过管道发送自定义数据
+    echo "SSH-2.0-OpenSSH_8.2" | nc 192.168.1.100 9999
+    echo "HELO test" | nc 192.168.1.100 9999
+
+--- 1.5 指纹数据库 ---
+
+  amap 使用指纹文件进行服务匹配：
+  /usr/share/amap/appdefs.trig
+
+  查看指纹库：
+  head -50 /usr/share/amap/appdefs.trig
+
+  添加自定义指纹（已知的服务特征）：
+  sudo vim /usr/share/amap/appdefs.trig
+
+  添加自定义trigger格式：
+  # trigger <name> <trigger_type> <send_string>
+  trigger my-app tcp send="VERSION\r\n"
+
+  添加自定义response匹配：
+  # match <service> <response_type> <pattern>
+  match my-app tcp response="MyApp v[0-9.]+\r\n"
+
+--- 1.6 加速与并发 ---
+
+  设置并发连接数：
+  amap -bqvH -c 10 -i targets.txt 80 443 8080
+  # -c 10: 同时10个并发连接（默认并发数较低）
+
+  设置超时时间：
+  amap -bqvH -t 3 192.168.1.100 80
+  # -t 3: 连接超时3秒（默认5秒）
+
+  组合高速扫描：
+  amap -bqv -c 20 -t 2 -i targets.txt 22 80 443 8080 8443 3389
+
+--- 1.7 实战案例 ---
+
+  案例1：识别内网Web服务器（非标准端口）
+    # 先masscan发现开放端口
+    sudo masscan -p1-65535 192.168.1.100 --rate=10000 -oJ masscan_full.json
+
+    # 提取所有开放端口
+    jq -r '.[].ports[].port' masscan_full.json > open_ports.txt
+
+    # 用amap识别每个端口
+    while read port; do
+      echo "=== Checking port $port ==="
+      amap -bqvH 192.168.1.100 "$port"
+    done < open_ports.txt
+
+  案例2：批量Banner抓取（内网存活主机）
+    # 创建目标列表
+    echo "192.168.1.1" > hosts.txt
+    echo "192.168.1.15" >> hosts.txt
+    echo "192.168.1.100" >> hosts.txt
+
+    # 对所有主机的关键端口抓取banner
+    amap -bqv -i hosts.txt 22 80 443 445 3389 8080 3306 5432 > all_banners.txt
+
+    # 分析结果
+    grep "matches" all_banners.txt
+    grep "Unrecognized" all_banners.txt
+
+  案例3：识别RD网关/SSL-VPN服务
+    amap -bqvS 192.168.1.100 443
+    # -S 触发SSL握手
+    # 可以识别: RDP over SSL (3389), OpenVPN (1194), SSTP (443)
+
+  案例4：识别数据库服务
+    amap -bqvM 192.168.1.100 3306    # MySQL
+    amap -bqvM 192.168.1.100 1433    # MSSQL
+    amap -bqvM 192.168.1.100 5432    # PostgreSQL
+    amap -bqvM 192.168.1.100 6379    # Redis
+    amap -bqvM 192.168.1.100 27017   # MongoDB
+    amap -bqvM 192.168.1.100 1521    # Oracle TNS
+
+================================================================================
+第二部分：unicornscan — TCP/UDP高速探测
+================================================================================
+
+unicornscan 是高速异步网络扫描器，特别适合UDP端口扫描和Banner抓取。
+在扫描大量UDP端口时性能远超nmap。
+
+--- 2.1 安装 ---
+
+  sudo pacman -S unicornscan     # ArchStrike 仓库
+
+  验证：
+  unicornscan --help
+  man unicornscan
+
+--- 2.2 TCP扫描 ---
+
+  【基本TCP扫描】
+  sudo unicornscan -mT 192.168.1.100:a
+  # -mT: TCP扫描模式
+  # :a = 扫描所有端口 (1-65535)
+
+  扫描指定端口范围：
+  sudo unicornscan -mT 192.168.1.100:1-1024       # 前1024个端口
+  sudo unicornscan -mT 192.168.1.100:80,443,8080  # 指定端口
+
+  扫描一个网段的所有主机：
+  sudo unicornscan -mT 192.168.1.0/24:22,80,443
+
+  输出示例：
+  TCP open                     ssh[   22]         from 192.168.1.1  ttl 64
+  TCP open                    http[   80]         from 192.168.1.1  ttl 64
+  TCP open                   https[  443]         from 192.168.1.1  ttl 64
+  TCP open                    msrpc[  135]        from 192.168.1.100  ttl 128
+  TCP open               netbios-ssn[  139]       from 192.168.1.100  ttl 128
+  TCP open          microsoft-ds[  445]           from 192.168.1.100  ttl 128
+
+--- 2.3 UDP扫描 ---
+
+  unicornscan 的UDP扫描比nmap快100倍以上，是最佳的UDP扫描方案。
+
+  全端口UDP扫描：
+  sudo unicornscan -mU 192.168.1.100:a
+  # -mU: UDP扫描模式
+
+  扫描常用UDP端口：
+  sudo unicornscan -mU 192.168.1.0/24:53,67,68,69,123,135,137,138,139,161,162,445,500,514,520,631,1434,1900,4500,5353
+
+  输出示例：
+  UDP open                     domain[   53]      from 192.168.1.1  ttl 64
+  UDP open                     snmp[  161]        from 192.168.1.100  ttl 128
+  UDP open                     isakmp[  500]      from 192.168.1.1  ttl 64
+
+  为什么UDP扫描通常很慢：
+  - UDP是无连接协议，没有像TCP SYN-ACK那样的可靠反馈
+  - 大多数封闭UDP端口会返回ICMP Port Unreachable
+  - 但很多防火墙会过滤ICMP，导致nmap必须等待超时
+  - unicornscan使用异步技术，并行发送大量UDP包，
+    减少因等待超时造成的时间浪费
+
+--- 2.4 Banner抓取 ---
+
+  unicornscan 可以在发现开放端口后立即抓取Banner：
+
+  TCP Banner抓取：
+  sudo unicornscan -mT -Iv 192.168.1.100:a
+  # -I: 立即抓取Banner
+  # -v: 详细输出
+
+  输出示例（含Banner）：
+  TCP open                     ssh[   22]         from 192.168.1.1  ttl 64
+          banner: SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.1
+  TCP open                    http[   80]         from 192.168.1.1  ttl 64
+          banner: HTTP/1.1 200 OK\r\nServer: nginx/1.18.0 (Ubuntu)\r\n...
+
+  UDP Banner抓取：
+  sudo unicornscan -mU -Iv 192.168.1.100:53,161,123
+
+--- 2.5 高级参数 ---
+
+  【速率控制】
+  sudo unicornscan -mT -r 1000 192.168.1.0/24:80,443
+  # -r 1000: 每秒1000个包（默认较高）
+
+  【源端口设定】
+  sudo unicornscan -mT -s 53 192.168.1.100:80
+  # -s 53: 使用源端口53（DNS），可能绕过防火墙
+
+  【源IP设定】
+  sudo unicornscan -mT -S 192.168.1.200 192.168.1.100:80
+  # -S: 设置源IP（IP欺骗）
+
+  【超时时间】
+  sudo unicornscan -mU -T 1000 192.168.1.100:53,161
+  # -T 1000: 响应超时 1000ms
+
+  【网卡指定】
+  sudo unicornscan -mT -i eth0 192.168.1.0/24:80
+  # -i eth0: 使用eth0网卡
+
+  【TTL设置】
+  sudo unicornscan -mT -ttl 128 192.168.1.100:80
+  # -ttl 128: 自定义TTL
+
+  【输出格式】
+  sudo unicornscan -mT -o output.txt 192.168.1.100:a
+  # -o: 输出到文件
+
+  【不解析主机名】
+  sudo unicornscan -mT -n 192.168.1.0/24:80
+  # -n: 不进行DNS解析（更快）
+
+--- 2.6 综合示例 ---
+
+  快速发现内网所有开放TCP端口：
+  sudo unicornscan -mT -Iv -r 5000 10.0.0.0/24:a -o tcp_scan.txt
+
+  快速发现内网所有开放UDP端口：
+  sudo unicornscan -mU -Iv -r 5000 10.0.0.0/24:1-1000,1024-2000 -o udp_scan.txt
+
+  组合扫描脚本：
+  #!/bin/bash
+  TARGET="192.168.1.0/24"
+  echo "[1/3] TCP快速扫描..."
+  sudo unicornscan -mT -r 10000 "$TARGET":22,80,443,445,3389,8080,8443 -o tcp_quick.txt
+
+  echo "[2/3] UDP常用端口扫描..."
+  sudo unicornscan -mU -r 2000 "$TARGET":53,123,161,500,1900,5353 -o udp_quick.txt
+
+  echo "[3/3] Banner抓取..."
+  sudo unicornscan -mT -Iv -r 1000 "$TARGET":22,80,443,8080 -o tcp_banner.txt
+
+  echo "扫描完成。结果文件: tcp_quick.txt, udp_quick.txt, tcp_banner.txt"
+
+================================================================================
+第三部分：扫描策略设计 — 分层服务识别
+================================================================================
+
+在真实红队行动中，不会只使用一种工具。最优策略是分层进行。
+
+--- 3.1 三层扫描策略 ---
+
+  第一层：快速端口发现
+    任务：在最短时间内找到所有开放端口
+    工具：masscan (TCP), unicornscan (UDP)
+    速度：极高 (10K-100K pps)
+    输出：IP:Port 列表
+
+    命令：
+    # TCP端口发现（masscan）
+    sudo masscan -p1-65535 192.168.1.0/24 --rate=50000 -oJ phase1_tcp.json
+
+    # UDP端口发现（unicornscan）
+    sudo unicornscan -mU -r 10000 192.168.1.0/24:1-1000,1024-65535 -o phase1_udp.txt
+
+  第二层：Banner抓取与服务初筛
+    任务：对发现的开放端口进行Banner抓取
+    工具：amap, unicornscan -Iv
+    速度：中等 (100-1000 conn/s)
+    输出：服务类型 + Banner
+
+    命令：
+    # 批量Banner抓取（amap）
+    cat open_ports.txt | while read ip port; do
+      amap -bqvH "$ip" "$port"
+    done > phase2_banners.txt
+
+    # 或使用unicornscan
+    sudo unicornscan -mT -Iv -r 1000 192.168.1.0/24:22,80,443,8080,8443,3306,3389 -o phase2_banners.txt
+
+  第三层：深度服务版本与漏洞探测
+    任务：精确确定服务版本，运行安全脚本
+    工具：nmap -sV -sC --script vuln
+    速度：慢 (每次扫描几十秒到几分钟)
+    输出：详细服务版本 + 潜在漏洞
+
+    命令：
+    # 对关键目标做深度扫描
+    nmap -sV -sC --script vuln -p 22,80,443,8080,3306,3389 192.168.1.100 -oA phase3_deep
+
+--- 3.2 自动化分层扫描脚本 ---
+
+  #!/bin/bash
+  # full_service_scan.sh — 完整的服务识别工作流
+
+  TARGET="192.168.1.100"
+  OUTDIR="scan_${TARGET}_$(date +%Y%m%d_%H%M%S)"
+  mkdir -p "$OUTDIR"
+
+  echo "============================================"
+  echo "分层服务扫描 — 目标: $TARGET"
+  echo "输出目录: $OUTDIR"
+  echo "============================================"
+
+  echo ""
+  echo ">>> Phase 1: 全端口TCP发现 (masscan)"
+  sudo masscan -p1-65535 "$TARGET" --rate=10000 -oJ "$OUTDIR/p1_tcp_ports.json"
+  TCP_PORTS=$(jq -r '.[].ports[].port' "$OUTDIR/p1_tcp_ports.json" | sort -n | paste -sd, -)
+  echo "发现的TCP端口: $TCP_PORTS"
+
+  echo ""
+  echo ">>> Phase 2: 常用UDP端口发现 (unicornscan)"
+  sudo unicornscan -mU -r 2000 "$TARGET":53,67,68,69,123,135,137,138,139,161,162,445,500,514,520,631,1434,1900,4500,5353 -o "$OUTDIR/p2_udp_ports.txt"
+
+  echo ""
+  echo ">>> Phase 3: Banner抓取 (amap)"
+  IFS=',' read -ra PORT_ARRAY <<< "$TCP_PORTS"
+  for port in "${PORT_ARRAY[@]}"; do
+    echo "  - 探测端口 $port ..."
+    amap -bqvHM "$TARGET" "$port" >> "$OUTDIR/p3_banners.txt" 2>&1
+  done
+
+  echo ""
+  echo ">>> Phase 4: 非标准端口深度检测"
+  # 对于没有匹配到已知服务的端口，尝试多种触发器
+  grep -v "matches" "$OUTDIR/p3_banners.txt" | grep "Protocol on" | awk '{print $4}' | \
+    while read port_info; do
+      port=$(echo "$port_info" | cut -d: -f1)
+      echo "  - 深度检测端口 $port ..."
+      # 尝试HTTP
+      amap -bqvH "$TARGET" "$port" >> "$OUTDIR/p4_deep_unknown.txt" 2>&1
+      # 尝试SSL
+      amap -bqvS "$TARGET" "$port" >> "$OUTDIR/p4_deep_unknown.txt" 2>&1
+    done
+
+  echo ""
+  echo ">>> Phase 5: 服务版本精确探测 (nmap)"
+  nmap -sV -sC --script "default,safe" -p "$TCP_PORTS" "$TARGET" -oA "$OUTDIR/p5_nmap"
+
+  echo ""
+  echo ">>> 扫描完成！结果汇总："
+  echo ""
+  echo "一、发现的TCP端口:"
+  cat "$OUTDIR/p1_tcp_ports.json" | jq -r '.[] | "  \(.ip):\(.ports[].port)/tcp"'
+  echo ""
+  echo "二、识别的服务:"
+  grep "matches" "$OUTDIR/p3_banners.txt" | while read line; do
+    echo "  $line"
+  done
+  echo ""
+  echo "三、需要人工确认的未知服务:"
+  grep -c "Unrecognized" "$OUTDIR/p4_deep_unknown.txt" 2>/dev/null && \
+    echo "  (查看 $OUTDIR/p4_deep_unknown.txt 了解详情)"
+
+  echo ""
+  echo "详细结果保存在: $OUTDIR/"
+
+--- 3.3 识别非标准服务的技巧 ---
+
+  技巧1：对比已知端口
+    # 如果端口 2222 开放，可能是 SSH 的替代端口
+    amap -bqvM 192.168.1.100 2222
+    # 手动发送 SSH 客户端标识
+    echo "SSH-2.0-OpenSSH_8.2" | nc -w 3 192.168.1.100 2222
+
+  技巧2：触发应用层协议
+    # 测试是否是 FTP
+    echo "USER anonymous" | nc -w 3 192.168.1.100 2121
+    # 测试是否是 SMTP
+    echo "EHLO test" | nc -w 3 192.168.1.100 2525
+    # 测试是否是 POP3
+    echo "USER test" | nc -w 3 192.168.1.100 2110
+
+  技巧3：TLS/SSL 检测
+    # 用 openssl 探测 SSL/TLS
+    openssl s_client -connect 192.168.1.100:8443 -servername 192.168.1.100
+    # SSL证书信息会透露服务类型和组织名称
+
+  技巧4：时间戳行为分析
+    # 有些服务的响应延迟不同
+    # MySQL: 会主动发送握手包
+    # PostgreSQL: 等待客户端先发消息
+    time nc -w 5 192.168.1.100 5432
+    # 如果即时收到数据=>可能是MySQL；如果等待=>可能是PostgreSQL
+
+  技巧5：协议格式分析
+    # 抓取原始banner后用hexdump分析
+    amap -bqvM 192.168.1.100 9999 2>/dev/null | xxd | head
+    # 十六进制查看可以发现非文本协议的特征
+
+================================================================================
+第四部分：实践演练 — 完整服务识别
+================================================================================
+
+--- 4.1 实验目标 ---
+
+  在实验网络中（虚拟网络或实验室物理网络），执行完整的分层扫描流程，
+  识别所有开放端口和运行的服务。
+
+--- 4.2 准备阶段 ---
+
+  Step 1: 确认网络环境
+    ip addr show
+    # 记录你的IP地址和网段
+
+    ip route
+    # 查看网关和路由
+
+    # 确认要扫描的网段（例如 192.168.122.0/24）
+
+  Step 2: 创建输出目录
+    mkdir -p ~/redteam_lab_scan/$(date +%Y%m%d)
+    cd ~/redteam_lab_scan/$(date +%Y%m%d)
+
+  Step 3: （选做）在靶机上启动一些非标准服务
+    # 在靶机上
+    sudo python3 -m http.server 9999 &
+    sudo nc -l -p 4444 -e /bin/bash &
+    # 这些非标准服务需要被识别
+
+--- 4.3 执行分层扫描 ---
+
+  Step 4: Phase 1 — masscan 快速端口发现
+    TARGET_NET="192.168.122.0/24"
+
+    echo "=== Phase 1: TCP快速端口扫描 ==="
+    sudo masscan -p1-65535 "$TARGET_NET" --rate=20000 \
+         -oJ phase1_tcp_open.json 2>&1 | tee phase1_log.txt
+
+    echo "=== Phase 1b: UDP常用端口扫描 ==="
+    sudo unicornscan -mU -r 5000 "$TARGET_NET":53,123,161,500,1900,4500,5353,67,68 \
+         -o phase1_udp_open.txt 2>&1
+
+  Step 5: 提取存活主机和端口
+    # 提取有开放端口的主机IP
+    jq -r '.[] | .ip' phase1_tcp_open.json | sort -u > phase1_alive_hosts.txt
+
+    ALIVE_COUNT=$(wc -l < phase1_alive_hosts.txt)
+    echo "存活主机数: $ALIVE_COUNT"
+
+  Step 6: Phase 2 — amap Banner抓取
+    echo "=== Phase 2: Banner抓取 ==="
+
+    while read -r host; do
+      # 获取该主机的所有开放端口
+      OPEN_PORTS=$(jq -r ".[] | select(.ip == \"$host\") | .ports[].port" \
+                   phase1_tcp_open.json | paste -sd ' ' -)
+
+      echo "--- $host ---"
+      echo "  端口: $OPEN_PORTS"
+
+      # 用amap逐一识别
+      for port in $OPEN_PORTS; do
+        result=$(amap -bqvHM "$host" "$port" 2>/dev/null)
+        if echo "$result" | grep -q "matches"; then
+          service_name=$(echo "$result" | grep "matches" | tail -1 | awk '{print $NF}')
+          echo "  [$port/tcp] => $service_name"
+        else
+          echo "  [$port/tcp] => (unknown)"
+          echo "$result" >> phase2_unknown_$host.txt
+        fi
+        # 记录完整banner
+        echo "=== $host:$port ===" >> phase2_all_banners.txt
+        echo "$result" >> phase2_all_banners.txt
+      done
+    done < phase1_alive_hosts.txt
+
+  Step 7: Phase 3 — nmap 版本深度验证
+    echo "=== Phase 3: nmap 服务版本验证 ==="
+
+    while read -r host; do
+      OPEN_PORTS=$(jq -r ".[] | select(.ip == \"$host\") | .ports[].port" \
+                   phase1_tcp_open.json | paste -sd, -)
+
+      if [ -n "$OPEN_PORTS" ]; then
+        echo "  扫描: $host ($OPEN_PORTS)"
+        nmap -sV -sC -p "$OPEN_PORTS" "$host" -oA "phase3_nmap_$host" &
+      fi
+    done < phase1_alive_hosts.txt
+    wait
+
+  Step 8: Phase 4 — 非标准端口深度分析
+    echo "=== Phase 4: 非标准端口深度分析 ==="
+
+    # 检查每个未知端口
+    for hostfile in phase2_unknown_*.txt; do
+      host=$(basename "$hostfile" | sed 's/phase2_unknown_//' | sed 's/\.txt//')
+      echo "深度分析: $host"
+
+      # 尝试HTTP触发
+      grep "Protocol on" "$hostfile" | awk -F'[:.]' '{print $1}' | while read -r port_line; do
+        port=$(echo "$port_line" | awk '{print $4}' | cut -d: -f1)
+        if [ -n "$port" ]; then
+          echo "  [$port] 尝试HTTP触发..."
+          result=$(curl -s --connect-timeout 3 "http://$host:$port/" 2>&1)
+          if [ -n "$result" ]; then
+            echo "    HTTP响应: $result" | head -10
+          fi
+
+          echo "  [$port] 尝试SSL连接..."
+          openssl s_client -connect "$host:$port" -quiet 2>/dev/null | head -5
+        fi
+      done
+    done
+
+--- 4.4 结果分析 ---
+
+  Step 9: 生成服务发现总表
+    echo "========== 服务发现总表 =========="
+    echo ""
+
+    while read -r host; do
+      echo "主机: $host"
+      echo "----------------------------------------"
+
+      # 从nmap输出中提取服务信息
+      if [ -f "phase3_nmap_$host.nmap" ]; then
+        grep -E "^[0-9]+/" "phase3_nmap_$host.nmap" | while read -r line; do
+          port=$(echo "$line" | awk -F'/' '{print $1}')
+          proto=$(echo "$line" | awk -F'/' '{print $2}')
+          state=$(echo "$line" | awk '{print $2}')
+          service=$(echo "$line" | grep -oP 'open\s+\K\S+')
+          version=$(echo "$line" | grep -oP "$service\s+\K.*" | head -1)
+          echo "  $port/$proto ($state): $service $version"
+        done
+      fi
+      echo ""
+    done < phase1_alive_hosts.txt
+
+  Step 10: 识别关键服务
+    echo "========== 关键服务识别 =========="
+
+    echo "" ; echo "--- Web服务器 (HTTP/HTTPS) ---"
+    grep -rn "http" phase3_nmap_*.nmap | grep -i "open" | grep -E ":(80|443|8080|8443|8000|8888)/"
+
+    echo "" ; echo "--- 数据库服务 ---"
+    grep -rnE "(mysql|postgresql|mssql|oracle|mongodb|redis)" phase3_nmap_*.nmap | grep "open"
+
+    echo "" ; echo "--- 远程管理 ---"
+    grep -rnE "(ssh|rdp|vnc|telnet)" phase3_nmap_*.nmap | grep "open"
+
+    echo "" ; echo "--- 文件共享 ---"
+    grep -rnE "(smb|nfs|ftp)" phase3_nmap_*.nmap | grep "open"
+
+  Step 11: 服务清单输出
+    echo "========== 最终服务清单 ==========" > final_service_inventory.txt
+    echo "扫描日期: $(date)" >> final_service_inventory.txt
+    echo "扫描网段: $TARGET_NET" >> final_service_inventory.txt
+    echo "" >> final_service_inventory.txt
+
+    while read -r host; do
+      echo "[$host]" >> final_service_inventory.txt
+      grep -E "^[0-9]+/" "phase3_nmap_$host.nmap" 2>/dev/null | \
+        grep "open" >> final_service_inventory.txt
+      echo "" >> final_service_inventory.txt
+    done < phase1_alive_hosts.txt
+
+    cat final_service_inventory.txt
+
+================================================================================
+第五部分：高级Banner抓取技巧
+================================================================================
+
+--- 5.1 手动Banner抓取 ---
+
+  有些服务不响应标准amap/nmap触发，需要手动操作：
+
+  SSH Banner:
+    ssh -o StrictHostKeyChecking=no user@target 2>&1 | head -5
+    # 即使认证失败，SSH banner也会显示
+
+  或：
+    echo "" | nc target 22
+
+  HTTP Headers:
+    curl -I http://target:80/
+    curl -k -I https://target:443/
+
+  FTP Banner:
+    echo "USER anonymous" | nc target 21
+
+  SMTP Banner:
+    echo "EHLO test" | nc target 25
+    # EHLO返回支持的扩展
+    # 部分SMTP服务器会泄露内部主机名和软件版本
+
+  POP3/IMAP:
+    echo "A01 LOGIN test test" | nc target 110
+
+  SMB:
+    # 使用 smbclient 获取Windows版本信息
+    smbclient -L //target -N 2>&1
+
+  RDP:
+    # 使用 rdesktop 查看RDP服务器信息
+    rdesktop -v target 2>&1 | head -5
+
+  VNC:
+    # VNC在连接前发送RFB协议版本
+    nc target 5900 | head -1
+    # 输出: RFB 003.008
+
+  Redis:
+    echo "INFO" | nc target 6379
+    # Redis INFO命令返回大量服务器信息
+
+--- 5.2 Banner欺骗检测 ---
+
+  有些管理员会修改banner来欺骗攻击者。如何检测？
+
+  方法1：操作系统指纹对比
+    # 使用 nmap -O 检测操作系统
+    nmap -O target
+
+    # 如果banner显示 "nginx/1.18.0 (Ubuntu)" 但OS检测结果是 Windows
+    # → Banner可能是伪造的
+
+  方法2：TCP/IP栈指纹
+    # 发送特殊TCP包观察响应行为
+    nmap --script smb-os-discovery target
+    # NTLM negotiation会泄露真实的Windows版本
+
+  方法3：行为分析
+    # 如果banner说"Apache/2.4.41"但支持的功能明显不是Apache
+    # → 可能是伪装
+
+  方法4：多端口交叉验证
+    # 同一主机上的不同服务应该与同一操作系统一致
+    amap -bqvM target 22
+    amap -bqvM target 80
+    amap -bqvM target 443
+    # 对比banner中的OS信息是否一致
+
+--- 5.3 批量Banner对比 ---
+
+  收集内网中相同服务的banner，寻找模式：
+
+  # 收集所有SSH banner
+  for host in $(cat phase1_alive_hosts.txt); do
+    echo "=== $host ==="
+    echo "" | nc -w 3 "$host" 22 2>/dev/null
+  done > all_ssh_banners.txt
+
+  # 分析哪些机器用相同版本的SSH
+  grep "SSH-" all_ssh_banners.txt | sort | uniq -c | sort -rn
+
+  这个分析可以：
+  - 识别标准的软件部署模式
+  - 发现版本过旧的服务（潜在漏洞）
+  - 发现异常版本（可能是蜜罐或伪装）
+
+================================================================================
+关键总结
+================================================================================
+
+1. amap 是专业的非标准端口服务识别工具，不假设端口号对应服务。
+2. unicornscan 是UDP扫描的最佳选择，比nmap快100倍以上。
+3. 分层扫描策略：masscan发现端口 -> amap/unicornscan抓banner -> nmap深度验证。
+4. 对于未知服务，组合多种触发器（空连接、HTTP、SSL）进行穷举识别。
+5. Banner信息包括：服务名称、版本号、操作系统、支持的扩展等。
+6. 手动Banner抓取（nc/curl/openssl）是自动化工具的补充。
+7. Banner可以伪装，交叉验证（OS指纹、协议行为）是必要的。
+8. 定期扫描自有基础设施，确认banner没有泄露过多信息。
+
+================================================================================

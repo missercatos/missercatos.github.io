@@ -1,0 +1,2232 @@
+================================================================================
+  C++深化教程  第九章: 异常处理 (Exception Handling)
+================================================================================
+
+【章节导读】
+异常处理是C++中实现健壮软件的核心机制。与其他语言不同，C++的异常处理
+与RAII（资源获取即初始化）深度绑定，以此保证在异常发生时资源能被正确
+释放。本章从底层实现原理出发，全面覆盖异常处理的语法和最佳实践，并通过
+五个综合案例与前面八章的知识融会贯通。
+
+================================================================================
+### 第一节: 基础示例代码 + 计算机底层原理
+================================================================================
+
+一、基础语法：try / catch / throw
+
+异常处理的核心流程：throw 抛出异常，函数调用链逐级上溯，
+直到遇到匹配的 catch 块。
+
+---------------------------------------------------------------
+// ---- 基础示例：安全的除法函数 ----
+#include <iostream>
+#include <stdexcept>
+
+double safeDivide(double a, double b) {
+    if (b == 0.0) {
+        throw std::runtime_error("除数不能为零！");
+    }
+    return a / b;
+}
+
+// 调用链示例
+void calculate() {
+    try {
+        double result = safeDivide(10.0, 0.0);
+        std::cout << "结果: " << result << std::endl;
+    }
+    catch (const std::runtime_error& e) {
+        std::cerr << "运行时错误: " << e.what() << std::endl;
+    }
+    catch (const std::exception& e) {   // 捕获基类
+        std::cerr << "标准异常: " << e.what() << std::endl;
+    }
+    catch (...) {                       // 捕获所有
+        std::cerr << "未知异常" << std::endl;
+    }
+}
+
+int main() {
+    std::cout << "程序启动" << std::endl;
+    calculate();
+    std::cout << "程序继续运行（异常被妥善处理）" << std::endl;
+    return 0;
+}
+---------------------------------------------------------------
+
+二、异常处理的底层实现原理
+
+1. 栈展开 (Stack Unwinding) 机制详解
+
+   当 throw 语句执行时，运行时系统执行以下步骤：
+
+   步骤1: 在当前函数的栈帧中查找 catch 块。
+          如果找到匹配类型，跳转执行。
+          如果未找到，销毁当前函数栈帧中的所有局部对象
+          （调用它们的析构函数），然后返回到调用者。
+
+   步骤2: 在调用者的栈帧中重复步骤1。
+          这个过程沿调用链向上追溯，称为"栈展开"。
+
+   步骤3: 如果一直追溯到 main() 仍未找到匹配的 catch，
+          则调用 std::terminate() 终止程序。
+
+   图解栈展开过程：
+
+   main()
+     └─> functionA()
+           └─> functionB()
+                 └─> functionC()
+                        throw exception! ★
+                     (析构 functionC 的局部对象)
+                   ──────── 向上 ────────>
+                 (析构 functionB 的局部对象)
+               ──────── 向上 ────────>
+             (在 functionA 中找到 catch)
+             执行 catch 块
+
+   重要特性：在栈展开过程中，所有成功构造的局部对象的析构函数
+   都会被调用。这正是 RAII 工作机制的基础——异常发生时，
+   智能指针、文件流、互斥锁等 RAII 对象会自动释放资源。
+
+2. 异常表 (Exception Table)
+
+   编译器在编译时生成异常表（Exception Table），存储在目标文件
+   的只读数据段（.eh_frame 段，ELF 格式）。
+
+   异常表包含以下信息：
+   - 每个函数中可能抛出异常的代码区域
+   - 每个 try 块对应的 catch 块的地址
+   - 需要进行栈展开时，局部对象的析构函数地址
+
+   当异常抛出时，运行时系统查询异常表来确定：
+   - 当前执行点是否在 try 块内
+   - 是否有匹配的 catch 块
+   - 需要调用哪些析构函数进行清理
+
+3. Itanium C++ ABI 的零开销异常模型
+
+   主流编译器（GCC、Clang）采用 Itanium C++ ABI 定义的
+   "零开销异常模型" (Zero-Cost Exception Handling)：
+
+   核心理念：正常执行路径完全不受异常处理影响。
+
+   - 正常路径（不抛出异常）：代码执行没有任何额外开销。
+     不维护额外的运行时记录，不进行额外的条件检查。
+
+   - 异常路径（抛出异常）：开销很大。
+     运行时系统需要遍历异常表（可能数百KB），进行类型匹配，
+     调用大量析构函数。但这是可接受的，因为异常本应是"异常情况"。
+
+   实现细节：
+   - 使用 LSDA (Language-Specific Data Area) 表
+   - 异常抛出时通过 DWARF 调试信息进行栈回溯
+   - 两级搜索：先搜索当前函数，再搜索调用者
+
+4. RAII 与异常安全的深刻关系
+
+   C++ 没有 Java/C# 的 finally 子句，原因是在 RAII 模型下不需要它。
+   任何需要在离开作用域时执行的清理工作，都应放到析构函数中。
+
+   对比两种风格：
+
+   // ---- Java/C# 风格（使用 finally）----
+   // C++ 没有 finally，不采用此风格
+   // try { 获取资源 } catch { 处理异常 } finally { 释放资源 }
+
+   // ---- C++ RAII 风格（推荐）----
+   // {
+   //     std::ifstream file("data.txt");   // 构造时获取资源
+   //     // ... 使用文件 ...
+   // }  // 离开作用域时自动析构，释放资源（即使异常发生）
+
+   RAII 的好处：
+   - 代码更简洁（不需要显式的清理代码）
+   - 异常安全自动保证（栈展开时自动调用析构）
+   - 不会遗漏清理（人总会忘记写 finally）
+
+5. 异常处理的性能开销量化分析
+
+   ┌───────────────────────┬───────────────┬──────────────────┐
+   │ 场景                   │ 正常路径开销   │ 异常路径开销      │
+   ├───────────────────────┼───────────────┼──────────────────┤
+   │ 无异常代码             │ 基准 100%     │ N/A              │
+   │ 有 try 无 throw       │ ~100%         │ N/A              │
+   │ 同函数 throw-catch    │ ~100%         │ 10x ~ 100x       │
+   │ 跨5层 throw-catch     │ ~100%         │ 50x ~ 500x       │
+   │ 跨10层 throw-catch    │ ~100%         │ 100x ~ 1000x     │
+   └───────────────────────┴───────────────┴──────────────────┘
+
+   注意：开销主要来源于栈展开时调用大量析构函数和异常表查找，
+   而非 throw/catch 语句本身。
+
+6. 异常机制与虚函数的对比
+
+   ┌─────────────────────┬──────────────────────────────────┐
+   │ 特性                │ 异常处理                          │
+   ├─────────────────────┼──────────────────────────────────┤
+   │ 控制流              │ 非局部跳转，跨越多个函数栈帧      │
+   │ 类型匹配            │ 运行时类型匹配（RTTI），类似虚函数  │
+   │ 性能影响            │ 正常路径零开销，异常路径有开销     │
+   │ 代码结构            │ 错误处理与正常逻辑分离             │
+   │ 不适用场景          │ 性能关键的内循环、硬实时系统       │
+   └─────────────────────┴──────────────────────────────────┘
+
+================================================================================
+### 第二节: 所有用法大全（标准库/关键字/函数）
+================================================================================
+
+一、throw 表达式
+
+throw 可以抛出任意类型的对象（推荐抛出 std::exception 的派生类）：
+
+---------------------------------------------------------------
+#include <iostream>
+#include <string>
+#include <stdexcept>
+
+// 抛出基本类型（不推荐）
+void throwInt() {
+    throw 42;           // 可以，但不推荐
+}
+
+// 抛出字符串（不推荐）
+void throwCString() {
+    throw "错误";       // 可以，但信息有限
+}
+
+// 抛出标准异常（推荐）
+void throwStandard() {
+    throw std::runtime_error("标准运行时错误");
+}
+
+// 抛出时构造异常对象
+void throwConstructed() {
+    throw std::invalid_argument(std::string("参数无效: ") + "值越界");
+}
+
+// 重新抛出异常 throw;（不带参数，保留原始类型和上下文）
+void rethrowDemo() {
+    try {
+        throw std::logic_error("原始错误");
+    }
+    catch (const std::exception& e) {
+        std::cout << "捕获: " << e.what() << std::endl;
+        std::cout << "记录日志后重新抛出..." << std::endl;
+        throw;  // 重新抛出原始异常（保留类型和堆栈）
+    }
+}
+
+int main() {
+    try { throwInt(); }
+    catch (int e) {
+        std::cout << "捕获整数: " << e << std::endl;
+    }
+
+    try { throwCString(); }
+    catch (const char* msg) {
+        std::cout << "捕获字符串: " << msg << std::endl;
+    }
+
+    try { throwStandard(); }
+    catch (const std::exception& e) {
+        std::cout << "捕获标准异常: " << e.what() << std::endl;
+    }
+
+    try { throwConstructed(); }
+    catch (const std::exception& e) {
+        std::cout << "捕获构造异常: " << e.what() << std::endl;
+    }
+
+    try { rethrowDemo(); }
+    catch (const std::logic_error& e) {
+        std::cout << "最终捕获(保留原始类型): " << e.what() << std::endl;
+    }
+
+    return 0;
+}
+---------------------------------------------------------------
+
+二、try 块和 catch 块
+
+catch 的类型匹配规则：
+
+---------------------------------------------------------------
+#include <iostream>
+#include <stdexcept>
+
+class MyException : public std::runtime_error {
+public:
+    explicit MyException(const std::string& msg)
+        : std::runtime_error(msg) {}
+};
+
+class SpecialException : public MyException {
+public:
+    explicit SpecialException(const std::string& msg)
+        : MyException(msg) {}
+};
+
+void demonstrateCatch() {
+    // 规则1: 精确匹配
+    try {
+        throw 42;
+    }
+    catch (int e) {      // 精确匹配 int
+        std::cout << "精确匹配: " << e << std::endl;
+    }
+
+    // 规则2: 派生类匹配基类
+    try {
+        throw SpecialException("特殊错误");
+    }
+    catch (const MyException& e) {    // 通过基类引用捕获派生类
+        std::cout << "基类捕获派生类: " << e.what() << std::endl;
+    }
+    // 注意：如果把 catch(MyException) 放在 catch(SpecialException) 之后
+    // 将永远不会捕获到 SpecialException（被基类先捕获了）
+
+    // 规则3: 正确的 catch 顺序（先派生后基类）
+    try {
+        throw SpecialException("特殊异常");
+    }
+    catch (const SpecialException& e) {  // 先匹配派生类
+        std::cout << "捕获 SpecialException: " << e.what() << std::endl;
+    }
+    catch (const MyException& e) {       // 再匹配基类
+        std::cout << "捕获 MyException: " << e.what() << std::endl;
+    }
+    catch (const std::exception& e) {    // 最后匹配标准基类
+        std::cout << "捕获 std::exception: " << e.what() << std::endl;
+    }
+
+    // 规则4: catch(...) 捕获所有
+    try {
+        throw 3.14159;
+    }
+    catch (...) {
+        std::cout << "catch(...) 捕获了所有类型的异常" << std::endl;
+        // 在 catch(...) 中可以用 throw; 重新抛出来获取具体类型
+    }
+}
+
+int main() {
+    demonstrateCatch();
+    return 0;
+}
+---------------------------------------------------------------
+
+三、标准异常类层次
+
+C++ 标准库定义的异常体系如下：
+
+std::exception
+├─ std::logic_error        (程序逻辑错误)
+│   ├─ std::domain_error       (数学定义域错误)
+│   ├─ std::invalid_argument   (无效参数)
+│   ├─ std::length_error       (长度错误)
+│   └─ std::out_of_range       (越界访问)
+│
+├─ std::runtime_error      (运行时错误)
+│   ├─ std::range_error        (范围错误)
+│   ├─ std::overflow_error     (溢出错误)
+│   └─ std::underflow_error    (下溢错误)
+│
+├─ std::bad_alloc          (new 失败)
+├─ std::bad_cast           (dynamic_cast 引用转换失败)
+├─ std::bad_typeid         (typeid 操作空指针)
+├─ std::bad_exception      (违反异常规范)
+└─ std::bad_function_call  (调用空的 std::function)
+
+---------------------------------------------------------------
+#include <iostream>
+#include <stdexcept>
+#include <new>
+#include <typeinfo>
+
+void demonstrateStandardExceptions() {
+    // logic_error 系列
+    try {
+        throw std::invalid_argument("年龄不能为负数");
+    } catch (const std::logic_error& e) {
+        std::cout << "logic_error: " << e.what() << std::endl;
+    }
+
+    try {
+        throw std::out_of_range("数组索引10超出范围");
+    } catch (const std::out_of_range& e) {
+        std::cout << "out_of_range: " << e.what() << std::endl;
+    }
+
+    // runtime_error 系列
+    try {
+        throw std::overflow_error("计算结果溢出");
+    } catch (const std::runtime_error& e) {
+        std::cout << "runtime_error: " << e.what() << std::endl;
+    }
+
+    // bad_alloc: 动态内存分配失败
+    try {
+        // 故意申请超大内存引发 bad_alloc
+        int* huge = new int[10000000000ULL];  // 可能失败
+        delete[] huge;
+    } catch (const std::bad_alloc& e) {
+        std::cout << "bad_alloc: " << e.what() << std::endl;
+    }
+
+    // bad_cast: dynamic_cast 失败
+    class Base { public: virtual ~Base() {} };
+    class Derived : public Base {};
+    try {
+        Base b;
+        // dynamic_cast 对引用失败时抛出 bad_cast
+        Derived& d = dynamic_cast<Derived&>(b);
+        (void)d;
+    } catch (const std::bad_cast& e) {
+        std::cout << "bad_cast: " << e.what() << std::endl;
+    }
+}
+
+int main() {
+    demonstrateStandardExceptions();
+    return 0;
+}
+---------------------------------------------------------------
+
+四、自定义异常类
+
+继承 std::exception 或其子类，重写 what() 方法：
+
+---------------------------------------------------------------
+#include <iostream>
+#include <string>
+#include <exception>
+#include <stdexcept>
+#include <sstream>
+
+// 基础自定义异常
+class DatabaseException : public std::runtime_error {
+private:
+    int errorCode;
+    std::string sqlStatement;
+
+public:
+    DatabaseException(int code, const std::string& msg,
+                      const std::string& sql = "")
+        : std::runtime_error(msg), errorCode(code), sqlStatement(sql) {}
+
+    // 重写 what() 提供更详细信息
+    const char* what() const noexcept override {
+        // 注意：what() 返回的字符串应在对象生命周期内有效
+        // 简单情况下直接返回基类的 what()
+        return std::runtime_error::what();
+    }
+
+    int getErrorCode() const { return errorCode; }
+    const std::string& getSQL() const { return sqlStatement; }
+
+    // 提供完整的错误描述
+    std::string fullDescription() const {
+        std::ostringstream oss;
+        oss << "数据库错误 [" << errorCode << "]: "
+            << what();
+        if(!sqlStatement.empty())
+            oss << " (SQL: " << sqlStatement << ")";
+        return oss.str();
+    }
+};
+
+// 继承自定义异常的更具体异常
+class ConnectionException : public DatabaseException {
+public:
+    ConnectionException(const std::string& msg)
+        : DatabaseException(1001, msg, "") {}
+};
+
+class QueryException : public DatabaseException {
+public:
+    QueryException(const std::string& msg, const std::string& sql)
+        : DatabaseException(1002, msg, sql) {}
+};
+
+int main() {
+    try {
+        throw QueryException("语法错误", "SELECT * FORM users");
+    }
+    catch (const QueryException& e) {
+        std::cout << e.fullDescription() << std::endl;
+    }
+    catch (const ConnectionException& e) {
+        std::cout << e.fullDescription() << std::endl;
+    }
+    catch (const DatabaseException& e) {
+        std::cout << e.fullDescription() << std::endl;
+    }
+    return 0;
+}
+---------------------------------------------------------------
+
+五、noexcept 说明符和运算符 (C++11)
+
+noexcept 用于声明函数不会抛出异常，编译器可据此优化：
+
+---------------------------------------------------------------
+#include <iostream>
+#include <vector>
+#include <type_traits>
+
+// noexcept 说明符：声明函数不抛异常
+void noThrowFunc() noexcept {
+    std::cout << "这个函数保证不抛异常" << std::endl;
+}
+
+int simpleAdd(int a, int b) noexcept {
+    return a + b;
+}
+
+// 条件 noexcept：只有在 T 的移动操作不抛异常时才不抛
+template<typename T>
+void swapIfNoexcept(T& a, T& b) noexcept(
+    std::is_nothrow_move_constructible<T>::value &&
+    std::is_nothrow_move_assignable<T>::value
+) {
+    T tmp = std::move(a);
+    a = std::move(b);
+    b = std::move(tmp);
+}
+
+// noexcept 运算符：编译期检测表达式是否可能抛异常
+void mightThrow() {}                    // 可能抛异常
+void neverThrow() noexcept {}           // 不抛异常
+
+int main() {
+    std::cout << std::boolalpha;
+
+    // noexcept 运算符检测
+    std::cout << "noThrowFunc noexcept: "
+              << noexcept(noThrowFunc()) << std::endl;       // true
+    std::cout << "simpleAdd noexcept: "
+              << noexcept(simpleAdd(1, 2)) << std::endl;     // true
+    std::cout << "mightThrow noexcept: "
+              << noexcept(mightThrow()) << std::endl;        // false
+    std::cout << "neverThrow noexcept: "
+              << noexcept(neverThrow()) << std::endl;        // true
+    std::cout << "1+2 noexcept: "
+              << noexcept(1 + 2) << std::endl;               // true
+
+    // 移动构造函数通常标记为 noexcept（提升 vector 扩容性能）
+    std::cout << "vector<int> move noexcept: "
+              << std::is_nothrow_move_constructible<
+                     std::vector<int>>::value << std::endl;  // true
+
+    return 0;
+}
+---------------------------------------------------------------
+
+六、函数 try 块（构造函数 try 块）
+
+在构造函数中使用 try-catch 拦截初始化列表中的异常：
+
+---------------------------------------------------------------
+#include <iostream>
+#include <string>
+#include <stdexcept>
+
+class Database {
+private:
+    std::string connectionString;
+    int maxConnections;
+    int* connectionPool;
+
+    void validateConnectionString(const std::string& s) {
+        if(s.empty())
+            throw std::invalid_argument("连接字符串不能为空");
+    }
+
+    void allocatePool(int size) {
+        if(size <= 0)
+            throw std::invalid_argument("连接池大小必须为正数");
+        connectionPool = new int[size];
+    }
+
+public:
+    // 构造函数 try 块：捕获初始化列表中的异常
+    Database(const std::string& connStr, int maxConn)
+    try :
+        connectionString(connStr),
+        maxConnections(maxConn),
+        connectionPool(nullptr)
+    {
+        validateConnectionString(connectionString);
+        allocatePool(maxConnections);
+        std::cout << "数据库初始化成功" << std::endl;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "数据库构造失败: " << e.what() << std::endl;
+        // 注意：构造函数 try 块中，异常会被自动重新抛出
+        // 所以即使 catch 了，对象构造仍然失败
+        // 不需要显式 delete connectionPool（因为初始化失败时它还是 nullptr）
+    }
+
+    ~Database() {
+        std::cout << "数据库析构" << std::endl;
+        delete[] connectionPool;
+    }
+};
+
+// 普通函数的 try 块
+void processFile(const std::string& filename)
+try {
+    // ... 文件处理代码 ...
+    if(filename.empty())
+        throw std::runtime_error("文件名不能为空");
+    std::cout << "处理文件: " << filename << std::endl;
+}
+catch (const std::exception& e) {
+    std::cerr << "文件处理失败: " << e.what() << std::endl;
+}
+
+int main() {
+    // 测试构造函数 try 块
+    try {
+        Database db("", -1);  // 将触发异常
+    }
+    catch (...) {
+        std::cout << "构造 Database 对象失败" << std::endl;
+    }
+
+    // 成功的构造
+    try {
+        Database db("mysql://localhost", 10);
+    }
+    catch (...) {
+        std::cout << "不应该到这里" << std::endl;
+    }
+
+    // 普通函数 try 块
+    processFile("");
+
+    return 0;
+}
+---------------------------------------------------------------
+
+七、异常安全保证级别
+
+三种异常安全保证级别：
+
+---------------------------------------------------------------
+#include <iostream>
+#include <vector>
+#include <string>
+#include <memory>
+#include <stdexcept>
+
+// ========== 1. 基本保证 (Basic Guarantee) ==========
+// 异常发生后，对象仍处于有效（可析构）状态，但内容可能已改变
+
+class BasicGuaranteeStack {
+private:
+    std::vector<int> data;
+public:
+    void push(int val) {
+        data.push_back(val);  // 如果 push_back 抛异常，data 状态未变
+    }
+
+    int pop() {
+        if(data.empty()) throw std::runtime_error("空栈");
+        int val = data.back();
+        data.pop_back();  // pop_back 不抛异常
+        return val;
+    }
+};
+
+// ========== 2. 强保证 (Strong Guarantee) ==========
+// 异常发生后，对象状态回滚到操作前的状态（要么完全成功，要么完全不变）
+
+class StrongGuaranteeAccount {
+private:
+    double balance;
+    std::string name;
+
+public:
+    StrongGuaranteeAccount(const std::string& n, double b)
+        : name(n), balance(b) {}
+
+    // 强异常安全保证的 transfer 函数
+    void transfer(StrongGuaranteeAccount& to, double amount) {
+        // 先检查所有前置条件（不修改任何状态）
+        if(amount <= 0)
+            throw std::invalid_argument("转账金额必须为正数");
+        if(this == &to)
+            throw std::invalid_argument("不能给自己转账");
+        if(balance < amount)
+            throw std::runtime_error("余额不足");
+
+        // copy-and-swap 惯用法：先复制，修改副本，成功后再交换
+        StrongGuaranteeAccount temp(*this);  // 拷贝
+        temp.balance -= amount;
+
+        try {
+            to.balance += amount;  // 可能抛异常（虽然这里不会）
+        }
+        catch(...) {
+            // to 的余额已改变，需要恢复（但这里没有简单的方法）
+            // 更好的做法是使用临时对象
+            throw;
+        }
+
+        // 如果上面都成功，更新状态
+        balance = temp.balance;
+    }
+
+    double getBalance() const { return balance; }
+};
+
+// ========== 3. 不抛出保证 (No-throw Guarantee) ==========
+// 函数承诺绝不抛出异常
+
+class NoThrowStack {
+private:
+    int* data;
+    int capacity;
+    int top;
+
+public:
+    NoThrowStack(int cap = 100) : capacity(cap), top(-1) {
+        data = new int[capacity];
+    }
+
+    ~NoThrowStack() noexcept { delete[] data; }  // 析构函数默认 noexcept
+
+    void push(int val) noexcept {
+        if(top < capacity - 1)
+            data[++top] = val;
+        // 栈满时不抛异常，直接忽略（不是好的设计，仅演示）
+    }
+
+    int pop() noexcept {
+        if(top >= 0) return data[top--];
+        return -1;  // 空栈返回-1，不抛异常
+    }
+
+    int size() const noexcept { return top + 1; }
+
+    // 声明为 noexcept 允许编译器做更好的优化
+};
+
+int main() {
+    std::cout << "===== 异常安全保证级别演示 =====" << std::endl;
+
+    // 基本保证
+    BasicGuaranteeStack basicStack;
+    try {
+        basicStack.push(42);
+        basicStack.push(100);
+        std::cout << "基本保证栈操作完成" << std::endl;
+    } catch(...) {
+        std::cout << "基本保证：栈仍可析构" << std::endl;
+    }
+
+    // 强保证
+    StrongGuaranteeAccount alice("Alice", 1000);
+    StrongGuaranteeAccount bob("Bob", 500);
+
+    try {
+        alice.transfer(bob, 200);
+        std::cout << "转账成功 Alice: " << alice.getBalance()
+                  << " Bob: " << bob.getBalance() << std::endl;
+    } catch(const std::exception& e) {
+        std::cout << "转账回滚: " << e.what() << std::endl;
+    }
+
+    // 不抛出保证
+    NoThrowStack noThrowStack(10);
+    noThrowStack.push(1);
+    noThrowStack.push(2);
+    noThrowStack.push(3);
+    std::cout << "不抛出栈大小: " << noThrowStack.size() << std::endl;
+
+    return 0;
+}
+---------------------------------------------------------------
+
+八、异常处理的最佳实践小结
+
+┌──────────────────────────────────────────────────────────────┐
+│ 1. 按引用捕获异常：catch(const std::exception& e) { ... }    │
+│ 2. 按先派生后基类的顺序排列 catch 块                          │
+│ 3. 抛出异常而非返回错误码（C++风格）                          │
+│ 4. 使用 RAII 管理资源，不依赖手动清理                          │
+│ 5. 析构函数不应抛出异常（默认 noexcept）                      │
+│ 6. 标记不抛异常的函数为 noexcept                              │
+│ 7. 自定义异常继承自 std::exception                            │
+│ 8. 不要在 catch 块中抛出新异常而丢失原始异常                   │
+│ 9. throw; (无参数)重新抛出，保留原始异常信息                   │
+│ 10. 性能关键路径避免使用异常（正常路径虽零开销，                 │
+│     但代码膨胀可能影响指令缓存）                               │
+└──────────────────────────────────────────────────────────────┘
+
+================================================================================
+### 第三节: 实用代码案例（生活场景举例，融入前面已学章节知识点）
+================================================================================
+
+案例1: 银行存款系统异常安全版 —— ATM取款异常提示
+---------------------------------------------------------------
+场景：银行ATM取款系统，需要处理余额不足、无效金额、账户冻结等异常。
+
+知识点融入：
+- Ch4 类与对象：BankAccount 类
+- Ch6 多态：SavingAccount / CheckingAccount
+- Ch7 运算符重载：<< 输出账户信息
+
+---------------------------------------------------------------
+#include <iostream>
+#include <string>
+#include <stdexcept>
+#include <vector>
+#include <memory>
+
+// ===== 自定义异常体系 =====
+
+class BankingException : public std::runtime_error {
+protected:
+    std::string accountNumber;
+public:
+    BankingException(const std::string& acct, const std::string& msg)
+        : std::runtime_error(msg), accountNumber(acct) {}
+    const std::string& getAccount() const { return accountNumber; }
+};
+
+class InsufficientFundsException : public BankingException {
+private:
+    double requested;
+    double available;
+public:
+    InsufficientFundsException(const std::string& acct,
+                                double req, double avail)
+        : BankingException(acct, "余额不足"), requested(req), available(avail) {}
+
+    double getRequested() const { return requested; }
+    double getAvailable() const { return available; }
+
+    std::string detail() const {
+        return std::string("账户 ") + getAccount()
+               + " 余额不足: 请求 $" + std::to_string(requested)
+               + " > 可用 $" + std::to_string(available);
+    }
+};
+
+class AccountFrozenException : public BankingException {
+public:
+    AccountFrozenException(const std::string& acct)
+        : BankingException(acct, "账户已冻结") {}
+};
+
+class InvalidAmountException : public BankingException {
+public:
+    InvalidAmountException(const std::string& acct)
+        : BankingException(acct, "无效金额") {}
+};
+
+// ===== 银行账户类层次 =====
+
+class BankAccount {
+protected:
+    std::string accountNumber;
+    std::string ownerName;
+    double balance;
+    bool frozen;
+
+public:
+    BankAccount(const std::string& num, const std::string& owner,
+                double initial = 0.0)
+        : accountNumber(num), ownerName(owner), balance(initial),
+          frozen(false) {}
+
+    virtual ~BankAccount() = default;
+
+    virtual void deposit(double amount) {
+        if(frozen) throw AccountFrozenException(accountNumber);
+        if(amount <= 0) throw InvalidAmountException(accountNumber);
+        balance += amount;
+        std::cout << "[" << accountNumber << "] 存款 $" << amount
+                  << " | 余额: $" << balance << std::endl;
+    }
+
+    virtual void withdraw(double amount) {
+        if(frozen) throw AccountFrozenException(accountNumber);
+        if(amount <= 0) throw InvalidAmountException(accountNumber);
+        if(amount > balance)
+            throw InsufficientFundsException(accountNumber, amount, balance);
+        balance -= amount;
+        std::cout << "[" << accountNumber << "] 取款 $" << amount
+                  << " | 余额: $" << balance << std::endl;
+    }
+
+    // 强异常安全保证的转账
+    virtual void transfer(BankAccount& target, double amount) {
+        // 先检查所有前置条件（不修改状态）
+        if(this == &target)
+            throw BankingException(accountNumber, "不能向自身转账");
+        if(frozen) throw AccountFrozenException(accountNumber);
+        if(target.isFrozen())
+            throw AccountFrozenException(target.getAccountNumber());
+        if(amount <= 0) throw InvalidAmountException(accountNumber);
+
+        // 两次操作，如果第二次失败，已扣款无法恢复
+        // 因此采用"先扣后加，加失败则回滚"策略
+        double originalBalance = balance;
+
+        try {
+            withdraw(amount);  // 先扣款
+        } catch(...) {
+            throw;  // 扣款失败，无需回滚
+        }
+
+        try {
+            target.deposit(amount);  // 再存款
+        } catch(...) {
+            // 存款失败，回滚扣款
+            balance = originalBalance;
+            throw;  // 仍然通知调用者转账失败
+        }
+    }
+
+    virtual std::string getType() const { return "普通账户"; }
+    double getBalance() const { return balance; }
+    const std::string& getAccountNumber() const { return accountNumber; }
+    bool isFrozen() const { return frozen; }
+    void freeze() { frozen = true; }
+    void unfreeze() { frozen = false; }
+
+    friend std::ostream& operator<<(std::ostream& os,
+                                     const BankAccount& acct) {
+        os << acct.getType() << " " << acct.accountNumber
+           << " [" << acct.ownerName << "] $"
+           << acct.balance << (acct.frozen ? " (冻结)" : "");
+        return os;
+    }
+};
+
+// 储蓄账户（融入 Ch5 继承）
+class SavingAccount : public BankAccount {
+private:
+    double interestRate;
+public:
+    SavingAccount(const std::string& num, const std::string& owner,
+                  double initial = 0.0, double rate = 0.02)
+        : BankAccount(num, owner, initial), interestRate(rate) {}
+
+    void applyInterest() {
+        double interest = balance * interestRate;
+        std::cout << "[" << accountNumber << "] 利息: $"
+                  << interest << std::endl;
+        balance += interest;
+    }
+
+    std::string getType() const override { return "储蓄账户"; }
+};
+
+// 支票账户（融入 Ch5 继承）
+class CheckingAccount : public BankAccount {
+private:
+    double overdraftLimit;
+public:
+    CheckingAccount(const std::string& num, const std::string& owner,
+                    double initial = 0.0, double overdraft = 500.0)
+        : BankAccount(num, owner, initial), overdraftLimit(overdraft) {}
+
+    void withdraw(double amount) override {
+        if(frozen) throw AccountFrozenException(accountNumber);
+        if(amount <= 0) throw InvalidAmountException(accountNumber);
+        if(amount > balance + overdraftLimit)
+            throw InsufficientFundsException(accountNumber,
+                                              amount, balance + overdraftLimit);
+        balance -= amount;
+        std::cout << "[" << accountNumber << "] 取款 $" << amount
+                  << " (可透支) | 余额: $" << balance << std::endl;
+    }
+
+    std::string getType() const override { return "支票账户"; }
+};
+
+// ===== ATM 主程序 =====
+
+int main() {
+    std::cout << "===== ATM 银行系统 =====" << std::endl;
+
+    SavingAccount alice("SA001", "Alice", 5000.0, 0.03);
+    CheckingAccount bob("CA001", "Bob", 2000.0);
+
+    std::cout << alice << std::endl;
+    std::cout << bob << std::endl << std::endl;
+
+    // 正常操作
+    try {
+        alice.deposit(1000);
+        bob.withdraw(500);
+        alice.transfer(bob, 2000);
+        alice.applyInterest();
+    }
+    catch (const BankingException& e) {
+        std::cerr << "错误: " << e.what() << std::endl;
+    }
+
+    std::cout << "\n--- 异常情况测试 ---" << std::endl;
+
+    // 余额不足
+    try {
+        alice.withdraw(100000);
+    }
+    catch (const InsufficientFundsException& e) {
+        std::cerr << e.detail() << std::endl;
+    }
+    catch (const BankingException& e) {
+        std::cerr << "银行错误: " << e.what() << std::endl;
+    }
+
+    // 无效金额
+    try {
+        bob.deposit(-500);
+    }
+    catch (const InvalidAmountException& e) {
+        std::cerr << "无效金额: 账户 " << e.getAccount() << std::endl;
+    }
+
+    // 账户冻结
+    try {
+        bob.freeze();
+        bob.withdraw(100);
+    }
+    catch (const AccountFrozenException& e) {
+        std::cerr << "冻结账户: " << e.getAccount() << std::endl;
+    }
+
+    // 转账失败回滚
+    std::cout << "\n转账前: Alice $" << alice.getBalance()
+              << " Bob $" << bob.getBalance() << std::endl;
+
+    try {
+        bob.unfreeze();
+        alice.transfer(bob, 100000);  // 余额不足
+    }
+    catch (const BankingException& e) {
+        std::cerr << "转账失败(已回滚): " << e.what() << std::endl;
+    }
+
+    std::cout << "转账后: Alice $" << alice.getBalance()
+              << " Bob $" << bob.getBalance()
+              << " (状态未变)" << std::endl;
+
+    return 0;
+}
+---------------------------------------------------------------
+
+案例2: 文件解析器 —— 批量导入用户数据
+---------------------------------------------------------------
+场景：运营人员批量导入CSV格式的用户数据，需要解析每一行、验证格式，
+异常情况下报告具体是哪一行出了问题。
+
+知识点融入：
+- Ch3 动态内存/智能指针：unique_ptr
+- Ch4 类与对象：UserData 结构体
+- 异常处理：自定义 ParseException 携带行号
+
+---------------------------------------------------------------
+#include <iostream>
+#include <string>
+#include <vector>
+#include <fstream>
+#include <sstream>
+#include <stdexcept>
+#include <memory>
+#include <regex>
+
+// ===== 自定义解析异常 =====
+
+class ParseException : public std::runtime_error {
+private:
+    int lineNumber;
+    std::string rawLine;
+public:
+    ParseException(int line, const std::string& raw,
+                   const std::string& msg)
+        : std::runtime_error(msg), lineNumber(line), rawLine(raw) {}
+
+    int getLineNumber() const { return lineNumber; }
+    const std::string& getRawLine() const { return rawLine; }
+
+    std::string fullReport() const {
+        std::ostringstream oss;
+        oss << "第" << lineNumber << "行解析失败: "
+            << what() << "\n原始内容: " << rawLine;
+        return oss.str();
+    }
+};
+
+// ===== 用户数据 =====
+
+struct UserData {
+    int id;
+    std::string name;
+    std::string email;
+    int age;
+
+    friend std::ostream& operator<<(std::ostream& os,
+                                     const UserData& u) {
+        os << "User{" << u.id << ", " << u.name
+           << ", " << u.email << ", " << u.age << "}";
+        return os;
+    }
+};
+
+// ===== CSV 解析器 =====
+
+class CSVParser {
+public:
+    // 解析单个字段
+    static std::string trim(const std::string& s) {
+        size_t start = s.find_first_not_of(" \t\r\n");
+        if(start == std::string::npos) return "";
+        size_t end = s.find_last_not_of(" \t\r\n");
+        return s.substr(start, end - start + 1);
+    }
+
+    // 分割一行 CSV
+    static std::vector<std::string> splitCSV(const std::string& line) {
+        std::vector<std::string> result;
+        std::stringstream ss(line);
+        std::string field;
+
+        while(std::getline(ss, field, ',')) {
+            result.push_back(trim(field));
+        }
+        return result;
+    }
+
+    // 解析单个用户记录（带行号信息）
+    static UserData parseLine(const std::string& line, int lineNum) {
+        auto fields = splitCSV(line);
+
+        if(fields.size() < 4) {
+            throw ParseException(lineNum, line,
+                "字段数不足(需要4个: ID,姓名,邮箱,年龄)，实际只有"
+                + std::to_string(fields.size()) + "个");
+        }
+
+        UserData user;
+
+        try {
+            user.id = std::stoi(fields[0]);
+        } catch(const std::exception&) {
+            throw ParseException(lineNum, line,
+                "无效的ID: '" + fields[0] + "'");
+        }
+
+        user.name = fields[1];
+        if(user.name.empty()) {
+            throw ParseException(lineNum, line, "姓名不能为空");
+        }
+
+        user.email = fields[2];
+        if(user.email.find('@') == std::string::npos) {
+            throw ParseException(lineNum, line,
+                "邮箱格式无效: '" + user.email + "'");
+        }
+
+        try {
+            user.age = std::stoi(fields[3]);
+        } catch(const std::exception&) {
+            throw ParseException(lineNum, line,
+                "无效的年龄: '" + fields[3] + "'");
+        }
+
+        if(user.age < 0 || user.age > 150) {
+            throw ParseException(lineNum, line,
+                "年龄超出合理范围(0-150): " + std::to_string(user.age));
+        }
+
+        return user;
+    }
+
+    // 解析整个文件，返回用户列表（智能指针管理）
+    static std::unique_ptr<std::vector<UserData>> parseFile(
+        const std::string& filename)
+    {
+        std::ifstream file(filename);
+        if(!file.is_open()) {
+            throw std::runtime_error("无法打开文件: " + filename);
+        }
+
+        auto users = std::make_unique<std::vector<UserData>>();
+
+        std::string line;
+        int lineNum = 0;
+        int errorCount = 0;
+
+        // 跳过标题行
+        if(std::getline(file, line)) {
+            lineNum++;
+            // 可选：验证标题行
+        }
+
+        while(std::getline(file, line)) {
+            lineNum++;
+            if(line.empty()) continue;  // 跳过空行
+
+            try {
+                auto user = parseLine(line, lineNum);
+                users->push_back(user);
+            }
+            catch(const ParseException& e) {
+                std::cerr << e.fullReport() << std::endl;
+                errorCount++;
+                // 继续解析下一行，不中断整个导入
+            }
+        }
+
+        file.close();
+
+        if(errorCount > 0) {
+            std::cerr << "警告: 共跳过 " << errorCount
+                      << " 条无效记录" << std::endl;
+        }
+
+        return users;
+    }
+};
+
+// 辅助函数：创建测试 CSV 文件
+void createTestCSV(const std::string& filename) {
+    std::ofstream file(filename);
+    file << "id,name,email,age\n";
+    file << "1,张三,zhang@example.com,25\n";
+    file << "2,李四,li@example.com,30\n";
+    file << "3,,wang@example.com,28\n";           // 名字为空
+    file << "4,赵六,zhao@,35\n";                   // 邮箱无效
+    file << "5,孙七,sun@example.com,abc\n";        // 年龄非数字
+    file << "6,周八,zhou@example.com,200\n";       // 年龄超范围
+    file << "7,吴九,wu@example.com,22\n";
+    file.close();
+}
+
+int main() {
+    std::cout << "===== CSV 用户数据导入 =====" << std::endl;
+
+    const std::string filename = "test_users.csv";
+    createTestCSV(filename);
+
+    try {
+        auto users = CSVParser::parseFile(filename);
+
+        std::cout << "\n成功导入 " << users->size()
+                  << " 条用户数据:" << std::endl;
+        for(const auto& user : *users) {
+            std::cout << "  " << user << std::endl;
+        }
+    }
+    catch(const std::exception& e) {
+        std::cerr << "严重错误: " << e.what() << std::endl;
+    }
+
+    // 清理测试文件
+    std::remove(filename.c_str());
+
+    return 0;
+}
+---------------------------------------------------------------
+
+案例3: 网络请求框架 —— 天气API调用
+---------------------------------------------------------------
+场景：开发一个天气查询服务，调用第三方API。
+网络请求可能因超时、连接失败、响应格式错误等原因失败。
+
+知识点融入：
+- Ch1 命名空间：namespace NetworkLib {}
+- Ch8 模板：模板函数包装请求
+- 本章：异常继承体系 + noexcept
+
+---------------------------------------------------------------
+#include <iostream>
+#include <string>
+#include <stdexcept>
+#include <sstream>
+#include <map>
+#include <chrono>
+#include <thread>
+
+namespace NetworkLib {
+
+    // ===== 异常继承体系 =====
+
+    class NetworkException : public std::runtime_error {
+    private:
+        int httpStatusCode;
+    public:
+        NetworkException(const std::string& msg, int code = 0)
+            : std::runtime_error(msg), httpStatusCode(code) {}
+
+        int getStatusCode() const { return httpStatusCode; }
+    };
+
+    class TimeoutException : public NetworkException {
+    private:
+        int timeoutMs;
+    public:
+        TimeoutException(int ms, const std::string& url)
+            : NetworkException("请求超时 " + std::to_string(ms) + "ms: " + url),
+              timeoutMs(ms) {}
+
+        int getTimeoutMs() const { return timeoutMs; }
+    };
+
+    class ConnectionException : public NetworkException {
+    public:
+        ConnectionException(const std::string& host, int port)
+            : NetworkException("无法连接到 " + host + ":"
+                                + std::to_string(port)) {}
+    };
+
+    class FormatException : public NetworkException {
+    public:
+        explicit FormatException(const std::string& detail)
+            : NetworkException("响应格式错误: " + detail) {}
+    };
+
+    // ===== 模拟HTTP响应 =====
+
+    struct HttpResponse {
+        int statusCode;
+        std::map<std::string, std::string> headers;
+        std::string body;
+    };
+
+    // ===== 天气数据 =====
+
+    struct WeatherData {
+        std::string city;
+        double temperature;
+        double humidity;
+        std::string condition;
+
+        friend std::ostream& operator<<(std::ostream& os,
+                                         const WeatherData& w) {
+            os << "城市: " << w.city << "\n"
+               << "  温度: " << w.temperature << "°C\n"
+               << "  湿度: " << w.humidity << "%\n"
+               << "  天气: " << w.condition;
+            return os;
+        }
+    };
+
+    // ===== HTTP 客户端（模拟） =====
+
+    class HttpClient {
+    public:
+        // 模拟的 GET 请求（实际应使用 curl 或 socket）
+        HttpResponse get(const std::string& url,
+                         int timeoutMs = 5000) {
+            std::cout << "[HTTP] GET " << url << " (超时: "
+                      << timeoutMs << "ms)" << std::endl;
+
+            // 模拟：检查URL是否为空
+            if(url.empty()) {
+                throw ConnectionException("localhost", 80);
+            }
+
+            // 模拟超时
+            if(url.find("timeout") != std::string::npos) {
+                throw TimeoutException(timeoutMs, url);
+            }
+
+            // 模拟连接失败
+            if(url.find("badhost") != std::string::npos) {
+                throw ConnectionException("badhost", 8080);
+            }
+
+            // 模拟正常响应
+            HttpResponse resp;
+            resp.statusCode = 200;
+            resp.headers["Content-Type"] = "application/json";
+            resp.body = R"({"city":"Beijing","temperature":22.5,"humidity":65,"condition":"晴"})";
+            return resp;
+        }
+
+        void close() noexcept {
+            std::cout << "[HTTP] 连接关闭" << std::endl;
+        }
+    };
+
+    // ===== 天气 API 客户端 =====
+
+    class WeatherAPIClient {
+    private:
+        HttpClient httpClient;
+        std::string apiKey;
+        std::string baseUrl;
+
+        // 解析 JSON 响应（简化版）
+        WeatherData parseWeatherResponse(const std::string& json,
+                                          const std::string& city)
+        {
+            WeatherData data;
+            data.city = city;
+
+            // 简单的字符串解析（实际应使用 JSON 库）
+            auto findValue = [&json](const std::string& key) -> std::string {
+                auto keyPos = json.find("\"" + key + "\"");
+                if(keyPos == std::string::npos)
+                    throw FormatException("缺少字段: " + key);
+
+                auto colonPos = json.find(':', keyPos);
+                auto startPos = json.find_first_not_of(" \t:", colonPos);
+                auto endPos = json.find_first_of(",}", startPos);
+                return json.substr(startPos, endPos - startPos);
+            };
+
+            try {
+                std::string tempStr = findValue("temperature");
+                data.temperature = std::stod(tempStr);
+
+                std::string humStr = findValue("humidity");
+                data.humidity = std::stod(humStr);
+
+                std::string cond = findValue("condition");
+                // 去除引号
+                cond.erase(std::remove(cond.begin(), cond.end(), '"'),
+                          cond.end());
+                data.condition = cond;
+            }
+            catch(const std::invalid_argument& e) {
+                throw FormatException(std::string("数值解析失败: ")
+                                       + e.what());
+            }
+
+            return data;
+        }
+
+    public:
+        WeatherAPIClient(const std::string& key,
+                         const std::string& url = "https://weather.api")
+            : apiKey(key), baseUrl(url) {}
+
+        // 获取天气（不抛异常版本——返回空 optional 表示失败）
+        WeatherData getWeather(const std::string& city,
+                               int timeoutMs = 5000)
+        {
+            std::string url = baseUrl + "/weather?city="
+                              + city + "&key=" + apiKey;
+
+            HttpResponse response = httpClient.get(url, timeoutMs);
+
+            if(response.statusCode != 200) {
+                throw NetworkException(
+                    "HTTP错误码: " + std::to_string(response.statusCode),
+                    response.statusCode
+                );
+            }
+
+            return parseWeatherResponse(response.body, city);
+        }
+
+        void disconnect() noexcept {
+            try {
+                httpClient.close();
+            } catch(...) {
+                // 忽略关闭时的异常（已经完成工作）
+            }
+        }
+    };
+
+    // ===== 带重试的请求模板函数 (Ch8 模板) =====
+
+    template<typename Func, typename... Args>
+    auto retryRequest(int maxRetries, Func&& func, Args&&... args)
+        -> decltype(func(args...))
+    {
+        NetworkException lastException("未发起请求");
+
+        for(int attempt = 1; attempt <= maxRetries; ++attempt) {
+            try {
+                return func(std::forward<Args>(args)...);
+            }
+            catch(const TimeoutException& e) {
+                lastException = NetworkException(e.what());
+                std::cerr << "第" << attempt << "次尝试超时，"
+                          << (attempt < maxRetries ? "重试中..." : "全部失败")
+                          << std::endl;
+                std::this_thread::sleep_for(
+                    std::chrono::milliseconds(100 * attempt));
+            }
+            catch(const ConnectionException& e) {
+                lastException = NetworkException(e.what());
+                std::cerr << "第" << attempt << "次尝试连接失败，"
+                          << (attempt < maxRetries ? "重试中..." : "全部失败")
+                          << std::endl;
+                std::this_thread::sleep_for(
+                    std::chrono::milliseconds(500 * attempt));
+            }
+        }
+
+        throw lastException;
+    }
+
+} // namespace NetworkLib
+
+int main() {
+    using namespace NetworkLib;
+
+    std::cout << "===== 天气API调用 =====" << std::endl;
+
+    WeatherAPIClient client("api_key_12345");
+
+    // 正常请求
+    try {
+        WeatherData weather = client.getWeather("Beijing");
+        std::cout << weather << std::endl;
+    }
+    catch(const NetworkException& e) {
+        std::cerr << "API错误: " << e.what() << std::endl;
+    }
+
+    // 带重试的请求
+    std::cout << "\n--- 重试机制测试 ---" << std::endl;
+    try {
+        auto weather = retryRequest(3, [&](const std::string& city) {
+            return client.getWeather(city, 3000);
+        }, std::string("Shanghai"));
+
+        std::cout << weather << std::endl;
+    }
+    catch(const NetworkException& e) {
+        std::cerr << "最终失败: " << e.what() << std::endl;
+    }
+
+    // 异常安全清理
+    client.disconnect();
+
+    return 0;
+}
+---------------------------------------------------------------
+
+案例4: 银行转账系统 —— 综合案例
+---------------------------------------------------------------
+场景：银行核心转账系统，需要强异常安全保证。
+一笔转账要么完全成功（双方余额正确更新），要么完全失败（双方余额不变）。
+
+知识点融入：
+- Ch1 命名空间：namespace BankCore {}
+- Ch3 动态内存/智能指针：unique_ptr
+- Ch4 类与对象
+- Ch5 继承：SavingAccount / CheckingAccount
+- Ch6 多态：虚函数 dispatch
+- Ch7 运算符重载
+- Ch8 模板：模板函数批量转账
+
+---------------------------------------------------------------
+#include <iostream>
+#include <string>
+#include <vector>
+#include <memory>
+#include <stdexcept>
+#include <chrono>
+#include <sstream>
+
+namespace BankCore {
+
+    // ===== 异常层次 =====
+
+    class TransferException : public std::runtime_error {
+    public:
+        TransferException(const std::string& msg)
+            : std::runtime_error(msg) {}
+    };
+
+    class InsufficientBalanceException : public TransferException {
+    private:
+        std::string accountId;
+        double required;
+        double available;
+    public:
+        InsufficientBalanceException(const std::string& id,
+                                      double req, double avail)
+            : TransferException("账户 " + id + " 余额不足: 需要$"
+                                 + std::to_string(req) + " 可用$"
+                                 + std::to_string(avail)),
+              accountId(id), required(req), available(avail) {}
+        const std::string& getAccountId() const { return accountId; }
+    };
+
+    class FrozenAccountException : public TransferException {
+    public:
+        explicit FrozenAccountException(const std::string& id)
+            : TransferException("账户 " + id + " 已冻结") {}
+    };
+
+    // ===== 交易记录（RAII 事务日志） =====
+
+    class TransactionLog {
+    private:
+        std::ostringstream log;
+        bool committed;
+    public:
+        TransactionLog() : committed(false) {
+            log << "[事务开始 "
+                << std::chrono::system_clock::to_time_t(
+                       std::chrono::system_clock::now())
+                << "]\n";
+        }
+
+        void record(const std::string& entry) {
+            log << entry << "\n";
+        }
+
+        void commit() {
+            committed = true;
+            log << "[事务提交]\n";
+            std::cout << log.str();
+        }
+
+        ~TransactionLog() noexcept {
+            if(!committed) {
+                log << "[事务回滚]\n";
+                std::cerr << log.str();
+            }
+        }
+    };
+
+    // ===== 账户基类 =====
+
+    class Account {
+    protected:
+        std::string id;
+        std::string owner;
+        double balance;
+        bool frozen;
+
+    public:
+        Account(const std::string& i, const std::string& o, double b)
+            : id(i), owner(o), balance(b), frozen(false) {}
+
+        virtual ~Account() = default;
+
+        virtual std::string getType() const = 0;
+
+        // 取款（可能抛异常）
+        void debit(double amount) {
+            if(frozen)
+                throw FrozenAccountException(id);
+            if(amount <= 0)
+                throw TransferException("取款金额无效: "
+                                         + std::to_string(amount));
+            if(amount > balance)
+                throw InsufficientBalanceException(id, amount, balance);
+            balance -= amount;
+        }
+
+        // 存款（不抛异常，假设总是成功）
+        void credit(double amount) noexcept {
+            balance += amount;
+        }
+
+        // 冻结/解冻
+        void freeze() noexcept { frozen = true; }
+        void unfreeze() noexcept { frozen = false; }
+        bool isFrozen() const noexcept { return frozen; }
+
+        double getBalance() const noexcept { return balance; }
+        const std::string& getId() const noexcept { return id; }
+        const std::string& getOwner() const noexcept { return owner; }
+
+        friend std::ostream& operator<<(std::ostream& os,
+                                         const Account& acc) {
+            os << acc.getType() << "[" << acc.id << "] "
+               << acc.owner << " $" << acc.balance;
+            return os;
+        }
+    };
+
+    // 储蓄账户
+    class SavingsAccount : public Account {
+    private:
+        double rate;
+    public:
+        SavingsAccount(const std::string& i, const std::string& o,
+                       double b, double r = 0.02)
+            : Account(i, o, b), rate(r) {}
+
+        std::string getType() const override { return "储蓄"; }
+
+        void applyInterest() noexcept {
+            balance += balance * rate;
+        }
+    };
+
+    // 支票账户
+    class CheckingAccount : public Account {
+    private:
+        double overdraft;
+    public:
+        CheckingAccount(const std::string& i, const std::string& o,
+                        double b, double od = 500)
+            : Account(i, o, b), overdraft(od) {}
+
+        std::string getType() const override { return "支票"; }
+
+        void debit(double amount) {
+            if(frozen) throw FrozenAccountException(id);
+            if(amount <= 0)
+                throw TransferException("取款金额无效");
+            if(amount > balance + overdraft)
+                throw InsufficientBalanceException(id, amount,
+                                                   balance + overdraft);
+            balance -= amount;
+        }
+    };
+
+    // ===== 转账服务（强异常安全保证） =====
+
+    class TransferService {
+    public:
+        // 单笔转账：强异常安全
+        static bool transfer(Account& from, Account& to,
+                              double amount)
+        {
+            TransactionLog tlog;
+
+            tlog.record("从 " + from.getId() + " 转账 $" +
+                        std::to_string(amount) +
+                        " 到 " + to.getId());
+
+            // 1. 执行取款（可能抛异常）
+            from.debit(amount);
+
+            // 2. 执行存款
+            try {
+                to.credit(amount);
+            } catch(...) {
+                // 3. 存款失败，回滚取款
+                from.credit(amount);
+                tlog.record("存款失败，已回滚取款");
+                throw;
+            }
+
+            tlog.commit();
+            return true;
+        }
+
+        // 批量转账（模板函数，Ch8）
+        // Transfer 必须包含 fromId, toId, amount 字段
+        template<typename Transfer>
+        static void batchTransfer(
+            std::vector<std::unique_ptr<Account>>& accounts,
+            const std::vector<Transfer>& transfers)
+        {
+            TransactionLog tlog;
+
+            // 先检查所有转账的合法性（不修改余额）
+            for(const auto& tr : transfers) {
+                auto* from = findAccount(accounts, tr.fromId);
+                auto* to = findAccount(accounts, tr.toId);
+
+                if(!from || !to)
+                    throw TransferException("账户不存在");
+
+                if(from->isFrozen())
+                    throw FrozenAccountException(tr.fromId);
+                if(to->isFrozen())
+                    throw FrozenAccountException(tr.toId);
+                if(from->getBalance() < tr.amount)
+                    throw InsufficientBalanceException(
+                        tr.fromId, tr.amount, from->getBalance());
+            }
+
+            // 所有检查通过，逐笔执行
+            for(const auto& tr : transfers) {
+                auto* from = findAccount(accounts, tr.fromId);
+                auto* to = findAccount(accounts, tr.toId);
+                from->debit(tr.amount);
+                to->credit(tr.amount);
+                tlog.record("转账 $" + std::to_string(tr.amount)
+                            + " " + tr.fromId + " -> " + tr.toId);
+            }
+
+            tlog.commit();
+        }
+
+    private:
+        static Account* findAccount(
+            std::vector<std::unique_ptr<Account>>& accounts,
+            const std::string& id)
+        {
+            for(auto& acc : accounts) {
+                if(acc->getId() == id) return acc.get();
+            }
+            return nullptr;
+        }
+    };
+
+    // 转账结构体
+    struct TransferRequest {
+        std::string fromId;
+        std::string toId;
+        double amount;
+    };
+
+} // namespace BankCore
+
+int main() {
+    using namespace BankCore;
+
+    std::cout << "===== 银行核心转账系统 =====" << std::endl;
+
+    // 账户管理
+    std::vector<std::unique_ptr<Account>> accounts;
+    accounts.push_back(std::make_unique<SavingsAccount>(
+        "A001", "Alice", 10000.0));
+    accounts.push_back(std::make_unique<CheckingAccount>(
+        "B001", "Bob", 5000.0));
+    accounts.push_back(std::make_unique<SavingsAccount>(
+        "C001", "Charlie", 3000.0));
+
+    // 打印初始状态
+    for(const auto& acc : accounts)
+        std::cout << *acc << std::endl;
+
+    // 正常转账
+    std::cout << "\n--- 正常转账 ---" << std::endl;
+    try {
+        TransferService::transfer(*accounts[0], *accounts[1], 2000.0);
+    } catch(const TransferException& e) {
+        std::cerr << "转账失败: " << e.what() << std::endl;
+    }
+
+    // 异常转账（余额不足）
+    std::cout << "\n--- 余额不足转账 ---" << std::endl;
+    try {
+        TransferService::transfer(*accounts[2], *accounts[0], 50000.0);
+    } catch(const TransferException& e) {
+        std::cerr << "转账失败: " << e.what() << std::endl;
+    }
+
+    // 批量转账
+    std::cout << "\n--- 批量转账 ---" << std::endl;
+    std::vector<TransferRequest> batch = {
+        {"A001", "B001", 1000.0},
+        {"B001", "C001", 500.0},
+        {"A001", "C001", 1500.0}
+    };
+
+    try {
+        TransferService::batchTransfer(accounts, batch);
+    } catch(const TransferException& e) {
+        std::cerr << "批量转账失败: " << e.what() << std::endl;
+    }
+
+    // 最终状态
+    std::cout << "\n--- 最终账户状态 ---" << std::endl;
+    for(const auto& acc : accounts)
+        std::cout << *acc << std::endl;
+
+    return 0;
+}
+---------------------------------------------------------------
+
+案例5: 游戏引擎资源管理器 —— 3D游戏启动加载
+---------------------------------------------------------------
+场景：3D游戏启动时需要加载纹理、模型、音效等资源。
+每个资源加载可能失败（文件损坏、内存不足、格式不支持等）。
+
+知识点融入：
+- Ch1 命名空间：namespace GameEngine {}
+- Ch3 动态内存/智能指针：unique_ptr
+- Ch4 类与对象 + Ch5 继承 + Ch6 多态：Resource 层次
+- Ch7 运算符重载：<< 输出
+- Ch8 模板：模板资源管理器
+
+---------------------------------------------------------------
+#include <iostream>
+#include <string>
+#include <vector>
+#include <memory>
+#include <map>
+#include <stdexcept>
+#include <sstream>
+#include <type_traits>
+
+namespace GameEngine {
+
+    // ===== 异常层次 =====
+
+    class ResourceException : public std::runtime_error {
+    private:
+        std::string resourcePath;
+    public:
+        ResourceException(const std::string& path, const std::string& msg)
+            : std::runtime_error(msg), resourcePath(path) {}
+        const std::string& getPath() const { return resourcePath; }
+    };
+
+    class LoadException : public ResourceException {
+    public:
+        LoadException(const std::string& path, const std::string& reason)
+            : ResourceException(path, "加载失败: " + reason) {}
+    };
+
+    class FormatException : public ResourceException {
+    public:
+        FormatException(const std::string& path, const std::string& fmt)
+            : ResourceException(path, "不支持的格式: " + fmt) {}
+    };
+
+    class OutOfMemoryException : public ResourceException {
+    public:
+        OutOfMemoryException(const std::string& path, size_t required)
+            : ResourceException(path,
+                "内存不足: 需要" + std::to_string(required) + "字节") {}
+    };
+
+    // ===== 资源基类（Ch4 + Ch5 + Ch6） =====
+
+    class Resource {
+    protected:
+        std::string name;
+        std::string filePath;
+        size_t memorySize;
+        bool loaded;
+
+        virtual void loadFromFile(const std::string& path) = 0;
+
+    public:
+        Resource(const std::string& n, const std::string& path)
+            : name(n), filePath(path), memorySize(0), loaded(false) {}
+
+        virtual ~Resource() = default;
+
+        void load() {
+            if(loaded) return;
+
+            std::cout << "[加载] " << getTypeName() << ": "
+                      << name << " (" << filePath << ")" << std::endl;
+
+            // 模拟加载可能失败
+            if(filePath.find(".bad") != std::string::npos) {
+                throw FormatException(filePath, "bad");
+            }
+            if(filePath.find(".huge") != std::string::npos) {
+                throw OutOfMemoryException(filePath, 4ULL * 1024 * 1024 * 1024);
+            }
+
+            try {
+                loadFromFile(filePath);
+                loaded = true;
+                std::cout << "[完成] " << name
+                          << " (" << memorySize << " bytes)" << std::endl;
+            }
+            catch(const std::exception& e) {
+                throw LoadException(filePath, e.what());
+            }
+        }
+
+        void unload() noexcept {
+            loaded = false;
+            memorySize = 0;
+            std::cout << "[卸载] " << name << std::endl;
+        }
+
+        virtual std::string getTypeName() const = 0;
+        bool isLoaded() const noexcept { return loaded; }
+        size_t getMemorySize() const noexcept { return memorySize; }
+        const std::string& getName() const noexcept { return name; }
+    };
+
+    // 纹理资源
+    class Texture : public Resource {
+    private:
+        int width, height;
+    protected:
+        void loadFromFile(const std::string& path) override {
+            // 模拟纹理加载
+            if(path.find("texture") != std::string::npos) {
+                width = 1024;
+                height = 1024;
+                memorySize = width * height * 4;  // RGBA
+            } else {
+                throw LoadException(path, "纹理数据损坏");
+            }
+        }
+    public:
+        Texture(const std::string& n, const std::string& p)
+            : Resource(n, p), width(0), height(0) {}
+
+        std::string getTypeName() const override { return "纹理"; }
+        int getWidth() const { return width; }
+        int getHeight() const { return height; }
+    };
+
+    // 模型资源
+    class Model : public Resource {
+    private:
+        int vertexCount;
+    protected:
+        void loadFromFile(const std::string& path) override {
+            if(path.find("model") != std::string::npos) {
+                vertexCount = 15000;
+                memorySize = vertexCount * 32;  // 每个顶点32字节
+            } else {
+                throw LoadException(path, "模型数据不完整");
+            }
+        }
+    public:
+        Model(const std::string& n, const std::string& p)
+            : Resource(n, p), vertexCount(0) {}
+
+        std::string getTypeName() const override { return "模型"; }
+        int getVertexCount() const { return vertexCount; }
+    };
+
+    // 音效资源
+    class Audio : public Resource {
+    private:
+        double duration;
+    protected:
+        void loadFromFile(const std::string& path) override {
+            if(path.find("audio") != std::string::npos ||
+               path.find("sound") != std::string::npos) {
+                duration = 3.5;
+                memorySize = static_cast<size_t>(duration * 44100 * 2);
+            } else {
+                throw LoadException(path, "音频编码不支持");
+            }
+        }
+    public:
+        Audio(const std::string& n, const std::string& p)
+            : Resource(n, p), duration(0.0) {}
+
+        std::string getTypeName() const override { return "音效"; }
+        double getDuration() const { return duration; }
+    };
+
+    // ===== 资源工厂（模板模式，Ch8） =====
+
+    template<typename T>
+    std::unique_ptr<T> createResource(const std::string& name,
+                                       const std::string& path)
+    {
+        static_assert(std::is_base_of<Resource, T>::value,
+                      "T 必须继承自 Resource");
+        return std::make_unique<T>(name, path);
+    }
+
+    // ===== 资源管理器（模板类，Ch8） =====
+
+    class ResourceManager {
+    private:
+        std::map<std::string, std::unique_ptr<Resource>> resources;
+        size_t totalMemory;
+        std::vector<std::string> failedResources;
+
+    public:
+        ResourceManager() : totalMemory(0) {}
+
+        // 注册并加载资源
+        template<typename T>
+        T* loadResource(const std::string& name,
+                        const std::string& path)
+        {
+            static_assert(std::is_base_of<Resource, T>::value,
+                          "T 必须继承自 Resource");
+
+            auto res = createResource<T>(name, path);
+
+            try {
+                res->load();
+                totalMemory += res->getMemorySize();
+                T* ptr = res.get();
+                resources[name] = std::move(res);
+                return ptr;
+            }
+            catch(const ResourceException& e) {
+                failedResources.push_back(name + ": " + e.what());
+                std::cerr << "  [失败] " << name << ": "
+                          << e.what() << std::endl;
+                return nullptr;  // 加载失败返回空指针
+            }
+        }
+
+        // 获取资源（多态）
+        Resource* get(const std::string& name) {
+            auto it = resources.find(name);
+            return (it != resources.end()) ? it->second.get() : nullptr;
+        }
+
+        // 卸载所有
+        void unloadAll() noexcept {
+            for(auto& pair : resources) {
+                pair.second->unload();
+            }
+            resources.clear();
+            totalMemory = 0;
+            std::cout << "[资源管理器] 所有资源已卸载" << std::endl;
+        }
+
+        // 状态报告
+        void report() const {
+            std::cout << "\n===== 资源加载报告 =====" << std::endl;
+            std::cout << "成功加载: " << resources.size() << " 项" << std::endl;
+            std::cout << "总内存: " << totalMemory / 1024
+                      << " KB" << std::endl;
+
+            for(const auto& pair : resources) {
+                auto& res = pair.second;
+                std::cout << "  [" << res->getTypeName() << "] "
+                          << res->getName()
+                          << " (" << res->getMemorySize() << " bytes)"
+                          << std::endl;
+            }
+
+            if(!failedResources.empty()) {
+                std::cout << "\n加载失败: " << failedResources.size()
+                          << " 项" << std::endl;
+                for(const auto& fail : failedResources) {
+                    std::cout << "  " << fail << std::endl;
+                }
+            }
+        }
+
+        ~ResourceManager() noexcept {
+            unloadAll();
+        }
+    };
+
+} // namespace GameEngine
+
+int main() {
+    using namespace GameEngine;
+
+    std::cout << "===== 3D游戏资源加载 =====" << std::endl;
+
+    ResourceManager manager;
+
+    // 正常加载
+    manager.loadResource<Texture>("主角纹理", "assets/texture_hero.png");
+    manager.loadResource<Texture>("草地纹理", "assets/texture_grass.png");
+    manager.loadResource<Model>("主角模型", "assets/model_hero.fbx");
+    manager.loadResource<Model>("敌人模型", "assets/model_enemy.fbx");
+    manager.loadResource<Audio>("背景音乐", "assets/audio_bgm.mp3");
+    manager.loadResource<Audio>("射击音效", "assets/audio_shoot.wav");
+
+    // 预期失败
+    manager.loadResource<Texture>("破损纹理", "assets/texture_broken.bad");
+    manager.loadResource<Model>("巨大模型", "assets/model_world.huge");
+    manager.loadResource<Audio>("未知格式", "assets/audio_unknown.xyz");
+
+    // 查找并使用资源（多态）
+    Resource* heroTexture = manager.get("主角纹理");
+    if(heroTexture) {
+        std::cout << "\n使用资源: " << heroTexture->getName()
+                  << " 类型: " << heroTexture->getTypeName() << std::endl;
+
+        // 多态 dynamic_cast 检查
+        auto* tex = dynamic_cast<Texture*>(heroTexture);
+        if(tex) {
+            std::cout << "  分辨率: " << tex->getWidth()
+                      << "x" << tex->getHeight() << std::endl;
+        }
+    }
+
+    // 报告
+    manager.report();
+
+    // RAII 确保退出时自动卸载所有资源
+    std::cout << "\n游戏退出..." << std::endl;
+    return 0;
+}
+---------------------------------------------------------------
+
+================================================================================
+### 第四节: 课后习题
+================================================================================
+
+习题：设计一个"在线考试系统"的异常处理框架
+
+要求如下：
+
+1. 自定义异常类 ExamException 继承 std::runtime_error，携带考生ID信息。
+   定义以下子类：
+   - TimeoutException: 考试超时（携带剩余时间信息）
+   - InvalidAnswerException: 无效答案（携带题号）
+   - AuthenticationException: 身份验证失败（携带IP地址）
+
+2. Exam 类管理考试流程，包含以下方法：
+   - authenticate(studentId, password): 身份验证，失败抛 AuthenticationException
+   - startExam(): 开始计时
+   - submitAnswer(questionId, answer): 提交答案，
+     超时抛 TimeoutException，无效答案抛 InvalidAnswerException
+   - endExam(): 结束考试，计算成绩
+
+3. 在 main() 中用 try-catch 在合适层级捕获不同类型的异常：
+   - 身份验证失败：重新提示登录
+   - 超时：自动提交已答题目
+   - 无效答案：记录日志后继续下一题
+
+4. 实现 RAII 类 ExamSessionGuard，在构造函数中记录"考试开始"，
+   在析构函数中自动保存答题记录（即使异常退出也要保存）。
+   不管考试正常结束还是异常退出，都要保证答题记录不丢失。
+   使用智能指针管理 ExamSessionGuard。
+
+5. 标记不会抛异常的函数为 noexcept
+   （如 getScore(), getStudentId(), isFinished() 等）。
+
+6. 附加要求（加分项）：
+   - 实现考试期间的自动保存定时器（定时触发保存）
+   - 将答题记录用 JSON 格式字符串表示（用 stringstream）
+   - 将异常处理与模板结合，实现通用的安全考试执行器
+
+答题模板框架：
+
+---------------------------------------------------------------
+#include <iostream>
+#include <string>
+#include <stdexcept>
+#include <fstream>
+#include <sstream>
+#include <vector>
+#include <memory>
+#include <chrono>
+#include <map>
+
+// TODO: 定义异常类层次
+
+// TODO: 定义试题结构
+
+// TODO: 实现 ExamSessionGuard (RAII)
+
+// TODO: 实现 Exam 类
+
+int main() {
+    // TODO: 模拟考试流程
+
+    return 0;
+}
+---------------------------------------------------------------
+
+期望运行结果示例：
+
+===== 在线考试系统 =====
+请登录...
+身份验证成功: 考生 2024001 小明
+[考试开始] 2024-01-15 14:00:00
+题目1: C++中声明命名空间的关键字?
+你的答案(A/B/C/D): A
+正确！
+题目2: 下列哪个是C++中处理异常的关键字?
+你的答案: throw   ← 无效答案
+[错误] 第2题发生无效答案异常: 答案格式不正确，请输入A/B/C/D
+你的答案(A/B/C/D): D
+错误！
+[考试时间到] 已超时，自动提交
+[自动保存] 答题记录已保存到 exam_2024001.txt
+考试结束，得分: 50分
+
+================================================================================

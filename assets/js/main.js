@@ -1,5 +1,6 @@
-// ========== 技术分享浮动按钮配置 ==========
+// ========== 技术分享按钮配置 ==========
 // ★ 新增分享入口：在下面数组中追加条目即可
+// group: 同一 group 的入口会用线连接（相同的 group 值即视为关联）
 const TECH_SHARES = [
     {
         id: 'archlinux',
@@ -7,8 +8,19 @@ const TECH_SHARES = [
         url: 'archlinux.html',
         logo: 'assets/ima/cions/archlinux.png',
         description: 'Arch Linux 安装与使用教程',
-        color: '#1793d1'
+        color: '#1793d1',
+        group: 'linux'
     },
+    {
+        id: 'cpp_tutorial',
+        name: 'C++',
+        url: 'cpp.html',
+        logo: 'assets/ima/cions/cpp.png',
+        description: 'C++ 深化教程 — 从命名空间到标准库',
+        color: '#7b2fbe',
+        textColor: '#1a1a1a',
+        group: 'cpp'
+    }
     // ★ 模板 - 复制以下内容并修改即可添加新技术分享入口：
     // {
     //     id: 'unique-id',
@@ -16,75 +28,23 @@ const TECH_SHARES = [
     //     url: '目标页面.html',
     //     logo: 'assets/ima/cions/图标.png',
     //     description: '简短描述',
-    //     color: '#主题色'
+    //     color: '#主题色',
+    //     group: '分组名'
     // },
 ];
 
 const ITEMS_PER_ROW = 3;
-const FLOAT_SPEED = 135; // px/s (数字雨 540px/s 的 0.25 倍)
-const EDGE_MARGIN = 50;   // 边缘反弹边距(px)
-
-let floatingRows = [];
-let floatingAnimId = null;
-let floatingLastTime = 0;
-let floatingPaused = false;
-let floatingResizeBound = false;
 
 function darkenHex(hex, amount) {
-    const n = parseInt(hex.replace('#', ''), 16);
-    const r = Math.max(0, Math.min(255, (n >> 16) + amount));
-    const g = Math.max(0, Math.min(255, ((n >> 8) & 0xFF) + amount));
-    const b = Math.max(0, Math.min(255, (n & 0xFF) + amount));
+    var n = parseInt(hex.replace('#', ''), 16);
+    var r = Math.max(0, Math.min(255, (n >> 16) + amount));
+    var g = Math.max(0, Math.min(255, ((n >> 8) & 0xFF) + amount));
+    var b = Math.max(0, Math.min(255, (n & 0xFF) + amount));
     return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
 }
 
 function stopFloating() {
-    if (floatingAnimId) {
-        cancelAnimationFrame(floatingAnimId);
-        floatingAnimId = null;
-    }
-    floatingRows = [];
-    floatingPaused = false;
-}
-
-function updateFloatingBounds() {
-    const container = document.getElementById('floatingShareContainer');
-    if (!container) return;
-    const cw = container.clientWidth;
-    floatingRows.forEach(function(rd) {
-        const rw = rd.el.scrollWidth;
-        rd.maxOff = Math.max(0, (cw - rw) / 2 - EDGE_MARGIN);
-        rd.offset = Math.max(-rd.maxOff, Math.min(rd.maxOff, rd.offset));
-    });
-}
-
-function animateFloating(ts) {
-    if (!floatingLastTime) floatingLastTime = ts;
-    var dt = Math.min((ts - floatingLastTime) / 1000, 0.1);
-    floatingLastTime = ts;
-
-    if (!floatingPaused && floatingRows.length > 0) {
-        for (var i = 0; i < floatingRows.length; i++) {
-            var rd = floatingRows[i];
-            rd.offset += rd.dir * FLOAT_SPEED * dt;
-
-            if (rd.offset >= rd.maxOff) {
-                rd.offset = rd.maxOff;
-                rd.dir = -1;
-            } else if (rd.offset <= -rd.maxOff) {
-                rd.offset = -rd.maxOff;
-                rd.dir = 1;
-            }
-
-            rd.el.style.transform = 'translateX(' + rd.offset + 'px)';
-        }
-    }
-
-    floatingAnimId = requestAnimationFrame(animateFloating);
-}
-
-function onFloatingResize() {
-    updateFloatingBounds();
+    // 已无浮动动画，保留以兼容旧调用
 }
 
 function initFloatingShares() {
@@ -95,6 +55,21 @@ function initFloatingShares() {
 
     container.innerHTML = '';
     var numRows = Math.ceil(TECH_SHARES.length / ITEMS_PER_ROW);
+
+    // 先创建 SVG 层用于画连接线
+    var svgNS = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('class', 'share-lines-svg');
+    svg.style.position = 'absolute';
+    svg.style.top = '0';
+    svg.style.left = '0';
+    svg.style.width = '100%';
+    svg.style.height = '100%';
+    svg.style.pointerEvents = 'none';
+    svg.style.zIndex = '0';
+    container.appendChild(svg);
+
+    var btnElements = []; // { id, el, group }
 
     for (var ri = 0; ri < numRows; ri++) {
         var row = document.createElement('div');
@@ -109,6 +84,8 @@ function initFloatingShares() {
                 btn.className = 'tech-share-btn';
                 btn.href = share.url;
                 btn.title = share.description;
+                btn.setAttribute('data-share-id', share.id);
+                btn.setAttribute('data-share-group', share.group);
 
                 var circle = document.createElement('div');
                 circle.className = 'tech-share-circle';
@@ -122,6 +99,9 @@ function initFloatingShares() {
                     this.style.display = 'none';
                     circle.classList.add('no-logo');
                     circle.textContent = share.name.substring(0, 3);
+                    if (share.textColor) {
+                        circle.style.color = share.textColor;
+                    }
                 };
 
                 circle.appendChild(img);
@@ -133,36 +113,67 @@ function initFloatingShares() {
                 btn.appendChild(label);
 
                 row.appendChild(btn);
+                btnElements.push({ id: share.id, el: circle, group: share.group });
             })(TECH_SHARES[i]);
         }
 
         container.appendChild(row);
-
-        var dir = ri % 2 === 0 ? 1 : -1;
-        floatingRows.push({
-            el: row,
-            offset: dir > 0 ? -EDGE_MARGIN : EDGE_MARGIN,
-            dir: dir,
-            maxOff: 0
-        });
     }
 
-    updateFloatingBounds();
+    // 绘制连接线：相同 group 的按钮两两连线
+    drawShareLines(svg, btnElements, container);
 
-    // 悬停时暂停所有按钮移动
-    var buttons = container.querySelectorAll('.tech-share-btn');
-    for (var b = 0; b < buttons.length; b++) {
-        buttons[b].addEventListener('mouseenter', function() { floatingPaused = true; });
-        buttons[b].addEventListener('mouseleave', function() { floatingPaused = false; });
+    // resize 时重绘线
+    var resizeHandler = function() {
+        drawShareLines(svg, btnElements, container);
+    };
+    window.addEventListener('resize', resizeHandler);
+    // 延迟再画一次（图片加载后尺寸可能变化）
+    setTimeout(function() { drawShareLines(svg, btnElements, container); }, 300);
+}
+
+function drawShareLines(svg, btns, container) {
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    if (btns.length < 2) return;
+
+    var containerRect = container.getBoundingClientRect();
+    var ns = 'http://www.w3.org/2000/svg';
+
+    // 按 group 分组
+    var groups = {};
+    for (var i = 0; i < btns.length; i++) {
+        var g = btns[i].group;
+        if (!groups[g]) groups[g] = [];
+        groups[g].push(btns[i]);
     }
 
-    if (!floatingResizeBound) {
-        window.addEventListener('resize', onFloatingResize);
-        floatingResizeBound = true;
-    }
+    // 画同组按钮之间的线
+    for (var key in groups) {
+        var members = groups[key];
+        if (members.length < 2) continue;
 
-    floatingLastTime = performance.now();
-    floatingAnimId = requestAnimationFrame(animateFloating);
+        for (var a = 0; a < members.length; a++) {
+            for (var b = a + 1; b < members.length; b++) {
+                var rA = members[a].el.getBoundingClientRect();
+                var rB = members[b].el.getBoundingClientRect();
+
+                var x1 = rA.left + rA.width / 2 - containerRect.left;
+                var y1 = rA.top + rA.height / 2 - containerRect.top;
+                var x2 = rB.left + rB.width / 2 - containerRect.left;
+                var y2 = rB.top + rB.height / 2 - containerRect.top;
+
+                var line = document.createElementNS(ns, 'line');
+                line.setAttribute('x1', x1);
+                line.setAttribute('y1', y1);
+                line.setAttribute('x2', x2);
+                line.setAttribute('y2', y2);
+                line.setAttribute('stroke', 'rgba(0, 255, 157, 0.25)');
+                line.setAttribute('stroke-width', '2');
+                line.setAttribute('stroke-dasharray', '6 4');
+                svg.appendChild(line);
+            }
+        }
+    }
 }
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -206,7 +217,7 @@ document.addEventListener('DOMContentLoaded', function() {
             
             const href = link.getAttribute('href');
             // 只处理.html链接且不是外部链接，排除us.html（独立页面）
-            if (href && href.endsWith('.html') && !href.startsWith('http') && href !== 'us.html' && href !== 'archlinux.html') {
+            if (href && href.endsWith('.html') && !href.startsWith('http') && href !== 'us.html' && href !== 'archlinux.html' && href !== 'cpp.html') {
                 e.preventDefault();
                 navigateTo(href);
                 return false;

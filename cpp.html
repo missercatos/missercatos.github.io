@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>C++ 深化教程</title>
+<link rel="icon" href="assets/img/avatar.png">
+<style>
+:root {
+    --bg: #16101e; --surface: #1e1830; --card: #261e3a;
+    --text: #d8d0e8; --text-dim: #9488a8;
+    --accent: #c4a060; --accent-light: #e8c878;
+    --code-bg: #0f0d14; --border: #332855;
+    --purple: #c792ea; --blue: #82aaff; --green: #c3e88d;
+    --orange: #f78c6c; --yellow: #ffcb6b; --gray: #676e95;
+    --red: #ff5370; --cyan: #89ddff;
+    --sidebar-w: 260px;
+    --shadow: 0 2px 20px rgba(0,0,0,0.35);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+    font-family:'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+    background:var(--bg); color:var(--text); line-height:1.8;
+}
+
+/* ===== 侧栏 ===== */
+.sidebar{
+    position:fixed; top:0; left:0; width:var(--sidebar-w); height:100vh;
+    background:var(--surface); border-right:1px solid var(--border);
+    z-index:100; display:flex; flex-direction:column;
+    overflow-y:auto; overflow-x:hidden;
+    box-shadow:2px 0 20px rgba(0,0,0,0.3);
+}
+.sidebar-header{
+    padding:18px 20px; border-bottom:1px solid var(--border);
+    background:linear-gradient(135deg, #7b2fbe33, #16101e);
+}
+.sidebar-header h3{
+    font-size:1rem; color:var(--accent-light); margin-bottom:4px;
+}
+.sidebar-header .subtitle{font-size:0.72rem; color:var(--text-dim)}
+.sidebar-chapters,.sidebar-sections{
+    padding:6px 0; flex-shrink:0;
+}
+.sidebar-label{
+    padding:10px 20px 4px; font-size:0.68rem; color:var(--text-dim);
+    text-transform:uppercase; letter-spacing:1px; font-weight:bold;
+}
+.sidebar-divider{
+    height:1px; background:var(--border); margin:2px 16px;
+}
+.sidebar a{
+    display:block; padding:8px 20px 8px 28px; font-size:0.82rem;
+    color:var(--text-dim); text-decoration:none; transition:all 0.2s;
+    border-left:3px solid transparent; cursor:pointer;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.sidebar a:hover{color:var(--accent-light); background:rgba(196,160,96,0.06)}
+.sidebar a.active{
+    color:var(--accent-light); background:rgba(196,160,96,0.1);
+    border-left-color:var(--accent);
+}
+.sidebar a.section-link{padding-left:40px; font-size:0.76rem}
+
+/* 侧栏折叠按钮(移动端) */
+.sidebar-toggle{
+    display:none; position:fixed; top:12px; left:12px; z-index:200;
+    width:38px; height:38px; border-radius:8px;
+    background:var(--surface); border:1px solid var(--border);
+    color:var(--accent); font-size:1.2rem; cursor:pointer;
+    align-items:center; justify-content:center;
+}
+
+/* ===== 主内容区 ===== */
+.main-wrap{
+    margin-left:var(--sidebar-w); min-height:100vh;
+    max-width:900px; padding:40px 48px 60px;
+}
+.page-header{margin-bottom:28px}
+.page-header h1{font-size:2rem; color:var(--accent-light); margin-bottom:4px}
+.page-header .ch-meta{font-size:0.82rem; color:var(--text-dim)}
+
+/* 内容排版 */
+.content h2{font-size:1.45rem; color:var(--accent); margin:36px 0 12px; padding-bottom:6px; border-bottom:1px solid var(--border)}
+.content h3{font-size:1.15rem; color:var(--blue); margin:24px 0 8px}
+.content p{margin:10px 0; color:var(--text)}
+.content ul,.content ol{margin:8px 0 8px 28px}
+.content li{margin:4px 0}
+.content strong{color:var(--accent-light)}
+.content em{color:var(--text-dim); font-style:italic}
+.content hr{border:none; border-top:1px solid var(--border); margin:24px 0}
+
+/* ===== 提示卡片 ===== */
+.note-card{
+    margin:18px 0; padding:16px 20px; border-radius:10px;
+    border-left:4px solid; background:var(--card);
+}
+.note-card.tip{border-color:var(--green)}
+.note-card.warn{border-color:var(--orange)}
+.note-card.info{border-color:var(--blue)}
+.note-card.important{border-color:var(--accent)}
+.note-card .note-title{
+    font-weight:bold; font-size:0.9rem; margin-bottom:6px;
+}
+.note-card.tip .note-title{color:var(--green)}
+.note-card.warn .note-title{color:var(--orange)}
+.note-card.info .note-title{color:var(--blue)}
+.note-card.important .note-title{color:var(--accent-light)}
+
+/* ===== 代码块 (IDE风格) ===== */
+.code-block{
+    margin:18px 0; border-radius:10px; overflow:hidden;
+    border:1px solid var(--border); background:var(--code-bg);
+    box-shadow:var(--shadow);
+}
+.code-block .cb-header{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:7px 16px; background:rgba(255,255,255,0.03);
+    border-bottom:1px solid #ffffff0f; font-size:0.75rem;
+}
+.cb-header .cb-lang{color:var(--text-dim); display:flex; align-items:center; gap:6px}
+.cb-header .cb-lang::before{content:''; width:8px; height:8px; border-radius:50%; background:var(--blue)}
+.cb-header .cb-copy{
+    background:none; border:1px solid #ffffff15; color:var(--text-dim);
+    padding:3px 10px; border-radius:4px; cursor:pointer; font-size:0.7rem;
+}
+.cb-header .cb-copy:hover{background:#ffffff10; color:var(--text)}
+.code-body{
+    display:flex; counter-reset:line;
+}
+.code-lines{
+    padding:14px 0; text-align:right; user-select:none;
+    min-width:44px; border-right:1px solid #ffffff08;
+    color:var(--gray); font-size:0.8rem; line-height:1.65;
+    font-family:'JetBrains Mono','Fira Code','Consolas',monospace;
+}
+.code-lines span{
+    display:block; padding:0 12px 0 8px;
+}
+.code-lines span::before{counter-increment:line; content:counter(line)}
+.code-content{
+    flex:1; overflow-x:auto; padding:14px 18px;
+}
+.code-content pre{
+    margin:0; font-family:'JetBrains Mono','Fira Code','Consolas',monospace;
+    font-size:0.84rem; line-height:1.65; color:var(--text);
+    white-space:pre; tab-size:4;
+}
+.code-content code{font-family:inherit}
+
+/* 语法颜色 */
+.hl-kw{color:var(--purple)}      /* 关键字 */
+.hl-type{color:var(--blue)}       /* 类型 */
+.hl-str{color:var(--green)}       /* 字符串 */
+.hl-com{color:var(--gray);font-style:italic} /* 注释 */
+.hl-num{color:var(--orange)}      /* 数字 */
+.hl-pp{color:var(--yellow)}       /* 预处理 */
+.hl-fn{color:var(--cyan)}         /* 函数名 */
+.hl-op{color:var(--accent-light)}  /* 运算符 */
+
+/* ===== ASCII图 ===== */
+.ascii-block{
+    background:var(--code-bg); border:1px solid var(--border);
+    border-radius:8px; padding:14px 18px; margin:14px 0;
+    font-family:'JetBrains Mono','Consolas',monospace;
+    font-size:0.76rem; line-height:1.35; white-space:pre;
+    overflow-x:auto; color:var(--text-dim);
+}
+
+/* ===== 表格 ===== */
+.content table{
+    width:100%; border-collapse:collapse; margin:14px 0; font-size:0.86rem;
+}
+.content th{background:var(--card); color:var(--accent); padding:10px 14px; border:1px solid var(--border); text-align:left}
+.content td{padding:8px 14px; border:1px solid var(--border)}
+.content tr:nth-child(even) td{background:rgba(255,255,255,0.015)}
+
+/* ===== 翻页 ===== */
+.page-nav{
+    display:flex; justify-content:space-between; align-items:center;
+    margin-top:40px; padding-top:20px; border-top:1px solid var(--border);
+}
+.page-nav button{
+    background:var(--card); color:var(--accent);
+    border:1px solid var(--accent); border-radius:8px;
+    padding:10px 24px; font-size:0.9rem; cursor:pointer; font-family:inherit;
+    transition:all 0.2s;
+}
+.page-nav button:hover:not(:disabled){background:var(--accent);color:var(--bg)}
+.page-nav button:disabled{opacity:0.3;cursor:default}
+.page-nav .pn-info{color:var(--text-dim);font-size:0.85rem}
+
+/* ===== 音乐控制 ===== */
+.music-bar{
+    position:fixed; top:14px; right:16px; z-index:200;
+    display:flex; align-items:center; gap:4px;
+    background:rgba(22,16,30,0.94); padding:7px 12px;
+    border-radius:24px; border:1px solid var(--border);
+    backdrop-filter:blur(10px);
+}
+.music-bar button{
+    background:none; border:1px solid var(--accent);
+    color:var(--accent); border-radius:50%;
+    width:32px; height:32px; cursor:pointer; font-size:0.95rem;
+    display:flex; align-items:center; justify-content:center;
+    transition:all 0.2s; flex-shrink:0; padding:0; line-height:1;
+}
+.music-bar button:hover{background:var(--accent);color:var(--bg)}
+.music-bar .np{font-size:0.78rem; color:var(--text-dim); max-width:110px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; margin-left:4px}
+
+/* ===== 加载 ===== */
+.loading-wrap{display:flex;align-items:center;justify-content:center;padding:80px;color:var(--text-dim);font-size:1rem;gap:10px}
+.spinner{width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ===== 响应式 ===== */
+@media(max-width:900px){
+    .sidebar{transform:translateX(-100%);transition:transform 0.3s;width:280px}
+    .sidebar.open{transform:translateX(0)}
+    .sidebar-toggle{display:flex}
+    .main-wrap{margin-left:0;padding:50px 18px 40px}
+    .music-bar{top:10px;right:10px;padding:5px 10px;gap:2px}
+    .music-bar button{width:28px;height:28px;font-size:0.8rem}
+    .music-bar .np{max-width:60px;font-size:0.7rem}
+    .page-header h1{font-size:1.5rem}
+}
+@media(max-width:480px){
+    .main-wrap{padding:46px 12px 30px}
+    .content h2{font-size:1.2rem}
+    .code-body{font-size:0.75rem}
+    .code-lines{min-width:32px}
+}
+</style>
+</head>
+<body>
+
+<!-- 侧栏切换(移动端) -->
+<button class="sidebar-toggle" id="sidebarToggle" title="目录">☰</button>
+
+<!-- 侧栏 -->
+<aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+        <h3>C++ 深化教程</h3>
+        <div class="subtitle">从命名空间到标准库</div>
+    </div>
+    <div class="sidebar-label">章节</div>
+    <div class="sidebar-chapters" id="sidebarChapters"></div>
+    <div class="sidebar-divider"></div>
+    <div class="sidebar-label">本节要点</div>
+    <div class="sidebar-sections" id="sidebarSections"></div>
+</aside>
+
+<!-- 主内容 -->
+<div class="main-wrap">
+    <div class="page-header">
+        <h1 id="pageTitle">加载中...</h1>
+        <div class="ch-meta">
+            <a id="downloadLink" href="#" download style="color:var(--accent);text-decoration:none;font-size:0.82rem">⬇ 下载本章 TXT</a>
+        </div>
+    </div>
+    <div class="content" id="contentArea">
+        <div class="loading-wrap"><div class="spinner"></div>正在加载教程内容...</div>
+    </div>
+    <nav class="page-nav">
+        <button id="prevBtn" disabled>◀ 上一页</button>
+        <span class="pn-info" id="pnInfo">—</span>
+        <button id="nextBtn">下一页 ▶</button>
+    </nav>
+</div>
+
+<!-- 音乐 -->
+<div class="music-bar">
+    <button id="mPlay" title="播放/暂停">▶</button>
+    <button id="mNext" title="下一首">▽</button>
+    <button id="mVolD" title="音量−">−</button>
+    <button id="mVolU" title="音量+">+</button>
+    <button id="mDown" title="下载当前曲目">⬇</button>
+    <button id="mMute" title="静音">◆</button>
+    <span class="np" id="mNow">未播放</span>
+</div>
+<audio id="mBgm" loop preload="auto"></audio>
+
+<script>
+(function(){
+// ==================== 章节配置 ====================
+var CH = [
+    {f:'目录.txt',t:'目录与学习路线'},
+    {f:'01_命名空间.txt',t:'第一章  命名空间'},
+    {f:'02_预处理器.txt',t:'第二章  预处理器'},
+    {f:'03_动态内存.txt',t:'第三章  动态内存'},
+    {f:'04_面向对象(一)类与对象基础.txt',t:'第四章  类与对象基础'},
+    {f:'05_面向对象(二)继承.txt',t:'第五章  继承'},
+    {f:'06_面向对象(三)多态与虚函数.txt',t:'第六章  多态与虚函数'},
+    {f:'07_面向对象(四)运算符重载与友元.txt',t:'第七章  运算符重载与友元'},
+    {f:'08_函数模板.txt',t:'第八章  函数模板'},
+    {f:'09_异常处理.txt',t:'第九章  异常处理'},
+    {f:'10_文件与流.txt',t:'第十章  文件与流'},
+    {f:'11_信号处理.txt',t:'第十一章  信号处理'},
+    {f:'12_多线程.txt',t:'第十二章  多线程'},
+    {f:'13_Web编程.txt',t:'第十三章  Web 编程'},
+    {f:'14_C++标准库.txt',t:'第十四章  C++ 标准库'}
+];
+var BP='learning/cpp/';
+var chIdx=0, pgIdx=0;
+var cache={}, pages=[];
+
+// ==================== DOM ====================
+var $S=function(id){return document.getElementById(id)};
+var sideCh=$S('sidebarChapters'), sideSec=$S('sidebarSections');
+var cont=$S('contentArea'), pTitle=$S('pageTitle');
+var dLink=$S('downloadLink'), pnInfo=$S('pnInfo');
+var prevB=$S('prevBtn'), nextB=$S('nextBtn');
+var sideToggle=$S('sidebarToggle'), sidebar=$S('sidebar');
+
+// ==================== 侧栏章节 ====================
+function buildSideChapters(){
+    sideCh.innerHTML='';
+    for(var i=0;i<CH.length;i++){
+        var a=document.createElement('a');
+        a.textContent=CH[i].t;
+        a.href='javascript:void(0)';
+        a.addEventListener('click',(function(idx){return function(){goTo(idx,0)}})(i));
+        a.setAttribute('data-ch',i);
+        sideCh.appendChild(a);
+    }
+}
+function highlightSideChapter(){
+    var as=sideCh.querySelectorAll('a');
+    for(var i=0;i<as.length;i++){
+        as[i].classList.toggle('active', parseInt(as[i].getAttribute('data-ch'))===chIdx);
+    }
+}
+
+// ==================== 侧栏节 ====================
+function buildSideSections(headings){
+    sideSec.innerHTML='';
+    if(!headings||headings.length===0){
+        sideSec.innerHTML='<div style="padding:10px 20px;font-size:0.72rem;color:var(--text-dim)">（无小节）</div>';
+        return;
+    }
+    for(var i=0;i<headings.length;i++){
+        var h=headings[i];
+        var a=document.createElement('a');
+        a.className='section-link';
+        a.textContent=h.text;
+        a.href='javascript:void(0)';
+        a.addEventListener('click',(function(target){return function(){
+            var el=$S(target);
+            if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+        }})(h.id));
+        sideSec.appendChild(a);
+    }
+}
+
+// ==================== 解析 ====================
+function parse(raw){
+    var lines=raw.split('\n');
+    var blocks=[], inCode=false, codeBuf=[], codeLang='';
+    function flushText(buf,start,end){
+        if(!buf||buf.length===0)return;
+        var text=buf.join('\n');
+        var hx=extractHeadings(text, start||0);
+        blocks.push({t:'text',c:text,headings:hx});
+    }
+
+    for(var i=0;i<lines.length;i++){
+        var ln=lines[i];
+        if(/^```/.test(ln.trim())){
+            if(inCode){
+                blocks.push({t:'code',c:codeBuf.join('\n'),lang:codeLang});
+                codeBuf=[];inCode=false;codeLang='';
+            }else{
+                inCode=true;codeLang=ln.trim().slice(3).trim();
+                codeBuf=[];
+            }
+        }else if(inCode){
+            codeBuf.push(ln);
+        }else{
+            // 检测大分隔符 — 作为潜在页面断点
+            if(/^[=▬★]{30,}/.test(ln.trim())||/^-{40,}/.test(ln.trim())){
+                blocks.push({t:'break',c:ln});
+            }else{
+                if(codeBuf.length===0&&blocks.length>0&&blocks[blocks.length-1].t==='text'){
+                    blocks[blocks.length-1].c+='\n'+ln;
+                    // re-extract headings
+                    var h2=extractHeadings(blocks[blocks.length-1].c,0);
+                    blocks[blocks.length-1].headings=h2;
+                }else{
+                    blocks.push({t:'text',c:ln,headings:extractHeadings(ln,0)});
+                }
+            }
+        }
+    }
+    if(inCode&&codeBuf.length>0){
+        blocks.push({t:'code',c:codeBuf.join('\n'),lang:codeLang});
+    }
+
+    // 合并连续的text块
+    var merged=[];
+    for(var j=0;j<blocks.length;j++){
+        var b=blocks[j];
+        if(b.t==='text'&&merged.length>0&&merged[merged.length-1].t==='text'){
+            merged[merged.length-1].c+='\n'+b.c;
+            var allH=extractHeadings(merged[merged.length-1].c,0);
+            merged[merged.length-1].headings=allH;
+        }else{
+            merged.push(b);
+        }
+    }
+    return merged;
+}
+
+function extractHeadings(text, baseIdx){
+    var headings=[];
+    var lines=text.split('\n');
+    for(var i=0;i<lines.length;i++){
+        var t=lines[i].trim();
+        // ## 标题 或 ### 标题
+        var m=t.match(/^(#{1,3})\s+(.+)/);
+        if(m){
+            var lvl=m[1].length;
+            var txt=m[2].replace(/[*_#]/g,'').trim();
+            if(txt.length>0&&txt.length<80){
+                var id='s'+baseIdx+'-'+i;
+                headings.push({text:txt,level:lvl,id:id,line:i});
+            }
+        }
+    }
+    return headings;
+}
+
+// ==================== 分页 ====================
+function splitPages(blocks){
+    var pgs=[], cur=[], lineCount=0;
+    for(var i=0;i<blocks.length;i++){
+        var b=blocks[i];
+        if(b.t==='break'&&lineCount>80){
+            if(cur.length>0){pgs.push(cur);cur=[];lineCount=0;}
+            continue;
+        }
+        cur.push(b);
+        if(b.t==='text') lineCount+=b.c.split('\n').length;
+        else if(b.t==='code') lineCount+=b.c.split('\n').length;
+        if(lineCount>350){
+            pgs.push(cur);cur=[];lineCount=0;
+        }
+    }
+    if(cur.length>0)pgs.push(cur);
+    if(pgs.length===0)pgs=[[]];
+    return pgs;
+}
+
+// ==================== 渲染 ====================
+var ALL_HEADINGS=[];
+
+function renderPage(blocks){
+    ALL_HEADINGS=[];
+    var html='';
+    for(var i=0;i<blocks.length;i++){
+        var b=blocks[i];
+        if(b.t==='text'){
+            html+=renderText(b.c);
+        }else if(b.t==='code'){
+            html+=renderCode(b.c,b.lang);
+        }
+    }
+    return html;
+}
+
+function renderText(text){
+    var lines=text.split('\n');
+    var out='', inUl=false, inOl=false, inAscii=false, asciiBuf=[];
+    for(var i=0;i<lines.length;i++){
+        var raw=lines[i], t=raw.trim();
+        if(t===''){
+            if(inUl){out+='</ul>';inUl=false}
+            if(inOl){out+='</ol>';inOl=false}
+            if(inAscii&&asciiBuf.length>0){out+='<div class="ascii-block">'+esc(asciiBuf.join('\n'))+'</div>';asciiBuf=[];inAscii=false}
+            continue;
+        }
+
+        // 标题
+        var hm=t.match(/^(#{1,3})\s+(.+)/);
+        if(hm){
+            if(inUl){out+='</ul>';inUl=false}
+            if(inOl){out+='</ol>';inOl=false}
+            var lvl=hm[1].length, txt=hm[2], tag='h'+(lvl+1>3?3:lvl+1);
+            var id='s'+chIdx+'-'+i;
+            ALL_HEADINGS.push({text:txt.replace(/[*_#]/g,'').trim(),level:lvl,id:id});
+            out+='<'+tag+' id="'+id+'">'+fmtInline(esc(txt))+'</'+tag+'>';
+            continue;
+        }
+
+        // 分隔线
+        if(/^[=▬]{20,}/.test(t)||/^-{30,}/.test(t)){
+            if(inUl){out+='</ul>';inUl=false}
+            if(inOl){out+='</ol>';inOl=false}
+            out+='<hr>';
+            continue;
+        }
+
+        // 列表
+        var liM=t.match(/^([-•*]|\d+[\.\)])\s+(.+)/);
+        if(liM){
+            var isOl=/^\d+[\.\)]/.test(liM[1]);
+            if(inUl&&isOl){out+='</ul>';inUl=false}
+            if(inOl&&!isOl){out+='</ol>';inOl=false}
+            if(isOl&&!inOl){out+='<ol>';inOl=true}
+            if(!isOl&&!inUl){out+='<ul>';inUl=true}
+            out+='<li>'+fmtInline(esc(liM[2]))+'</li>';
+            continue;
+        }
+
+        // 卡片(★ 🔴 ⚠ 💡 注意 提示 警告)
+        var cardM=t.match(/^([★🔴⚠💡]|注意|提示|警告|重要|补充)\s*[：:]?\s*(.*)/);
+        if(cardM){
+            if(inUl){out+='</ul>';inUl=false}
+            if(inOl){out+='</ol>';inOl=false}
+            var ct='info',cn='提示';
+            var pre=cardM[1];
+            if(pre==='★'||pre==='重要'){ct='important';cn='重要'}
+            else if(pre==='⚠'||pre==='警告'){ct='warn';cn='警告'}
+            else if(pre==='💡'||pre==='提示'){ct='tip';cn='提示'}
+            else if(pre==='🔴'){ct='warn';cn='注意'}
+            var body=cardM[2]||'';
+            // 收集后续行(直到空行)
+            var j=i+1; var cardLines=[body];
+            while(j<lines.length&&lines[j].trim()!==''&&!/^(#{1,3}\s|^[-•*\d]+[\.\)]\s|^[=▬★]{10}|^```|^[★🔴⚠💡])/.test(lines[j].trim())){
+                var nl=lines[j].trim();
+                // 检查是否是卡片标题延续
+                if(/^(注意|提示|警告|重要|补充)/.test(nl))break;
+                cardLines.push(nl);
+                j++;
+            }
+            i=j-1;
+            out+='<div class="note-card '+ct+'"><div class="note-title">'+cn+'</div><p>'+fmtInline(esc(cardLines.join('<br>')))
++'</p></div>';
+            continue;
+        }
+
+        // 命令提示 $
+        if(/^\$\s/.test(t)){
+            if(inUl){out+='</ul>';inUl=false}
+            if(inOl){out+='</ol>';inOl=false}
+            out+='<div class="code-block"><div class="cb-header"><span class="cb-lang">shell</span></div><div class="code-body"><div class="code-lines"><span></span></div><div class="code-content"><pre><code><span class="hl-com">'+esc(t)+'</span></code></pre></div></div></div>';
+            continue;
+        }
+
+        // ASCII图检测
+        if(/[┌┐└┘├┤│┬┴┼─━◆▌▐▀▄█]/.test(t)||(t.length>50&&!/[a-zA-Z]{3,}/.test(t)&&/[│├]/.test(t))){
+            if(!inAscii){inAscii=true;asciiBuf=[];if(inUl){out+='</ul>';inUl=false}if(inOl){out+='</ol>';inOl=false}}
+            asciiBuf.push(raw);
+            continue;
+        }
+        if(inAscii&&asciiBuf.length>0){
+            out+='<div class="ascii-block">'+esc(asciiBuf.join('\n'))+'</div>';
+            asciiBuf=[];inAscii=false;
+        }
+
+        // 普通段
+        if(inUl){out+='</ul>';inUl=false}
+        if(inOl){out+='</ol>';inOl=false}
+        out+='<p>'+fmtInline(esc(t))+'</p>';
+    }
+    if(inUl)out+='</ul>';
+    if(inOl)out+='</ol>';
+    if(inAscii&&asciiBuf.length>0)out+='<div class="ascii-block">'+esc(asciiBuf.join('\n'))+'</div>';
+    return out;
+}
+
+function renderCode(code,lang){
+    var lines=code.split('\n');
+    var lnHtml='', cdHtml='';
+    for(var i=0;i<lines.length;i++){
+        lnHtml+='<span></span>';
+        cdHtml+=highlightLine(lines[i])+'\n';
+    }
+    var langName=lang||'cpp';
+    return '<div class="code-block"><div class="cb-header"><span class="cb-lang">'+langName+'</span><button class="cb-copy" onclick="(function(b){var t=b.parentElement.parentElement.querySelector(\'.code-content code\').textContent;navigator.clipboard.writeText(t);b.textContent=\'已复制!\';setTimeout(function(){b.textContent=\'复制\'},1500)})(this)">复制</button></div><div class="code-body"><div class="code-lines">'+lnHtml+'</div><div class="code-content"><pre><code>'+cdHtml+'</code></pre></div></div></div>';
+}
+
+// ==================== 语法高亮 ====================
+var KW=new Set('auto break case catch class const continue default delete do else enum explicit extern false for friend goto if inline mutable namespace new noexcept nullptr operator override private protected public register return sizeof static struct switch template this throw true try typedef typeid typename union using virtual void volatile while constexpr decltype static_cast dynamic_cast const_cast reinterpret_cast final thread_local alignas alignof and or not xor include define ifdef ifndef endif elif pragma error undef line defined concept requires co_await co_return co_yield consteval constinit export module import signed unsigned'.split(' '));
+var TY=new Set('int char float double long short bool size_t string vector map set pair tuple shared_ptr unique_ptr weak_ptr function array list deque queue stack forward_list unordered_map unordered_set multiset multimap optional variant any string_view mutex lock_guard unique_lock thread atomic future promise fstream ifstream ofstream stringstream iostream istream ostream exception runtime_error logic_error regex allocator bitset condition_variable scoped_lock recursive_mutex timed_mutex shared_future packaged_task once_flag jthread stop_token byte int8_t int16_t int32_t int64_t uint8_t uint16_t uint32_t uint64_t wchar_t char16_t char32_t'.split(' '));
+
+function highlightLine(line){
+    var s=esc(line);
+    // 注释 (保留已转义)
+    var ci=s.indexOf('//');
+    if(ci>=0){
+        var before=s.substring(0,ci);
+        var com=s.substring(ci);
+        return highlightTokens(before)+'<span class="hl-com">'+com+'</span>';
+    }
+    // 预处理
+    if(/^#\s*\w+/.test(s.trim())){
+        return '<span class="hl-pp">'+s+'</span>';
+    }
+    return highlightTokens(s);
+}
+
+function highlightTokens(s){
+    // 字符串
+    s=s.replace(/(["'])(?:(?!\1)[^\\]|\\.)*\1/g,'<span class="hl-str">$&</span>');
+    // 数字
+    s=s.replace(/\b(\d+\.?\d*[fFlL]?|0[xX][0-9a-fA-F]+|0[bB][01]+)\b/g,'<span class="hl-num">$1</span>');
+    // 关键字和类型
+    s=s.replace(/\b([a-zA-Z_]\w*)\b/g,function(m){
+        if(KW.has(m)) return '<span class="hl-kw">'+m+'</span>';
+        if(TY.has(m)) return '<span class="hl-type">'+m+'</span>';
+        // 函数调用: 后面跟(
+        return m;
+    });
+    // 函数名(标识符后跟()
+    s=s.replace(/([a-zA-Z_]\w*)\s*\(/g,'<span class="hl-fn">$1</span>(');
+    return s;
+}
+
+function fmtInline(s){
+    // 行内代码
+    s=s.replace(/`([^`]+)`/g,'<code style="background:var(--code-bg);padding:2px 6px;border-radius:4px;font-family:Consolas,monospace;font-size:0.9em;color:var(--green)">$1</code>');
+    // 加粗
+    s=s.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
+    return s;
+}
+
+function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+// ==================== 导航 ====================
+function goTo(ci,pi){
+    chIdx=ci;
+    pTitle.textContent=CH[ci].t;
+    dLink.href=BP+CH[ci].f; dLink.download=CH[ci].f;
+    highlightSideChapter();
+
+    if(cache[ci]){
+        pages=cache[ci];
+        pgIdx=(pi===99999)?Math.max(0,pages.length-1):(pi||0);
+        showPage();
+    }else{
+        pgIdx=(pi===99999)?99999:(pi||0);
+        loadAndShow();
+    }
+    sidebar.classList.remove('open');
+}
+
+function loadAndShow(){
+    var ci=chIdx;
+    cont.innerHTML='<div class="loading-wrap"><div class="spinner"></div>正在加载 '+CH[ci].t+' ...</div>';
+    fetch(BP+CH[ci].f).then(function(r){if(!r.ok)throw Error('加载失败');return r.text()})
+    .then(function(raw){
+        var blocks=parse(raw);
+        pages=splitPages(blocks);
+        cache[ci]=pages;
+        if(ci===chIdx){
+            if(pgIdx===99999||pgIdx>=pages.length) pgIdx=Math.max(0,pages.length-1);
+            showPage();
+        }
+    }).catch(function(e){
+        cont.innerHTML='<div class="loading-wrap">加载失败: '+e.message+'</div>';
+    });
+}
+
+function showPage(){
+    if(pgIdx>=pages.length)pgIdx=0;
+    var pg=pages[pgIdx];
+    cont.innerHTML=renderPage(pg);
+    buildSideSections(ALL_HEADINGS);
+    updateNav();
+    window.scrollTo({top:0,behavior:'smooth'});
+}
+
+function updateNav(){
+    var total=pages.length;
+    prevB.disabled=(chIdx===0&&pgIdx===0);
+    nextB.disabled=(chIdx===CH.length-1&&pgIdx>=total-1);
+    pnInfo.textContent='第 '+(chIdx+1)+'/'+CH.length+' 章';
+    if(total>1)pnInfo.textContent+=' — 页 '+(pgIdx+1)+'/'+total;
+}
+
+prevB.addEventListener('click',function(){
+    if(pgIdx>0){pgIdx--;showPage();}
+    else if(chIdx>0){goTo(chIdx-1,99999)}
+});
+nextB.addEventListener('click',function(){
+    if(pgIdx<pages.length-1){pgIdx++;showPage();}
+    else if(chIdx<CH.length-1){goTo(chIdx+1,0)}
+});
+document.addEventListener('keydown',function(e){
+    if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;
+    if(e.key==='ArrowRight'||e.key==='ArrowDown'){e.preventDefault();nextB.click()}
+    if(e.key==='ArrowLeft'||e.key==='ArrowUp'){e.preventDefault();prevB.click()}
+});
+
+// 移动端侧栏
+sideToggle.addEventListener('click',function(){sidebar.classList.toggle('open')});
+document.addEventListener('click',function(e){
+    if(!sidebar.contains(e.target)&&e.target!==sideToggle&&sidebar.classList.contains('open')){
+        sidebar.classList.remove('open');
+    }
+});
+
+// ==================== 音乐 ====================
+var bgm=$S('mBgm');
+var PL=[
+    {t:'不存在的乐园',s:'assets/music/track1.mp3'},
+    {t:'生息',s:'assets/music/track2.mp3'},
+    {t:'走过漫漫时空',s:'assets/music/track3.mp3'},
+    {t:'我的生活',s:'assets/music/我的生活.mp3'},
+    {t:'永恒呼吸',s:'assets/music/永恒呼吸.mp3'},
+    {t:'春弦',s:'assets/music/春弦-塞壬唱片-MSR,横山克.mp3'},
+    {t:'MY ALL',s:'assets/music/MY ALL-浜崎あゆみ.mp3'},
+    {t:'永世のクレイドル',s:'assets/music/永世のクレイドル-鈴華ゆう子.mp3'},
+    {t:'浸春芜',s:'assets/music/浸春芜-塞壬唱片-MSR,宋柏,十音,解伟苓.mp3'}
+];
+var ti=0,mt=false;bgm.volume=1;
+function lbgm(i){ti=i;bgm.src=PL[i].s;$S('mNow').textContent=PL[i].t;bgm.play().catch(function(){});$S('mPlay').textContent='⏸'}
+$S('mPlay').addEventListener('click',function(){if(bgm.paused){bgm.play();this.textContent='⏸'}else{bgm.pause();this.textContent='▶'}});
+$S('mNext').addEventListener('click',function(){lbgm((ti+1)%PL.length)});
+$S('mVolD').addEventListener('click',function(){bgm.volume=Math.max(0,Math.round((bgm.volume-0.1)*10)/10)});
+$S('mVolU').addEventListener('click',function(){bgm.volume=Math.min(1,Math.round((bgm.volume+0.1)*10)/10)});
+$S('mMute').addEventListener('click',function(){mt=!mt;bgm.muted=mt;this.textContent=mt?'◇':'◆'});
+$S('mDown').addEventListener('click',function(){var a=document.createElement('a');a.href=PL[ti].s;a.download=PL[ti].t.replace(/[*]/g,'')+'.mp3';document.body.appendChild(a);a.click();document.body.removeChild(a)});
+bgm.addEventListener('ended',function(){lbgm((ti+1)%PL.length)});
+document.querySelector('.music-bar').addEventListener('wheel',function(e){e.preventDefault();if(e.deltaY>0)bgm.volume=Math.max(0,Math.round((bgm.volume-0.1)*10)/10);else bgm.volume=Math.min(1,Math.round((bgm.volume+0.1)*10)/10)}, {passive:false});
+
+// ==================== 启动 ====================
+buildSideChapters();
+lbgm(0);
+goTo(0,0);
+})();
+</script>
+</body>
+</html>

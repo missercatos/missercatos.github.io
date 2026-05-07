@@ -1,0 +1,609 @@
+================================================================================
+模块 03：Web漏洞扫描与检测
+================================================================================
+模块标题：漏洞猎手 — Web漏洞自动扫描与检测技术
+学习目标：
+  1. 掌握nikto Web服务器的全面使用方法
+  2. 熟练使用wafw00f检测WAF防护
+  3. 了解arachni自动化扫描器
+  4. 了解skipfish高速扫描器
+  5. 掌握OWASP ZAP代理扫描器的使用
+  6. 理解多种扫描器的优缺点，学会对比分析结果
+  7. 掌握手动验证与自动扫描的配合方法
+工具分类：漏洞扫描 / 检测工具
+推荐工具：nikto, wafw00f, zaproxy, arachni, skipfish
+优先级：★★★★★ (自动化发现漏洞，大幅提升效率)
+================================================================================
+
+============================================================
+第一部分：漏洞扫描方法论
+============================================================
+
+【漏洞扫描在渗透测试中的位置】
+
+信息收集 → 漏洞扫描 → 漏洞利用 → 后渗透 → 报告
+  (模块02)   (本模块)   (模块4-7)   (模块08)
+
+漏洞扫描原理：
+  1. 发送精心构造的请求
+  2. 分析响应特征
+  3. 匹配漏洞特征库
+  4. 报告潜在漏洞
+
+自动扫描 vs 手动验证：
+  - 自动扫描：覆盖面广、速度快，但有误报
+  - 手动验证：精确度高，但效率低、覆盖不全
+  - 最佳实践：自动扫描先行发现候选漏洞，手动验证确认和利用
+
+【扫描注意事项】
+
+⚠️  核心警告：
+  1. 扫描器会产生大量请求，极易触发WAF/IDS告警
+  2. 某些扫描测试可能破坏数据 (如INSERT注入)
+  3. 始终在获得授权的环境中使用
+  4. 不要同时运行多个重型扫描器对准同一目标 (可能DoS)
+  5. 注意扫描时间窗口 (业务低谷时段)
+
+============================================================
+第二部分：nikto — Web服务器扫描器
+============================================================
+
+【2.1 工具介绍】
+
+nikto 是一个开源Web服务器扫描器，能检测：
+  - 超过6700个危险文件/CGI
+  - 超过1250个过时的服务器版本
+  - 超过270个特定版本的问题
+  - 服务器配置问题 (如目录索引)
+  - 不安全的文件和程序
+  - 默认文件和程序
+
+nikto 是渗透测试中最常用的自动化Web漏洞扫描器之一，速度快且覆盖面广。
+
+【2.2 基本命令】
+
+命令格式: nikto -h <目标>
+
+# 基本扫描
+nikto -h http://testphp.vulnweb.com
+
+输出示例：
+  - Nikto v2.1.6
+  ---------------------------------------------------------------------------
+  + Target IP:          44.228.249.136
+  + Target Hostname:    testphp.vulnweb.com
+  + Target Port:        80
+  + Start Time:         2026-01-15 10:00:00
+  ---------------------------------------------------------------------------
+  + Server: nginx/1.19.0
+  + The anti-clickjacking X-Frame-Options header is not present.
+  + The X-XSS-Protection header is not defined.
+  + The X-Content-Type-Options header is not set.
+  + /: The site uses TLS and the Strict-Transport-Security header is not defined.
+  + /admin/: This might be interesting...
+  + /icons/: Directory indexing found.
+  + /phpinfo.php: PHP info page disclosure.
+  + 7922 requests: 0 error(s) and 15 item(s) reported on remote host
+
+【2.3 命令选项详解】
+
+# 指定端口
+nikto -h http://example.com -p 8080
+
+# SSL扫描
+nikto -h https://example.com -ssl
+
+# 带端口SSL
+nikto -h https://example.com -p 8443
+
+# 指定主机头 (虚拟主机)
+nikto -h 192.168.1.100 -vhost example.com
+
+# 设置超时时间 (秒)
+nikto -h http://example.com -timeout 10
+
+# 设置最大执行时间 (秒)
+nikto -h http://example.com -maxtime 600
+
+# 限制请求间隔 (秒, 低调模式)
+nikto -h http://example.com -Pause 2
+
+# 多线程扫描 (加快速度)
+nikto -h http://example.com -Tuning 123456789
+
+# Tuning 选项说明:
+#   1 = 文件上传注入
+#   2 = 异常文件/CGI
+#   3 = XSS
+#   4 = 目录遍历
+#   5 = 过时/默认文件
+#   6 = 信息泄露
+#   7 = 服务器配置问题
+#   8 = 远程文件检索
+#   9 = 拒绝服务 (谨慎使用!)
+#   0 = 全部
+
+【2.4 输出格式选项】
+
+# HTML报告
+nikto -h http://example.com -o report.html -Format html
+
+# CSV格式 (便于Excel分析)
+nikto -h http://example.com -o report.csv -Format csv
+
+# 文本格式
+nikto -h http://example.com -o report.txt -Format txt
+
+# XML格式
+nikto -h http://example.com -o report.xml -Format xml
+
+# 多功能组合示例
+nikto -h http://testphp.vulnweb.com \
+      -o nikto_testphp.html \
+      -Format html \
+      -Tuning 12345678 \
+      -timeout 10
+
+【2.5 Proxy和认证】
+
+# 使用代理
+nikto -h http://example.com -useproxy http://127.0.0.1:8080
+
+# HTTP基本认证
+nikto -h http://example.com -id admin:password
+
+# 使用Cookie
+nikto -h http://example.com -C "PHPSESSID=abc123; security=low"
+
+# NTLM认证 (Windows域)
+nikto -h http://example.com -id DOMAIN\\user:password
+
+【2.6 高级用法】
+
+# 排除某些扫描
+nikto -h http://example.com -no404
+→ 忽略404检查，加快扫描速度
+
+# 指定自定义404页面
+nikto -h http://example.com -404 "Custom 404 Page"
+
+# 从文件读取目标
+nikto -h targets.txt
+
+# 排除特定主机
+nikto -h networks.txt -exclude 192.168.1.10
+
+# 使用插件(自定义数据库)
+nikto -h http://example.com -dbcheck
+→ 检查并更新nikto数据库
+
+# 指定自定义配置文件
+nikto -h http://example.com -config /path/to/custom.conf
+
+# 静默模式
+nikto -h http://example.com -Display 1234EPV
+→ Display选项控制哪些结果被显示
+
+============================================================
+第三部分：wafw00f — WAF检测
+============================================================
+
+【3.1 为什么需要检测WAF】
+
+Web应用防火墙 (WAF) 会拦截大部分自动化攻击。在进行渗透测试前，
+必须先确定目标是否使用了WAF以及WAF的类型，以便制定绕过策略。
+
+【3.2 基本使用】
+
+# 检测WAF
+wafw00f http://example.com
+
+输出示例：
+                   ______
+                  /      \
+                 (  W00f! )
+                  \  ____/
+                  ,,    __            404 Hack Not Found
+             |: : /  /  |,     __
+             |;|:|   | |-'   /  |
+             |:|| :|  | :   /   |__
+              ':||: :|  |  /   /|  :
+                 ': : : :| /   / |  :
+                      : :|/   /  |  :
+                        :     /   |  :
+
+  Checking http://example.com
+  Generic Detection results:
+  The site http://example.com is behind Cloudflare (Cloudflare Inc.)
+  Number of requests: 13
+
+【3.3 wafw00f能识别的WAF】
+
+wafw00f可识别超过150种WAF，包括：
+  - Cloudflare (云WAF)
+  - AWS WAF
+  - Azure WAF
+  - ModSecurity (开源WAF)
+  - Imperva (Incapsula)
+  - F5 BIG-IP
+  - FortiWeb (Fortinet)
+  - Sucuri
+  - Wordfence (WordPress WAF)
+  - Barracuda
+  - Citrix NetScaler
+  - 以及更多...
+
+【3.4 命令选项】
+
+# 详细输出
+wafw00f -v http://example.com
+
+# 输出所有检测尝试
+wafw00f -a http://example.com
+
+# 使用代理
+wafw00f -p http://127.0.0.1:8080 http://example.com
+
+# 自定义User-Agent
+wafw00f -H "User-Agent: Custom/1.0" http://example.com
+
+# 设置Cookie
+wafw00f -c "PHPSESSID=abc123" http://example.com
+
+# 输出为JSON格式
+wafw00f -o waf_result.json -f json http://example.com
+
+【3.5 手动WAF检测技巧】
+
+除了工具，还可以通过以下方法人工判断WAF存在：
+  1. 发送恶意载荷: http://example.com/?q=<script>alert(1)</script>
+     如果返回403/406，很可能有WAF
+  2. 检查响应头: X-CDN, X-WAF, Server头可能含有WAF信息
+  3. 查看Set-Cookie: 某些WAF会修改Cookie
+  4. 尝试SQL注入: ?id=1' 如果被拦截则确认WAF
+
+============================================================
+第四部分：arachni — 高级Web安全扫描
+============================================================
+
+【4.1 arachni简介】
+
+arachni是一个功能强大的Web应用安全扫描框架，支持：
+  - 自动化的爬虫和扫描
+  - 丰富的漏洞检测模块 (SQL注入、XSS、CSRF、LFI等)
+  - 支持命令行和Web界面
+  - 分布式扫描支持
+  - 详细的HTML/XML报告
+
+【4.2 基本命令】
+
+# 基本扫描
+arachni http://testphp.vulnweb.com
+
+# 使用Web界面
+arachni_web
+→ 浏览器访问 http://localhost:9292
+
+# 输出报告
+arachni http://example.com --report-save-path=scan.afr
+arachni_reporter scan.afr --reporter=html:outfile=report.html
+
+# 限制扫描范围
+arachni http://example.com --scope-include-subdomains
+
+# 指定检查模块
+arachni http://example.com --checks=xss*,sql*
+
+# 排除检查模块
+arachni http://example.com --checks=*,-csrf*,--audit-forms
+
+# 设置认证Cookie
+arachni http://example.com --plugin=autologin:url=http://example.com/login, 
+  parameters="user=admin&pass=123",check="Welcome"
+
+============================================================
+第五部分：skipfish — Google高速扫描器
+============================================================
+
+【5.1 skipfish简介】
+
+skipfish是Google开发的高性能Web安全扫描器，特点：
+  - 纯C编写，速度极快
+  - 自动递归爬取
+  - 字典辅助扫描
+  - 启发式漏洞检测
+  - 自动HTML报告生成
+
+⚠️  skipfish速度极快，每秒钟可发出数百个请求，极易触发WAF或
+    造成目标服务器压力过大。使用时务必谨慎！
+
+【5.2 基本使用】
+
+# 基本扫描命令格式
+skipfish -o <输出目录> <字典> <目标>
+
+# 扫描示例
+skipfish -o skipfish_report \
+         -S /usr/share/skipfish/dictionaries/complete.wl \
+         http://testphp.vulnweb.com
+
+# 指定扫描范围
+skipfish -o report -S /usr/share/skipfish/dictionaries/minimal.wl \
+         -d 5 -l 10 http://example.com
+
+# 常用参数：
+  -o  输出目录
+  -S  字典文件
+  -d  最大爬取深度
+  -l  每个目录最大链接数
+  -m  并发连接数 (默认40)
+  -t  超时时间
+
+# 限制请求速率 (避免DoS)
+skipfish -o report -S dict.wl \
+         -m 5 -p 0.5 http://example.com
+→ -m 5 表示5个并发, -p 0.5 表示限制为每秒0.5请求
+
+【5.3 字典文件】
+
+skipfish字典位置:
+  /usr/share/skipfish/dictionaries/
+  ├── minimal.wl      ← 最小字典 (快速扫描)
+  ├── medium.wl       ← 中等字典
+  ├── complete.wl     ← 完整字典 (全面但慢)
+  └── extensions.wl   ← 扩展名字典
+
+============================================================
+第六部分：OWASP ZAP (zaproxy) — 综合代理扫描器
+============================================================
+
+【6.1 ZAP简介】
+
+OWASP Zed Attack Proxy (ZAP) 是世界上使用最广泛的免费Web安全工具之一。
+它结合了：
+  - 拦截代理 (类似Burp Suite)
+  - 主动扫描器
+  - 被动扫描器
+  - 爬虫
+  - Fuzzer
+  - WebSocket支持
+  - API和脚本支持
+
+ArchStrike可以通过 zaproxy 命令启动。
+
+【6.2 启动ZAP】
+
+Step 1: 启动ZAP
+  终端输入: zaproxy
+  
+  如果命令行启动失败，可以尝试:
+  /usr/share/zaproxy/zap.sh -daemon
+
+Step 2: 初始设置
+  1. 选择是否持久化Session
+     → 选择 "No, I do not want to persist this session at this moment in time"
+     → 点击 Start
+  2. 等待ZAP加载所有组件
+
+Step 3: ZAP界面概览
+  - 左侧: Sites树 (站点结构)
+  - 右上: 请求/响应面板
+  - 右下: 历史/Alerts/输出面板
+  - 工具栏: 各种功能按钮
+
+【6.3 设置Firefox代理】
+
+Step 1: ZAP代理监听
+  默认: 127.0.0.1:8080
+  菜单: Tools → Options → Local Proxies
+  确认Address: localhost, Port: 8080
+
+Step 2: Firefox代理设置
+  菜单 → 设置 → 网络设置 → 手动代理配置
+  HTTP代理: 127.0.0.1  端口: 8080
+  勾选 "也将此代理用于HTTPS"
+  确定
+
+Step 3: 导入ZAP的SSL证书
+  ZAP → Tools → Options → Dynamic SSL Certificates
+  → Save → 保存证书文件
+  Firefox → 设置 → 隐私与安全 → 证书 → 查看证书
+  → 导入 → 选择ZAP的证书 → 信任此CA
+
+【6.4 被动扫描】
+
+ZAP的被动扫描在浏览过程中自动进行，不发送额外请求：
+  - 检测缺失的安全头
+  - 发现信息泄露 (Server头, 注释中的敏感信息)
+  - 检测不安全的Cookie设置
+  - 识别已知漏洞的框架版本
+
+Step 1: 确保被动扫描开启
+  ZAP界面 → Alerts标签旁 → 确认 "Passive Scan" 为绿色
+
+Step 2: 在Firefox中浏览目标
+  访问: http://testphp.vulnweb.com
+  正常浏览网站各页面
+
+Step 3: 查看被动扫描结果
+  ZAP → Alerts标签
+  → 查看每个Alerts的详情
+  → 关注: 中/高危告警
+
+【6.5 主动扫描】
+
+主动扫描会发送攻击性请求探测漏洞。它比被动扫描更强大但更容易被检测。
+
+Step 1: 在Sites面板中选择目标
+  右键目标URL (例: http://testphp.vulnweb.com)
+  → Attack → Active Scan...
+
+Step 2: 配置主动扫描
+  弹出窗口：Active Scan
+  - Scope: 选择扫描范围
+  - Input Vector: 选择测试的输入点
+  - Technology: 指定后端技术提升准确性
+  - Policy: 选择扫描策略
+    → Default Policy (推荐)
+
+Step 3: 启动扫描
+  点击 "Start Scan"
+  扫描进度在底部状态栏显示
+
+Step 4: 监控扫描结果
+  Alerts标签实时更新发现的漏洞
+  Active Scan标签显示进度
+
+【6.6 自动化扫描 (Ajax Spider + Spider)】
+
+传统爬虫只能处理静态HTML，Ajax Spider可以处理JavaScript渲染的页面。
+
+Step 1: 标准爬虫
+  右键目标 → Attack → Spider...
+  → 爬取传统页面结构
+
+Step 2: Ajax爬虫
+  右键目标 → Attack → Ajax Spider...
+  → 需要安装Firefox/Chrome浏览器
+  → 爬取JavaScript动态渲染的内容
+
+【6.7 ZAP对比Burp Suite】
+
+         ZAP           Burp Suite
+  价格:   免费开源       免费版(功能受限)/专业版($449/年)
+  扫描:   内置主动/被动  专业版才有Scanner
+  学习:   相对陡峭       相对平缓
+  报告:   丰富           丰富
+  社区:   OWASP支持      大企业用户群
+  API:    强大           REST API (专业版)
+  插件:   丰富           丰富 (BApp Store)
+
+建议: 两者都学，ZAP用于自动化扫描，Burp用于手工测试。
+
+【6.8 ZAP命令行模式 (无GUI)】
+
+# 快速扫描
+zaproxy -cmd -quickurl http://example.com -quickprogress -quickout report.html
+
+# 守护进程模式
+zaproxy -daemon -port 8080
+
+# 通过API进行扫描 (需要先启动ZAP)
+curl 'http://localhost:8080/JSON/ascan/action/scan/?url=http://example.com'
+
+============================================================
+第七部分：多扫描器对比实战
+============================================================
+
+【实战: 使用多种扫描器扫描testphp.vulnweb.com并对比结果】
+
+Step 1: 目录创建
+  mkdir /home/a/scan_results
+
+Step 2: nikto扫描
+  命令:
+  nikto -h http://testphp.vulnweb.com \
+        -o /home/a/scan_results/nikto_report.html \
+        -Format html \
+        -Tuning 12345678
+
+Step 3: wafw00f检测
+  命令:
+  wafw00f -v http://testphp.vulnweb.com -o /home/a/scan_results/wafw00f_result.json -f json
+
+Step 4: ZAP扫描
+  Step 4a: 启动ZAP (另一个终端: zaproxy)
+  Step 4b: 设置Firefox代理到 127.0.0.1:8080
+  Step 4c: 访问 http://testphp.vulnweb.com 浏览所有页面
+  Step 4d: 在ZAP中 → 右键目标 → Attack → Active Scan
+  Step 4e: 扫描完成后 → Report → Generate HTML Report
+  Step 4f: 保存到 /home/a/scan_results/zap_report.html
+
+Step 5: dirb补充扫描
+  命令:
+  dirb http://testphp.vulnweb.com /usr/share/dirb/wordlists/common.txt \
+       -X .php,.bak,.old,.txt,.zip,.sql \
+       -o /home/a/scan_results/dirb_report.txt
+
+Step 6: 分析对比结果
+  创建文件 /home/a/scan_results/analysis.txt
+  
+  分析要点：
+  1. 哪些漏洞被多个工具同时发现？(高置信度)
+  2. 哪些漏洞只被单一工具发现？(可能是误报)
+  3. nikto发现的服务器配置问题有哪些？
+  4. ZAP发现的输入验证漏洞有哪些？
+  5. 目录扫描发现的敏感路径有哪些？
+
+Step 7: 手工验证高危发现
+  针对每个高危/中危发现，使用curl或Firefox手工验证：
+  
+  例: nikto报告 "Directory indexing found"
+  手工验证: Firefox访问 http://testphp.vulnweb.com/icons/
+  确认是否存在目录列表
+
+  例: ZAP报告 "X-Frame-Options Header Not Set"
+  手工验证: curl -I http://testphp.vulnweb.com
+  确认响应头中是否缺少 X-Frame-Options
+
+Step 8: 编写扫描对比报告
+  ========================
+  扫描对比分析报告
+  目标: http://testphp.vulnweb.com
+  扫描日期: 2026-xx-xx
+  
+  工具对比:
+  ┌──────────┬────────┬────────┬────────┐
+  │ 漏洞类型  │ nikto  │  ZAP   │ 手工   │
+  ├──────────┼────────┼────────┼────────┤
+  │ 安全头缺失│   ✓    │   ✓    │   ✓    │
+  │ 目录索引  │   ✓    │   -    │   ✓    │
+  │ PHP信息披露│  ✓    │   ✓    │   ✓    │
+  │ XSS       │   -    │   ✓    │  待确认 │
+  │ SQL注入   │   -    │   ✓    │  待确认 │
+  └──────────┴────────┴────────┴────────┘
+  ========================
+
+============================================================
+第八部分：扫描器最佳实践
+============================================================
+
+【扫描策略金字塔】
+
+  第1层: 被动扫描 (ZAP被动、手工浏览)
+    → 无风险，不产生额外流量
+  第2层: 轻量扫描 (whatweb, wafw00f, dirb common)
+    → 低风险，请求量小
+  第3层: 标准扫描 (nikto, gobuster big)
+    → 中等风险，可能触发告警
+  第4层: 重型扫描 (ZAP主动, arachni, skipfish)
+    → 高风险，大量攻击性请求
+
+【常见问题与解决方案】
+
+  Q: 扫描器报告了大量误报如何处理？
+  A: 逐一手工验证高危/中危漏洞。使用多种工具交叉验证。分析上下文。
+
+  Q: 扫描速度太慢？
+  A: 增加并发数、选择最小字典、仅扫描关键路径、排除静态资源。
+
+  Q: 扫描器被WAF封禁IP？
+  A: 降低请求频率、使用代理轮换、分时段扫描、先识别WAF再定制扫描策略。
+
+  Q: 应该先用哪个扫描器？
+  A: nikto (快速配置检测) → ZAP被动 (浏览中收集) → gobuster (路径发现) → ZAP主动 (深度扫描)
+
+================================================================================
+模块小结
+================================================================================
+
+完成本模块后你应该能够：
+  ✓ 使用nikto进行全面的Web服务器安全扫描
+  ✓ 使用wafw00f检测WAF的存在和类型
+  ✓ 配置和使用OWASP ZAP进行被动和主动扫描
+  ✓ 了解arachni和skipfish的使用场景
+  ✓ 对比分析不同扫描器的结果
+  ✓ 理解自动扫描和手动验证的配合方法
+  ✓ 遵循扫描最佳实践，避免不必要的风险
+
+下一模块预告：04-SQL注入攻击 — 深入掌握sqlmap等SQL注入工具

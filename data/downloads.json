@@ -31,21 +31,12 @@
         "size": "500 kb",
         "path": "downloads/Love2D_语法进阶教程.txt"
     },
-           {
+              {
           "name": "downloads/raylib_nvim_tutorial.txt",
           "title": "raylib与nvim开发教程",
           "description": "介绍了如何使用raylib和nvim进行游戏开发",
           "type": "TXT",
           "size": "600 kb",
           "path": "downloads/raylib_nvim_tutorial.txt"
-     },
-           {
-          "name": "downloads/cpp深化教程",
-          "title": "cpp深化教程",
-          "description": "介绍了如何在cpp入门之后学习以后的内容",
-          "type": "文件夹",
-          "size": "1.2Mb",
-          "path": "downloads/cpp深化教程"
      }
-
 ]

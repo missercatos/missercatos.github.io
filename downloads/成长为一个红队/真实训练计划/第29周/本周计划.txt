@@ -1,0 +1,610 @@
+================================================================================
+第29周：取证与恶意软件分析 (进阶期)
+================================================================================
+
+【本周围绕的核心渗透案例阶段】
+引用红队队员完整学习手册中的案例：
+从防御和高级攻防视角，取证技术是红队队员理解攻击痕迹和提升
+攻击隐蔽性的关键能力。恶意软件分析则帮助理解高级攻击载荷
+的生成和检测原理。本周围绕取证"逆向思维"——学防御者如何发现
+攻击痕迹，反哺攻击者的痕迹清除能力。
+
+【本周学习目标】
+1. 掌握磁盘取证的基本流程：磁盘镜像获取、分析、文件恢复
+2. 熟练使用Autopsy/sleuthkit进行磁盘镜像分析
+3. 理解内存取证原理，掌握volatility3内存分析
+4. 掌握数据恢复技术，理解文件删除的底层原理
+5. 了解恶意软件分析的基本分类和方法论
+6. 学会编写简单的YARA规则并通过实际样本的检测
+
+【本周知识清单】
+- 磁盘取证：
+  - 取证磁盘镜像格式：dd(raw), E01(EnCase), AFF(Advanced Forensic Format)
+  - 镜像获取工具：dd, dc3dd, dcfldd, FTK Imager
+  - 文件系统分析：FAT, NTFS, ext4, XFS
+  - MFT(Master File Table)分析 — NTFS核心
+  - 时间线分析(Timeline Analysis): MACB时间戳
+  - 删除文件恢复原理：目录项标记删除 vs 数据块覆写
+  - Slack Space和Unallocated Space分析
+- 内存取证：
+  - 内存镜像获取：LiME(Linux), WinPmem(Windows), VMWare .vmem快照
+  - volatility3插件体系：windows.* / linux.* / mac.*
+  - 内存分析关键artifact：
+    - 运行中进程列表
+    - 网络连接(活动+历史)
+    - 加载的DLL/Kernel Modules
+    - 注册表(Windows内存)hive
+    - 命令行历史
+    - 注入代码检测(malfind)
+- 数据恢复：
+  - 文件雕刻(File Carving): foremost, scalpel, photorec
+  - 文件系统修复: testdisk, fsck
+  - 签名/魔数(Magic Number)识别
+- 恶意软件分析：
+  - 静态分析 vs 动态分析
+  - PE文件结构：DOS Header, PE Header, Sections, Import/Export Table
+  - 沙箱分析：Cuckoo Sandbox, Joe Sandbox, Any.Run
+  - 反汇编/反编译：IDA Pro, Ghidra, radare2
+- YARA规则：
+  - 规则结构：meta / strings / condition
+  - 字符串类型：ASCII, wide, hex, regex
+  - Condition条件表达式
+  - yara命令行工具使用
+
+【本周工具清单】
+- Autopsy — GUI磁盘取证平台(Backed by sleuthkit)
+- sleuthkit (fls, mmls, istat, icat, fsstat) — CLI磁盘取证
+- volatility3 — 内存取证框架
+- LiME — Linux内存镜像获取内核模块
+- foremost / scalpel / photorec — 文件雕刻/恢复
+- testdisk — 分区恢复和文件系统修复
+- binwalk — 固件/二进制文件分析
+- Ghidra — NSA开源反编译工具（恶意软件分析）
+- radare2 / rizin — 命令行逆向工程框架
+- PEStudio / Detect It Easy — PE文件静态分析
+- YARA — 恶意软件特征检测规则引擎
+- VirusTotal API — 在线恶意软件检测
+
+================================================================================
+周一：磁盘取证 (sleuthkit + autopsy)
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：磁盘取证基础与sleuthkit
+    - 数字取证的黄金法则：
+      1. 永不直接操作原始证据
+      2. 只分析取证镜像副本
+      3. 保持证据链的完整性(Chain of Custody)
+      4. 使用写保护器或只读挂载
+    - 磁盘镜像格式对比：
+      - dd (raw): 原始逐位拷贝，兼容性最好，无元数据
+      - E01 (Expert Witness/EnCase): 含哈希校验、压缩、案例元数据
+      - AFF (Advanced Forensic Format): 开源可扩展格式
+    - sleuthkit (TSK) 工具集：
+      - mmls: 分区布局分析
+      - fsstat: 文件系统统计信息
+      - fls: 列出文件和目录(含已删除)
+      - istat: 查看inode/MFT条目详情
+      - icat: 通过inode号提取文件内容
+      - ffind: 通过inode号查找文件名
+      - blkcat/blkls/blkcalc: 扇区级分析
+    - Autopsy架构：
+      - Web模式: 浏览器访问http://localhost:9999/autopsy
+      - 桌面模式: 直接GUI应用
+      - 使用PostgreSQL/SQLite存储案例数据
+      - 模块化: 文件分析、关键词搜索、时间线、Web成果、Android分析
+  参考文件：/home/a/成长为一个红队/archstrike-forensics教学/01-磁盘取证与反取证.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：使用Autopsy分析磁盘镜像
+  参考文件：/home/a/成长为一个红队/archstrike-forensics教学/01-磁盘取证与反取证.txt
+
+  操作步骤：
+    Step 1: 安装Autopsy和sleuthkit
+      sudo apt install autopsy sleuthkit
+      验证: mmls -V, fls -V
+    Step 2: 启动Autopsy Web模式
+      sudo autopsy
+      输出会显示: "Autopsy Forensic Browser — Connection URL: http://localhost:9999/autopsy"
+      浏览器访问: http://localhost:9999/autopsy
+    Step 3: 创建取证案例
+      点击 "New Case"
+      输入案例名称: "Training_Case_01"
+      输入调查员姓名和描述
+      选择案例目录: /home/a/forensics_lab/
+    Step 4: 添加磁盘镜像
+      点击 "Add Host" → 输入主机名
+      点击 "Add Image" → 选择镜像文件
+      (如无真实镜像，可先创建一个测试镜像用于练习)
+      创建测试镜像:
+        sudo dd if=/dev/zero of=/tmp/test_disk.dd bs=1M count=100
+        sudo mkfs.ext4 /tmp/test_disk.dd
+        sudo mount -o loop /tmp/test_disk.dd /mnt/test
+        echo "secret_password_12345" | sudo tee /mnt/test/secret.txt
+        echo "normal file content" | sudo tee /mnt/test/normal.txt
+        sudo umount /mnt/test
+      将/tmp/test_disk.dd作为镜像导入Autopsy
+    Step 5: 分析镜像内容
+      在Autopsy中:
+        浏览文件系统树 → 找到 secret.txt 和 normal.txt
+        查看文件内容
+        使用 "File Analysis" 模块查看MIME类型、时间戳
+        使用 "Keyword Search" 搜索 "secret" 和 "password"
+        分析MACT时间戳(MAC timeline)
+      点击 "Generate Report" 生成HTML分析报告
+    Step 6: 使用sleuthkit CLI工具
+      mmls /tmp/test_disk.dd → 查看分区布局
+      fsstat -o 0 /tmp/test_disk.dd → 查看文件系统信息
+      fls -r -o 0 /tmp/test_disk.dd → 列出所有文件(含已删除)
+      istat -o 0 /tmp/test_disk.dd <inode#> → 查看文件inode详情
+      icat -o 0 /tmp/test_disk.dd <inode#> → 提取文件内容
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：掌握Autopsy基本操作和sleuthkit CLI工具
+  - Autopsy发现的关键证据：____________________
+  - 明日计划：学习内存取证，使用volatility分析内存镜像
+
+================================================================================
+周二：内存取证 (volatility)
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：内存取证原理与volatility
+    - 为什么需要内存取证：
+      - 磁盘只保留持久化数据，内存包含运行时状态
+      - 攻击载荷(如Meterpreter)驻留在内存中，不在磁盘
+      - 加密密钥、网络连接、注入代码只在内存中
+      - 取证顺序的首要对象(最易失)
+    - 内存镜像获取方法：
+      - Linux: LiME (Linux Memory Extractor)内核模块
+        - sudo insmod lime.ko "path=/tmp/mem.lime format=lime"
+      - Windows: win32dd, FTK Imager, DumpIt, WinPmem
+      - VMWare: 虚拟机快照文件(.vmem / .vmss)
+      - Hyper-V: 保存检查点
+    - volatility3核心架构：
+      - 插件框架：每个功能是独立插件
+      - 独立于操作系统版本（使用Symbol Tables）
+      - ISF (Intermediate Symbol Format): Linux内核符号信息
+      - Layer抽象：内存层、文件层、虚拟机层
+    - volatility3常用插件分类：
+      - 进程分析: windows.pslist, windows.pstree, windows.cmdline
+      - 网络分析: windows.netscan, linux.sockstat
+      - DLL/模块: windows.dlllist, linux.lsmod
+      - 注册表: windows.registry.hivelist, windows.registry.printkey
+      - 文件扫描: windows.filescan, linux.elfs
+      - 恶意代码检测: windows.malfind, windows.vadinfo
+      - 凭据提取: windows.hashdump, windows.lsadump
+  参考文件：/home/a/成长为一个红队/archstrike-forensics教学/02-内存取证与攻击痕迹.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：获取内存镜像并使用volatility3分析
+  参考文件：/home/a/成长为一个红队/archstrike-forensics教学/02-内存取证与攻击痕迹.txt
+
+  操作步骤：
+    Step 1: 安装volatility3
+      sudo apt install python3-pip
+      git clone https://github.com/volatilityfoundation/volatility3.git /opt/volatility3
+      cd /opt/volatility3
+      pip3 install -r requirements.txt
+      验证: python3 vol.py -h
+    Step 2: 获取Linux内存镜像（用于测试分析）
+      下载LiME内核模块(需编译):
+        git clone https://github.com/504ensicsLabs/LiME.git /tmp/LiME
+        cd /tmp/LiME/src && make
+      (或在VMWare实验环境中直接使用挂起快照的.vmem文件)
+      VMWare快照方式:
+        暂停VM → 找到.vmem和.vmss文件 → 复制到分析环境
+    Step 3: 进程分析
+      分析进程列表:
+        python3 vol.py -f /path/to/memory.vmem windows.pslist.PsList
+      分析进程树(父子进程关系):
+        python3 vol.py -f /path/to/memory.vmem windows.pstree.PsTree
+      提取命令行参数:
+        python3 vol.py -f /path/to/memory.vmem windows.cmdline.CmdLine
+      识别可疑进程:
+        名称异常(在临时目录运行的进程)
+        父进程异常(explorer.exe的子进程是cmd.exe/powershell.exe)
+        命令行包含反弹shell/下载命令
+    Step 4: 网络连接分析
+      python3 vol.py -f /path/to/memory.vmem windows.netscan.NetScan
+      分析输出:
+        查找ESTABLISHED连接中的非标准端口(4444, 5555等)
+        查找异常IP地址(公网IP→内网机器的连接)
+        查看每连接的进程(Owner字段)
+    Step 5: 恶意代码检测
+      python3 vol.py -f /path/to/memory.vmem windows.malfind.Malfind
+      该插件检测注入的代码:
+        检查VAD(Virtual Address Descriptor)的标志
+        检查页权限(PAGE_EXECUTE_READWRITE 是高危标志)
+      记录所有可疑的进程和地址范围
+    Step 6: 转储可疑进程内存
+      python3 vol.py -f /path/to/memory.vmem -o /tmp/dump/ windows.dumpfiles.DumpFiles --pid <可疑PID>
+      或转储整个进程内存:
+        python3 vol.py -f /path/to/memory.vmem -o /tmp/dump/ windows.memmap.Memmap --pid <PID> --dump
+      将转储的可执行文件提交到VirusTotal或做进一步逆向分析
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：掌握volatility3内存分析的基本流程
+  - 发现的攻击痕迹：____________________
+  - 可疑进程/连接：____________________
+  - 明日计划：学习数据恢复技术
+
+================================================================================
+周三：数据恢复 (foremost + testdisk)
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：数据恢复原理与技术
+    - 数据恢复的必要性：
+      - 取证分析：从"已删除"的文件中恢复证据
+      - 攻击视角：理解文件删除不彻底 → 增强痕迹清除方法
+    - 文件删除原理深入：
+      - FAT文件系统:
+        - 删除时在目录项首字节标记为0xE5
+        - FAT表中对应簇链标记为未使用(0x0000)
+        - 数据区域未被擦除
+      - NTFS文件系统:
+        - $MFT记录中的IN_USE标志位清零
+        - $Bitmap元数据文件中对应簇标记为空闲
+        - 数据区域未被擦除(直到新数据覆写)
+      - ext4文件系统:
+        - inode从目录中移除链接
+        - inode位图和块位图中标记为空闲
+        - 数据块未擦除(直到重新分配)
+    - 文件雕刻(File Carving)原理：
+      - 不依赖文件系统元数据
+      - 基于文件签名(Magic Number/Header)查找文件边界
+      - 常见文件签名: JPEG(FF D8 FF), PNG(89 50 4E 47), PDF(25 50 44 46), ZIP(50 4B 03 04)
+    - 文件恢复成功率因素：
+      - 文件是否被覆写
+      - 文件碎片化程度(连续存储→高恢复率)
+      - 时间间隔(删除后新写入的多少)
+    - 安全删除最佳实践：
+      - shred -n 3 -z (3次覆写+最终填0)
+      - /dev/urandom覆写
+      - 全盘加密下的安全删除(SSD TRIM限制)
+  参考文件：/home/a/成长为一个红队/archstrike-forensics教学/03-数据恢复与反删除技术.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：文件雕刻和分区恢复实践
+  参考文件：/home/a/成长为一个红队/archstrike-forensics教学/03-数据恢复与反删除技术.txt
+
+  操作步骤：
+    Step 1: 安装数据恢复工具
+      sudo apt install foremost scalpel testdisk photorec
+      验证: foremost -V, testdisk --version, photorec --version
+    Step 2: 创建恢复实验环境
+      创建测试文件和删除:
+        echo "TOP SECRET: admin password is P@ssw0rd123" > /tmp/secret_doc.txt
+        cp /usr/share/wallpapers/*.jpg /tmp/ 2>/dev/null
+        md5sum /tmp/secret_doc.txt → 记录原始哈希
+        rm /tmp/secret_doc.txt
+        rm /tmp/*.jpg
+      创建磁盘镜像用于恢复:
+        sudo dd if=/dev/zero of=/tmp/recovery_test.dd bs=1M count=50
+        sudo mkfs.ext4 /tmp/recovery_test.dd
+        sudo mount -o loop /tmp/recovery_test.dd /mnt/recovery
+        echo "IMPORTANT: API_KEY=sk-1234567890abcdef" | sudo tee /mnt/recovery/api_key.txt
+        sudo cp /usr/share/wallpapers/*.png /mnt/recovery/ 2>/dev/null
+        sudo umount /mnt/recovery
+        sudo mount -o loop /tmp/recovery_test.dd /mnt/recovery
+        sudo rm /mnt/recovery/api_key.txt → 删除它
+        sudo umount /mnt/recovery
+    Step 3: 使用foremost进行文件雕刻
+      foremost -t all -i /tmp/recovery_test.dd -o /tmp/foremost_output/
+      参数:
+        -t all: 恢复所有支持的文件类型(也可 jpeg,pdf,ole,zip)
+        -i: 输入镜像文件
+        -o: 输出目录
+      查看恢复结果:
+        ls /tmp/foremost_output/
+        检查每个子目录(如jpg/, pdf/, ole/, txt/)
+        查看恢复的txt文件内容: cat /tmp/foremost_output/txt/*.txt
+    Step 4: 使用photorec恢复特定类型
+      sudo photorec /tmp/recovery_test.dd
+      交互式界面:
+        选择分区(整个磁盘)
+        选择文件系统类型
+        选择恢复文件类型(或全部)
+        选择输出目录
+      查看恢复的文件
+    Step 5: 使用testdisk恢复分区和文件
+      sudo testdisk /tmp/recovery_test.dd
+      交互菜单:
+        [Create] 创建新日志
+        选择分区表类型(Intel/EFI GPT等)
+        [Analyze] 分析当前分区结构
+        [Advanced] → 文件系统工具 → [Undelete] 恢复已删文件
+      使用Undelete功能查找api_key.txt
+      恢复并验证内容: cat /path/to/recovered/api_key.txt
+    Step 6: 使用binwalk分析固件/二进制文件
+      binwalk -Me /tmp/recovery_test.dd
+      如果磁盘镜像内有压缩/嵌套文件，binwalk会自动提取
+      查看binwalk提取的内容结构
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：掌握文件雕刻和分区恢复技术
+  - 恢复的文件数量：____________________
+  - 成功恢复的敏感信息：____________________
+  - 明日计划：学习恶意软件分析入门
+
+================================================================================
+周四：恶意软件分析入门
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：恶意软件分析基础
+    - 恶意软件分析的两大流派：
+      - 静态分析: 不运行样本，分析文件结构/反汇编代码
+        - 优点：安全(不触发恶意行为)，不依赖沙箱
+        - 缺点：需要逆向技能，无法处理混淆/加密
+      - 动态分析: 在受控环境中运行样本，观察行为
+        - 优点：可直接观察行为，绕过加密混淆
+        - 缺点：需要安全沙箱环境，可能触发反沙箱检测
+    - PE文件结构 (Windows可执行文件):
+      - DOS Header: MZ签名(0x4D 0x5A), e_lfanew指向PE Header
+      - PE Header: PE\0\0签名(0x50 0x45 0x00 0x00)
+      - Optional Header: 入口点(Entry Point), ImageBase, 子系统
+      - Section Table: .text(代码), .data(数据), .rdata(只读), .rsrc(资源)
+      - Import Table: 导入的DLL和函数
+      - Export Table: 导出的函数
+    - 静态分析关键技术：
+      - 字符串分析: strings命令提取可读字符串(IP/URL/注册表键)
+      - 导入表分析: 识别可疑API(VirtualAlloc, WriteProcessMemory, CreateRemoteThread)
+      - 资源提取: 提取嵌入的可执行文件/脚本
+    - 动态分析沙箱环境：
+      - 虚拟机+快照 → 运行样本 → 观察系统变化
+      - 工具: Process Monitor, Process Explorer, Wireshark, Regshot
+      - 自动化: Cuckoo Sandbox, Any.Run, Joe Sandbox
+    - 恶意软件常见行为模式：
+      - 持久化: 注册表Run键, 计划任务, 服务创建
+      - 通信: HTTP/HTTPS C2, DNS隧道
+      - 窃密: 浏览器凭据, 剪贴板, 键盘记录
+      - 反分析: 反虚拟机, 反调试, 代码混淆
+  参考文件：/home/a/成长为一个红队/archstrike-malware教学/01-恶意软件分析入门.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：PE文件静态分析实践
+  参考文件：/home/a/成长为一个红队/archstrike-malware教学/01-恶意软件分析入门.txt
+  安全警告：在隔离的虚拟机中进行，不要在生产环境执行恶意样本
+
+  操作步骤：
+    Step 1: 安全准备和环境隔离
+      确认在隔离的虚拟机中操作：
+        创建VM快照(便于恢复)
+        禁用共享文件夹和剪贴板
+        断开网络连接(或使用Host-Only网络)
+    Step 2: 基本静态分析 — 文件信息
+      获取一个无害的练习样本或自己编译一个测试程序:
+      使用PE文件分析工具:
+        file sample.exe → 确认PE格式
+        strings sample.exe | grep -E "(http|https|cmd|powershell|\.exe|\.dll|IP:|port)"
+        查看提取的可疑字符串: IP地址, URL, 命令, 文件路径
+    Step 3: PE头部分析
+      使用readpe或pecheck:
+        readpe sample.exe → 查看完整PE结构
+        readpe -h dos sample.exe → DOS Header
+        readpe -h coff sample.exe → COFF/PE Header
+        readpe -h optional sample.exe → Optional Header
+        readpe -i sample.exe → Import Table (重点分析)
+      重点查看Import Table中的可疑DLL/API:
+        kernel32.dll: VirtualAlloc, CreateRemoteThread, WriteProcessMemory
+        wininet.dll: InternetOpen, InternetConnect (C2通信)
+        advapi32.dll: CreateService, RegSetValueEx (持久化)
+    Step 4: Section分析
+      readpe -S sample.exe → 列出所有Section
+      注意异常Section:
+        .text区可写可能意味着自修改代码
+        异常的Section名称(非编译器默认)
+        Section的Raw Size < Virtual Size(在内存中解包)
+        Section的熵值很高(可能包含加密/压缩数据)
+    Step 5: 使用Detect It Easy (DiE)快速识别
+      sudo apt install die (如可用)
+      die sample.exe
+      或从官网下载: https://github.com/horsicq/Detect-It-Easy
+      DiE提供:
+        - 编译器/打包器识别(UPX, Themida, VMProtect等)
+        - 熵值图可视化
+        - 快速分析和报告
+    Step 6: 基本动态分析准备(不实际运行)
+      了解动态分析工具链:
+        Process Monitor: 监控文件/注册表/进程操作
+        Process Explorer: 高级任务管理器+网络连接
+        Wireshark: 捕获C2流量
+        Regshot: 注册表和文件系统快照对比
+      如果要进行动态分析:
+        1. VM快照 → 2. 启动监控工具 → 3. 运行样本 → 4. 记录行为 → 5. VM快照恢复
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：掌握PE文件静态分析的基本方法
+  - 发现的可疑API：____________________
+  - 明日计划：学习YARA规则编写，检测恶意软件特征
+
+================================================================================
+周五：YARA规则编写与检测
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：YARA规则引擎与特征检测
+    - YARA概述：
+      - "Yet Another Recursive Acronym" (递归缩写玩笑)
+      - 模式匹配引擎，用于恶意软件识别和分类
+      - Victor M. Alvarez开发，广泛应用于威胁情报
+    - YARA规则结构：
+      rule 规则名称 {
+          meta:  // 元数据(描述性信息，不影响匹配)
+              description = "规则描述"
+              author = "作者"
+              date = "2024-01-15"
+              severity = "high"
+              reference = "参考链接"
+
+          strings:  // 要匹配的字符串
+              $string1 = "malicious_pattern"  // ASCII字符串
+              $string2 = "C:\\Windows\\Tasks\\" wide  // Unicode字符串
+              $hex1 = { 4D 5A 90 00 [4-8] 50 45 }  // 十六进制模式
+              $regex1 = /[a-z0-9]{32}/  // 正则表达式
+
+          condition:  // 匹配条件
+              $string1 and $string2  // 两个字符串都出现
+              or any of ($hex*)  // 任意十六进制模式匹配
+              or #string1 > 5  // 字符串出现次数大于5
+      }
+    - 字符串模式类型：
+      - 文本字符串: "text" (ASCII), "text" wide (UTF-16LE)
+      - 十六进制: { 4D 5A } 或 { 4D 5A [0-100] 50 45 } (范围跳跃)
+      - 正则表达式: /pattern/i (大小写不敏感), /pattern/s (包含换行)
+    - Condition表达式：
+      - 布尔: and, or, not
+      - 计数: #string_name > N, #string_name < N
+      - 位置: $string at 0x100 (在指定偏移), $string in (0..1000)
+      - 文件大小: filesize < 500KB
+      - 集合: any of ($s*), all of ($s*), N of ($s*), for any of ($s*): (...)
+    - 常用检测目标：
+      - C2地址: IP/域名字符串
+      - 持久化路径: Run注册表键, 计划任务路径
+      - 工具特征: mimikatz的"mimikatz"字符串, nc.exe的反弹shell命令
+      - 加密算法特征: RC4密钥调度代码, AES S-Box
+      - 反调试特征: IsDebuggerPresent, NtGlobalFlag, CheckRemoteDebuggerPresent
+  参考文件：/home/a/成长为一个红队/archstrike-malware教学/02-YARA规则编写与检测.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：编写YARA规则和检测实践
+  参考文件：/home/a/成长为一个红队/archstrike-malware教学/02-YARA规则编写与检测.txt
+
+  操作步骤：
+    Step 1: 安装YARA
+      sudo apt install yara
+      验证: yara --version
+    Step 2: 编写第一个YARA规则
+      创建文件: /tmp/my_rules.yar
+        rule Detect_Rebound_Shell {
+            meta:
+                description = "检测netcat反弹shell载荷"
+                author = "Student"
+                date = "2024-01-15"
+                severity = "high"
+
+            strings:
+                $s1 = "cmd.exe /c" wide ascii
+                $s2 = "nc.exe" wide ascii
+                $s3 = "-e cmd.exe" wide ascii
+                $s4 = "/dev/tcp/" ascii
+
+            condition:
+                any of ($s1, $s2, $s3, $s4)
+        }
+    Step 3: 使用YARA扫描文件
+      测试规则: yara -s /tmp/my_rules.yar <目标文件或目录>
+      参数:
+        -s: 显示匹配的字符串
+        -r: 递归扫描目录
+        -w: 禁用警告
+      扫描nc.exe: yara /tmp/my_rules.yar /usr/bin/nc*
+      扫描系统目录: yara -r /tmp/my_rules.yar /tmp/
+    Step 4: 编写更复杂的规则
+      添加第二个规则到my_rules.yar:
+        rule Detect_Mimikatz {
+            meta:
+                description = "检测mimikatz特征"
+                severity = "critical"
+
+            strings:
+                $mz = { 4D 5A }  // MZ PE头
+                $s1 = "mimikatz" ascii wide
+                $s2 = "sekurlsa::logonpasswords" ascii wide
+                $s3 = "privilege::debug" ascii wide
+                $s4 = "lsadump::sam" ascii wide
+
+            condition:
+                $mz at 0 and any of ($s1, $s2, $s3, $s4)
+        }
+    Step 5: 利用公用YARA规则库
+      下载社区规则库:
+        git clone https://github.com/Yara-Rules/rules.git /tmp/yara-rules
+      扫描测试目录:
+        yara -r /tmp/yara-rules/malware/ /tmp/
+      了解社区常用的检测方法
+    Step 6: YARA性能优化
+      使用yara -c编译规则加速:
+        yarac /tmp/my_rules.yar /tmp/my_rules_compiled.yrc
+        使用编译规则: yara /tmp/my_rules_compiled.yrc <目标>
+      对比编译前后的速度差异
+      大型规则集的扫描技巧和注意事项
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：掌握YARA规则编写，能够检测基本的恶意软件特征
+  - 编写的规则数量：____________________
+  - 检测到的匹配结果：____________________
+
+================================================================================
+周六：复习日 (2h 复习 + 1h HTB/THM)
+================================================================================
+
+📚 复习内容（2小时）
+  1. 复盘完整的取证流程：磁盘镜像→内存镜像→文件恢复→恶意软件分析
+  2. 整理volatility3最常用插件速查表（按场景分类）
+  3. 复习PE文件结构和导入表分析技巧
+  4. 编写一个完整的YARA规则集：
+     - 检测常见反弹shell载荷
+     - 检测常见渗透测试工具（nc, mimikatz, chisel, linpeas）
+     - 检测持久化手段（注册表Run, Crontab, Systemd）
+  5. 整理磁盘取证+数据恢复的工具选型决策树
+
+💻 HTB/THM练习（1小时）
+  - 登录HackTheBox平台
+  - 选择一个Forensics/Malware相关挑战
+  - 或登录TryHackMe完成 "YARA" 房间
+  - 目标: 将本周理论应用到实际练习中
+
+📝 复习笔记
+  - 本周最有效的技术：____________________
+  - 需要加强的部分：____________________
+  - 下周预习计划：Fuzzing技术（AFL模糊测试）
+
+================================================================================
+周日：休息日
+================================================================================
+
+【本周资源清单】
+理论知识文件：
+  /home/a/成长为一个红队/archstrike-forensics教学/01-磁盘取证与反取证.txt
+  /home/a/成长为一个红队/archstrike-forensics教学/02-内存取证与攻击痕迹.txt
+  /home/a/成长为一个红队/archstrike-forensics教学/03-数据恢复与反删除技术.txt
+  /home/a/成长为一个红队/archstrike-malware教学/01-恶意软件分析入门.txt
+  /home/a/成长为一个红队/archstrike-malware教学/02-YARA规则编写与检测.txt
+
+实践教程文件：
+  /home/a/成长为一个红队/archstrike-forensics教学/01-磁盘取证与反取证.txt
+  /home/a/成长为一个红队/archstrike-forensics教学/02-内存取证与攻击痕迹.txt
+  /home/a/成长为一个红队/archstrike-forensics教学/03-数据恢复与反删除技术.txt
+  /home/a/成长为一个红队/archstrike-malware教学/01-恶意软件分析入门.txt
+  /home/a/成长为一个红队/archstrike-malware教学/02-YARA规则编写与检测.txt
+
+在线练习：
+  TryHackMe: Forensics相关房间, YARA房间, Malware Analysis相关
+  HackTheBox: Sherlocks(Forensic挑战)或相应的取证机器
+  CyberDefenders: 在线取证挑战平台
+
+工具下载：
+  Autopsy: sudo apt install autopsy
+  sleuthkit: sudo apt install sleuthkit
+  volatility3: https://github.com/volatilityfoundation/volatility3
+  LiME: https://github.com/504ensicsLabs/LiME
+  foremost: sudo apt install foremost
+  scalpel: sudo apt install scalpel
+  testdisk/photorec: sudo apt install testdisk
+  binwalk: sudo apt install binwalk
+  Ghidra: https://ghidra-sre.org/ 或 sudo apt install ghidra
+  radare2/rizin: sudo apt install radare2 或 rizin
+  YARA: sudo apt install yara
+  Detect It Easy: https://github.com/horsicq/Detect-It-Easy
+  PEStudio: https://www.winitor.com/ (Windows)
+
+YARA规则库：
+  https://github.com/Yara-Rules/rules
+  https://github.com/InQuest/awesome-yara
+
+【本周完成检查】
+[ ] 周一 [ ] 周二 [ ] 周三 [ ] 周四 [ ] 周五
+[ ] 周六复习 [ ] 笔记 [ ] 体能

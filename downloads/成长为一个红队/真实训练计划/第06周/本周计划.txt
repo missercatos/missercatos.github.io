@@ -1,0 +1,712 @@
+================================================================================
+第6周：高级侦察 (侦察期)
+================================================================================
+
+【本周围绕的核心渗透案例阶段】
+阶段一：信息侦察 (Reconnaissance) —— 深度情报收集
+在第5周的基础上，本周深入DNS侦察（fierce/dnsenum挖掘内部DNS服务器和域控制器），
+掌握Shodan/Censys互联网级搜索引擎搜索暴露的服务和设备，精通Google Dorking
+和GitHub Dorking挖掘敏感信息泄露。完整学习手册经典案例的操作3-4属于本阶段：
+DNS深度侦察发现内网架构 → 搜索引擎Dorking发现泄露的密码和配置文件。
+引用：红队队员完整学习手册 → 三、经典渗透案例 → 阶段一: 信息侦察
+"操作3: DNS深度侦察 → fierce/dnsenum → 发现内部DNS服务器和域控制器
+ 操作4: 搜索引擎Dorking → Google Dork搜索机密文件 + Shodan搜索暴露设备"
+
+【本周学习目标】
+1. 掌握fierce和dnsenum进行DNS深度侦察
+2. 理解DNS区域传输(AXFR)原理和发现方法
+3. 掌握dig/host等DNS查询工具的高级用法
+4. 熟练使用Shodan和Censys搜索暴露的设备和资产
+5. 精通Google Dorking高级搜索技巧
+6. 掌握综合侦察报告的撰写方法
+7. 完成对公开目标的完整侦察流程
+
+【本周知识清单】
+• DNS记录类型详解：A/AAAA/MX/NS/CNAME/SOA/TXT/PTR/SRV/AXFR
+• DNS区域传输漏洞：AXFR请求获取域名所有记录
+• DNS递归查询 vs 迭代查询的区别
+• DNSSEC安全机制的签名验证链
+• SPF/DKIM/DMARC邮件安全策略记录（TXT记录中的应用）
+• fierce的子域名暴力破解原理（字典+递归）
+• dnsenum的综合DNS侦察流程（whois+DNS+区域传输+子域名+反向DNS）
+• Shodan的技术原理：全网端口扫描 → Banner抓取 → 索引 → 搜索
+• Shodan搜索过滤语法：org/city/country/port/product/os/version/after/before
+• Censys与Shodan的互补关系（Censys侧重证书和域名）
+• Google Dorking：site/filetype/intitle/inurl/intext/ext/cache/link
+• 敏感信息泄露的常见位置（robots.txt/sitemap.xml/备份文件/.git目录/env文件）
+• 侦察报告的结构：目标概况/域名信息/子域名清单/IP范围/技术栈/潜在入口
+
+【本周工具清单】
+• fierce (DNS暴力破解侦察)
+• dnsenum (综合DNS枚举)
+• dig (DNS查询)
+• host (DNS查询)
+• Shodan CLI + Web (互联网搜索引擎)
+• Censys Web (证书和域名搜索)
+• Firefox (Google Dorking, GitHub Dorking)
+• theHarvester/recon-ng (复习)
+
+================================================================================
+周一：DNS深度侦察 (fierce, dnsenum)
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：DNS侦察的核心价值——从DNS记录中发现子域名、内部网络架构、
+  邮件服务器、域控制器位置。DNS记录类型完整回顾：A(IPv4)、AAAA(IPv6)、
+  MX(邮件服务器+优先级)、NS(解析该域名的DNS服务器)、CNAME(别名)、
+  SOA(授权起始，包含主DNS/管理员邮箱/序列号)、TXT(文本，
+  常包含SPF邮件安全策略和DMARC/DKIM配置)、PTR(反向DNS)、
+  SRV(服务定位，如LDAP/SIP)。DNS区域传输漏洞(AXFR)：如果DNS服务器
+  未正确限制AXFR请求来源，攻击者可以一次获取域名的所有记录。
+  DNSSEC如何防止DNS欺骗（通过数字签名的信任链）。
+  参考文件：/home/a/成长为一个红队/archstrike-recon教学/02-高级DNS侦察技术.txt（阅读全部）
+  参考文件：/home/a/成长为一个红队/网安基础知识/01-计算机网络基础.txt（复习DNS相关章节）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：使用dig进行各种DNS查询，使用fierce进行子域名暴力破解，
+  使用dnsenum执行综合DNS侦察，理解输出结果的含义。
+  参考文件：/home/a/成长为一个红队/archstrike-recon教学/02-高级DNS侦察技术.txt
+
+  操作步骤：
+    Step 1: dig高级DNS查询练习
+      # 基本查询
+      dig example.com                     # 完整DNS查询结果
+      dig example.com +short              # 只显示IP地址
+
+      # 查询不同记录类型
+      dig example.com MX +short           # 邮件交换服务器
+      dig example.com NS +short           # 域名服务器
+      dig example.com SOA                 # 授权起始记录
+      dig example.com TXT                 # 文本记录(SPF/DKIM/DMARC)
+      dig example.com ANY                 # 所有记录
+
+      # 使用指定DNS服务器查询
+      dig example.com @8.8.8.8           # 使用Google DNS查询
+      dig example.com @1.1.1.1           # 使用Cloudflare DNS查询
+
+      # 反向DNS查询
+      dig -x 93.184.216.34 +short        # 从IP查域名(PTR记录)
+
+      # DNS追踪（从根域名服务器逐级查询）
+      dig example.com +trace
+
+    Step 2: fierce子域名暴力破解
+      sudo pacman -S fierce 2>/dev/null || echo "跳过安装"
+      mkdir -p ~/training/week6/dns_results
+
+      # 对目标进行fierce DNS侦察
+      fierce --domain example.com --threads 10 \
+        2>/dev/null | tee ~/training/week6/dns_results/fierce_example.txt
+
+      # 理解输出：fierce会先查SOA记录确定DNS服务器 → 
+      # 然后使用内置字典暴力猜测子域名 → 报告发现的子域名和IP
+
+      # 使用自定义字典
+      echo -e "www\nmail\nftp\ndev\ntest\nadmin\nvpn\nportal" > /tmp/sub_list.txt
+      fierce --domain example.com --wordlist /tmp/sub_list.txt \
+        2>/dev/null | tee ~/training/week6/dns_results/fierce_custom.txt
+
+    Step 3: dnsenum综合DNS侦察
+      sudo pacman -S dnsenum 2>/dev/null || echo "跳过安装"
+
+      # dnsenum完整侦察流程
+      dnsenum --enum example.com \
+        -f /usr/share/seclists/Discovery/DNS/subdomains-top1million-2000.txt \
+        -o ~/training/week6/dns_results/dnsenum_example.xml \
+        2>/dev/null | tee ~/training/week6/dns_results/dnsenum_example.txt
+
+      # 理解dnsenum的输出：
+      # 1. Host's addresses (主机A记录)
+      # 2. Name Servers (DNS服务器)
+      # 3. Mail (MX) Servers (邮件服务器)
+      # 4. Zone Transfer (尝试AXFR区域传输)
+      # 5. Brute force subdomains (子域名暴力破解)
+      # 6. Reverse lookup (反向DNS)
+
+    Step 4: host命令快速查询
+      host example.com                   # 基本DNS查询
+      host -t MX example.com             # 指定记录类型
+      host -t NS example.com             # 查DNS服务器
+      host -t TXT example.com            # 查TXT记录
+      host -l example.com 8.8.8.8        # 尝试AXFR区域传输(一般会拒绝)
+
+    Step 5: DNS侦察结果分析
+      cat > ~/training/week6/dns_results/analysis.txt << 'EOF'
+      DNS侦察结果分析框架
+      =========================================
+      1. A记录分析: 列出所有IP地址
+         → 判断是否使用了CDN(多个不同IP)
+         → 判断是否在云服务商(IP归属查询)
+
+      2. MX记录分析: 邮件服务器地址和优先级
+         → 邮件服务器是否使用第三方服务(如Google Workspace)
+         → 邮件服务器软件版本
+
+      3. NS记录分析: 权威DNS服务器
+         → DNS服务器是否自建还是使用第三方
+         → DNS服务器软件(BIND, Microsoft DNS等)
+
+      4. TXT记录分析: 邮件安全策略
+         → SPF记录: "v=spf1 include:_spf.google.com ~all"
+            → 了解允许哪些服务器发送邮件
+         → DMARC记录: 邮件验证策略和被攻击者利用的可能
+         → DKIM记录: 邮件签名密钥
+
+      5. 潜在攻击路径:
+         → 如果发现AXFR区域传输漏洞 → 获取全部DNS记录
+         → SPF配置过于宽松(~all) → 邮件伪造可能
+         → 子域名指向内部网络 → 可能的内网入口
+      EOF
+      cat ~/training/week6/dns_results/analysis.txt
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：掌握了DNS深度侦察技术，理解了各种DNS记录类型的红队价值，学会了fierce和dnsenum的使用
+  - 遇到问题：(记录AXFR被拒绝、DNS查询被限速等)
+  - 明日计划：学习Shodan和Censys搜索引擎
+
+================================================================================
+周二：Shodan/Censys搜索引擎
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：Shodan是"互联网设备搜索引擎"，通过持续扫描全网IP地址的常见端口
+  来收集连接设备的Banner信息，包括Web服务器、IoT设备、工业控制系统(ICS)、
+  数据库、摄像头等。Shodan搜索语法核心：org(按组织搜索)、port(按端口)、
+  product(按产品/服务)、os(按操作系统)、city/country(按地理位置)、
+  hash(按SSL证书哈希)、vuln(按CVE编号)。Censys与Shodan的区别：
+  Censys更侧重SSL/TLS证书分析和域名发现，数据更结构化。
+  两者的侦察价值：发现目标组织暴露在公网的所有资产、发现配置错误的服务器、
+  发现未授权的远程访问端口(3389/RDP, 22/SSH)。
+  参考文件：/home/a/成长为一个红队/archstrike-recon教学/03-OSINT与人肉搜索技术.txt（阅读Shodan和Censys部分）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：安装Shodan CLI，学习Shodan搜索过滤语法，通过Web界面了解Censys。
+  参考文件：/home/a/成长为一个红队/archstrike-recon教学/03-OSINT与人肉搜索技术.txt
+
+  操作步骤：
+    Step 1: Shodan CLI配置
+      pip install shodan --user 2>/dev/null
+      # 需要从shodan.io注册获取API Key（免费账户有查询限额）
+      # shodan init YOUR_API_KEY
+
+      # 测试连接
+      shodan info 2>/dev/null || echo "请先配置Shodan API Key"
+
+    Step 2: Shodan搜索实践（CLI + Web对比）
+      cat > ~/training/week6/shodan_queries.txt << 'EOF'
+      === Shodan搜索查询清单 ===
+
+      基础搜索:
+        shodan search 'apache' --limit 5
+        shodan search 'port:22' --limit 5
+        shodan search 'product:MySQL' --limit 5
+
+      组织搜索:
+        shodan search 'org:"Google"' --limit 5
+        shodan search 'org:"Amazon"' --limit 5
+
+      地理位置:
+        shodan search 'country:CN port:80' --limit 5
+
+      特定服务:
+        shodan search 'port:3389 os:"Windows"' --limit 5    # RDP暴露
+        shodan search 'port:9200 product:Elastic' --limit 5  # ES暴露
+        shodan search 'port:27017 product:MongoDB' --limit 5  # MongoDB暴露(无认证!)
+        shodan search 'port:6379' --limit 5                  # Redis暴露
+
+      漏洞搜索:
+        shodan search 'vuln:CVE-2014-0160' --limit 5        # Heartbleed
+        shodan search 'vuln:CVE-2021-44228' --limit 5       # Log4Shell
+
+      服务探测:
+        shodan scan submit 192.168.56.102 2>/dev/null       # 请求扫描指定IP
+        shodan scan list 2>/dev/null
+
+      统计信息:
+        shodan stats --facets port product has_screenshot 2>/dev/null
+      EOF
+
+    Step 3: Shodan Web界面搜索练习 (Firefox)
+      cat > ~/training/week6/shodan_web_guide.txt << 'EOF'
+      === Shodan Web搜索步骤 ===
+      1. 打开 https://www.shodan.io
+      2. 搜索: org:"Example Corp" → 查看组织的暴露资产
+      3. 搜索: ssl.cert.subject.CN:"*.example.com" → 通过SSL证书发现
+      4. 使用左侧过滤器按国家/端口/服务/组织筛选
+      5. 点击任意结果查看: 开放端口列表/Banner(原始响应)/SSL证书/历史数据
+
+      === 典型分析案例 ===
+      搜索: port:3389 country:CN
+        → 大量RDP远程桌面暴露在公网
+        → 风险: 弱密码 → 远程控制 → 内网渗透入口
+
+      搜索: product:"MongoDB" -auth
+        → 未认证的MongoDB数据库
+        → 风险: 数据库直接可读写 → 数据泄露/勒索
+
+      搜索: product:"Jenkins"
+        → Jenkins持续集成服务器
+        → 风险: 默认配置 → 脚本控制台RCE → 代码和凭证获取
+      EOF
+
+    Step 4: Censys Web界面搜索
+      # 在Firefox中打开 https://search.censys.io
+      # 尝试搜索:
+      #   services.service_name: HTTP AND location.country: "China"
+      #   证书搜索: parsed.names: example.com
+      # 注意: Censys需要免费账户登录
+
+      cat > ~/training/week6/censys_guide.txt << 'EOF'
+      === Censys搜索语法 ===
+      主机搜索:
+        services.service_name: HTTP
+        services.port: 443
+        location.country: "United States"
+        autonomous_system.organization: "Google"
+
+      证书搜索:
+        parsed.names: example.com
+        parsed.extensions.subject_alt_name.dns_names: *.example.com
+        parsed.issuer.organization: "Let's Encrypt"
+        validation.apple.valid: false (查找无效证书)
+      EOF
+
+    Step 5: 本地Shodan数据导出和分析
+      # 如有API Key，导出搜索结果
+      shodan download --limit 10 ~/training/week6/shodan_data 'port:22 country:CN' 2>/dev/null
+      shodan parse --fields ip_str,port,org,hostnames ~/training/week6/shodan_data.json.gz 2>/dev/null | head
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：掌握了Shodan和Censys搜索引擎的核心用法，理解了互联网资产暴露的风险
+  - 遇到问题：(记录Shodan API限制、需要翻墙访问等)
+  - 明日计划：学习Google Dorking技术
+
+================================================================================
+周三：Google Dorking技术
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：Google Dorking（又称Google Hacking）是利用搜索引擎的高级搜索
+  操作符来发现目标组织的敏感信息和安全漏洞的技术。核心操作符：site(限定站点)、
+  filetype/ext(限定文件类型)、intitle(标题含关键字)、inurl(URL含关键字)、
+  intext(正文含关键字)、cache(查看缓存页面)、link(查外链，已弃用)。
+  组合Dorking的威力：将多个操作符组合可以实现精确搜索，例如
+  site:target.com filetype:sql "password" → 搜索目标站点的包含密码的SQL备份文件。
+  常见敏感文件类型：.sql(数据库备份), .env(环境变量/密钥), .log(日志泄露),
+  .bak/.backup(备份文件), .conf/.config(配置文件)。GitHub Dorking通过搜索
+  公开代码仓库发现API密钥、密码、令牌和内部文档。
+  参考文件：/home/a/成长为一个红队/archstrike-recon教学/03-OSINT与人肉搜索技术.txt（阅读Google Dorking和GitHub Dorking部分）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：在Firefox中实际搜索Google Dorking查询，记录发现的信息。
+  学习GitHub搜索技巧，编写综合Dorking报告。
+  参考文件：/home/a/成长为一个红队/archstrike-recon教学/03-OSINT与人肉搜索技术.txt
+
+  操作步骤：
+    Step 1: Google Dorking分类练习
+      cat > ~/training/week6/dorking_practice.txt << 'EOF'
+      === Google Dorking 实战分类练习 ===
+
+      【目录列表泄露】
+        site:example.com intitle:"index of"
+        site:example.com intitle:"index of" "parent directory"
+        site:example.com intitle:"index of /admin"
+        → 目的：发现开启了目录列表的Web服务器，直接浏览文件
+
+      【备份文件泄露】
+        site:example.com ext:sql
+        site:example.com ext:sql "password" OR "passwd"
+        site:example.com ext:bak
+        site:example.com ext:old
+        site:example.com ext:backup
+        → 目的：发现数据库备份文件和配置文件备份
+
+      【敏感配置文件】
+        site:example.com ext:env "DB_PASSWORD"
+        site:example.com ext:ini intext:password
+        site:example.com ext:conf "password"
+        site:example.com inurl:.git/config
+        → 目的：发现环境变量、数据库配置等敏感信息
+
+      【登录和管理页面】
+        site:example.com inurl:admin
+        site:example.com intitle:"login" "admin"
+        site:example.com inurl:wp-admin
+        site:example.com inurl:phpmyadmin
+        → 目的：发现管理后台入口
+
+      【错误信息泄露】
+        site:example.com "warning" "mysql"
+        site:example.com "error" "sql"
+        site:example.com "Fatal error" "on line"
+        → 目的：从错误信息中获取服务器路径/数据库信息
+
+      【上传页面】
+        site:example.com inurl:upload
+        site:example.com intitle:"file upload"
+        → 目的：发现文件上传入口(可能用于上传webshell)
+      EOF
+
+    Step 2: 在Firefox中执行Dorking搜索
+      # 打开Firefox，对公开目标逐一测试上述Dork语句
+      # 将有效的结果URL保存下来
+      echo "=== 有效Dork发现 ===" > ~/training/week6/dork_findings.txt
+      echo "手动搜索并将发现记录在此文件" >> ~/training/week6/dork_findings.txt
+
+    Step 3: GitHub Dorking实践
+      cat > ~/training/week6/github_dorks.txt << 'EOF'
+      === GitHub搜索技巧 ===
+
+      基础搜索 (在 github.com 搜索栏输入):
+        example.com password
+        example.com "api_key"
+        example.com "secret"
+        example.com "access_key"
+        example.com "BEGIN RSA PRIVATE KEY"
+        example.com "ftp" password
+        example.com "db_password"
+
+      精确搜索语法:
+        "example.com" password NOT test
+        "example.com" language:python password
+        "example.com" extension:env
+        "example.com" extension:sql "password"
+        "example.com" filename:.npmrc _auth
+        "example.com" filename:credentials
+
+      敏感文件类型搜索:
+        filename:.env DB_PASSWORD
+        filename:.bashrc password
+        filename:id_rsa path:.ssh
+        filename:config.php dbpassword
+      EOF
+
+    Step 4: robots.txt 和 sitemap.xml 分析
+      # 这些文件常常直接在搜索中泄露网站结构
+      curl -s http://example.com/robots.txt 2>/dev/null
+      curl -s http://example.com/sitemap.xml 2>/dev/null
+
+      # robots.txt的Disallow条目恰好指明了"不想被索引"的敏感目录
+      # 攻击者反而会重点关注这些被Disallow的路径
+
+    Step 5: Dorking综合报告模板
+      cat > ~/training/week6/dorking_report_template.txt << 'EOF'
+      =========================================
+      Google/GitHub Dorking 侦察报告
+      =========================================
+      目标: (填入目标域名)
+
+      --- 一、发现的文件泄露 ---
+      (记录通过filetype搜索发现的敏感文件)
+
+      --- 二、发现的管理页面 ---
+      (记录通过inurl:admin搜索发现的入口)
+
+      --- 三、目录列表泄露 ---
+      (记录intitle:"index of"搜索结果)
+
+      --- 四、GitHub发现 ---
+      (记录在GitHub中发现的敏感信息)
+
+      --- 五、风险评级和建议 ---
+      (评估发现的信息泄露严重程度)
+      =========================================
+      EOF
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：掌握了Google Dorking和GitHub Dorking的高级搜索技巧，理解了企业信息泄露的严重性
+  - 遇到问题：(记录Google CAPTCHA验证、搜索结果受限等)
+  - 明日计划：综合侦察实战——对公开目标做完整侦察
+
+================================================================================
+周四：综合侦察实战
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：整合第5-6周所有侦察工具和技术，设计完整的侦察工作流。
+  流程设计：目标定义(明确侦察范围和目标) → 域名信息收集(whois/crt.sh) →
+  子域名发现(amass/subfinder/fierce) → DNS记录分析(dig/dnsenum) →
+  技术栈识别(whatweb) → 互联网资产发现(Shodan/Censys) →
+  搜索引擎挖掘(Google/GitHub) → 情报综合分析。
+  理解侦察的深入程度与渗透效果的正比关系——侦察越深入，
+  后续的攻击路径越清晰、成功率越高。侦察报告的三个层次：
+  原始数据(IP/端口)→分析结果(技术栈/漏洞)→攻击路径(可操作的建议)。
+  参考文件：复习本周所有参考教程文件
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：选择一个公开目标(建议选择自己有授权的目标或公共测试平台)，
+  执行完整的侦察流程，从域名开始直到识别出潜在攻击入口。
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/02-信息收集与侦察技术.txt（全部）
+  参考文件：/home/a/成长为一个红队/archstrike-recon教学/01、02、03（全部）
+
+  操作步骤：
+    Step 1: 初始化目标和工作目录
+      # 选择一个练习目标（建议用公开合法目标）
+      TARGET="example.com"  # 或替换为你的练习目标
+      mkdir -p ~/training/week6/full_recon/{whois,dns,subdomains,shodan,dorking}
+      echo "[*] 开始对 $TARGET 进行完整侦察..."
+
+    Step 2: 第一阶段：域名信息收集
+      # whois查询
+      whois $TARGET > ~/training/week6/full_recon/whois/whois_raw.txt 2>/dev/null
+      # crt.sh证书透明度
+      curl -s "https://crt.sh/?q=%.${TARGET}&output=json" > ~/training/week6/full_recon/dns/crtsh.json 2>/dev/null
+      python3 -c "
+      import json
+      with open('$HOME/training/week6/full_recon/dns/crtsh.json') as f:
+          data = json.load(f)
+          names = set()
+          for entry in data:
+              names.update(entry.get('name_value','').split('\\n'))
+          for n in sorted(names):
+              print(n)
+      " 2>/dev/null > ~/training/week6/full_recon/subdomains/crtsh_subdomains.txt
+
+    Step 3: 第二阶段：子域名发现
+      # amass被动枚举
+      amass enum -passive -d $TARGET -o ~/training/week6/full_recon/subdomains/amass.txt 2>/dev/null
+      # subfinder被动枚举
+      subfinder -d $TARGET -o ~/training/week6/full_recon/subdomains/subfinder.txt 2>/dev/null
+      # 合并去重所有子域名
+      cat ~/training/week6/full_recon/subdomains/*.txt 2>/dev/null | sort -u \
+        > ~/training/week6/full_recon/subdomains/all_unique.txt
+      echo "发现 $(wc -l < ~/training/week6/full_recon/subdomains/all_unique.txt 2>/dev/null) 个唯一子域名"
+
+    Step 4: 第三阶段：DNS深度侦察
+      # DNS记录查询
+      for type in A AAAA MX NS SOA TXT; do
+          echo "=== $type 记录 ===" >> ~/training/week6/full_recon/dns/all_records.txt
+          dig $TARGET $type +short >> ~/training/week6/full_recon/dns/all_records.txt 2>/dev/null
+          echo "" >> ~/training/week6/full_recon/dns/all_records.txt
+      done
+      # dnsenum综合扫描
+      dnsenum --enum $TARGET -o ~/training/week6/full_recon/dns/dnsenum.xml 2>/dev/null
+
+    Step 5: 第四阶段：技术栈识别
+      # whatweb识别Web技术（如果目标有Web服务）
+      whatweb http://$TARGET 2>/dev/null > ~/training/week6/full_recon/tech_stack.txt
+      whatweb https://$TARGET 2>/dev/null >> ~/training/week6/full_recon/tech_stack.txt
+
+      # 对子域名列表中的Web服务逐一识别（取前5个）
+      head -5 ~/training/week6/full_recon/subdomains/all_unique.txt 2>/dev/null | while read sub; do
+          echo "=== $sub ===" >> ~/training/week6/full_recon/tech_stack.txt
+          whatweb http://$sub 2>/dev/null >> ~/training/week6/full_recon/tech_stack.txt
+      done
+
+    Step 6: 第五阶段：Shodan搜索
+      # 搜索该组织的暴露资产（需要API Key）
+      shodan search "hostname:$TARGET" --fields ip_str,port,org,product \
+        --limit 10 2>/dev/null > ~/training/week6/full_recon/shodan/hostname_results.txt
+      shodan search "org:\"$(whois $TARGET 2>/dev/null | grep 'OrgName' | head -1 | awk -F: '{print $2}' | xargs)\"" \
+        --fields ip_str,port,product --limit 10 2>/dev/null > ~/training/week6/full_recon/shodan/org_results.txt
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：完成了一次完整的综合侦察流程，从域名到潜在攻击入口的全链路覆盖
+  - 遇到问题：(记录自动化脚本中的错误、某些工具限速问题)
+  - 明日计划：侦察报告写作练习
+
+================================================================================
+周五：侦察报告写作练习
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：渗透测试报告的结构和写作规范。侦察阶段报告包含：
+  执行摘要(1页以内的高级概述)、目标概况(域名/注册信息/组织描述)、
+  发现资产清单(子域名/IP/服务/端口)、技术栈分析(Web服务器/CMS/框架版本)、
+  潜在攻击入口分析（基于侦察数据的攻击路径推演）、风险评估（发现资产的
+  风险评级）。报告的读者包括技术团队和管理层，需要兼顾技术细节和业务影响。
+  图表的应用：网络拓扑图(展示子域名和IP的关联)、攻击面矩阵(服务vs漏洞)。
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/08-痕迹清除与渗透报告.txt（报告写作部分）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：基于周四收集的数据，撰写一份完整的侦察报告。
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/08-痕迹清除与渗透报告.txt
+
+  操作步骤：
+    Step 1: 编写执行摘要
+      cat > ~/training/week6/recon_report.txt << 'EOF'
+      ==================================================
+      侦察阶段报告
+      ==================================================
+      日期: (填写日期)
+      分析师: (填写你的代号)
+      目标: (填写练习目标)
+
+      ==================================================
+      一、执行摘要
+      ==================================================
+      本次侦察针对目标组织进行了为期一周的被动信息收集，
+      覆盖了域名信息查询、子域名发现、DNS记录分析、
+      搜索引擎Dorking和互联网资产搜索引擎等多个维度。
+
+      关键发现:
+        1. 发现 (数量) 个子域名，其中包括 (列举关键子域名)
+        2. 技术栈: (Web服务器/操作系统/数据库版本)
+        3. 暴露在公网的敏感服务: (列举)
+        4. 搜索引擎泄露: (列举发现的敏感文件或信息)
+      EOF
+
+    Step 2: 补充目标概况和资产清单
+      cat >> ~/training/week6/recon_report.txt << 'EOF'
+
+      ==================================================
+      二、目标概况
+      ==================================================
+      主域名:
+      注册商:
+      注册时间:
+      到期时间:
+      DNS服务器:
+      组织描述:
+
+      ==================================================
+      三、资产发现清单
+      ==================================================
+      --- 子域名 ---
+      (列出所有发现的子域名及对应IP)
+
+      --- IP范围 ---
+      (列出发现的IP地址段)
+
+      --- 开放服务 ---
+      (列出常见端口和服务)
+
+      ==================================================
+      四、技术栈分析
+      ==================================================
+      --- Web服务器 ---
+      (Apache/Nginx/IIS版本)
+
+      --- CMS/框架 ---
+      (WordPress/Joomla/Drupal版本)
+
+      --- 编程语言 ---
+      (PHP/ASP.NET/Python/Node.js版本)
+
+      ==================================================
+      五、潜在攻击入口
+      ==================================================
+      基于收集的信息，以下为可能的攻击路径:
+
+      路径1: (例如: 过时的Apache版本 → 已知RCE漏洞)
+      路径2: (例如: WordPress admin页面 + 弱密码)
+      路径3: (例如: 暴露的Jenkins控制台 → 脚本执行)
+
+      ==================================================
+      六、风险评级
+      ==================================================
+      高风险: (直接可被利用的漏洞或暴露)
+      中风险: (需要额外条件的攻击路径)
+      低风险: (可能的信息泄露但不直接导致攻击)
+
+      ==================================================
+      EOF
+
+    Step 3: 补充图表和网络拓扑描述
+      cat >> ~/training/week6/recon_report.txt << 'EOF'
+      七、网络拓扑推理
+      ==================================================
+      基于DNS记录和IP分配，推测目标网络结构:
+
+      (画出简单的网络拓扑文字描述)
+
+      例如:
+        互联网
+          │
+          ├── 203.0.113.10 (Web服务器, Apache)
+          ├── 203.0.113.20 (邮件服务器, Postfix)
+          ├── 203.0.113.30 (VPN网关)
+          │
+      内网 (推测)
+          ├── 10.0.1.10 (Windows AD域控制器)
+          ├── 10.0.1.20 (Jenkins CI服务器)
+          └── 10.0.1.0/24 (办公网络)
+
+      ==================================================
+      EOF
+
+    Step 4: 自动化报告生成脚本
+      cat > ~/training/week6/generate_report.sh << 'EOF'
+      #!/bin/bash
+      TARGET=$1
+      mkdir -p ~/training/week6/reports/$TARGET
+
+      echo "[*] 正在为 $TARGET 生成侦察报告..."
+      echo "目标: $TARGET" > ~/training/week6/reports/$TARGET/summary.txt
+      echo "日期: $(date)" >> ~/training/week6/reports/$TARGET/summary.txt
+      echo "" >> ~/training/week6/reports/$TARGET/summary.txt
+
+      # whois信息
+      echo "--- WHOIS ---" >> ~/training/week6/reports/$TARGET/summary.txt
+      whois $TARGET 2>/dev/null | head -30 >> ~/training/week6/reports/$TARGET/summary.txt
+
+      # DNS
+      echo "--- DNS记录 ---" >> ~/training/week6/reports/$TARGET/summary.txt
+      for r in A MX NS TXT; do
+          dig $TARGET $r +short 2>/dev/null >> ~/training/week6/reports/$TARGET/summary.txt
+      done
+
+      echo "[+] 报告已生成: ~/training/week6/reports/$TARGET/summary.txt"
+      EOF
+      chmod +x ~/training/week6/generate_report.sh
+      ~/training/week6/generate_report.sh example.com 2>/dev/null
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：学会了侦察报告的写作规范，能将原始侦察数据转化为可操作的攻击路径建议
+  - 遇到问题：(记录报告写作中的困难，如技术细节与业务影响如何平衡)
+  - 明日计划：周六复习日，全面回顾第5-6周侦察技术
+
+================================================================================
+周六：复习日
+================================================================================
+  上午 (2小时)：回顾本周所有高级侦察知识点
+    - 对一个新的公开目标重做完整的DNS侦察(30分钟)
+    - 编写5个新的Google Dork查询并在Firefox中测试
+    - 在Shodan上搜索你的ISP(互联网服务提供商)暴露的设备
+    - 整理两周(第5-6周)的侦察SOP标准操作流程
+
+  下午 (1小时)：在HackTheBox/TryHackMe上做相关挑战
+    - TryHackMe Room: Google Dorking
+    - TryHackMe Room: Shodan.io
+    - TryHackMe Room: DNS in Detail
+
+  晚间：整理本周笔记
+    - 制作DNS侦察工具(fierce/dnsenum/dig)对比表
+    - 整理Shodan常用搜索语法速查卡
+    - 归档侦察报告模板
+
+================================================================================
+周日：休息日
+================================================================================
+  体能训练 | 自由活动 | 补充睡眠
+
+================================================================================
+【本周资源清单】
+================================================================================
+理论知识文件：
+  • /home/a/成长为一个红队/archstrike-recon教学/02-高级DNS侦察技术.txt（全部）
+  • /home/a/成长为一个红队/archstrike-recon教学/03-OSINT与人肉搜索技术.txt（第2-5章）
+  • /home/a/成长为一个红队/网安基础知识/01-计算机网络基础.txt（DNS相关章节）
+  • /home/a/成长为一个红队/archstrike-base教学/02-信息收集与侦察技术.txt（复习）
+
+实践教程文件：
+  • /home/a/成长为一个红队/archstrike-recon教学/02-高级DNS侦察技术.txt
+  • /home/a/成长为一个红队/archstrike-recon教学/03-OSINT与人肉搜索技术.txt
+  • /home/a/成长为一个红队/archstrike-base教学/08-痕迹清除与渗透报告.txt（报告写作部分）
+
+在线练习：
+  • TryHackMe Room: Google Dorking
+  • TryHackMe Room: Shodan.io
+  • TryHackMe Room: DNS in Detail
+  • shodan.io / search.censys.io (在线搜索引擎)
+  • crt.sh / DNSDumpster (在线DNS工具)
+
+【本周完成检查】
+[ ] 周一任务完成
+[ ] 周二任务完成
+[ ] 周三任务完成
+[ ] 周四任务完成
+[ ] 周五任务完成
+[ ] 周六复习完成
+[ ] 本周笔记整理完成
+[ ] 体能训练完成

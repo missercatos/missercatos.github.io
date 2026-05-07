@@ -1,0 +1,591 @@
+================================================================================
+第19周：离线密码破解 (凭据攻击期)
+================================================================================
+
+【本周围绕的核心渗透案例阶段】
+以"从系统提取Hash到完整密码破解"为贯穿案例，学员深入学习Hashcat和John the
+Ripper两大离线密码破解工具的全功能使用。从字典攻击到规则攻击到掩码攻击，
+再到从Metasploitable2提取Linux shadow文件进行完整破解实战。周五使用pipal
+工具进行密码特征统计分析，理解密码模式和弱点。本阶段属于"凭据攻击期"，
+离线破解是在获取Hash后的关键一步。
+
+【本周学习目标】
+1. 掌握Hashcat架构、攻击模式和核心参数
+2. 熟练使用Hashcat字典攻击(-a 0)、规则攻击(-a 0 -r)、掩码攻击(-a 3)
+3. 掌握John the Ripper (JtR)高级使用：自定义规则、社区增强版(jumbo)
+4. 能够从Linux系统中提取/etc/shadow并进行破解
+5. 掌握unshadow合并passwd和shadow文件
+6. 能够将hash转换为Hashcat和John兼容的格式
+7. 了解Hashcat的GPU加速原理（CUDA/OpenCL）
+8. 掌握pipal密码分析工具：密码长度分布、字符组成、常见模式
+9. 完成Metasploitable2完整凭证破解链：提取->转换->破解->分析
+
+【本周知识清单】
+★ Hashcat入门与进阶
+  - Hashcat概述：
+    * 全球最快的密码破解工具（支持CPU+GPU）
+    * 支持300+哈希类型（-m参数指定）
+    * 攻击模式丰富：字典/组合/掩码/混合/规则
+  - 核心参数：
+    * -m：哈希类型编号（0=MD5, 100=SHA1, 1400=SHA256, 1800=SHA512 Crypt, 1000=NTLM）
+    * -a：攻击模式
+      -a 0 = 字典攻击(Straight)
+      -a 1 = 组合攻击(Combination)
+      -a 3 = 掩码攻击(Brute-Force/Mask)
+      -a 6 = 字典+掩码(Hybrid Wordlist+Mask)
+      -a 7 = 掩码+字典(Hybrid Mask+Wordlist)
+      -a 9 = 关联攻击(Association)
+    * -O：优化内核（速度优先，限制密码长度）
+    * -w：工作负载配置(1-4，4=性能优先)
+    * -r：应用规则文件
+    * --stdout：显示候选密码（不实际破解）
+    * --show：显示已破解的结果
+    * --left：显示未破解的hash
+    * --potfile-path：指定potfile路径（存储已破解hash）
+    * --session：会话名称（用于暂停/恢复）
+    * --restore：恢复已暂停的会话
+  - 常用哈希类型编号：
+    * 0: MD5
+    * 100: SHA1
+    * 1400: SHA256
+    * 1700: SHA512
+    * 1000: NTLM
+    * 1800: sha512crypt $6$ (Linux)
+    * 500: md5crypt $1$
+    * 3200: bcrypt $2*$
+    * 11600: 7-Zip
+    * 10900: PBKDF2-HMAC-SHA256
+    * 11300: Bitcoin wallet
+    * 13100: Kerberos 5 TGS-REP
+    * 18200: Kerberos 5 AS-REP
+  - Hashcat掩码攻击(Mask Attack)：
+    * 掩码字符集：
+      ?l = abcdefghijklmnopqrstuvwxyz
+      ?u = ABCDEFGHIJKLMNOPQRSTUVWXYZ
+      ?d = 0123456789
+      ?s = 特殊字符(空格!"#$%...)
+      ?a = ?l?u?d?s (全部可打印)
+      ?b = 0x00-0xff
+    * 自定义字符集：-1, -2, -3, -4 (最多4个)
+      例如: -1 ?l?d ?1?1?1?1?1?1?1?1 (8位小写和数字)
+    * 常见掩码模式：
+      ?l?l?l?l?l?l?l?l = 8位小写
+      ?u?l?l?l?l?l?l?d?d = 大写+6小写+2数字
+      ?d?d?d?d?d?d = 6位纯数字
+
+★ Hashcat规则与掩码攻击
+  - 规则(Rules)攻击：
+    * 最强大的字典变形能力
+    * 规则文件位置：/usr/share/hashcat/rules/
+    * 常用规则文件：best64.rule, d3ad0ne.rule, dive.rule, rockyou-30000.rule
+    * OneRuleToRuleThemAll.rule (社区最强规则)
+  - 规则语法基础：
+    * : = 不做修改（输出原始单词）
+    * l = 全小写, u = 全大写, c = 首字母大写, C = 首字母小写其余大写
+    * t = 大小写反转
+    * r = 反转字符串
+    * d = 复制单词, f = 反射单词
+    * $X = 在末尾追加字符X
+    * ^X = 在开头插入字符X
+    * sXY = 将X替换为Y
+    * @X = 删除位置X的字符
+    * [ = 删除首字符, ] = 删除尾字符
+    * D3 = 删除位置3的字符
+    * O01 = 00->11替换, O12 = 01->12替换...
+  - 组合规则示例：
+    * cu$!$! = 首字母大写+全小写其余+末尾加!!
+    * $1$2$3 = 追加123
+    * ^1^2^3 = 前缀123
+    * sa@ = a替换为@ (leet speak)
+
+★ John the Ripper高级使用
+  - John the Ripper (JtR) 概述：
+    * 经典离线密码破解工具，已有25+年历史
+    * 社区增强版(John the Ripper Jumbo)支持更多格式
+  - 核心命令：
+    * john hash.txt (自动检测格式+字典攻击)
+    * john --wordlist=rockyou.txt hash.txt (指定字典)
+    * john --format=raw-md5 hash.txt (指定哈希格式)
+    * john --show hash.txt (显示已破解结果)
+    * john --restore (恢复中断的会话)
+    * john --rules=Jumbo hash.txt (启用规则)
+    * john --incremental hash.txt (增量模式/暴力破解)
+  - John规则语法（与Hashcat不完全相同）：
+    * john.conf中定义规则
+    * [List.Rules:Wordlist] 节定义规则集
+    * 预定义规则集：Single, Wordlist, Extra, Jumbo, KoreLogic
+
+★ 提取Hash与密码分析
+  - 从Linux提取hash完整流程：
+    1. 获取 /etc/passwd + /etc/shadow
+    2. unshadow /etc/passwd /etc/shadow > combined.txt
+    3. 识别hash格式
+    4. 选择Hashcat或John破解
+    5. 记录破解结果
+  - pipal密码分析：
+    * pipal是一款密码统计分析工具
+    * 分析密码列表的统计特征
+    * 统计项：长度分布、字符集分布、基础单词、年份、特殊字符
+    * 输出：Top 10密码、Top 10基础单词、密码长度分布图
+    * 用途：了解目标的密码习惯，指导字典生成和破解策略
+    * 命令：pipal pass.txt -o analysis.txt
+
+【本周工具清单】
+  - Hashcat (离线密码破解)
+  - John the Ripper (Jumbo社区版)
+  - unshadow (合并passwd+shadow)
+  - pipal (密码分析)
+  - hash-identifier / hashid (哈希识别)
+  - Metasploitable2 (Hash源)
+
+================================================================================
+周一：Hashcat入门 (字典攻击)
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：Hashcat架构、攻击模式和字典攻击基础
+  - Hashcat发展：hashcat(cpu) + oclHashcat(gpu) -> 统一为Hashcat v6+
+  - 支持后端：CPU, GPU (CUDA/OpenCL), FPGA (部分)
+  - Hashcat攻击模式(a参数)全解析：
+    -a 0 (Straight)：纯字典攻击，逐行尝试字典中的每个密码
+    -a 1 (Combination)：将两个字典的词进行排列组合
+    -a 3 (Brute-force/Mask)：按掩码模式暴力生成所有可能性
+    -a 6 (Hybrid Wordlist+Mask)：字典词 + 掩码后缀
+    -a 7 (Hybrid Mask+Wordlist)：掩码前缀 + 字典词
+    -a 9 (Association)：关联攻击
+  - 哈希类型识别流程：
+    1. 观察hash格式特征
+    2. 使用hashid/hash-identifier工具
+    3. 查看Hashcat哈希类型列表：hashcat --help | grep -A5 "Hash modes"
+    4. 参考Hashcat wiki例表
+  - 字典攻击策略：
+    * 基础字典(rockyou.txt) -> 规则变形(rockyou+best64.rule) -> 
+      组合攻击(多字典组合) -> 掩码攻击(暴力)
+    * 由快到慢，逐级提升：字典最快，掩码最慢但覆盖最全
+  参考文件：/home/a/成长为一个红队/archstrike-cracking教学/02-离线密码破解大师课.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：Hashcat安装、字典攻击基础和结果分析
+  参考文件：/home/a/成长为一个红队/archstrike-cracking教学/02-离线密码破解大师课.txt
+
+  操作步骤：
+    Step 1: hashcat --version 检查Hashcat版本
+    Step 2: hashcat --help | less 浏览帮助信息
+    Step 3: hashcat --help | grep "Hash modes" -A 20 查看常见哈希模式编号
+    Step 4: 创建测试MD5哈希:
+      echo -n "password" | md5sum | awk '{print $1}' > test_md5.txt
+      echo -n "admin123" | md5sum | awk '{print $1}' >> test_md5.txt
+      echo -n "letmein" | md5sum | awk '{print $1}' >> test_md5.txt
+    Step 5: 创建小字典:
+      echo -e "password\nadmin\nadmin123\nroot\ntoor\nletmein" > test_dict.txt
+    Step 6: 字典攻击破解MD5:
+      hashcat -m 0 -a 0 test_md5.txt test_dict.txt -O
+    Step 7: 显示破解结果:
+      hashcat -m 0 --show test_md5.txt
+    Step 8: 准备rockyou.txt:
+      ls -la /usr/share/wordlists/rockyou.txt.gz
+      sudo gunzip /usr/share/wordlists/rockyou.txt.gz (如未解压)
+      wc -l /usr/share/wordlists/rockyou.txt (查看条目数)
+    Step 9: 创建更多测试hash (SHA1, SHA256, NTLM):
+      echo -n "iloveyou" | sha1sum | awk '{print $1}' > test_sha1.txt
+      echo -n "summer2023" | sha256sum | awk '{print $1}' > test_sha256.txt
+    Step 10: 使用rockyou字典破解:
+      hashcat -m 100 -a 0 test_sha1.txt /usr/share/wordlists/rockyou.txt -O
+      hashcat -m 1400 -a 0 test_sha256.txt /usr/share/wordlists/rockyou.txt -O
+    Step 11: 观察破解速度和统计信息
+    Step 12: 使用--show查看破解结果:
+      hashcat -m 100 --show test_sha1.txt
+    Step 13: 使用--left查看未破解的hash:
+      hashcat -m 100 --left test_sha1.txt
+    Step 14: 使用potfile跟踪已破解hash:
+      cat ~/.local/share/hashcat/hashcat.potfile
+    Step 15: 准备Linux shadow格式测试hash (SHA512 Crypt):
+      从Metasploitable2复制: echo 'msfadmin:$6$xxxxx$yyyyyyyy' > test_linux.txt
+      hashcat -m 1800 -a 0 test_linux.txt /usr/share/wordlists/rockyou.txt -O
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周二：Hashcat规则与掩码攻击
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：Hashcat规则(Rules)攻击和掩码(Mask)攻击深度掌握
+  - 规则攻击原理：
+    * 对字典中的每个单词应用一系列变形规则
+    * 一条规则可以包含多个规则指令
+    * 例如：so0 si1 se3 $! -> password -> p4ssw0rd3!
+  - 规则文件位置：/usr/share/hashcat/rules/
+  - 常用规则文件效果对比：
+    * best64.rule：64条高效规则（适合快速测试，字典放大64倍）
+    * d3ad0ne.rule：34000+条规则（覆盖全面，速度较慢）
+    * dive.rule：专注于大字典 + 智能规则
+    * rockyou-30000.rule：从rockyou密码分析出的30000条高频规则
+    * OneRuleToRuleThemAll.rule：社区整理的最优规则集合
+  - 规则组合建议：
+    * 第一轮：字典 + best64.rule (快速筛选)
+    * 第二轮：字典 + d3ad0ne.rule (深度变形)
+    * 第三轮：多个字典 + best64 + combinator
+  - 掩码攻击(Mask Attack)：
+    * 当字典+规则都无法破解时使用
+    * 适用场景：知道密码策略（长度、字符要求）
+    * 预定义掩码文件：/usr/share/hashcat/masks/
+    * 掩码攻击计算量 = charset_size ^ password_length
+    * 8位纯数字=10^8=1亿, 8位小写字母=26^8=2080亿, 8位混合=95^8=6.6万亿
+    * 因此掩码攻击通常用于较短密码(<=8位)或部分已知密码
+  - 自定义字符集(-1到-4):
+    * -1 ?d?u = 数字和大写
+    * -1 ?l?d -2 ?l?d ?1?2?2?2?2?2?2?2 (首字符来自?1, 其余来自?2)
+    * -1 ?d?l?u -2 ?d?l?u?s ?1?2?2?2?2?2?2?2 (常见密码模式)
+  参考文件：/home/a/成长为一个红队/archstrike-cracking教学/02-离线密码破解大师课.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：Hashcat规则攻击和掩码攻击实战
+  参考文件：/home/a/成长为一个红队/archstrike-cracking教学/02-离线密码破解大师课.txt
+
+  操作步骤：
+    Step 1: ls /usr/share/hashcat/rules/ 浏览所有规则文件
+    Step 2: 准备测试哈希（密码经过变形的不在字典中）:
+      echo -n "P@ssw0rd!" | md5sum | awk '{print $1}' > test_rules.txt
+      echo -n "Admin123" | md5sum | awk '{print $1}' >> test_rules.txt
+      echo -n "summer2023!!" | sha256sum | awk '{print $1}' > test_rules256.txt
+    Step 3: 小字典: echo -e "password\nadmin\nsummer" > small_dict.txt
+    Step 4: 使用best64.rule规则攻击:
+      hashcat -m 0 -a 0 test_rules.txt small_dict.txt -r /usr/share/hashcat/rules/best64.rule -O
+    Step 5: --show查看破解结果:
+      hashcat -m 0 --show test_rules.txt
+    Step 6: 使用d3ad0ne.rule:
+      hashcat -m 1400 -a 0 test_rules256.txt small_dict.txt -r /usr/share/hashcat/rules/d3ad0ne.rule -O
+    Step 7: 使用rockyou-30000.rule:
+      hashcat -m 0 -a 0 test_rules.txt /usr/share/wordlists/rockyou.txt -r /usr/share/hashcat/rules/rockyou-30000.rule -O
+    Step 8: 掩码攻击练习:
+      生成纯数字6位hash测试: echo -n "123789" | md5sum | awk '{print $1}' > test_mask.txt
+    Step 9: 掩码攻击: hashcat -m 0 -a 3 test_mask.txt ?d?d?d?d?d?d -O
+    Step 10: 观察破解速度和预计完成时间
+    Step 11: 尝试更复杂的掩码:
+      hashcat -m 0 -a 3 test_mask.txt ?u?l?l?l?l?l?d?d -O (大写+5小写+2数字)
+    Step 12: 使用预定义掩码文件:
+      ls /usr/share/hashcat/masks/
+      hashcat -m 0 -a 3 test_mask.txt --increment --increment-min 4 --increment-max 8 ?a?a?a?a?a?a?a?a
+    Step 13: 自定义字符集掩码:
+      hashcat -m 0 -a 3 -1 ?l?d ?1?1?1?1?1?1 test_mask.txt -O
+    Step 14: 混合攻击(Hybrid -a 6): 字典词+掩码后缀
+      echo -n "summer2023" | md5sum | awk '{print $1}' > test_hybrid.txt
+      hashcat -m 0 -a 6 test_hybrid.txt small_dict.txt ?d?d?d?d -O
+    Step 15: 混合攻击(Hybrid -a 7): 掩码前缀+字典词
+      echo -n "3summer" | md5sum | awk '{print $1}' > test_hybrid2.txt
+      hashcat -m 0 -a 7 test_hybrid2.txt ?d small_dict.txt -O
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周三：John the Ripper高级使用
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：John the Ripper架构、高级功能和与Hashcat的互补使用
+  - John the Ripper vs Hashcat：
+    * John：更早出现，规则语法丰富，某些格式支持更好
+    * Hashcat：GPU加速更快，掩码攻击更直观
+    * 互补：先用Hashcat GPU加速字典+规则，再用John深入攻击
+  - John工作模式：
+    * Single crack：基于用户名的简单猜测（最快）
+    * Wordlist：字典+规则（类似Hashcat -a 0 -r）
+    * Incremental：暴力破解（类似Hashcat -a 3）
+    * External：自定义破解模式
+  - John规则文件位置：
+    * 默认：/etc/john/john.conf 或 ~/.john/john.conf
+    * john-local.conf：自定义规则（优先级更高）
+    * [List.Rules:Wordlist]节：定义字典攻击规则
+  - John规则语法特色：
+    * AZ = 追加字符Z, A0 = 追加所有数字
+    * Tn = 大小写toggle第n位
+    * f = 反射, r = 反转
+    * [sXY] = 替换规则组
+    * John支持更多复杂的规则语法组合
+  - John输出文件：
+    * john.pot：已破解密码存储（类似Hashcat potfile）
+    * john.log：破解日志
+    * john.rec：恢复文件（用于--restore）
+  - John特殊格式支持：
+    * unshadow格式：直接支持passwd+shadow合并文件
+    * pfx/p12证书文件
+    * SSH密钥文件(ssh2john)
+    * RAR/ZIP/7z压缩文件(利用压缩包内的已知文件)
+    * Office文档(doc/xls/pptx)
+    * PDF文件
+    * KeePass数据库
+  参考文件：/home/a/成长为一个红队/archstrike-cracking教学/02-离线密码破解大师课.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：John the Ripper安装配置和各种攻击模式练习
+  参考文件：/home/a/成长为一个红队/archstrike-cracking教学/02-离线密码破解大师课.txt
+
+  操作步骤：
+    Step 1: sudo apt install john 安装John (或编译Jumbo版本)
+    Step 2: john 查看基础使用帮助
+    Step 3: john --list=formats | head -30 查看支持的格式
+    Step 4: john --list=rules | head -20 查看预定义规则
+    Step 5: 准备测试MD5哈希:
+      echo -n "password" | md5sum | awk '{print $1}' > jtr_test.txt
+      echo -n "letmein" | md5sum | awk '{print $1}' >> jtr_test.txt
+    Step 6: 纯字典攻击:
+      john --wordlist=/usr/share/wordlists/rockyou.txt jtr_test.txt --format=Raw-MD5
+    Step 7: 显示破解结果:
+      john --show --format=Raw-MD5 jtr_test.txt
+    Step 8: 启用规则攻击:
+      john --wordlist=/usr/share/wordlists/rockyou.txt --rules=Jumbo jtr_test.txt --format=Raw-MD5
+    Step 9: 增量模式(Incremental):
+      john --incremental jtr_test.txt --format=Raw-MD5
+      (Ctrl+C后可用john --restore恢复)
+    Step 10: Single crack模式:
+      echo "admin:5f4dcc3b5aa765d61d8327deb882cf99" > jtr_single.txt
+      john --single jtr_single.txt --format=Raw-MD5
+    Step 11: 使用不同规则集:
+      john --wordlist=test_dict.txt --rules=Wordlist jtr_test.txt --format=Raw-MD5
+      john --wordlist=test_dict.txt --rules=Extra jtr_test.txt --format=Raw-MD5
+    Step 12: 准备Linux shadow格式:
+      echo "msfadmin:\$1\$xxxxxxxx\$yyyyyyyyyyy:18000:0:99999:7:::"> jtr_shadow.txt
+      john jtr_shadow.txt --format=crypt (自动检测格式)
+    Step 13: 使用session管理:
+      john --session=mytest --wordlist=rockyou.txt jtr_test.txt --format=Raw-MD5
+      Ctrl+C 中断
+      john --restore=mytest 恢复
+    Step 14: 破解Linux /etc/shadow:
+      将 Metasploitable2的/etc/shadow复制
+      john --wordlist=rockyou.txt ms2_shadow.txt
+    Step 15: 查看john.pot中的破解记录:
+      cat ~/.john/john.pot
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周四：从目标系统提取Hash并破解
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：从目标系统提取密码Hash的完整流程和技术
+  - Linux系统Hash提取路径：
+    1. 获取root权限后复制/etc/shadow（sudo或root shell）
+    2. 配合/etc/passwd使用unshadow
+    3. /etc/shadow格式：username:$id$salt$hash:last_changed:min:max:warn:inactive:expire
+    4. 常见Hash ID：$1$(MD5), $5$(SHA256), $6$(SHA512), $y$(yescrypt)
+  - Hash提取的多种场景：
+    * 已有root/sudo权限：直接cat /etc/shadow
+    * 通过WebShell：cat /etc/shadow (需要root权限的web进程)
+    * 通过权限提升漏洞：Dirty Cow, Polkit, Sudo提权等
+    * 通过LFI：包含/etc/shadow文件
+    * 通过数据库：SQL注入读取shadow文件
+    * 内存转储：Volatility分析内存镜像
+  - unshadow工具：
+    * 作用：合并/etc/passwd和/etc/shadow为John/Hashcat兼容格式
+    * 命令：unshadow /etc/passwd /etc/shadow > hashes.txt
+    * 输出格式：username:password_hash_field
+  - 其他凭证Hash来源：
+    * MySQL数据库：mysql.user表的authentication_string
+    * PostgreSQL：pg_shadow表
+    * Web应用：config.php, wp-config.php, .env文件中的数据库密码
+    * 浏览器保存密码：Firefox(logins.json), Chrome(Login Data)
+    * Wi-Fi密码：/etc/NetworkManager/system-connections/
+  - Hashcat和John的格式转换：
+    * Hashcat -m 1800 = $6$ (SHA512 Crypt)
+    * John --format=crypt 自动处理
+    * MySQL: Hashcat -m 300 = MySQL4.1/5
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：从Metasploitable2提取Hash并使用Hashcat/John破解
+  操作步骤：
+    Step 1: 连接到Metasploitable2:
+      ssh msfadmin@192.168.56.101 (使用已知凭据)
+    Step 2: 查看shadow内容:
+      sudo cat /etc/shadow
+    Step 3: 复制shadow和passwd到本地:
+      sudo cat /etc/shadow > /tmp/shadow_copy
+      cat /etc/passwd > /tmp/passwd_copy
+    Step 4: 传输到攻击机:
+      scp msfadmin@192.168.56.101:/tmp/shadow_copy ./ms2_shadow.txt
+      scp msfadmin@192.168.56.101:/tmp/passwd_copy ./ms2_passwd.txt
+    Step 5: 使用unshadow合并:
+      unshadow ms2_passwd.txt ms2_shadow.txt > ms2_hashes.txt
+    Step 6: 查看合并后的hash文件:
+      cat ms2_hashes.txt | head -15
+    Step 7: 识别hash类型:
+      hashid -m ms2_hashes.txt
+      hash-identifier ms2_hashes.txt
+    Step 8: 使用John破解:
+      john --wordlist=/usr/share/wordlists/rockyou.txt ms2_hashes.txt
+    Step 9: 查看John破解结果:
+      john --show ms2_hashes.txt
+    Step 10: 使用Hashcat破解:
+      hashcat -m 1800 -a 0 ms2_hashes.txt /usr/share/wordlists/rockyou.txt -O --force
+    Step 11: Hashcat启用规则:
+      hashcat -m 1800 -a 0 ms2_hashes.txt /usr/share/wordlists/rockyou.txt -r /usr/share/hashcat/rules/best64.rule -O --force
+    Step 12: 查看Hashcat结果:
+      hashcat -m 1800 --show ms2_hashes.txt
+    Step 13: 提取Web应用中的凭证:
+      在Metasploitable2上: grep -r "password" /var/www/ 2>/dev/null | head -15
+      cat /var/www/html/dvwa/config/config.inc.php
+      cat /var/www/html/mutillidae/includes/database-config.php
+    Step 14: 提取MySQL数据库密码hash:
+      在Metasploitable2上: sudo mysql -e "SELECT User,Password FROM mysql.user;"
+      提取Password列的内容（MySQL哈希）
+    Step 15: 复制MySQL hash到本地破解:
+      hashcat -m 300 mysql_hashes.txt /usr/share/wordlists/rockyou.txt -O
+    Step 16: 整理所有破解出的密码，制作凭据清单
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周五：密码分析 (pipal, 密码特征统计)
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：使用pipal进行密码统计分析，理解密码模式和人类行为
+  - pipal密码分析工具：
+    * 由Robin Wood (Digininja) 开发
+    * 分析密码列表的统计特征
+    * 揭示目标群体的密码习惯和模式
+  - pipal分析维度：
+    * 总体统计：总密码数、唯一密码数
+    * 密码长度分布：1-32+位各有多少
+    * 字符集分布：纯数字、纯小写、纯大写、混合
+    * Top 10密码：最常见密码
+    * Top 10基础单词：密码中去掉数字和符号后的基础词
+    * Top 10掩码：密码的字符类型模式(?l?l?d?d?d)
+    * 年份使用：密码中包含的年份（1990-2030）
+    * 特殊字符使用：哪些特殊字符最常用、位置分布
+    * 密码强度估算：弱/中/强分布
+  - 密码分析的红队应用：
+    * 了解目标组织的密码文化
+    * 优化字典生成策略（聚焦高频密码模式）
+    * 优化Hashcat掩码（先攻击概率最高的掩码）
+    * 密码策略审计：检查是否符合组织的密码复杂度要求
+    * 社会工程参考：知道常见密码模式有利于密码猜测
+  - 常见密码模式分析结论：
+    * 大多数人使用：基础词+数字(Password123)
+    * 常见基础词：password, admin, qwerty, monkey, dragon
+    * 常见年份：2000-2025, 生日相关性高
+    * 特殊字符：! 和 @ 和 # 最常见，通常在末尾
+    * 数字后缀：1, 123, 1234, 12345, 123456
+    * 首字母大写：约30-40%的密码以大写开头
+  参考文件：/home/a/成长为一个红队/archstrike-cracking教学/03-字典生成与密码分析.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：安装pipal，对rockyou和自制密码进行统计分析
+  参考文件：/home/a/成长为一个红队/archstrike-cracking教学/03-字典生成与密码分析.txt
+
+  操作步骤：
+    Step 1: sudo apt install pipal 或 gem install pipal 安装pipal
+    Step 2: 如果apt没有，手动安装:
+      git clone https://github.com/digininja/pipal
+      cd pipal && sudo gem install pipal
+    Step 3: 对rockyou.txt前10000条进行密码分析:
+      head -10000 /usr/share/wordlists/rockyou.txt > rockyou_10k.txt
+      pipal rockyou_10k.txt -o rockyou_analysis.txt
+    Step 4: 分析结果解读:
+      cat rockyou_analysis.txt
+      关注：Top 10密码, 密码长度分布, 字符集分布
+    Step 5: 对完整rockyou进行子集分析:
+      head -100000 /usr/share/wordlists/rockyou.txt > rockyou_100k.txt
+      pipal rockyou_100k.txt -o rockyou100k_analysis.txt
+    Step 6: 对比10k和100k的分析结果差异
+    Step 7: 使用本周破解的密码列表进行分析:
+      将Hashcat potfile中的密码提取出来分析:
+      cat ~/.local/share/hashcat/hashcat.potfile | cut -d: -f2 > cracked_pass.txt
+      pipal cracked_pass.txt -o cracked_analysis.txt
+    Step 8: 创建自己的测试密码集:
+      echo -e "password123\nPassword123!\nadmin2023\nsummer2023\nqwerty123" > my_pass.txt
+      pipal my_pass.txt -o my_analysis.txt
+    Step 9: 观察pipal输出的"Top 10 masks"部分:
+      这是最有价值的信息，指导Hashcat掩码攻击
+    Step 10: 使用pipal分析metasploitable2上的用户密码:
+      (提取所有破解的密码)
+      pipal ms2_cracked.txt -o ms2_pass_analysis.txt
+    Step 11: 根据分析结果优化Hashcat掩码:
+      如果Top mask是 ?l?l?l?l?l?l?d?d -> 优先使用
+      如果大多数密码8-10位 -> 重点攻击8-10位
+      如果特殊字符!@#最常见 -> 限定掩码中特殊字符集
+    Step 12: 使用分析结果定制Hashcat攻击:
+      hashcat -m 0 -a 3 -1 ?l?d ?1?1?1?1?1?1?d?d test_hashes.txt -O
+    Step 13: 整理本周所有破解出的密码和统计分析结果
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周六：复习日 (2h 复习 + 1h HTB/THM)
+================================================================================
+
+📝 第1小时 | 周知识点回顾 (08:00 - 09:00)
+  复习清单：
+  - Hashcat五大攻击模式：-a 0字典/-a 1组合/-a 3掩码/-a 6混合/-a 7混合
+  - 常用哈希类型编号：0(MD5), 100(SHA1), 1400(SHA256), 1800(SHA512), 1000(NTLM)
+  - 规则文件选择策略：best64(快速) -> d3ad0ne(深度) -> rockyou-30000(高频)
+  - 掩码字符集：?l小写, ?u大写, ?d数字, ?s特殊, ?a全部
+  - John vs Hashcat互补：John单机/特殊格式好, Hashcat GPU加速强
+  - unshadow用法：unshadow passwd shadow > combined.txt
+  - pipal分析维度：长度分布、字符集、Top密码、Top掩码、基础词
+
+💻 第2小时 | 综合实战练习 (09:00 - 10:00)
+  练习内容：不参考笔记，完成Hash提取->识别->Hashcat破解->pipal分析完整流程
+  操作步骤：
+    Step 1: 从Metasploitable2重新提取shadow和passwd
+    Step 2: unshadow合并
+    Step 3: hashid识别
+    Step 4: hashcat字典+规则+掩码递进攻击
+    Step 5: pipal分析结果
+    Step 6: 对比不同字典/规则/掩码的破解率
+
+🔓 第3小时 | HackTheBox / TryHackMe 密码破解 (10:00 - 11:00)
+  练习内容：在在线平台上练习从目标获取hash并破解
+  操作步骤：
+    Step 1: 连接HTB VPN
+    Step 2: 选择需要密码破解的靶机
+    Step 3: 获取hash（shadow/SAM/数据库/配置文件）
+    Step 4: 使用Hashcat/John进行离线破解
+    Step 5: 记录破解成功率和破解策略
+
+================================================================================
+周日：休息日
+================================================================================
+
+【本周资源清单】
+理论知识文件：
+  /home/a/成长为一个红队/archstrike-cracking教学/02-离线密码破解大师课.txt
+  /home/a/成长为一个红队/archstrike-cracking教学/03-字典生成与密码分析.txt
+
+实践教程文件：
+  /home/a/成长为一个红队/archstrike-cracking教学/02-离线密码破解大师课.txt
+  /home/a/成长为一个红队/archstrike-cracking教学/03-字典生成与密码分析.txt
+
+在线练习：
+  - Metasploitable2 (提取shadow/Hash) (192.168.56.101)
+  - HackTheBox (https://app.hackthebox.com)
+  - TryHackMe密码破解房间 (https://tryhackme.com)
+  - CrackStation (https://crackstation.net - 在线哈希查询)
+  - Hashkiller (https://hashkiller.io/listmanager)
+
+推荐工具安装：
+  - Hashcat (sudo apt install hashcat)
+  - John the Ripper (sudo apt install john)
+  - pipal (sudo gem install pipal)
+  - hash-identifier / hashid (sudo apt install hashid)
+  - rockyou.txt (sudo apt install wordlists)
+
+【本周完成检查】
+[ ] 周一 [ ] 周二 [ ] 周三 [ ] 周四 [ ] 周五
+[ ] 周六复习 [ ] 笔记 [ ] 体能

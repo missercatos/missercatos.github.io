@@ -1682,6 +1682,7 @@ body.us-page .top-left-actions {
 }
 
 .floating-share-container {
+    position: relative;
     width: 100%;
     padding: 1rem 0;
     /* 边缘渐隐遮罩 - 实现"模糊的边缘"效果 */
@@ -1707,6 +1708,17 @@ body.us-page .top-left-actions {
     gap: 2.5rem;
     padding: 1.5rem 0;
     will-change: transform;
+    position: relative;
+    z-index: 1;
+}
+
+/* SVG 连接线层 */
+.share-lines-svg {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 0;
 }
 
 /* 交错排布：奇数行(第2,4,6...行)向右偏移半个按钮位 */

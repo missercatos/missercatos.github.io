@@ -1,0 +1,1020 @@
+================================================================================
+  03-字典生成与密码分析 — Crunch, CUPP, Cewl, Mentalist
+  ArchStrike工具组：crunch, cupp, cewl, mentalist, changeme, pipal
+  预计学习时间：3-5小时  |  难度：初级到中级
+================================================================================
+
+【学习目标】
+1. 精通crunch生成自定义密码字典（固定长度、模式、字符集）
+2. 学会使用CUPP基于目标个人信息生成针对性字典
+3. 掌握cewl从目标网站爬取关键词构建字典
+4. 了解mentalist可视化字典生成器的使用
+5. 学会使用changeme扫描默认凭证和pipal分析密码特征
+
+================================================================================
+  第一部分：Crunch — 全功能字典生成器
+================================================================================
+
+1.1 Crunch基础入门
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Crunch是最经典的命令行字典生成工具，支持：
+- 自定义字符集
+- 指定最小/最大长度
+- 内置模式(template)机制
+- 管道输出（不生成文件，直接供给其他工具）
+- 压缩输出以节省空间
+
+Step 1: 查看Crunch帮助：
+
+  crunch --help
+  man crunch
+
+Step 2: 在Firefox中打开Crunch文档：
+  搜索 "crunch wordlist generator documentation" 获取最新资料
+
+1.2 基本字典生成
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 3: 生成6位纯数字字典（所有组合）：
+
+  crunch 6 6 0123456789 -o /tmp/6digit.txt
+
+  参数说明：
+  6 6:         最小长度6，最大长度6（固定长度）
+  0123456789:   使用的字符集
+  -o:          输出到文件
+
+  注意：6位数字字典有 10^6 = 1,000,000 条，文件大小约7MB
+
+Step 4: 生成4到6位数字字典（可变长度）：
+
+  crunch 4 6 0123456789 -o /tmp/4to6digit.txt
+
+  注意：总数 = 10^4 + 10^5 + 10^6 = 10000 + 100000 + 1000000 = 1,110,000 条
+
+Step 5: 生成小写字母字典（3到4位）：
+
+  crunch 3 4 abcdefghijklmnopqrstuvwxyz -o /tmp/lowercase.txt
+
+  总数: 26^3 + 26^4 = 17576 + 456976 = 474,552 条
+
+Step 6: 估算生成文件的大小（不实际生成，只计算）：
+
+  crunch 8 8 0123456789 -s
+
+  -s: 显示统计信息但不生成文件
+  输出包括：密码总数和预估文件大小
+
+Step 7: 估算更复杂的字典：
+
+  crunch 6 6 abcdefghijklmnopqrstuvwxyz0123456789 -s
+
+  6位小写+数字 = 36^6 = 2,176,782,336 条 ≈ 15GB！
+
+  这个数量级已经不建议生成完整字典，应使用掩码攻击(Hashcat -a 3)替代。
+
+1.3 使用-T参数创建模式字典（Pattern / Template）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Crunch的-T参数让你可以定义密码的模式（格式），
+并基于多个字符集自动填充。
+
+Step 8: 模式符号说明：
+
+  ┌──────────────────────────────────────────────────────┐
+  │ @  │ 小写字母 (a-z)                                  │
+  │ ,  │ 大写字母 (A-Z)                                  │
+  │ %  │ 数字 (0-9)                                      │
+  │ ^  │ 特殊符号 (!@#$%等)                              │
+  └──────────────────────────────────────────────────────┘
+
+Step 9: 生成"密码+2位数字"格式（password00-password99）：
+
+  crunch 8 8 -t password%% -o /tmp/pattern_demo.txt
+
+  -t password%%: 固定部分"password" + 2位数字(%%)
+
+  输出示例：
+  password00
+  password01
+  ...
+  password99
+  共100条
+
+Step 10: 生成"大写+2位字母+4位数字"格式：
+
+  crunch 7 7 -t ,@@%%%% -o /tmp/mixed_pattern.txt
+
+  例如：Aab1234, Zzz9999
+
+Step 11: 生成"3位数字+特殊符号+2位小写字母"格式：
+
+  crunch 6 6 -t %%%^@@ -o /tmp/complex_pattern.txt
+
+  例如：123!ab, 999@zz
+
+Step 12: 结合自定义字符集的模式（高级用法）：
+  当使用模式时，可以在字符集参数中指定替换：
+
+  crunch 6 6 -t @,%@^% -l a@aaaaa@a@a@ -o /tmp/custom.txt
+
+  -l 参数：指定哪些模式的字符使用哪个字符集
+  a@aaaaa@a@a@：第1个@使用默认字符集a，第2个使用默认字符集a...
+
+  # 或者更实用的方式：使用字符集文件
+
+1.4 使用-c参数限制输出大小
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 13: 限制输出行数（只生成前1000条）：
+
+  crunch 6 6 0123456789 -c 1000 -o /tmp/limited.txt
+
+Step 14: 限制输出文件大小（按MB计算）：
+
+  crunch 6 6 0123456789 -b 100mib -o START
+
+  这会生成多个文件：START_aa, START_ab, ... 每个最大100MB
+
+Step 15: 只输出前1000条（用head截断）：
+
+  crunch 6 6 0123456789 | head -1000 > /tmp/first1000.txt
+
+1.5 使用管道结合其他工具
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Crunch的一大优势是支持管道输出，不需要先保存大文件再读取。
+
+Step 16: 将生成的密码直接传给Hashcat（在线生成+破解）：
+
+  crunch 6 6 0123456789 | hashcat -m 0 -a 0 /tmp/md5_test.txt
+
+  注意：这样可以节省磁盘空间，但无法恢复中断的进度。
+
+Step 17: 将生成的密码传给John the Ripper：
+
+  crunch 8 8 -t password%% | john --stdin /tmp/hash.txt
+
+Step 18: 将生成的密码传给hydra：
+
+  crunch 6 6 0123456789 | hydra -l admin -P /dev/stdin ssh://192.168.56.101
+
+Step 19: 配合aespipe加密输出（保护生成的敏感文件）：
+
+  crunch 6 6 0123456789 | gpg -c > /tmp/encrypted_dictionary.gpg
+
+1.6 高级字符集定义
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 20: 使用自定义字符集文件：
+
+  创建 /tmp/charset.lst：
+  ┌──────────────────────────────────────────────────────┐
+  │ abc123!@#                                             │
+  └──────────────────────────────────────────────────────┘
+
+  crunch 4 4 -f /tmp/charset.lst mix -o /tmp/custom.txt
+
+Step 21: 在命令行中直接指定多个字符集：
+
+  crunch 4 4 -p abc 123 !@# -o /tmp/permutation.txt
+
+  -p: 排列模式（生成指定字符串的全排列）
+
+  输出示例：
+  abc123!@#
+  abc!@#123
+  123abc!@#
+  123!@#abc
+  !@#abc123
+  !@#123abc
+  共6条（3个元素的排列）
+
+Step 22: 使用-q参数从文件中读取字符串并置换：
+
+  创建 /tmp/words.txt：
+  password
+  admin
+  login
+  winter
+  summer
+
+  crunch 0 0 -q /tmp/words.txt -o /tmp/word_combos.txt
+
+  -q: 读取文件中的单词并生成所有组合
+
+1.7 实例：实用字典生成
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 23: 生成中国常见密码模式：
+
+  # 11位手机号 (1开头+10位数字)
+  crunch 11 11 -t 1%%%%%%%%%% -o /tmp/phone_numbers.txt
+
+  # 8位生日 (YYYYMMDD) — 1970~2010范围
+  crunch 8 8 -t 19%%%%%%%% -o /tmp/birthdays_1900.txt
+  crunch 8 8 -t 20%%%%%%%% -o /tmp/birthdays_2000.txt
+
+Step 24: 生成常见弱密码模式：
+
+  # 密码格式：常见词+2~4位数字
+  crunch 10 12 -t password%%%% -o /tmp/common_pattern.txt
+
+Step 25: 生成首字母大写+小写字母+数字组合：
+
+  crunch 8 8 -f /usr/share/crunch/charset.lst mixalpha-numeric \
+    -o /tmp/alphanum_8.txt
+
+  # 或直接用字符集
+  crunch 8 8 abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 \
+    -o /tmp/alphanum_8.txt
+
+Step 26: 估算大小并决定是否生成（避免生成过大文件）：
+
+  # 8位字母+数字: 62^8 = 218,340,105,584,896 ≈ 1.5PB
+  # 极不建议生成完整字典！
+
+  # 合理估算：
+  # 6位字母+数字: 62^6 = 56,800,235,584 ≈ 450GB (仍然很大)
+  # 4位字母+数字: 62^4 = 14,776,336 ≈ 120MB (可以接受)
+
+  crunch 4 4 abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -s
+
+================================================================================
+  第二部分：CUPP — 针对性密码分析工具
+================================================================================
+
+2.1 CUPP简介与安装
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CUPP (Common User Passwords Profiler) 是一个交互式工具，
+通过提问目标个人信息（姓名、生日、宠物名、爱好等），
+自动生成可能的密码变体。它基于社会工程学原理。
+
+Step 1: 在终端启动CUPP：
+
+  cupp -i
+
+  或：
+
+  python3 /usr/share/cupp/cupp.py -i
+
+Step 2: 在Firefox中打开CUPP的GitHub页面：
+  https://github.com/Mebus/cupp
+  阅读README了解最新版本和功能
+
+2.2 交互式生成针对性字典
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 3: 启动交互式模式后，CUPP会提出一系列问题：
+
+  ┌──────────────────────────────────────────────────────┐
+  │ > First Name:       John                              │
+  │ > Surname:          Smith                             │
+  │ > Nickname:         Johnny                            │
+  │ > Birthdate:        15081990    (DDMMYYYY)            │
+  │ > Partner's name:   Jane                              │
+  │ > Partner's nickname:                                 │
+  │ > Partner's birthdate:                                │
+  │ > Child's name:                                       │
+  │ > Child's nickname:                                   │
+  │ > Child's birthdate:                                  │
+  │ > Pet's name:       Max                               │
+  │ > Company name:     AcmeCorp                          │
+  │ > Do you want to add some key words about the victim? │
+  │   Y/[N]: y                                            │
+  │ > Please enter the words, separated by comma.         │
+  │   [i.e. hacker,juice,black], spaces will be removed:  │
+  │   football,guitar,beach                              │
+  │ > Do you want to add special chars at the end of      │
+  │   words? Y/[N]: y                                     │
+  │ > Do you want to add some random numbers at the end   │
+  │   of words? Y/[N]: y                                  │
+  │ > Leet mode? (i.e. leet = 1337) Y/[N]: y              │
+  └──────────────────────────────────────────────────────┘
+
+Step 4: CUPP完成分析后，会生成字典文件：
+
+  [*] Generating wordlist...
+  [*] Sorting and removing duplicates...
+  [+] Wordlist saved to: john.txt
+  [*] Number of passwords: 87234
+  [*] File size: 850.42 KB
+
+Step 5: 查看生成的字典文件内容：
+
+  head -50 john.txt
+
+  你会看到类似：
+  john
+  smith
+  johnny
+  johnsmith
+  smithjohn
+  john1990
+  john0815
+  ajn0
+  j0hn
+  ... (leet变换、大小写变换、数字组合等)
+
+Step 6: 将生成的字典用于Hashcat/John破解：
+
+  hashcat -m 1000 -a 0 ntlm_hashes.txt john.txt
+
+  # 或用规则进一步增强
+  hashcat -m 1000 -a 0 ntlm_hashes.txt john.txt -r best64.rule
+
+2.3 CUPP的其他功能
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 7: 从已有配置文件生成（批量模式）：
+
+  # 创建配置文件 /tmp/victim.cfg
+  cat > /tmp/victim.cfg << 'EOF'
+  first_name=John
+  surname=Smith
+  nickname=Johnny
+  birthdate=15081990
+  EOF
+
+  cupp -c /tmp/victim.cfg
+
+Step 8: 使用预设的泄露密码列表增强字典：
+
+  # CUPP内置了数千条常见密码作为基础
+  # 生成时会自动与目标信息结合
+
+Step 9: 启用leet模式深度变换：
+
+  cupp -i
+  # 在leet mode选项中选择 y
+  # CUPP会生成 leet speak 变体（如 password -> p@$$w0rd, p4ssw0rd, pa55word...）
+
+Step 10: 查看CUPP内置的常见密码数据库：
+
+  ls /usr/share/cupp/       # 查看CUPP安装目录
+  cat /usr/share/cupp/cupp.cfg  # 查看默认配置
+
+================================================================================
+  第三部分：Cewl — 网站内容爬取生成字典
+================================================================================
+
+3.1 Cewl简介
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Cewl (Custom Word List generator) 通过爬取网站内容，
+提取所有单词生成密码字典。这对于针对特定组织的字典攻击非常有效，
+因为人们常使用与工作/组织相关的词汇作为密码。
+
+Step 1: 查看Cewl帮助：
+
+  cewl --help
+
+Step 2: 在Firefox中搜索Cewl的使用场景和技巧文章
+
+3.2 基本网站爬取
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 3: 爬取一个网站并生成单词列表：
+
+  cewl http://example.com -w /tmp/site_words.txt
+
+  参数说明：
+  -w: 写入输出文件
+
+Step 4: 爬取并设置最小词长度（过滤短词）：
+
+  cewl http://example.com -w /tmp/site_words.txt -m 5
+
+  参数说明：
+  -m 5: 最小单词长度为5（过滤掉"the", "and", "is"等短词）
+
+Step 5: 设置爬取深度：
+
+  cewl http://example.com -w /tmp/site_words.txt -d 2
+
+  参数说明：
+  -d 2: 爬取深度为2（从首页点击2层链接）
+
+Step 6: 带认证的网站爬取：
+
+  cewl http://example.com/admin --auth_type basic \
+    --auth_user admin --auth_pass password -w /tmp/admin_words.txt
+
+Step 7: 使用代理爬取：
+
+  cewl http://example.com -w /tmp/site_words.txt \
+    --proxy_host 127.0.0.1 --proxy_port 8080
+
+3.3 高级Cewl选项
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 8: 包含页面的meta数据中的词：
+
+  cewl http://example.com -w /tmp/site_words.txt -m 5 --meta
+
+Step 9: 包含email地址（如发现email中的用户名部分）：
+
+  cewl http://example.com -w /tmp/site_words.txt --email
+
+Step 10: 将结果小写化（避免大小写重复）：
+
+  cewl http://example.com -w /tmp/site_words.txt --lowercase
+
+Step 11: 统计词频并显示（了解哪些词最常出现）：
+
+  cewl http://example.com -w /tmp/site_words.txt -v -c
+
+  参数说明：
+  -v: 详细输出
+  -c: 显示每个词的计数
+
+Step 12: 限制抓取的页面数量：
+
+  cewl http://example.com -w /tmp/site_words.txt -d 3 -n
+
+  -n: 不下载新发现的子域名（仅当前域名内的页面）
+
+Step 13: 生成但只输出到stdout（不写文件，直接管道）：
+
+  cewl http://example.com -m 5 | sort -u | head -20
+
+3.4 实战：针对目标网站的字典生成
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 14: 对目标公司网站进行深度爬取：
+
+  cewl https://target-company.com \
+    -w /tmp/target_words.txt \
+    -d 4 \              # 爬取深度4
+    -m 5 \              # 最短5字符
+    --lowercase \       # 小写化
+    --meta \            # 包含meta数据
+    -e \                # 包含email
+    -v                  # 详细输出
+
+Step 15: 查看生成的字典：
+
+  wc -l /tmp/target_words.txt     # 查看行数
+  head -30 /tmp/target_words.txt  # 查看示例
+
+Step 16: 结合手工添加针对性的词：
+
+  # 将Cewl结果与手工添加的词合并
+  cat >> /tmp/target_words.txt << 'EOF'
+  公司名缩写
+  ceo姓名
+  产品名称
+  办公室地址中的数字
+  EOF
+
+  sort -u /tmp/target_words.txt -o /tmp/target_words.txt  # 去重
+
+Step 17: 使用针对性的字典进行攻击：
+
+  hashcat -m 1000 -a 0 ntlm_hashes.txt /tmp/target_words.txt \
+    -r /usr/share/hashcat/rules/best64.rule
+
+3.5 Cewl与其他工具配合
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 18: 将Cewl生成的词与crunch结合：
+
+  # 用Cewl提取公司相关词汇
+  cewl https://target.com -w /tmp/cewl_words.txt -m 4
+
+  # 用crunch为每个词添加数字后缀
+  while read word; do
+    crunch 0 0 -p "$word" 123 -o /tmp/expanded_words.txt
+  done < /tmp/cewl_words.txt
+
+Step 19: Cewl配合CUPP使用：
+
+  # 先提取公司词汇
+  cewl https://company.com -w /tmp/company_words.txt -m 4
+
+  # 用CUPP生成员工针对性字典
+  cupp -i
+
+  # 合并两个字典
+  cat john.txt /tmp/company_words.txt | sort -u > /tmp/combined.txt
+
+================================================================================
+  第四部分：Mentalist — 可视化字典生成
+================================================================================
+
+4.1 Mentalist简介与启动
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Mentalist是一个图形化(GUI)的字典生成工具，提供直观的规则链机制。
+它使用可视化节点和连接线来表示密码生成流程，
+适合不想记忆命令行参数或需要复杂规则的用户。
+
+Step 1: 启动Mentalist（需要GUI环境）：
+
+  mentalist
+
+  或：
+
+  python3 /usr/share/mentalist/mentalist.py
+
+Step 2: 如果通过SSH使用ArchStrike（无图形界面），
+  可以安装X转发或直接在Firefox中查阅Mentalist资料：
+  https://github.com/sc0tfree/mentalist
+
+  本章节将用文字描述GUI操作步骤。
+
+4.2 基本操作流程
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 3: Mentalist主窗口包含：
+  ┌──────────────────────────────────────────────────────┐
+  │ 左侧面板: 节点类型列表                                │
+  │   ├─ Base Words (基础词)                             │
+  │   ├─ Case (大小写变换)                               │
+  │   ├─ Substitution (字符替换/leet变换)                │
+  │   ├─ Append/Prepend (附加/前缀)                      │
+  │   ├─ Date (日期模式)                                 │
+  │   └─ ...                                             │
+  │                                                      │
+  │ 中间面板: 规则链画布（拖拽节点连接）                  │
+  │                                                      │
+  │ 右侧面板: 预览和输出选项                              │
+  └──────────────────────────────────────────────────────┘
+
+Step 4: 操作流程：
+
+  1. 从左侧"Base Words"节点拖动到画布
+  2. 双击节点配置基础词来源（文件、手动输入、自定义列表）
+  3. 从左侧拖动"Case"节点到画布
+  4. 连接Base Words节点到Case节点（鼠标拖动）
+  5. 依次添加"Append"、"Substitution"等节点
+
+Step 5: 配置输出：
+
+  在右侧设置输出文件路径、最大条目数限制等。
+
+Step 6: 点击"Generate"按钮生成字典。
+
+4.3 常见规则链示例
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 7: 规则链示例1（基础变换）：
+  Base Words -> Case(首字母大写+) -> Append(添加!@#$)
+
+  结果: Password!, Password@, Password#, Password$
+
+Step 8: 规则链示例2（leet变换+数字）：
+  Base Words -> Substitution(a->@, e->3, s->$) -> Append(0-999)
+
+  结果: p@$$w0rd0...p@$$w0rd999
+
+Step 9: 规则链示例3（日期模式）：
+  Date(1970-2020) -> Case(无变换) -> Append(从文件读取后缀)
+
+4.4 Mentalist高级功能
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 10: 使用"Chain"功能（分支规则链）：
+
+  创建两条并行链：
+  链A: Base Words -> Append(数字) -> Append(特殊符号)
+  链B: Base Words -> Case(大写) -> Prepend(admin)
+
+  最终输出是两条链结果的并集。
+
+Step 11: 设置单词限制（避免生成过大字典）：
+
+  在菜单中找到 File -> Preferences -> Max Results
+  设置合理的上限值。
+
+Step 12: 预览生成进度：
+
+  生成过程中可以实时查看已生成的条目数和示例。
+
+================================================================================
+  第五部分：Changeme — 默认凭证扫描
+================================================================================
+
+5.1 Changeme简介
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Changeme是一个自动扫描工具，用于检测目标是否使用了
+默认用户名/密码组合。它内置了数百种设备和应用的默认凭证数据库。
+
+Step 1: 查看Changeme帮助：
+
+  changeme -h
+
+Step 2: 在Firefox中查看changeme GitHub：
+  https://github.com/ztgrace/changeme
+  浏览其支持的凭据列表
+
+5.2 基本扫描
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 3: 扫描HTTP(S)服务：
+
+  changeme -a http://192.168.56.101
+
+  参数说明：
+  -a: 指定目标地址和协议
+
+Step 4: 扫描多个目标（从文件读取）：
+
+  cat > /tmp/targets.txt << 'EOF'
+  http://192.168.56.101
+  ssh://192.168.56.101
+  mysql://192.168.56.101
+  rdp://192.168.56.102
+  EOF
+
+  changeme /tmp/targets.txt
+
+Step 5: 指定协议扫描：
+
+  changeme -a ssh://192.168.56.101
+
+Step 6: 扫描多个端口：
+
+  changeme -a http://192.168.56.101:8080
+  changeme -a http://192.168.56.101:8000
+
+Step 7: HTTPS扫描：
+
+  changeme -a https://192.168.56.101
+
+5.3 高级选项
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 8: 使用自定义凭证文件（不限于默认凭据）：
+
+  changeme -a http://192.168.56.101 -c /tmp/my_creds.txt
+
+  凭证文件格式（冒号分隔）：
+  admin:admin
+  root:toor
+  user:password
+
+Step 9: 限制超时时间（加快扫描速度）：
+
+  changeme -a http://192.168.56.101 -t 5
+
+  -t 5: 每个连接超时5秒
+
+Step 10: 控制线程数：
+
+  changeme -a http://192.168.56.101 -t 5 -w 10
+
+  -w 10: 使用10个worker线程
+
+Step 11: 详细输出模式：
+
+  changeme -a http://192.168.56.101 -v
+
+Step 12: 将结果输出到文件：
+
+  changeme -a http://192.168.56.101 -o /tmp/changeme_result.txt
+
+Step 13: 查看Changeme内置的凭据列表：
+
+  ls /usr/share/changeme/creds/    # 查看凭据目录
+  cat /usr/share/changeme/creds/http.txt | head -30   # HTTP默认凭据
+
+Step 14: 扫描模式对比：
+
+  # 快速模式（仅测试最常见的默认凭据）
+  changeme -a http://192.168.56.101 --speed fast
+
+  # 完整模式（测试所有已知默认凭据）
+  changeme -a http://192.168.56.101
+
+================================================================================
+  第六部分：Pipal — 密码特征分析
+================================================================================
+
+6.1 Pipal简介
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Pipal是一个密码分析工具，用于分析泄露的密码列表，
+统计密码的长度分布、字符组成、常见模式等。
+这对红队成员了解目标人群的密码习惯非常有价值。
+
+Step 1: 查看Pipal帮助：
+
+  pipal --help
+
+  或：
+
+  ruby /usr/share/pipal/pipal.rb --help
+
+Step 2: 获取一个测试用的密码列表：
+
+  # 使用rockyou.txt的前1万条作为分析样本
+  head -10000 /usr/share/wordlists/rockyou.txt > /tmp/pass_sample.txt
+
+6.2 基本分析
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 3: 运行Pipal分析密码列表：
+
+  pipal /tmp/pass_sample.txt -o /tmp/pipal_report.txt
+
+Step 4: 查看生成的报告：
+
+  cat /tmp/pipal_report.txt
+
+  报告内容包括：
+  ┌──────────────────────────────────────────────────────┐
+  │ 总密码数: 10000                                      │
+  │ 唯一密码数: 8523                                     │
+  │                                                      │
+  │ 密码长度分布:                                        │
+  │   1-4:  5%                                           │
+  │   5-6:  15%                                          │
+  │   7-8:  40%                                          │
+  │   9-10: 25%                                          │
+  │   11+:  15%                                          │
+  │                                                      │
+  │ 字符组成:                                            │
+  │   纯小写:  45%                                       │
+  │   纯数字:  20%                                       │
+  │   小写+数字: 25%                                    │
+  │   混合(含大写): 8%                                   │
+  │   纯大写:  2%                                        │
+  │                                                      │
+  │ 最常见的密码:                                        │
+  │   password: 58次                                     │
+  │   123456:  45次                                      │
+  │   ...                                                │
+  │                                                      │
+  │ 最常见的结尾:                                        │
+  │   123: 15%                                           │
+  │   1:   10%                                           │
+  │   12:  5%                                            │
+  │                                                      │
+  │ 最常见的年份(日期模式):                              │
+  │   1990: ...                                          │
+  │   1987: ...                                          │
+  └──────────────────────────────────────────────────────┘
+
+Step 5: 分析更大的密码列表（完整rockyou.txt）：
+
+  pipal /usr/share/wordlists/rockyou.txt -o /tmp/full_pipal_report.txt
+
+Step 6: 在Firefox中查看Pipal官方的分析示例：
+  搜索 "pipal password analysis examples" 查看已分析过的泄露密码库
+
+6.3 利用分析结果优化密码策略
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 7: 根据Pipal分析结果调整破解优先顺序：
+
+  如果报告显示：
+  - 40%密码为7-8位 -> 优先尝试7-8位的掩码攻击
+  - 25%密码以"123"结尾 -> 重点使用字典+"123"的规则
+  - 45%为纯小写字母 -> 纯小写字母的掩码攻击
+  - 最常见密码长度=8 -> 8位?l?l?l?l?l?l?l?l优先
+
+Step 8: 基于分析创建针对性规则：
+
+  如果分析显示大量密码以年份结尾（如1990, 1987）：
+  创建规则文件 /tmp/year_rules.rule：
+  ┌──────────────────────────────────────────────────────┐
+  │ $1 $9 $8 $0                                           │
+  │ $1 $9 $8 $5                                           │
+  │ $1 $9 $9 $0                                           │
+  │ $1 $9 $9 $5                                           │
+  │ $2 $0 $0 $0                                           │
+  │ $2 $0 $0 $5                                           │
+  │ $2 $0 $1 $0                                           │
+  │ $2 $0 $1 $5                                           │
+  │ $2 $0 $2 $0                                           │
+  └──────────────────────────────────────────────────────┘
+
+Step 9: 使用分析驱动的方法：
+
+  1. 用Cewl收集目标公司相关的词
+  2. 用Pipal分析同行业的泄露密码特征
+  3. 用CUPP生成针对性的基础词
+  4. 用Crunch生成特征匹配的变体序列
+  5. 用Hashcat的规则应用变体
+
+================================================================================
+  第七部分：综合实战练习
+================================================================================
+
+【练习1：为渗透测试构建完整的目标专用字典】
+
+场景：你正在对 ExampleCorp 公司执行渗透测试
+
+Step 1: 用Cewl从公司网站收集词汇：
+
+  cewl https://www.examplecorp.com \
+    -w /tmp/examplecorp_words.txt \
+    -d 3 -m 4 --lowercase --meta -e
+
+Step 2: 查看收集到的词汇：
+
+  wc -l /tmp/examplecorp_words.txt
+  head -30 /tmp/examplecorp_words.txt
+
+Step 3: 用CUPP生成员工针对性密码（基于已知的员工信息）：
+
+  cupp -i
+  # 输入: CEO姓名, 公司名, 产品名, 成立年份等
+
+Step 4: 合并两个来源的词汇：
+
+  cat /tmp/examplecorp_words.txt john.txt | sort -u > /tmp/base_words.txt
+
+Step 5: 用手工添加遗漏的关键词（产品名、缩写、内部行话）：
+
+  cat >> /tmp/base_words.txt << 'EOF'
+  examplecorp
+  ecorp
+  ecorp2026
+  productx
+  producty
+  EOF
+  sort -u /tmp/base_words.txt -o /tmp/base_words.txt
+
+Step 6: 用Crunch为每个基础词生成数字后缀：
+
+  # 方法1: 直接用Crunch的管道模式
+  crunch 0 0 -q /tmp/base_words.txt | \
+    while read word; do
+      echo "$word"
+      echo "${word}123"
+      echo "${word}2026"
+      echo "${word}!"
+      echo "${word}@"
+    done > /tmp/expanded_words.txt
+
+  # 方法2: 用Hashcat的规则更高效
+  # 创建规则文件 /tmp/expand.rule:
+  # :
+  # $1 $2 $3
+  # $!
+  # $@ $2 $3
+
+Step 7: 查看最终字典：
+
+  wc -l /tmp/expanded_words.txt
+  head -20 /tmp/expanded_words.txt
+
+Step 8: 使用最终字典进行破解：
+
+  hashcat -m 1000 -a 0 /tmp/ntlm_hashes.txt /tmp/expanded_words.txt \
+    -r /usr/share/hashcat/rules/best64.rule
+
+【练习2：密码分析驱动的高效破解】
+
+Step 9: 用Pipal分析rockyou泄露库的特征：
+
+  pipal /usr/share/wordlists/rockyou.txt -o /tmp/rockyou_analysis.txt
+
+Step 10: 阅读分析报告，记录关键发现：
+
+  cat /tmp/rockyou_analysis.txt
+
+  假设发现：
+  - 最常见的长度: 6-8位
+  - 最常见的结尾: "123", "1", "12", "1234"
+  - 超过30%为纯小写字母
+  - 最常见数字组合: "123", "123456", "111111"
+
+Step 11: 基于发现创建高效破解策略：
+
+  # 第1步: 纯小写6-8位字母字典
+  crunch 6 8 abcdefghijklmnopqrstuvwxyz -o /tmp/lower_6to8.txt 2>/dev/null &
+
+  # 第2步: 使用Hashcat掩码快速尝试（比先生成字典更高效）
+  hashcat -m 1000 -a 3 /tmp/ntlm.txt --increment --increment-min 6 --increment-max 8 ?l?l?l?l?l?l?l?l
+
+  # 第3步: rockyou字典 + best64规则（最常见的规则组合）
+  hashcat -m 1000 -a 0 /tmp/ntlm.txt /usr/share/wordlists/rockyou.txt \
+    -r /usr/share/hashcat/rules/best64.rule
+
+Step 12: 对比不同策略的破解率：
+
+  # 记录每种策略的破解数
+  hashcat -m 1000 -a 0 /tmp/ntlm.txt rockyou.txt --show | wc -l
+  hashcat -m 1000 -a 0 /tmp/ntlm.txt rockyou.txt -r best64.rule --show | wc -l
+
+【练习3：Changeme自动检测弱默认凭证】
+
+Step 13: 在实验环境中部署一个有默认密码的服务：
+
+  # 例如，在本地或虚拟机中运行一个有默认密码的Web应用
+  # 或使用Metasploitable
+
+Step 14: 用nmap扫描发现服务：
+
+  nmap -sV 192.168.56.101
+
+Step 15: 使用Changeme检测默认凭证：
+
+  changeme -a http://192.168.56.101 -v
+  changeme -a ssh://192.168.56.101 -v
+  changeme -a mysql://192.168.56.101 -v
+
+Step 16: 如果发现了默认凭证，记录并用于后续渗透：
+
+  echo "发现默认凭证: admin:admin @ http://192.168.56.101" >> /tmp/findings.txt
+
+【练习4：完整字典构建流水线】
+
+Step 17: 创建自动化脚本 dict_pipeline.sh：
+
+  ┌──────────────────────────────────────────────────────┐
+  │ #!/bin/bash                                          │
+  │ TARGET_URL=$1                                        │
+  │ OUTPUT_DIR=$2                                        │
+  │                                                      │
+  │ mkdir -p "$OUTPUT_DIR"                               │
+  │                                                      │
+  │ echo "[*] Cewl: 从 $TARGET_URL 爬取"                │
+  │ cewl "$TARGET_URL" -w "$OUTPUT_DIR/cewl_words.txt" \ │
+  │   -d 3 -m 4 --lowercase --meta 2>/dev/null           │
+  │                                                      │
+  │ echo "[*] 添加常见变体"                              │
+  │ while read word; do                                  │
+  │   echo "$word"                                       │
+  │   echo "${word}123"                                  │
+  │   echo "${word}2026"                                 │
+  │   echo "${word}!"                                    │
+  │   echo "$(echo $word | tr 'a-z' 'A-Z')"              │
+  │ done < "$OUTPUT_DIR/cewl_words.txt" \               │
+  │   | sort -u > "$OUTPUT_DIR/final_dict.txt"           │
+  │                                                      │
+  │ echo "[+] 字典已生成: $OUTPUT_DIR/final_dict.txt"    │
+  │ wc -l "$OUTPUT_DIR/final_dict.txt"                   │
+  └──────────────────────────────────────────────────────┘
+
+Step 18: 运行流水线：
+
+  chmod +x dict_pipeline.sh
+  ./dict_pipeline.sh https://example.com /tmp/my_dict
+
+Step 19: 检查生成的字典质量：
+
+  head -50 /tmp/my_dict/final_dict.txt
+  wc -l /tmp/my_dict/final_dict.txt
+
+================================================================================
+  附录A：常见密码字典资源
+================================================================================
+
+  字典文件                      │ 条数        │ 描述
+  ─────────────────────────────┼─────────────┼─────────────────
+  rockyou.txt                   │ ~14,000,000 │ 最常用的密码字典
+  SecLists (通用)               │ ~10,000,000 │ GitHub上大型字典集
+  darkweb2017-top10000.txt     │ 10,000      │ 泄露密码Top10000
+  probable-v2-top12000.txt     │ 12,000      │ 高可能密码
+  fasttrack.txt                 │ ~200        │ 快速测试小字典
+  phpbb.txt                     │ ~180,000    │ phpBB泄露密码
+  myspace.txt                   │ ~40,000     │ MySpace泄露密码
+  500-worst-passwords.txt      │ 500         │ 500个最差密码
+  common-credentials/           │ 各10-100    │ 不同服务的默认凭证
+
+  SecLists仓库：https://github.com/danielmiessler/SecLists
+
+================================================================================
+  附录B：字典大小估算参考
+================================================================================
+
+  字符集              │ 长度   │ 组合数         │ 近似文件大小
+  ───────────────────┼───────┼───────────────┼─────────────
+  数字 (10)           │ 6     │ 1,000,000      │ 7 MB
+  数字 (10)           │ 8     │ 100,000,000    │ 800 MB
+  数字 (10)           │ 10    │ 10,000,000,000 │ 100 GB
+  小写字母 (26)       │ 4     │ 456,976        │ 2.5 MB
+  小写字母 (26)       │ 5     │ 11,881,376     │ 71 MB
+  小写字母 (26)       │ 6     │ 308,915,776    │ 2.2 GB
+  字母+数字 (36)      │ 4     │ 1,679,616      │ 11 MB
+  字母+数字 (36)      │ 5     │ 60,466,176     │ 420 MB
+  字母+数字 (36)      │ 6     │ 2,176,782,336  │ 15 GB
+  大小写+数字 (62)    │ 4     │ 14,776,336     │ 120 MB
+  大小写+数字 (62)    │ 5     │ 916,132,832    │ 7.5 GB
+  大小写+数字 (62)    │ 6     │ 56,800,235,584 │ 450 GB
+
+  警告：超过1GB的字典通常不建议生成，应使用Hashcat掩码(-a 3)替代。
+
+================================================================================
+  附录C：命令速查表
+================================================================================
+
+  Crunch ─────────────────────────────────────────────────
+  基本生成:       crunch [min] [max] [charset] -o [file]
+  模式生成:       crunch [min] [max] -t [pattern] -o [file]
+  估算大小:       crunch [min] [max] [charset] -s
+  限制输出:       crunch ... -c [lines] -o [file]
+  管道模式:       crunch ... | hashcat/john/hydra ...
+  排列模式:       crunch 0 0 -p [word1] [word2] ...
+  批量词组合:     crunch 0 0 -q [wordlist] -o [file]
+
+  CUPP ───────────────────────────────────────────────────
+  交互式:         cupp -i
+  从配置文件:     cupp -c [config.cfg]
+  输出路径:       默认输出到当前目录的 [firstname].txt
+
+  Cewl ───────────────────────────────────────────────────
+  基本爬取:       cewl [url] -w [outfile]
+  设置深度:       cewl [url] -w [outfile] -d [depth]
+  最小词长:       cewl [url] -w [outfile] -m [min_len]
+  包含meta:       cewl [url] --meta
+  小写化:         cewl [url] --lowercase
+  单词计数:       cewl [url] -c
+
+  Mentalist ──────────────────────────────────────────────
+  启动GUI:        mentalist
+
+  Changeme ───────────────────────────────────────────────
+  扫描默认凭证:   changeme -a [protocol]://[IP]
+  批量扫描:       changeme [targets.txt]
+  自定义凭证:     changeme -a [url] -c [creds.txt]
+
+  Pipal ──────────────────────────────────────────────────
+  分析密码:       pipal [password_list.txt] -o [report.txt]
+
+================================================================================
+  End of 03-字典生成与密码分析.txt
+  完成ArchStrike Cracking工具组教程！
+================================================================================

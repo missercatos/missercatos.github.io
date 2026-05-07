@@ -1,0 +1,391 @@
+================================================================================
+第1周：Linux基础与环境搭建 (基础打造期)
+================================================================================
+
+【本周围绕的核心渗透案例阶段】
+阶段一：信息侦察 (Reconnaissance) —— 预备阶段
+在红队行动中，信息侦察的第一步就是操作Linux系统进行DNS查询、子域名枚举、网络连接测试。
+本周围绕完整学习手册"阶段一"中的基础设施准备：掌握Linux命令行是所有侦察工具运行的前提。
+没有Linux基础，后续的amass、subfinder、nmap、metasploit等工具将无法使用。
+引用：红队队员完整学习手册 → 三、经典渗透案例 → 阶段一: 信息侦察 (Reconnaissance)
+"操作1: OSINT信息收集 → Firefox搜索 → 收集员工姓名、职位、邮箱格式"
+
+【本周学习目标】
+1. 熟练使用Linux基础命令 (cat, ls, cd, pwd, man, cp, mv, rm, mkdir, touch, find, grep)
+2. 理解Linux文件系统目录结构 (FHS标准)
+3. 掌握文件权限管理 (chmod, chown, sudo, useradd, groupadd)
+4. 学会进程与网络管理命令 (ps, top, kill, netstat, ss, ip)
+5. 完成VirtualBox安装 + Metasploitable2部署 + Kali与靶机网络互通
+6. 能够独立在命令行环境下完成日常文件操作和系统管理
+
+【本周知识清单】
+• Linux操作系统概述与发展历史
+• Linux文件系统层次结构 (FHS: /bin, /etc, /var, /home, /tmp, /opt, /root)
+• 绝对路径与相对路径的区别和使用场景
+• Linux文件权限模型 (rwx / 数字表示法 / SUID/SGID/Sticky位)
+• 用户与组管理 (/etc/passwd, /etc/shadow, /etc/group)
+• 进程生命周期与信号机制 (SIGTERM, SIGKILL, SIGSTOP)
+• systemd服务管理与journalctl日志查看
+• 虚拟化基础概念 (Type-1 vs Type-2 Hypervisor)
+• VirtualBox网络模式 (NAT / 桥接 / Host-Only / 内部网络)
+• Metasploitable2简介 (故意包含漏洞的Linux靶机)
+• man命令使用方法 (分章节查阅手册)
+• Linux核心安全机制 (SELinux/AppArmor概述)
+
+【本周工具清单】
+• coreutils (ls, cat, cp, mv, rm, mkdir, touch, chmod, chown)
+• findutils (find, locate)
+• grep (文本搜索)
+• procps-ng (ps, top, kill, pkill)
+• net-tools / iproute2 (netstat, ss, ip, ifconfig)
+• sudo / shadow-utils (useradd, groupadd, passwd)
+• systemd (systemctl, journalctl)
+• VirtualBox (虚拟机管理)
+• Metasploitable2 (实验靶机)
+• openssh (ssh, ssh-keygen)
+
+================================================================================
+周一：Linux目录结构与基础命令
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：Linux操作系统概述、FHS文件系统标准目录结构、命令行基本概念。理解
+  为什么红队必须精通Linux（Kali Linux是渗透测试标配，90%的服务器运行Linux）。
+  重点记忆各目录用途：/bin(二进制程序)、/etc(配置文件)、/var(日志和可变数据)、
+  /home(用户目录)、/tmp(临时文件)、/opt(第三方软件)、/root(管理员家目录)。
+  参考文件：/home/a/成长为一个红队/网安基础知识/03-操作系统基础.txt（阅读第一部分：第1-4章）
+  参考文件：/home/a/成长为一个红队/网安基础知识/10-虚拟化与容器基础.txt（阅读第1-2章虚拟化概述）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：打开终端，跟随教程文件练习ls/cd/pwd/man/cat/mkdir/touch等基础命令。
+  在~/training/week1目录下创建实验文件结构，练习目录切换和文件浏览。
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/01-基础命令与Linux安全操作.txt（第一部分: 1.1-1.3）
+
+  操作步骤：
+    Step 1: 打开终端，确认当前目录位置
+      pwd
+      whoami
+
+    Step 2: 创建训练目录结构
+      mkdir -p ~/training/week1/{logs,scans,reports,exploits}
+      touch ~/training/week1/logs/access.log
+      touch ~/training/week1/notes.txt
+
+    Step 3: 练习目录浏览和文件操作
+      cd ~/training/week1
+      ls -la                    # 查看所有文件(含隐藏文件)
+      ls -lh                    # 人类可读的大小格式
+      cd logs && pwd && cd ..   # 进入子目录并返回
+      cd -                      # 返回上一次所在目录
+      cd ~                      # 返回家目录
+
+    Step 4: 学习使用man查阅命令手册
+      man ls                    # 查看ls命令帮助
+      man man                   # 了解man本身的章节分类
+      man -k "directory"        # 按关键词搜索手册
+
+    Step 5: 使用cat查看文件内容和系统信息
+      cat /etc/os-release       # 查看操作系统版本
+      cat /proc/cpuinfo | head  # 查看CPU信息
+      cat /etc/passwd | head    # 查看系统用户列表
+
+    Step 6: 在笔记文件中记录今日学习内容
+      echo "# 第1周 周一 学习笔记" >> ~/training/week1/notes.txt
+      echo "已掌握: pwd, whoami, cd, ls, cat, man, mkdir, touch" >> ~/training/week1/notes.txt
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：掌握了Linux命令行基础操作，理解了FHS目录结构，能独立创建和管理文件目录
+  - 遇到问题：(记录实际操作中遇到的具体问题，如权限不足、命令未找到等)
+  - 明日计划：学习文件复制/移动/删除操作，掌握find和grep搜索命令
+
+================================================================================
+周二：文件操作命令深度练习
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：深入理解cp/mv/rm/mkdir/touch命令的常用选项和工作原理。掌握find命令
+  的强大搜索功能（按名称/大小/时间/权限查找文件），掌握grep的文本搜索能力及正则
+  表达式基础。理解rm命令的危险性及防护措施，了解Linux下文件通配符(*, ?, [])的用法。
+  参考文件：/home/a/成长为一个红队/网安基础知识/03-操作系统基础.txt（阅读第1-2章文件系统与常用命令部分）
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/01-基础命令与Linux安全操作.txt（第一部分: 1.4-1.6）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：综合练习文件创建/复制/移动/删除操作，使用find在系统中搜索文件，
+  使用grep在日志中搜索关键信息（模拟攻击后信息收集场景）。
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/01-基础命令与Linux安全操作.txt
+
+  操作步骤：
+    Step 1: 文件创建和批量操作
+      mkdir -p ~/training/week1/testdir/{sub1,sub2,sub3}
+      touch ~/training/week1/testdir/file_{1..10}.txt
+      touch ~/training/week1/testdir/sub1/config_{a,b,c}.conf
+      ls -R ~/training/week1/testdir/
+
+    Step 2: 文件复制练习
+      cp ~/training/week1/testdir/file_1.txt ~/training/week1/testdir/file_1_copy.txt
+      cp -r ~/training/week1/testdir/sub1 ~/training/week1/testdir/sub1_backup
+      cp -p ~/training/week1/testdir/file_2.txt ~/training/week1/   # 保留权限
+
+    Step 3: 文件移动/重命名练习
+      mv ~/training/week1/testdir/file_3.txt ~/training/week1/testdir/sub2/
+      mv ~/training/week1/testdir/file_4.txt ~/training/week1/testdir/renamed_file.txt
+
+    Step 4: find命令高级搜索（模拟红队场景：搜索SUID文件、敏感配置文件）
+      find ~/training -name "*.txt"                    # 按名称查找
+      find ~/training -type f -size +0                 # 查找非空文件
+      find ~/training -type d -name "sub*"             # 查找目录
+      find /usr/bin -perm -4000 2>/dev/null | head     # 查找SUID文件(红队必用!)
+      find /etc -name "*.conf" -type f 2>/dev/null | head  # 查找配置文件
+
+    Step 5: grep文本搜索练习（模拟日志分析）
+      echo "192.168.1.100 - admin [access granted]" >> ~/training/week1/logs/access.log
+      echo "192.168.1.200 - root  [access denied]"  >> ~/training/week1/logs/access.log
+      echo "10.0.0.50    - user  [access granted]"  >> ~/training/week1/logs/access.log
+      grep "granted" ~/training/week1/logs/access.log
+      grep -E "[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}" ~/training/week1/logs/access.log
+      grep -i "denied" ~/training/week1/logs/access.log
+
+    Step 6: 组合使用find和grep（在找到的配置文件中搜索密码关键字）
+      find /etc -name "*.conf" -type f -exec grep -l "pass" {} \; 2>/dev/null | head
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：掌握了文件操作全套命令，学会了find和grep的组合使用，了解了SUID文件搜索的红队应用
+  - 遇到问题：(记录具体操作问题)
+  - 明日计划：学习用户权限管理（chmod, chown, sudo, useradd）
+
+================================================================================
+周三：用户权限管理
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：Linux权限模型详解（所有者/所属组/其他用户，rwx三位一体）。数字权限表示法
+  （r=4, w=2, x=1）与实际应用场景。SUID/SGID/Sticky位的含义和红队利用价值。
+  sudo机制原理、/etc/sudoers配置、useradd/userdel/groupadd用户管理命令。
+  /etc/passwd和/etc/shadow文件格式详解（红队后渗透中的核心目标文件）。
+  参考文件：/home/a/成长为一个红队/网安基础知识/03-操作系统基础.txt（阅读第3-5章文件权限和用户管理）
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/01-基础命令与Linux安全操作.txt（第二部分: 权限管理）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：创建测试用户和组，修改文件权限和所有者，练习sudo配置，
+  理解chmod数字模式和符号模式的使用场景。
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/01-基础命令与Linux安全操作.txt
+
+  操作步骤：
+    Step 1: 创建测试文件和目录
+      mkdir ~/training/week1/perm_test
+      touch ~/training/week1/perm_test/{readonly,executable,writable,secret}.txt
+      echo "sensitive data" > ~/training/week1/perm_test/secret.txt
+
+    Step 2: chmod数字模式练习
+      chmod 644 ~/training/week1/perm_test/readonly.txt   # rw-r--r--
+      chmod 755 ~/training/week1/perm_test/executable.txt  # rwxr-xr-x
+      chmod 600 ~/training/week1/perm_test/secret.txt      # rw-------
+      chmod 777 ~/training/week1/perm_test/writable.txt    # rwxrwxrwx
+      ls -la ~/training/week1/perm_test/                   # 验证权限
+
+    Step 3: chmod符号模式练习
+      chmod u+x ~/training/week1/perm_test/executable.txt  # 所有者加执行权限
+      chmod g-w ~/training/week1/perm_test/readonly.txt    # 组去掉写权限
+      chmod o-rwx ~/training/week1/perm_test/secret.txt    # 其他用户去掉所有权限
+      chmod a+r ~/training/week1/perm_test/readonly.txt    # 所有用户加读权限
+
+    Step 4: chown和chgrp练习
+      ls -la ~/training/week1/perm_test/
+      # 注意：以下命令需要sudo，如无sudo权限则了解语法即可
+      sudo chown root ~/training/week1/perm_test/secret.txt   2>/dev/null || echo "需要sudo"
+      sudo chgrp root ~/training/week1/perm_test/secret.txt   2>/dev/null || echo "需要sudo"
+
+    Step 5: 查看和分析关键系统文件（红队视角）
+      cat /etc/passwd | head -10        # 查看用户列表和UID映射
+      cat /etc/group  | head -10        # 查看组列表
+      sudo cat /etc/shadow | head -5   2>/dev/null || echo "需要root权限查看影子文件"
+      ls -la /etc/shadow                 # 查看影子文件权限
+
+    Step 6: 用户管理命令（需要sudo）
+      sudo useradd -m testuser1 2>/dev/null || echo "跳过(需要sudo)"
+      id testuser1 2>/dev/null
+      sudo passwd -l testuser1 2>/dev/null  # 锁定用户
+      sudo userdel -r testuser1 2>/dev/null # 删除用户及家目录
+      sudo groupadd testgroup 2>/dev/null || echo "跳过(需要sudo)"
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：深入理解Linux权限模型，能独立管理用户和组，理解了/etc/shadow的红队价值
+  - 遇到问题：(记录sudo权限不足、命令语法错误等问题)
+  - 明日计划：学习进程与网络管理命令
+
+================================================================================
+周四：进程与网络管理命令
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：进程生命周期（运行/睡眠/停止/僵尸），ps/top/htop查看系统进程状态，
+  kill/pkill信号机制（SIGTERM=15, SIGKILL=9, SIGSTOP=19），前台/后台进程切换
+  (Ctrl+Z, bg, fg, jobs)。网络命令：netstat查看网络连接(建立/监听状态)，
+  ss替代netstat的新一代工具，ip命令管理网络接口和路由表。
+  从红队视角理解：netstat -tlnp是后渗透中必用的命令，用于发现内网服务和端口。
+  参考文件：/home/a/成长为一个红队/网安基础知识/03-操作系统基础.txt（阅读第4章进程管理和第9章安全机制）
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/01-基础命令与Linux安全操作.txt（第三部分: 进程与网络）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：练习进程查看、过滤、管理操作，使用netstat/ss分析网络连接状态，
+  使用ip命令管理网络接口，理解网络监听服务在后渗透中的侦查价值。
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/01-基础命令与Linux安全操作.txt
+
+  操作步骤：
+    Step 1: 进程查看练习
+      ps aux                        # 查看所有进程(BSD格式)
+      ps -ef                        # 查看所有进程(标准格式)
+      ps aux | grep root | head     # 过滤root进程
+      ps aux --sort=-%mem | head    # 按内存占用排序
+
+    Step 2: top交互式进程管理
+      top -n 1 -b | head -20        # 批量模式输出一次后退出
+      top -p 1                       # 只监控PID=1的进程(systemd)
+
+    Step 3: 进程控制实验
+      sleep 300 &                    # 后台启动一个sleep进程(5分钟)
+      jobs                           # 查看后台任务
+      fg %1                          # 将任务调到前台
+      # 按Ctrl+Z 暂停进程
+      bg %1                          # 将暂停进程放入后台继续
+      kill %1                        # 终止该后台任务(发送SIGTERM)
+
+    Step 4: 网络连接分析（红队核心技能）
+      netstat -tlnp                  # 查看所有TCP监听端口及进程
+      netstat -an | grep LISTEN      # 过滤监听端口
+      ss -tlnp                       # ss替代netstat(更快)
+      ss -anp | grep ESTAB           # 查看已建立的连接
+
+    Step 5: ip命令网络管理
+      ip addr show                   # 查看网络接口和IP地址
+      ip route show                  # 查看路由表
+      ip neigh show                  # 查看ARP缓存表
+      ip link show                   # 查看网络接口状态
+
+    Step 6: 模拟后渗透信息收集场景
+      echo "=== 后渗透信息收集报告 ==="  > ~/training/week1/recon_report.txt
+      echo "--- 当前用户 ---" >> ~/training/week1/recon_report.txt
+      whoami >> ~/training/week1/recon_report.txt
+      echo "--- 网络监听端口 ---" >> ~/training/week1/recon_report.txt
+      netstat -tlnp 2>/dev/null >> ~/training/week1/recon_report.txt
+      echo "--- 路由表 ---" >> ~/training/week1/recon_report.txt
+      ip route show >> ~/training/week1/recon_report.txt
+      cat ~/training/week1/recon_report.txt
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：掌握了进程管理命令，理解了网络监听端口在渗透中的价值，能编写简易后渗透信息收集脚本
+  - 遇到问题：(记录实际命令执行中的问题)
+  - 明日计划：搭建完整实验环境（VirtualBox安装 + Metasploitable2部署 + 网络配置验证）
+
+================================================================================
+周五：搭建实验环境
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：VirtualBox虚拟机管理器的安装和配置，理解NAT/桥接/Host-Only/内部网络四种
+  网络模式的区别和应用场景。Metasploitable2介绍——这是一台故意包含多种漏洞的Linux
+  虚拟机（VNC弱口令、vsftpd后门、UnrealIRCd后门、弱SSH密码、多种Web漏洞等），是
+  渗透测试训练的完美目标。Kali Linux与靶机的网络拓扑设计。
+  参考文件：/home/a/成长为一个红队/网安基础知识/10-虚拟化与容器基础.txt（阅读全部，重点第3章VirtualBox和第10章实验拓扑设计）
+  参考文件：/home/a/成长为一个红队/ArchStrike新手安装教程.txt
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：安装VirtualBox → 导入Metasploitable2 → 配置网络为Host-Only模式 →
+  验证攻击机与靶机的网络连通性 → 首次对Metasploitable2进行端口扫描。
+  参考文件：/home/a/成长为一个红队/网安基础知识/10-虚拟化与容器基础.txt
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/01-基础命令与Linux安全操作.txt
+
+  操作步骤：
+    Step 1: 安装VirtualBox
+      sudo pacman -S virtualbox virtualbox-host-modules-arch 2>/dev/null || echo "如未安装请手动执行"
+      sudo modprobe vboxdrv        # 加载VirtualBox内核模块
+      sudo usermod -aG vboxusers $(whoami)  # 将当前用户加入vboxusers组
+      # 注意：添加用户组后需要注销重新登录才生效
+
+    Step 2: 下载Metasploitable2（如未下载）
+      # 官方下载地址：https://sourceforge.net/projects/metasploitable/
+      # 直接下载OVA文件并在VirtualBox中导入
+      ls ~/Downloads/metasploitable* 2>/dev/null || echo "请先下载Metasploitable2 OVA文件"
+
+    Step 3: 在VirtualBox中导入Metasploitable2
+      # 图形界面操作：文件 → 导入虚拟电脑 → 选择Metasploitable2.ova
+      # 设置网络：虚拟机设置 → 网络 → 网卡1 → 连接方式: Host-Only网络
+      # 启动Metasploitable2虚拟机
+      # 默认登录: msfadmin / msfadmin
+
+    Step 4: 创建Host-Only网络（如不存在）
+      # VirtualBox主界面 → 管理 → 主机网络管理器 → 创建
+      # 默认网络: 192.168.56.0/24
+      # 确认DHCP服务器启用: 192.168.56.100-254
+
+    Step 5: 验证攻击机与靶机连通性
+      # 先在Metasploitable2中查看其IP地址：
+      # 在靶机终端中: ifconfig eth0    (Metasploitable2内部执行)
+      # 记录靶机IP，例如: 192.168.56.102
+
+      # 在攻击机(Kali/ArchStrike)终端中:
+      ping -c 4 192.168.56.102        # 测试连通性
+      nmap -sn 192.168.56.0/24        # 扫描Host-Only网络中的存活主机
+      nmap -sV 192.168.56.102         # 对Metasploitable2做服务版本扫描
+      # 记录靶机开放的服务：21(FTP),22(SSH),23(Telnet),80(HTTP),3306(MySQL)等
+
+    Step 6: 保存实验环境信息
+      echo "靶机IP: 192.168.56.xxx"   > ~/training/week1/lab_info.txt
+      echo "攻击机IP: $(ip addr show | grep 'inet ' | grep -v 127.0.0.1 | awk '{print $2}' | head -1)" >> ~/training/week1/lab_info.txt
+      echo "网络模式: Host-Only"      >> ~/training/week1/lab_info.txt
+      nmap -sV 192.168.56.102 2>/dev/null >> ~/training/week1/lab_info.txt
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：成功搭建了渗透测试实验环境，攻击机和靶机能正常通信，为后续训练奠定基础
+  - 遇到问题：(记录VirtualBox驱动问题、网络不通、权限不足等实际困难)
+  - 明日计划：周六复习日，回顾本周所有命令和知识点
+
+================================================================================
+周六：复习日
+================================================================================
+  上午 (2小时)：回顾本周所有知识点
+    - 复习Linux目录结构 (FHS标准)
+    - 复习find/grep命令的20个常用组合
+    - 复习chmod权限管理（数字模式和符号模式）
+    - 复习进程与网络命令操作步骤
+    - 重新在Metasploitable2上验证一次扫描
+
+  下午 (1小时)：在HackTheBox/TryHackMe上做相关挑战
+    - TryHackMe Room: Linux Fundamentals (免费)
+    - TryHackMe Room: Intro to LAN (网络基础)
+
+  晚间：整理本周笔记
+    - 将5天的学习笔记合并为一份完整的周总结
+    - 制作Linux常用命令速查卡片
+    - 标注本周不熟练的命令以便后续加强
+
+================================================================================
+周日：休息日
+================================================================================
+  体能训练 | 自由活动 | 补充睡眠
+
+================================================================================
+【本周资源清单】
+================================================================================
+理论知识文件：
+  • /home/a/成长为一个红队/网安基础知识/03-操作系统基础.txt（第1-9章，重点第1-5章）
+  • /home/a/成长为一个红队/网安基础知识/10-虚拟化与容器基础.txt（全部，重点第3章和第10章）
+  • /home/a/成长为一个红队/ArchStrike新手安装教程.txt
+
+实践教程文件：
+  • /home/a/成长为一个红队/archstrike-base教学/01-基础命令与Linux安全操作.txt（全部）
+
+在线练习：
+  • TryHackMe Room: Linux Fundamentals (Part 1, Part 2, Part 3)
+  • TryHackMe Room: Intro to LAN
+  • Metasploitable2虚拟机 (本地实验环境)
+
+【本周完成检查】
+[ ] 周一任务完成
+[ ] 周二任务完成
+[ ] 周三任务完成
+[ ] 周四任务完成
+[ ] 周五任务完成
+[ ] 周六复习完成
+[ ] 本周笔记整理完成
+[ ] 体能训练完成

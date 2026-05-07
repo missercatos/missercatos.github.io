@@ -1,0 +1,3125 @@
+================================================================================
+C++ 深化教程 — 第三章: 动态内存 (Dynamic Memory)
+================================================================================
+
+## 章节概述
+
+内存管理是 C++ 编程中最重要的技能之一。与 Java、Python 等带垃圾回收（GC）的
+语言不同，C++ 将内存管理的完整控制权交给程序员。这意味着你可以精确控制对象
+的生命周期和内存布局，但也需要负责在合适的时候释放不再使用的内存。
+
+本章从操作系统底层的内存模型讲起，深入探讨栈与堆的物理区别、malloc/free 的
+内部实现机制、new/delete 的工作原理、C++11 引入的智能指针体系，以及内存池
+等高级话题。通过五个精心设计的实用案例，从简单的动态数组到复杂的 RAII 矩阵类，
+逐步掌握 C++ 动态内存管理的全部技能。
+
+本章将融入第一章（命名空间）和第二章（预处理器/宏）的知识点，展示三个章节
+的综合运用。
+
+================================================================================
+### 第一节: 基础示例代码 + 计算机底层原理
+================================================================================
+
+3.1 new / delete 基础语法
+----------------------------
+
+C++ 提供了 `new` 和 `delete` 操作符用于在堆（Heap）上动态分配和释放内存：
+
+```cpp
+#include <iostream>
+
+struct Point {
+    int x, y;
+    Point(int a, int b) : x(a), y(b) {
+        std::cout << "Point(" << x << ", " << y << ") 构造" << std::endl;
+    }
+    ~Point() {
+        std::cout << "Point(" << x << ", " << y << ") 析构" << std::endl;
+    }
+};
+
+int main() {
+    // 1. 分配单个对象
+    int* pInt = new int(42);
+    std::cout << "*pInt = " << *pInt << std::endl;
+    delete pInt;
+
+    // 2. 分配数组
+    int* arr = new int[10];
+    for (int i = 0; i < 10; ++i) arr[i] = i * 10;
+    std::cout << "arr[5] = " << arr[5] << std::endl;
+    delete[] arr;  // 数组用 delete[]
+
+    // 3. 分配带构造函数的对象
+    Point* pt = new Point(10, 20);
+    pt->x += 5;
+    std::cout << "pt->x = " << pt->x << std::endl;
+    delete pt;
+
+    // 4. 分配对象数组（要求有默认构造函数）
+    Point* pts = new Point[3]{{1, 2}, {3, 4}, {5, 6}};
+    delete[] pts;
+
+    return 0;
+}
+```
+
+关键规则：
+- `new` 操作符做两件事：①调用 operator new 分配原始内存 ②在分配的内存上调用构造函数
+- `delete` 操作符做两件事：①调用析构函数 ②调用 operator delete 释放原始内存
+- 单个对象用 `new` / `delete`，数组用 `new[]` / `delete[]`，**绝对不能混用**
+- 用 `new` 分配的内存必须用 `delete` 释放，否则导致内存泄漏
+
+3.2 malloc / free 与 new / delete 的区别
+-------------------------------------------
+
+C 语言使用 `malloc` / `free` 进行内存管理，C++ 提供了 `new` / `delete`。两者
+有本质区别：
+
+```cpp
+#include <iostream>
+#include <cstdlib>  // malloc, free
+#include <cstring>  // memset
+
+class MyClass {
+public:
+    MyClass(const char* s) {
+        std::cout << "MyClass 构造: " << s << std::endl;
+    }
+    ~MyClass() {
+        std::cout << "MyClass 析构" << std::endl;
+    }
+};
+
+int main() {
+    // 1. 分配基本类型
+    int* pMalloc = (int*)std::malloc(sizeof(int));  // 需要手动计算大小
+    *pMalloc = 100;
+    std::cout << "*pMalloc = " << *pMalloc << std::endl;
+    std::free(pMalloc);
+
+    int* pNew = new int(200);  // 自动计算大小，可直接初始化
+    std::cout << "*pNew = " << *pNew << std::endl;
+    delete pNew;
+
+    // 2. 分配数组
+    int* arrMalloc = (int*)std::malloc(10 * sizeof(int));
+    std::memset(arrMalloc, 0, 10 * sizeof(int));  // 手动清零
+    std::free(arrMalloc);
+
+    int* arrNew = new int[10]{};  // 值初始化，所有元素为 0
+    delete[] arrNew;
+
+    // 3. 关键区别：构造函数调用
+    std::cout << "\n--- malloc 不会调用构造函数 ---" << std::endl;
+    MyClass* objMalloc = (MyClass*)std::malloc(sizeof(MyClass));
+    // MyClass 的构造函数没有被调用! 对象处于未初始化状态!
+    // 必须用 placement new 手动构造:
+    new (objMalloc) MyClass("from malloc");
+    objMalloc->~MyClass();  // 手动调用析构函数
+    std::free(objMalloc);
+
+    std::cout << "\n--- new 自动调用构造函数 ---" << std::endl;
+    MyClass* objNew = new MyClass("from new");
+    delete objNew;  // 自动调用析构函数
+
+    return 0;
+}
+```
+
+| 特性 | malloc / free | new / delete |
+|------|--------------|-------------|
+| 来源 | C 标准库 | C++ 操作符 |
+| 类型安全 | 返回 void*，需强制转换 | 返回正确的类型指针 |
+| 构造函数 | 不调用 | 调用 |
+| 析构函数 | 不调用 | 调用 |
+| 大小计算 | 手动 sizeof | 自动计算 |
+| 初始化 | 不初始化（值不确定） | 可值初始化 |
+| 失败返回 | NULL | 抛 std::bad_alloc |
+| 重载 | 不可以 | 可以（全局/类级别） |
+| 分配数组 | malloc(n * sizeof(T)) | new T[n] |
+
+3.3 栈 (Stack) 与堆 (Heap) 的内存模型
+----------------------------------------
+
+理解栈和堆的区别是掌握内存管理的关键：
+
+```
+高地址
+┌─────────────────────────┐
+│      命令行参数/环境变量   │ ← 进程启动时由 OS 设置
+├─────────────────────────┤
+│         Stack           │ ← 栈：向下增长(低地址方向)
+│    ┌───────────────┐    │
+│    │ 函数参数       │    │    每次函数调用创建一个栈帧
+│    │ 返回地址       │    │    (Stack Frame):
+│    │ 局部变量       │    │    - 保存返回地址
+│    ├───────────────┤    │    - 保存寄存器值
+│    │ 下一栈帧       │    │    - 局部变量存储
+│    │    ...        │    │    - 自动分配/释放
+│    ▼               ▼    │
+│                         │
+│    ▲               ▲    │
+│    │   未使用的地址空间   │ ← 堆和栈向中间增长
+│    │               │    │
+├─────────────────────────┤
+│         Heap            │ ← 堆：向上增长(高地址方向)
+│    (动态分配的内存)      │    - malloc/new 从这里分配
+│    - 链表节点           │    - 程序员控制生命周期
+│    - 对象实例           │    - 可能出现碎片
+│    - 大型数组           │
+├─────────────────────────┤
+│         BSS 段          │ ← 未初始化的全局变量
+│    (static 变量等)      │    初始值为 0
+├─────────────────────────┤
+│         Data 段         │ ← 已初始化的全局变量
+│    (初始化的全局/静态)    │    在可执行文件中占据空间
+├─────────────────────────┤
+│         Text 段         │ ← 可执行代码 (只读)
+│    (程序指令)           │    函数体编译后的机器码
+└─────────────────────────┘
+低地址
+```
+
+**栈 (Stack) 的特点：**
+- 后进先出（LIFO）结构
+- 自动分配和释放：函数调用时压栈，返回时弹栈
+- 大小有限（Linux 默认约 8MB，可通过 ulimit -s 调整）
+- 分配极快：只需移动栈指针（SP 寄存器）几个字节
+- 局部性极好，CPU 缓存友好
+- 不适合存储需要在函数返回后继续存在的大对象
+
+**堆 (Heap) 的特点：**
+- 动态分配，程序员控制生命周期
+- 大小几乎只受物理内存+交换空间限制（32位约2-3GB，64位理论上极大）
+- 分配较慢：需要搜索空闲块，涉及系统调用
+- 可能产生内存碎片
+- 手动管理，容易出错（内存泄漏、悬挂指针、双重释放）
+- 适合存储大对象或需要在函数间共享的对象
+
+进程内存布局的详细说明：
+
+```cpp
+// 代码示例：验证不同变量的存储位置
+#include <iostream>
+
+int global_init = 42;        // Data 段
+int global_uninit;           // BSS 段 (自动初始化为 0)
+static int static_var = 100; // Data 段 (static 影响的是链接属性，不是存储位置)
+
+void test() {
+    static int local_static = 999; // Data/BSS 段 (生命周期=程序运行期)
+    int local_auto = 10;           // Stack
+    int* heap_var = new int(50);   // Heap (指针本身在 Stack)
+
+    std::cout << "全局已初始化: " << &global_init << std::endl;
+    std::cout << "全局未初始化: " << &global_uninit << std::endl;
+    std::cout << "局部static: " << &local_static << std::endl;
+    std::cout << "局部自动: " << &local_auto << std::endl;
+    std::cout << "堆变量(指针): " << &heap_var << std::endl;  // 指针在栈上
+    std::cout << "堆变量(值): " << heap_var << std::endl;      // 内存在堆上
+
+    delete heap_var;
+}
+
+int main() {
+    test();
+    return 0;
+}
+```
+
+3.4 malloc / free 的内部实现机制
+-------------------------------------
+
+malloc 并不是每次都向操作系统申请内存。它维护着一个内部的**空闲链表 (Free
+List)** 来管理已从操作系统获得但尚未分配给用户的内存块。
+
+**基本工作流程：**
+
+1. **初始化阶段：** 第一次调用 malloc 时，内存分配器获取一大块内存（通常通过
+   brk/sbrk 系统调用扩展数据段，或通过 mmap 映射匿名内存区域）
+
+2. **分配请求处理：** 当用户调用 malloc(size) 时：
+   - 将请求大小 size 加上元数据头部大小（通常 8-16 字节），并对齐到合适的
+     边界（通常 8 或 16 字节）
+   - 遍历空闲链表，寻找足够大的空闲块
+     - 首次适配 (First Fit): 找到第一个足够大的块就分配
+     - 最佳适配 (Best Fit): 遍历所有块，找最接近请求大小的块
+     - 下次适配 (Next Fit): 从上次分配的位置开始搜索
+   - 如果块过大，将其分裂成两块（分配块 + 剩余空闲块）
+   - 将分配块的地址（跳过元数据头部）返回给用户
+
+3. **释放操作：** 当用户调用 free(ptr) 时：
+   - 从 ptr 减去元数据头部大小，找到实际的块起始地址
+   - 将该块标记为空闲
+   - 检查相邻块是否也是空闲的，如果是则合并（coalescing）
+   - 如果合并后的空闲块足够大，可能通过 brk 收缩（返还给操作系统）
+
+**malloc 的元数据结构（简化版）：**
+
+```cpp
+// malloc 的内部数据结构示意（实际实现更复杂）
+struct malloc_chunk {
+    size_t prev_size;   // 前一个块的大小（如果前一个块是空闲的）
+    size_t size;        // 当前块的大小（最低位用作标志：是否在使用中）
+                        // size & 1 == 0 表示前一个块是空闲的
+                        // size & 2 == 0 表示当前块是 mmap 分配的
+    struct malloc_chunk* fd;  // 前向指针（空闲链表中）
+    struct malloc_chunk* bk;  // 后向指针（空闲链表中）
+    // ... 用户数据从这里开始 ...
+};
+```
+
+**brk/sbrk 系统调用：** malloc 通过改变程序的"程序断点"（program break，即数据
+段的末尾）来获取更多堆内存。程序断点是进程数据段和未分配空间之间的边界。
+
+```
+调用 brk(addr) 将程序断点设置为 addr 地址。
+调用 sbrk(increment) 将程序断点增加 increment 字节。
+
+当 malloc 的空闲链表无法满足请求时：
+1. 如果请求小于某个阈值（如 128KB），使用 brk/sbrk 扩展堆
+2. 如果请求较大，直接使用 mmap 分配独立的匿名内存区域
+   （优点：free 时可以直接 munmap 归还给操作系统）
+```
+
+**内存碎片 (Memory Fragmentation)：**
+
+```
+内部碎片 (Internal Fragmentation):
+  分配器分配的块比请求大（对齐、元数据开销）
+  例: 请求 7 字节 → 分配 16 字节(对齐到 8 字节 + 8 字节头部)
+      浪费 9 字节
+
+外部碎片 (External Fragmentation):
+  空闲内存足够但分散，无法满足连续的大块请求
+
+  例: 空闲链表: [8B] [16B] [8B] [16B] [8B] (总共 56B 空闲)
+      如果请求 32B 连续内存 → 无法满足! (没有连续 32B 的空闲块)
+      即使总空闲 56B > 32B，但它们是分散的。
+```
+
+```cpp
+// 模拟外部碎片的产生（概念代码）
+#include <iostream>
+#include <cstdlib>
+#include <cstring>
+
+void demonstrateFragmentation() {
+    const int BLOCK_COUNT = 5;
+    void* blocks[BLOCK_COUNT];
+
+    std::cout << "=== 内存碎片演示 ===" << std::endl;
+
+    // 分配 5 个 1KB 块（它们通常是连续的）
+    for (int i = 0; i < BLOCK_COUNT; ++i) {
+        blocks[i] = std::malloc(1024);
+        std::cout << "块 " << i << ": " << blocks[i] << std::endl;
+        std::memset(blocks[i], 0, 1024);  // 写入数据确保物理分配
+    }
+
+    std::cout << "\n释放第1、3、5个块（交替释放）：" << std::endl;
+    std::free(blocks[0]);  // 交替释放
+    std::free(blocks[2]);
+    std::free(blocks[4]);
+
+    std::cout << "现在空闲内存分散在3个位置（外部碎片）" << std::endl;
+    std::cout << "此时请求 2KB 连续空间会怎么样？" << std::endl;
+
+    // 尝试分配一个较大的块
+    void* bigBlock = std::malloc(2048);
+    std::cout << "大块地址: " << bigBlock << std::endl;
+    // 这个大块可能在碎片之间，也可能在其他地方
+    std::free(bigBlock);
+
+    // 释放剩余的块
+    std::free(blocks[1]);
+    std::free(blocks[3]);
+
+    std::cout << "全部释放后，如果相邻块被合并，又变成了连续的大空闲块" << std::endl;
+}
+
+int main() {
+    demonstrateFragmentation();
+    return 0;
+}
+```
+
+3.5 new 的底层实现：operator new → malloc → brk/mmap
+------------------------------------------------------
+
+C++ 中的 `new` 表达式底层经过多个层次的调用：
+
+```
+new T(args)
+  │
+  ├──► 步骤1: 调用 void* operator new(sizeof(T))
+  │       │
+  │       ├──► 调用 malloc(sizeof(T))
+  │       │     │
+  │       │     ├──► 查找内部空闲链表
+  │       │     ├──► 找不到 → 调用 brk() / mmap() 向 OS 申请
+  │       │     └──► 返回原始内存指针
+  │       │
+  │       ├──► 如果 malloc 返回 NULL
+  │       │     │
+  │       │     ├──► 调用 new_handler 函数 (如果有)
+  │       │     ├──► 重试分配
+  │       │     └──► 无法分配 → 抛出 std::bad_alloc 异常
+  │       │
+  │       └──► 返回原始内存指针
+  │
+  └──► 步骤2: 在返回的内存上调用 T 的构造函数
+       │     (placement new: new (ptr) T(args))
+       │
+       └──► 返回类型为 T* 的指针
+```
+
+```cpp
+// 验证 new 的底层调用链（通过重载 operator new）
+#include <iostream>
+#include <cstdlib>
+
+class Tracker {
+public:
+    int id;
+
+    Tracker(int i) : id(i) {
+        std::cout << "  → Tracker::构造(id=" << id << ")" << std::endl;
+    }
+
+    ~Tracker() {
+        std::cout << "  → Tracker::析构(id=" << id << ")" << std::endl;
+    }
+
+    // 重载类的 operator new
+    static void* operator new(std::size_t size) {
+        std::cout << "[operator new] 请求分配 " << size << " 字节" << std::endl;
+        void* ptr = std::malloc(size);
+        if (!ptr) throw std::bad_alloc();
+        std::cout << "  获得地址: " << ptr << std::endl;
+        return ptr;
+    }
+
+    // 重载类的 operator delete
+    static void operator delete(void* ptr) noexcept {
+        std::cout << "[operator delete] 释放地址: " << ptr << std::endl;
+        std::free(ptr);
+    }
+};
+
+int main() {
+    std::cout << "执行: auto t = new Tracker(42);" << std::endl;
+    auto t = new Tracker(42);
+    // 输出顺序:
+    // [operator new] 请求分配 4 字节
+    //   获得地址: 0x...
+    //   → Tracker::构造(id=42)
+    // 返回给 main: t = 0x...
+
+    std::cout << "\n执行: delete t;" << std::endl;
+    delete t;
+    // 输出顺序:
+    //   → Tracker::析构(id=42)
+    // [operator delete] 释放地址: 0x...
+
+    return 0;
+}
+```
+
+**operator new 的异常处理机制：**
+
+当 malloc 返回 nullptr 时，operator new 不会立刻抛出异常，而是调用用户设置的
+new_handler 函数（通过 std::set_new_handler 注册）。new_handler 可以做：
+1. 释放一些内存后返回（operator new 会重试 malloc）
+2. 抛出异常
+3. 调用 abort() / exit() 终止程序
+4. 直接返回（operator new 会继续重试）
+
+```cpp
+#include <iostream>
+#include <new>  // std::set_new_handler, std::bad_alloc
+
+// 自定义的 new_handler
+void myNewHandler() {
+    std::cerr << "内存不足! 尝试清理..." << std::endl;
+    // 实际项目中这里会释放缓存、记录日志等
+    // 如果无法释放更多内存，抛出 bad_alloc
+    throw std::bad_alloc();
+}
+
+int main() {
+    // 设置新的 new_handler 并保存旧的
+    std::new_handler oldHandler = std::set_new_handler(myNewHandler);
+
+    try {
+        // 尝试分配超大内存（会失败）
+        auto huge = new char[30ULL * 1024 * 1024 * 1024]; // 30 GB
+        delete[] huge;
+    } catch (const std::bad_alloc& e) {
+        std::cerr << "捕获 bad_alloc: " << e.what() << std::endl;
+    }
+
+    // 恢复原有的 new_handler
+    std::set_new_handler(oldHandler);
+
+    return 0;
+}
+```
+
+3.6 指针运算与内存地址可视化
+-------------------------------
+
+理解指针的本质是理解内存地址。指针的值就是一个内存地址。
+
+```cpp
+#include <iostream>
+#include <iomanip>
+
+int main() {
+    // 栈上的数组（连续内存）
+    int arr[5] = {10, 20, 30, 40, 50};
+
+    std::cout << "=== 栈数组内存布局 ===" << std::endl;
+    for (int i = 0; i < 5; ++i) {
+        std::cout << "arr[" << i << "] = " << arr[i]
+                  << "  地址: " << &arr[i]
+                  << " (偏移: +" << i * sizeof(int) << " 字节)"
+                  << std::endl;
+    }
+
+    // 指针运算
+    int* p = arr;  // p 指向 arr[0]
+    std::cout << "\n*p = " << *p << std::endl;        // 10
+    std::cout << "*(p+1) = " << *(p + 1) << std::endl; // 20
+    std::cout << "*(p+2) = " << *(p + 2) << std::endl; // 30
+    // p + n 等价于 (char*)p + n * sizeof(int)
+
+    // 堆上的数组
+    int* heapArr = new int[5]{100, 200, 300, 400, 500};
+
+    std::cout << "\n=== 堆数组内存布局 ===" << std::endl;
+    for (int i = 0; i < 5; ++i) {
+        std::cout << "heapArr[" << i << "] = " << heapArr[i]
+                  << "  地址: " << &heapArr[i]
+                  << std::endl;
+    }
+
+    delete[] heapArr;
+
+    // 指针相减得到元素个数差
+    int* p1 = &arr[1];
+    int* p2 = &arr[4];
+    std::cout << "\np2 - p1 = " << (p2 - p1) << " 个元素" << std::endl;
+
+    // 内存边界示意
+    std::cout << "\n=== 内存跨度 ===" << std::endl;
+    std::cout << "数组占用总字节: "
+              << (char*)(&arr[4] + 1) - (char*)(&arr[0])
+              << " 字节" << std::endl;
+
+    return 0;
+}
+```
+
+
+================================================================================
+### 第二节: 所有用法大全（标准库/关键字/函数）
+================================================================================
+
+本节全面列举 C++ 中动态内存相关的所有用法，从 C 风格到现代 C++ 智能指针。
+
+4.1 new 操作符 (分配单个对象)
+-------------------------------
+
+```cpp
+// 基本用法
+int* p1 = new int;           // 未初始化（值不确定）
+int* p2 = new int(42);       // 初始化为 42
+int* p3 = new int{};         // 值初始化，为 0
+int* p4 = new int();         // 值初始化，为 0
+
+// 分配对象
+class Widget {
+public:
+    Widget() { /* ... */ }
+    Widget(int a, double b) { /* ... */ }
+};
+
+Widget* w1 = new Widget;           // 默认构造
+Widget* w2 = new Widget();         // 默认构造
+Widget* w3 = new Widget(10, 3.14); // 有参构造
+Widget* w4 = new Widget{};         // C++11 列表初始化
+
+// 分配 const 对象
+const int* cp = new const int(100);
+// *cp = 200;  // 错误！不能修改 const 对象
+delete cp;     // const 对象也可 delete
+
+// 不抛异常的new (nothrow)
+#include <new>
+int* p5 = new (std::nothrow) int[1000000000];
+if (!p5) {
+    std::cerr << "分配失败，p5 为 nullptr" << std::endl;
+}
+```
+
+4.2 new[] 操作符 (分配数组)
+----------------------------
+
+```cpp
+// 分配基本类型数组
+int* arr1 = new int[10];           // 未初始化
+int* arr2 = new int[10]();         // 值初始化为 0
+int* arr3 = new int[10]{};         // 值初始化为 0
+int* arr4 = new int[10]{1,2,3};    // 前3个为1,2,3，其余为0
+
+// 分配对象数组（需要默认构造函数）
+class Foo {
+public:
+    Foo() { std::cout << "Foo()" << std::endl; }
+    Foo(int x) { std::cout << "Foo(" << x << ")" << std::endl; }
+};
+
+Foo* foos1 = new Foo[5];                  // 5次默认构造
+Foo* foos2 = new Foo[3]{Foo(1), Foo(2)};  // 前2个有参，第3个默认
+
+// 多维数组（C++11 可以用 auto）
+int (*matrix)[5] = new int[3][5];  // 3行5列
+// 释放
+delete[] matrix;
+
+// 使用 auto 简化多维数组
+auto matrix2 = new int[3][5];      // C++11
+delete[] matrix2;
+```
+
+**new[] 分配数组时的"隐藏计数器"：**
+
+当使用 new T[n] 分配包含析构函数的对象数组时，编译器通常在返回的指针**之前**
+存储元素个数，这样 delete[] 可以知道需要调用多少次析构函数：
+
+```
+实际分配的内存布局 (对象有析构函数时):
+┌──────────────┬──────────┬──────────┬─────┬──────────┐
+│  元素个数 n   │  对象[0]  │  对象[1]  │ ... │  对象[n-1]│
+│  (size_t)    │          │          │     │          │
+└──────────────┴──────────┴──────────┴─────┴──────────┘
+       ↑              ↑
+       │              └── new[] 返回的指针
+       └── 分配器内部的指针
+
+如果 T 没有析构函数 (trivially destructible)，编译器可能
+不存储这个计数器，以节省空间。
+```
+
+4.3 delete 与 delete[]
+------------------------
+
+```cpp
+int* p1 = new int(10);
+delete p1;       // 释放单个对象
+
+int* p2 = new int[10];
+delete[] p2;     // 释放数组，必须用 delete[]
+
+// 常见错误:
+// int* p3 = new int[10];
+// delete p3;    // 未定义行为! 应该用 delete[]
+
+// int* p4 = new int(10);
+// delete[] p4;  // 未定义行为! 应该用 delete
+
+// delete nullptr 是安全的
+int* p5 = nullptr;
+delete p5;       // OK, 什么都不做
+delete[] p5;     // OK, 什么都不做
+```
+
+4.4 placement new (定位 new)
+------------------------------
+
+在已分配的原始内存上构造对象，不分配新内存。
+
+```cpp
+#include <iostream>
+#include <new>  // placement new
+
+class Object {
+public:
+    int x, y;
+    Object(int a, int b) : x(a), y(b) {
+        std::cout << "构造(" << a << "," << b << ")" << std::endl;
+    }
+    ~Object() {
+        std::cout << "析构(" << x << "," << y << ")" << std::endl;
+    }
+};
+
+int main() {
+    // 分配原始内存（不调用构造函数）
+    void* buffer = operator new(sizeof(Object) * 3);
+    // 或
+    // char buffer[sizeof(Object) * 3]; // 栈上的 buffer 也可
+
+    // 在 buffer 上逐块构造对象
+    Object* obj1 = new (buffer) Object(1, 2);
+    Object* obj2 = new (static_cast<char*>(buffer) + sizeof(Object)) Object(3, 4);
+    Object* obj3 = new (static_cast<char*>(buffer) + 2 * sizeof(Object)) Object(5, 6);
+
+    // ⚠ 用 placement new 构造的对象必须手动调用析构函数
+    obj1->~Object();
+    obj2->~Object();
+    obj3->~Object();
+
+    // 释放原始内存
+    operator delete(buffer);
+
+    return 0;
+}
+```
+
+placement new 的典型应用场景：
+- 内存池：预先分配一大块内存，在需要时用 placement new 构造
+- 自定义容器：std::vector 内部用 placement new 实现在预分配内存上构造元素
+- 共享内存：在共享内存区域上构造 C++ 对象
+- 嵌入式开发：在固定物理地址上构造对象
+
+4.5 std::set_new_handler
+---------------------------
+
+设置全局的"内存不足处理器"，在 new 分配失败时调用。
+
+```cpp
+#include <iostream>
+#include <new>
+#include <cstdlib>
+
+void noMemoryHandler() {
+    std::cerr << "致命: 内存耗尽!" << std::endl;
+    std::abort();
+}
+
+int main() {
+    // 保存旧的 handler
+    std::new_handler old = std::set_new_handler(noMemoryHandler);
+
+    // 尝试分配超大内存触发 handler
+    try {
+        auto big = new char[100ULL * 1024 * 1024 * 1024]; // 100 GB
+        delete[] big;
+    } catch (const std::bad_alloc&) {
+        std::cerr << "bad_alloc" << std::endl;
+    }
+
+    // 恢复旧的 handler
+    std::set_new_handler(old);
+
+    return 0;
+}
+```
+
+4.6 malloc / calloc / realloc / free (C 方式)
+-----------------------------------------------
+
+```cpp
+#include <cstdlib>
+#include <cstring>
+#include <iostream>
+
+int main() {
+    // malloc: 分配未初始化的内存
+    int* m1 = (int*)std::malloc(10 * sizeof(int));
+    std::memset(m1, 0, 10 * sizeof(int));
+
+    // calloc: 分配并初始化为 0 (参数: n个元素, 每个元素的size)
+    int* m2 = (int*)std::calloc(10, sizeof(int));
+    // m2 的所有字节已经是 0
+
+    // realloc: 调整已分配内存的大小
+    // 扩大的情况: 可能原地扩展或复制到新位置
+    int* m3 = (int*)std::realloc(m1, 20 * sizeof(int));
+    // m3 可能是 m1 (原地扩展) 也可能是新地址 (如果原地扩展失败)
+    // 如果 m3 != m1，则 m1 已经被释放
+    if (m3) m1 = m3;  // 更新指针
+
+    // 缩小的情��
+    int* m4 = (int*)std::realloc(m1, 5 * sizeof(int));
+    if (m4) m1 = m4;
+
+    // realloc(NULL, size) 等价于 malloc(size)
+    // realloc(ptr, 0) 等价于 free(ptr)
+
+    std::free(m1);
+    std::free(m2);
+    // m1 和 m3/m4 可能指向同一块内存，不要重复释放
+
+    return 0;
+}
+```
+
+4.7 unique_ptr (独占式智能指针, C++11)
+----------------------------------------
+
+不共享所有权，独占管理的智能指针。移动语义支持，禁用拷贝。
+
+```cpp
+#include <iostream>
+#include <memory>
+#include <utility>
+
+class Resource {
+public:
+    Resource(const char* name) : name_(name) {
+        std::cout << "获取资源: " << name_ << std::endl;
+    }
+    ~Resource() {
+        std::cout << "释放资源: " << name_ << std::endl;
+    }
+    void use() {
+        std::cout << "使用资源: " << name_ << std::endl;
+    }
+private:
+    const char* name_;
+};
+
+int main() {
+    // 1. 创建 unique_ptr
+    std::unique_ptr<int> up1(new int(42));
+    std::cout << "*up1 = " << *up1 << std::endl;
+
+    // 2. C++14 推荐使用 make_unique
+    auto up2 = std::make_unique<int>(100);
+    std::cout << "*up2 = " << *up2 << std::endl;
+
+    // 3. 管理数组
+    auto upArr = std::make_unique<int[]>(5);  // int[5]
+    for (int i = 0; i < 5; ++i) upArr[i] = i * 10;
+
+    // 4. 移动所有权
+    auto up3 = std::move(up2);  // up2 现在为空
+    if (!up2) std::cout << "up2 已空" << std::endl;
+
+    // 5. 释放所有权 (不调用 delete)
+    int* raw = up1.release();
+    std::cout << "原始指针: " << *raw << std::endl;
+    delete raw;  // 手动释放
+
+    // 6. 重置 unique_ptr
+    auto up4 = std::make_unique<Resource>("Resource-A");
+    up4->use();
+    up4.reset(new Resource("Resource-B")); // 释放旧资源，接管新资源
+    up4->use();
+    // up4 离开作用域时自动释放 Resource-B
+
+    // 7. 自定义删除器
+    FILE* file = nullptr;
+    {
+        auto fileDeleter = [](FILE* f) {
+            if (f) {
+                std::cout << "关闭文件" << std::endl;
+                fclose(f);
+            }
+        };
+        std::unique_ptr<FILE, decltype(fileDeleter)>
+            fp(fopen("/etc/hostname", "r"), fileDeleter);
+        // 离开作用域时自动调用 fileDeleter 关闭文件
+    }
+
+    return 0;
+}
+```
+
+4.8 shared_ptr (共享式智能指针, C++11)
+----------------------------------------
+
+共享所有权的智能指针，内部维护引用计数。当引用计数归零时释放资源。
+
+```cpp
+#include <iostream>
+#include <memory>
+#include <vector>
+#include <string>
+
+class SharedObj {
+public:
+    SharedObj(int id) : id_(id) {
+        std::cout << "SharedObj 构造: #" << id_ << std::endl;
+    }
+    ~SharedObj() {
+        std::cout << "SharedObj 析构: #" << id_ << std::endl;
+    }
+    void greet() const {
+        std::cout << "SharedObj#" << id_ << " says hello" << std::endl;
+    }
+    int getId() const { return id_; }
+private:
+    int id_;
+};
+
+int main() {
+    // 1. 创建 shared_ptr
+    std::shared_ptr<SharedObj> sp1(new SharedObj(1));
+    // 引用计数: 1
+
+    {
+        // 2. 共享所有权
+        std::shared_ptr<SharedObj> sp2 = sp1;    // 拷贝构造，引用计数+1
+        std::shared_ptr<SharedObj> sp3(sp1);     // 同样
+        // 引用计数: 3
+
+        std::cout << "引用计数: " << sp1.use_count() << std::endl; // 3
+
+        sp2->greet();
+    }
+    // sp2, sp3 离开作用域，引用计数-1 (现在只剩 sp1)
+    std::cout << "引用计数: " << sp1.use_count() << std::endl; // 1
+
+    // 3. 使用 make_shared (一次内存分配，更高效)
+    auto sp2 = std::make_shared<SharedObj>(2);
+
+    // 4. 检查是否为空
+    std::shared_ptr<SharedObj> nullPtr;
+    if (!nullPtr) std::cout << "nullPtr 是空的" << std::endl;
+
+    // 5. 重置
+    sp1.reset();  // 释放引用，引用计数-1 (SharedObj#1 在此析构)
+    sp1.reset(new SharedObj(3));  // 接管新对象
+
+    // 6. 获取原始指针 (注意不要 delete 返回值!)
+    SharedObj* raw = sp1.get();
+    raw->greet();
+
+    // 7. shared_ptr 与数组 (C++17 前需要自定义删除器)
+    {
+        std::shared_ptr<int> spArr(
+            new int[10],
+            [](int* p) { std::cout << "删除int数组" << std::endl; delete[] p; }
+        );
+    }
+    // C++17 后可直接用
+    // std::shared_ptr<int[]> spArr2(new int[10]);
+    // C++20 有 std::make_shared<int[]>(10)
+
+    return 0;
+}
+```
+
+**shared_ptr 的控制块结构：**
+
+```
+┌─────────────────────────────────────────────────────┐
+│              shared_ptr 控制块                       │
+│  ┌──────────────────────────────┐                    │
+│  │ 引用计数 (use_count)         │  ← shared_ptr 数量│
+│  ├──────────────────────────────┤                    │
+│  │ 弱引用计数 (weak_count)      │  ← weak_ptr 数量  │
+│  ├──────────────────────────────┤                    │
+│  │ 删除器 (Deleter)             │  ← 如何释放对象   │
+│  ├──────────────────────────────┤                    │
+│  │ 分配器 (Allocator)           │  ← 可选           │
+│  └──────────────────────────────┘                    │
+└─────────────────────────────────────────────────────┘
+         │
+         │ 指向
+         ▼
+┌─────────────────┐
+│  被管理对象      │
+│  (T 的实例)     │
+└─────────────────┘
+
+make_shared 将控制块和被管理对象分配在一起（单次分配）:
+┌─────────────────┬──────────────────────────────────┐
+│  被管理对象      │  控制块                           │
+│  (T 的实例)     │  (引用计数 + 删除器 + 分配器)      │
+└─────────────────┴──────────────────────────────────┘
+```
+
+4.9 weak_ptr (弱引用指针, C++11)
+----------------------------------
+
+不参与引用计数的"观察者"指针，用于打破 shared_ptr 循环引用。
+
+```cpp
+#include <iostream>
+#include <memory>
+
+// 前向声明
+struct Node;
+
+struct Node {
+    std::string name;
+    std::shared_ptr<Node> next;   // 强引用：下一个节点
+    std::weak_ptr<Node> prev;     // 弱引用：上一个节点（避免循环引用）
+
+    Node(const std::string& n) : name(n) {
+        std::cout << "Node " << name << " 构造" << std::endl;
+    }
+    ~Node() {
+        std::cout << "Node " << name << " 析构" << std::endl;
+    }
+};
+
+int main() {
+    // 1. 基本用法
+    auto sp = std::make_shared<int>(42);
+    std::weak_ptr<int> wp = sp;  // 不增加引用计数
+
+    std::cout << "shared_ptr 引用计数: " << sp.use_count() << std::endl; // 1
+
+    // 2. 使用 weak_ptr 前必须检查是否过期
+    if (auto locked = wp.lock()) {  // 提升为 shared_ptr
+        std::cout << "值: " << *locked << std::endl;
+    }
+
+    // 3. 释放原 shared_ptr，weak_ptr 变为过期
+    sp.reset();
+    if (wp.expired()) {
+        std::cout << "weak_ptr 已过期" << std::endl;
+    }
+
+    // 4. 打破循环引用 — 关键用法
+    auto node1 = std::make_shared<Node>("first");
+    auto node2 = std::make_shared<Node>("second");
+
+    node1->next = node2;   // node1 → node2 (shared_ptr)
+    node2->prev = node1;   // node1 ← node2 (weak_ptr, 不增加引用计数)
+
+    std::cout << "node1 引用计数: " << node1.use_count() << std::endl; // 1
+    std::cout << "node2 引用计数: " << node2.use_count() << std::endl; // 2
+
+    // 离开作用域时:
+    // node1 的引用计数归 0 → Node "first" 析构
+    // node2 的引用计数归 0 → Node "second" 析构
+    // (如果 prev 也是 shared_ptr，则会互相持有，永远不会释放)
+
+    return 0;
+}
+```
+
+**如果没有 weak_ptr 的场景（错误示范）：**
+
+```cpp
+struct BadNode {
+    std::string name;
+    std::shared_ptr<BadNode> next;
+    std::shared_ptr<BadNode> prev;  // 错误! 应该用 weak_ptr
+
+    BadNode(const std::string& n) : name(n) {}
+    ~BadNode() { std::cout << "BadNode " << name << " 析构" << std::endl; }
+};
+
+// 当 node1->next = node2; node2->prev = node1; 时:
+// node1 持有 node2 的 shared_ptr → node2 引用计数 = 2
+// node2 持有 node1 的 shared_ptr → node1 引用计数 = 2
+// 离开作用域后: 局部变量 node1 和 node2 被销毁
+// node1 引用计数: 2-1 = 1 (node2->prev 仍持有)
+// node2 引用计数: 2-1 = 1 (node1->next 仍持有)
+// 永远无法到达 0 → 内存泄漏!
+```
+
+4.10 智能指针的删除器 (Deleter)
+----------------------------------
+
+```cpp
+#include <iostream>
+#include <memory>
+#include <fstream>
+
+// 自定义删除器示例1: 文件关闭
+void closeFile(std::ofstream* fp) {
+    std::cout << "自定义删除器: 关闭文件" << std::endl;
+    if (fp->is_open()) fp->close();
+    delete fp;
+}
+
+// 自定义删除器示例2: 数组删除
+template<typename T>
+struct ArrayDeleter {
+    void operator()(T* p) const {
+        std::cout << "删除器: 释放数组" << std::endl;
+        delete[] p;
+    }
+};
+
+// 自定义删除器示例3: 日志记录删除
+auto loggingDeleter = [](int* p) {
+    std::cout << "删除器: 释放 int* (值=" << *p << ")" << std::endl;
+    delete p;
+};
+
+int main() {
+    // 1. unique_ptr 带删除器
+    {
+        std::unique_ptr<std::ofstream, void(*)(std::ofstream*)>
+            filePtr(new std::ofstream("test.log"), closeFile);
+    }
+
+    {
+        std::unique_ptr<int, ArrayDeleter<int>>
+            arr(new int[100], ArrayDeleter<int>());
+        arr[0] = 42;
+    }
+
+    // 2. shared_ptr 带删除器 (删除器不是类型的一部分)
+    {
+        std::shared_ptr<int> sp(new int(42), loggingDeleter);
+        std::cout << "shared_ptr 值: " << *sp << std::endl;
+    }
+
+    // 3. 使用删除器管理 C 资源
+    {
+        auto freeDeleter = [](void* p) {
+            std::cout << "释放 C 内存" << std::endl;
+            std::free(p);
+        };
+        std::unique_ptr<int, decltype(freeDeleter)>
+            cptr(static_cast<int*>(std::malloc(sizeof(int))), freeDeleter);
+        *cptr = 999;
+    }
+
+    return 0;
+}
+```
+
+4.11 std::allocator 类
+------------------------
+
+allocator 将内存分配和对象构造分离，允许在预分配的内存上按需构造对象。
+
+```cpp
+#include <iostream>
+#include <memory>
+#include <string>
+
+int main() {
+    std::allocator<std::string> alloc;
+
+    // 1. 分配原始内存（不构造对象）
+    const int n = 3;
+    std::string* p = alloc.allocate(n);
+
+    // 2. 在原始内存上逐个构造对象
+    alloc.construct(p, "Hello");
+    alloc.construct(p + 1, "World");
+    alloc.construct(p + 2, "!");
+
+    // 3. 使用对象
+    for (int i = 0; i < n; ++i) {
+        std::cout << p[i] << " ";
+    }
+    std::cout << std::endl;
+
+    // 4. 销毁对象（不释放内存）
+    for (int i = 0; i < n; ++i) {
+        alloc.destroy(p + i);
+    }
+
+    // 5. 释放内存
+    alloc.deallocate(p, n);
+
+    // C++17 起 allocator 有更简化的接口
+    // 但原理相同: allocate/deallocate + construct/destroy
+
+    return 0;
+}
+```
+
+4.12 nothrow new (不抛异常的 new)
+------------------------------------
+
+```cpp
+#include <iostream>
+#include <new>
+
+int main() {
+    // 普通 new: 失败时抛 std::bad_alloc
+    try {
+        int* p1 = new int[1000000000];
+        delete[] p1;
+    } catch (const std::bad_alloc& e) {
+        std::cout << "普通 new 失败: " << e.what() << std::endl;
+    }
+
+    // nothrow new: 失败时返回 nullptr
+    int* p2 = new (std::nothrow) int[1000000000];
+    if (!p2) {
+        std::cout << "nothrow new 失败, p2 = nullptr" << std::endl;
+    } else {
+        delete[] p2;
+    }
+
+    return 0;
+}
+```
+
+4.13 自定义全局 operator new / delete
+----------------------------------------
+
+```cpp
+#include <iostream>
+#include <cstdlib>
+#include <new>
+
+// 全局 new 的分配计数
+namespace {
+    std::size_t totalAllocated = 0;
+    std::size_t totalFreed = 0;
+    std::size_t allocationCount = 0;
+}
+
+// 重载全局 operator new
+void* operator new(std::size_t size) {
+    totalAllocated += size;
+    ++allocationCount;
+    void* p = std::malloc(size);
+    if (!p) throw std::bad_alloc();
+    std::cout << "[全局 new] 分配 " << size << " 字节 → " << p << std::endl;
+    return p;
+}
+
+// 重载全局 operator new[] (数组)
+void* operator new[](std::size_t size) {
+    return operator new(size);  // 复用上面的实现
+}
+
+// 重载全局 operator delete
+void operator delete(void* p) noexcept {
+    std::cout << "[全局 delete] 释放 " << p << std::endl;
+    std::free(p);
+}
+
+// 重载全局 operator delete[] (数组)
+void operator delete[](void* p) noexcept {
+    operator delete(p);
+}
+
+// 带大小的 operator delete (C++14)
+void operator delete(void* p, std::size_t size) noexcept {
+    totalFreed += size;
+    std::cout << "[全局 delete sized] 释放 " << p
+              << " (大小: " << size << " 字节)" << std::endl;
+    std::free(p);
+}
+
+int main() {
+    std::cout << "=== 自定义全局 new/delete ===" << std::endl;
+
+    int* a = new int(42);
+    delete a;
+
+    double* b = new double(3.14);
+    delete b;
+
+    int* arr = new int[5];
+    delete[] arr;
+
+    std::cout << "总分配次数: " << allocationCount << std::endl;
+    std::cout << "总分配字节: " << totalAllocated << std::endl;
+
+    return 0;
+}
+```
+
+4.14 内存泄漏检测工具概述
+----------------------------
+
+```bash
+# Valgrind: Linux 下经典的内存检测工具
+$ valgrind --leak-check=full ./my_program
+
+# AddressSanitizer (ASan): 编译器内置，运行时检测
+$ g++ -fsanitize=address -g my_program.cpp
+$ ./a.out
+
+# 输出会显示:
+#   - heap-use-after-free (使用已释放的内存)
+#   - heap-buffer-overflow (堆缓冲区溢出)
+#   - memory leaks (内存泄漏)
+
+# LeakSanitizer (LSan): 专门的泄漏检测
+$ g++ -fsanitize=leak -g my_program.cpp
+```
+
+在自己的代码中模拟这些工具的行为：
+
+```cpp
+#include <iostream>
+#include <set>
+#include <cstdlib>
+#include <new>
+
+// 简单的内存泄漏检测器
+namespace MemTracker {
+    std::set<void*> allocations;
+
+    void* trackedAlloc(std::size_t size, const char* file, int line) {
+        void* p = std::malloc(size);
+        allocations.insert(p);
+        std::cout << "[ALLOC] " << file << ":" << line
+                  << " 分配 " << size << " 字节 → " << p
+                  << " (活跃分配: " << allocations.size() << ")"
+                  << std::endl;
+        return p;
+    }
+
+    void trackedFree(void* p, const char* file, int line) {
+        if (allocations.erase(p)) {
+            std::cout << "[FREE]  " << file << ":" << line
+                      << " 释放 " << p
+                      << " (活跃分配: " << allocations.size() << ")"
+                      << std::endl;
+        }
+        std::free(p);
+    }
+
+    void reportLeaks() {
+        if (!allocations.empty()) {
+            std::cerr << "\n!!! 检测到内存泄漏 !!!" << std::endl;
+            std::cerr << "未释放的分配数: " << allocations.size() << std::endl;
+            for (auto p : allocations) {
+                std::cerr << "  泄漏: " << p << std::endl;
+            }
+        } else {
+            std::cout << "\n没有检测到内存泄漏" << std::endl;
+        }
+    }
+}
+```
+
+
+================================================================================
+### 第三节: 实用代码案例（生活场景举例）
+================================================================================
+
+案例一：可变长成绩管理系统
+----------------------------------------------------------------
+
+生活场景：老师在学期末需要录入全班学生的成绩。由于班级人数不固定，需要动态增长
+的数组来存储成绩。录入时需要自动扩容，最后计算平均分和排名。
+
+本案例涉及：new[] 动态分配、realloc 逻辑、指针运算、基础内存管理。
+
+```cpp
+#include <iostream>
+#include <iomanip>
+#include <cstring>
+#include <algorithm>
+
+// ============================================================
+// 成绩管理系统命名空间
+// ============================================================
+namespace GradeManager {
+
+    struct Student {
+        char name[32];
+        double score;
+    };
+
+    // 动态数组类（简化版，展示 new[] 和扩容原理）
+    class DynamicStudentArray {
+    public:
+        DynamicStudentArray()
+            : data_(nullptr), size_(0), capacity_(0) {}
+
+        ~DynamicStudentArray() {
+            delete[] data_;
+        }
+
+        // 禁止拷贝（简化）
+        DynamicStudentArray(const DynamicStudentArray&) = delete;
+        DynamicStudentArray& operator=(const DynamicStudentArray&) = delete;
+
+        // 添加学生（自动扩容）
+        void add(const char* name, double score) {
+            if (size_ >= capacity_) {
+                // 扩容策略：2倍增长
+                std::size_t newCapacity = (capacity_ == 0)
+                                          ? 4
+                                          : capacity_ * 2;
+                resize(newCapacity);
+            }
+
+            std::strncpy(data_[size_].name, name, 31);
+            data_[size_].name[31] = '\0';
+            data_[size_].score = score;
+            ++size_;
+        }
+
+        // 获取学生信息
+        const Student& at(std::size_t index) const {
+            return data_[index];
+        }
+
+        std::size_t size() const { return size_; }
+        std::size_t capacity() const { return capacity_; }
+
+        // 按成绩降序排序
+        void sortByScore() {
+            // 简单的选择排序（本例演示指针运算）
+            for (std::size_t i = 0; i < size_; ++i) {
+                std::size_t maxIdx = i;
+                for (std::size_t j = i + 1; j < size_; ++j) {
+                    if (data_[j].score > data_[maxIdx].score) {
+                        maxIdx = j;
+                    }
+                }
+                if (maxIdx != i) {
+                    Student temp = data_[i];
+                    data_[i] = data_[maxIdx];
+                    data_[maxIdx] = temp;
+                }
+            }
+        }
+
+        // 计算平均分
+        double average() const {
+            if (size_ == 0) return 0.0;
+            double sum = 0.0;
+            for (std::size_t i = 0; i < size_; ++i) {
+                sum += data_[i].score;
+            }
+            return sum / size_;
+        }
+
+        // 查找最高分
+        double maxScore() const {
+            if (size_ == 0) return 0.0;
+            double maxVal = data_[0].score;
+            for (std::size_t i = 1; i < size_; ++i) {
+                if (data_[i].score > maxVal) {
+                    maxVal = data_[i].score;
+                }
+            }
+            return maxVal;
+        }
+
+        // 查找最低分
+        double minScore() const {
+            if (size_ == 0) return 0.0;
+            double minVal = data_[0].score;
+            for (std::size_t i = 1; i < size_; ++i) {
+                if (data_[i].score < minVal) {
+                    minVal = data_[i].score;
+                }
+            }
+            return minVal;
+        }
+
+        // 输出成绩单
+        void printReport() const {
+            std::cout << "\n┌─────────────────────────────────────┐" << std::endl;
+            std::cout << "│         成绩单                      │" << std::endl;
+            std::cout << "├──────┬──────────────────┬───────────┤" << std::endl;
+            std::cout << "│ 排名 │ 姓名             │ 成绩      │" << std::endl;
+            std::cout << "├──────┼──────────────────┼───────────┤" << std::endl;
+
+            for (std::size_t i = 0; i < size_; ++i) {
+                std::cout << "│ "
+                          << std::setw(4) << (i + 1) << " │ "
+                          << std::setw(16) << std::left << data_[i].name << " │ "
+                          << std::setw(9) << std::right << std::fixed
+                          << std::setprecision(2) << data_[i].score << " │"
+                          << std::endl;
+            }
+
+            std::cout << "└──────┴──────────────────┴───────────┘" << std::endl;
+        }
+
+    private:
+        Student* data_;
+        std::size_t size_;
+        std::size_t capacity_;
+
+        void resize(std::size_t newCapacity) {
+            std::cout << "  [扩容] " << capacity_ << " → "
+                      << newCapacity << " (当前学生数: " << size_ << ")"
+                      << std::endl;
+
+            // 分配新内存
+            Student* newData = new Student[newCapacity];
+
+            // 复制旧数据
+            for (std::size_t i = 0; i < size_; ++i) {
+                newData[i] = data_[i];
+            }
+
+            // 释放旧内存
+            delete[] data_;
+
+            // 更新指针和容量
+            data_ = newData;
+            capacity_ = newCapacity;
+        }
+    };
+
+}  // namespace GradeManager
+
+int main() {
+    std::cout << "╔══════════════════════════════╗" << std::endl;
+    std::cout << "║    可 变 长 成 绩 管 理     ║" << std::endl;
+    std::cout << "╚══════════════════════════════╝\n" << std::endl;
+
+    GradeManager::DynamicStudentArray arr;
+
+    // 模拟录入成绩
+    std::cout << "=== 录入学生成绩 ===" << std::endl;
+    arr.add("李明", 95.5);
+    arr.add("王小红", 88.0);
+    arr.add("张伟", 76.5);
+    arr.add("刘芳", 92.0);
+    arr.add("陈强", 85.0);
+    arr.add("赵敏", 78.5);
+    arr.add("周杰", 91.0);
+    arr.add("吴鑫", 69.0);
+    arr.add("郑爽", 83.5);
+    arr.add("钱彪", 97.0);
+    arr.add("孙丽", 81.0);
+    arr.add("马超", 74.0);
+
+    std::cout << "\n录入完成，共 " << arr.size() << " 名学生" << std::endl;
+    std::cout << "数组容量: " << arr.capacity() << std::endl;
+
+    // 排序
+    arr.sortByScore();
+
+    // 统计
+    std::cout << "\n=== 成绩统计 ===" << std::endl;
+    std::cout << "平均分: " << std::fixed << std::setprecision(2)
+              << arr.average() << std::endl;
+    std::cout << "最高分: " << arr.maxScore() << std::endl;
+    std::cout << "最低分: " << arr.minScore() << std::endl;
+
+    // 输出成绩单
+    arr.printReport();
+
+    return 0;
+}
+```
+
+
+案例二：餐厅点餐队列（动态链表）
+----------------------------------------------------------------
+
+生活场景：一家热门餐厅需要叫号系统。顾客到达后取号排队，服务员按FIFO顺序叫号。
+用自己 new 出来的链表节点管理队列，支持排队、出队、查询等待人数。
+
+本案例涉及：new/delete 构建动态链表、命名空间组织、原始指针操作。
+
+```cpp
+#include <iostream>
+#include <string>
+#include <iomanip>
+
+// ============================================================
+// 餐厅排队系统命名空间
+// ============================================================
+namespace Restaurant {
+
+    // 队列节点 (客人信息)
+    struct GuestNode {
+        int ticketNumber;          // 取号号码
+        std::string name;          // 客人姓名
+        int partySize;             // 同行人数
+        GuestNode* next;           // 指向下一个节点
+
+        GuestNode(int ticket, const std::string& n, int size)
+            : ticketNumber(ticket), name(n), partySize(size), next(nullptr) {
+            std::cout << "  [new] 新客人 " << name << " 号数: "
+                      << ticket << " (" << partySize << "人)" << std::endl;
+        }
+
+        ~GuestNode() {
+            std::cout << "  [delete] 客人 " << name << " (号数: "
+                      << ticketNumber << ") 已处理" << std::endl;
+        }
+    };
+
+    // 等待队列
+    class GuestQueue {
+    public:
+        GuestQueue() : head_(nullptr), tail_(nullptr), count_(0), nextTicket_(1) {}
+
+        ~GuestQueue() {
+            // 释放所有节点
+            while (head_) {
+                GuestNode* temp = head_;
+                head_ = head_->next;
+                delete temp;
+            }
+        }
+
+        // 禁止拷贝
+        GuestQueue(const GuestQueue&) = delete;
+        GuestQueue& operator=(const GuestQueue&) = delete;
+
+        // 排队：客人取号
+        int enqueue(const std::string& name, int partySize) {
+            GuestNode* newNode = new GuestNode(nextTicket_, name, partySize);
+            ++nextTicket_;
+
+            if (!tail_) {
+                // 队列为空
+                head_ = tail_ = newNode;
+            } else {
+                tail_->next = newNode;
+                tail_ = newNode;
+            }
+
+            ++count_;
+            return newNode->ticketNumber;
+        }
+
+        // 叫号：出队
+        bool dequeue() {
+            if (!head_) {
+                std::cout << "队列为空，没有等待的客人" << std::endl;
+                return false;
+            }
+
+            GuestNode* served = head_;
+            head_ = head_->next;
+            if (!head_) tail_ = nullptr;  // 队列已空
+
+            std::cout << "\n>>> 请 " << served->ticketNumber << " 号 "
+                      << served->name << " 先生/女士 "
+                      << "(" << served->partySize << "人) 入座!"
+                      << std::endl;
+
+            delete served;
+            --count_;
+            return true;
+        }
+
+        // 查看队列状态
+        void displayQueue() const {
+            std::cout << "\n┌─────────────────────────────┐" << std::endl;
+            std::cout << "│       当前等待队列          │" << std::endl;
+            std::cout << "├──────┬──────────┬───────────┤" << std::endl;
+            std::cout << "│ 号数 │ 姓名     │ 人数      │" << std::endl;
+            std::cout << "├──────┼──────────┼───────────┤" << std::endl;
+
+            GuestNode* current = head_;
+            while (current) {
+                std::cout << "│ "
+                          << std::setw(4) << current->ticketNumber << " │ "
+                          << std::setw(8) << std::left << current->name << " │ "
+                          << std::setw(9) << std::right << current->partySize << " │"
+                          << std::endl;
+                current = current->next;
+            }
+
+            if (!head_) {
+                std::cout << "│       (当前无等待客人)      │" << std::endl;
+            }
+
+            std::cout << "└──────┴──────────┴───────────┘" << std::endl;
+            std::cout << "当前等待: " << count_ << " 桌"
+                      << " | 下一位号数: " << nextTicket_ << std::endl;
+        }
+
+        // 查看指定号数的客人
+        GuestNode* findGuest(int ticket) const {
+            GuestNode* current = head_;
+            while (current) {
+                if (current->ticketNumber == ticket) {
+                    return current;
+                }
+                current = current->next;
+            }
+            return nullptr;
+        }
+
+        // 查询等待人数
+        int waitingCount() const { return count_; }
+
+    private:
+        GuestNode* head_;
+        GuestNode* tail_;
+        int count_;
+        int nextTicket_;
+    };
+
+    // 餐厅操作接口
+    namespace Host {
+        void showMenu() {
+            std::cout << "\n操作菜单:" << std::endl;
+            std::cout << "  1. 取号排队" << std::endl;
+            std::cout << "  2. 叫号入座" << std::endl;
+            std::cout << "  3. 查看队列" << std::endl;
+            std::cout << "  4. 查询等待人数" << std::endl;
+            std::cout << "  0. 收工打烊" << std::endl;
+            std::cout << "请选择: ";
+        }
+    }
+
+}  // namespace Restaurant
+
+int main() {
+    std::cout << "╔══════════════════════════════╗" << std::endl;
+    std::cout << "║   餐 厅 叫 号 系 统         ║" << std::endl;
+    std::cout << "╚══════════════════════════════╝\n" << std::endl;
+
+    Restaurant::GuestQueue queue;
+
+    // 模拟高峰时段
+    std::cout << "=== 高峰时段客人涌入 ===" << std::endl;
+    queue.enqueue("张三", 2);
+    queue.enqueue("李四", 4);
+    queue.enqueue("王五", 1);
+    queue.enqueue("赵六", 3);
+    queue.enqueue("钱七", 2);
+
+    queue.displayQueue();
+
+    // 叫号入座
+    std::cout << "\n=== 开始叫号 ===" << std::endl;
+    queue.dequeue();
+    queue.dequeue();
+
+    queue.displayQueue();
+
+    // 又来新客人
+    std::cout << "\n=== 新客人到达 ===" << std::endl;
+    int ticket = queue.enqueue("孙八", 5);
+    std::cout << "孙八的号数是: " << ticket << std::endl;
+
+    queue.displayQueue();
+
+    // 查询指定号数
+    int findTicket = ticket;  // 刚才取到的号
+    auto guest = queue.findGuest(findTicket);
+    if (guest) {
+        std::cout << "\n号数 " << findTicket << " 的客人: "
+                  << guest->name << " (" << guest->partySize << "人)"
+                  << std::endl;
+    }
+
+    // 继续叫号直到空
+    std::cout << "\n=== 叫完所有客人 ===" << std::endl;
+    while (queue.waitingCount() > 0) {
+        queue.dequeue();
+    }
+
+    queue.displayQueue();
+
+    std::cout << "\n打烊了！" << std::endl;
+    return 0;
+}
+```
+
+
+案例三：简易内存池 (Memory Pool)
+----------------------------------------------------------------
+
+生活场景：游戏中的子弹对象频繁创建和销毁（每帧可能成百上千个）。如果每次都用
+new/delete，不仅效率低（每次都要向操作系统申请/归还），还会产生内存碎片。
+内存池预先分配一大块内存，对象"创建"和"销毁"只是标记使用/空闲状态，极大
+提高了性能。
+
+本案例涉及：operator new/delete 重载、placement new、预分配内存块、free list。
+
+```cpp
+#include <iostream>
+#include <cstddef>
+#include <cstdint>
+
+// 第二章的调试宏（融入前章知识）
+#ifdef ENABLE_POOL_DEBUG
+    #define POOL_LOG(msg) \
+        std::cout << "[MemoryPool][" << __FILE__ << ":" << __LINE__ \
+                  << "] " << msg << std::endl
+#else
+    #define POOL_LOG(msg) ((void)0)
+#endif
+
+// 启用调试
+#define ENABLE_POOL_DEBUG
+
+// ============================================================
+// 内存池命名空间
+// ============================================================
+namespace MemPool {
+
+    // 子弹类（模拟频繁创建/销毁的小对象）
+    class Bullet {
+    public:
+        float x, y;
+        float vx, vy;
+        bool active;
+        int damage;
+
+        Bullet() : x(0), y(0), vx(0), vy(0), active(false), damage(10) {}
+
+        Bullet(float px, float py, float vx_, float vy_, int dmg)
+            : x(px), y(py), vx(vx_), vy(vy_), active(true), damage(dmg) {
+            POOL_LOG("Bullet 构造 at (" << x << "," << y << ")"
+                      << " 速度(" << vx << "," << vy << ")"
+                      << " 伤害=" << damage);
+        }
+
+        ~Bullet() {
+            POOL_LOG("Bullet 析构");
+        }
+
+        void update() {
+            if (!active) return;
+            x += vx;
+            y += vy;
+        }
+
+        void print() const {
+            std::cout << "  Bullet[位置(" << x << "," << y << ")"
+                      << " 速度(" << vx << "," << vy << ")"
+                      << " 伤害=" << damage
+                      << " " << (active ? "活跃" : "休眠") << "]"
+                      << std::endl;
+        }
+    };
+
+    // ============================================================
+    // 内存池实现
+    // ============================================================
+    class BulletPool {
+    public:
+        static const std::size_t POOL_SIZE = 16;   // 池中最多存储的子弹数
+        static const std::size_t BULLET_SIZE = sizeof(Bullet);
+
+        BulletPool() : rawMemory_(nullptr), freeList_(nullptr), usedCount_(0) {
+            // 1. 预先分配一大块原始内存
+            rawMemory_ = static_cast<char*>(
+                ::operator new(POOL_SIZE * BULLET_SIZE)
+            );
+            POOL_LOG("预分配 " << (POOL_SIZE * BULLET_SIZE)
+                      << " 字节原始内存 → " << (void*)rawMemory_);
+
+            // 2. 初始化空闲链表：将大块内存切割成小块，串联起来
+            char* current = rawMemory_;
+            for (std::size_t i = 0; i < POOL_SIZE - 1; ++i) {
+                // 每个空闲槽的前 sizeof(void*) 字节存储下一个空闲槽的地址
+                *reinterpret_cast<char**>(current) = current + BULLET_SIZE;
+                current += BULLET_SIZE;
+            }
+            *reinterpret_cast<char**>(current) = nullptr;  // 最后一个指向 null
+            freeList_ = rawMemory_;  // 空闲链表的头
+
+            POOL_LOG("空闲链表初始化完成，共 " << POOL_SIZE << " 个槽");
+        }
+
+        ~BulletPool() {
+            POOL_LOG("释放内存池");
+            ::operator delete(rawMemory_);
+        }
+
+        // 禁止拷贝
+        BulletPool(const BulletPool&) = delete;
+        BulletPool& operator=(const BulletPool&) = delete;
+
+        // "分配"一个子弹（从池中获取）
+        Bullet* allocate() {
+            if (!freeList_) {
+                POOL_LOG("内存池已满！无法分配更多子弹");
+                return nullptr;
+            }
+
+            // 从空闲链表头部取一个槽
+            char* slot = static_cast<char*>(freeList_);
+            // 下一个空闲槽的地址存在当前槽的前几个字节中
+            freeList_ = *reinterpret_cast<void**>(slot);
+
+            ++usedCount_;
+            POOL_LOG("从池中分配一个子弹槽 (" << usedCount_
+                      << "/" << POOL_SIZE << " 已用)"
+                      << " 地址: " << (void*)slot);
+
+            return reinterpret_cast<Bullet*>(slot);
+        }
+
+        // "释放"一个子弹（归还到池中）
+        void deallocate(Bullet* bullet) {
+            if (!bullet) return;
+
+            // 先析构（如果用户没有手动调）
+            bullet->~Bullet();
+
+            // 将当前槽插入空闲链表头部
+            char* slot = reinterpret_cast<char*>(bullet);
+            *reinterpret_cast<void**>(slot) = freeList_;
+            freeList_ = slot;
+
+            --usedCount_;
+            POOL_LOG("归还子弹槽到池中 (" << usedCount_
+                      << "/" << POOL_SIZE << " 已用)"
+                      << " 地址: " << (void*)slot);
+        }
+
+        // 在池上构造子弹
+        Bullet* createBullet(float x, float y, float vx, float vy, int damage) {
+            Bullet* bullet = allocate();
+            if (bullet) {
+                // placement new: 在已分配的内存上构造对象
+                new (bullet) Bullet(x, y, vx, vy, damage);
+            }
+            return bullet;
+        }
+
+        // 销毁子弹并归还内存
+        void destroyBullet(Bullet* bullet) {
+            if (bullet) {
+                bullet->~Bullet();  // 手动调用析构
+                deallocate(bullet);
+            }
+        }
+
+        // 池状态
+        void printStats() const {
+            std::cout << "内存池状态: "
+                      << usedCount_ << "/" << POOL_SIZE << " 使用中"
+                      << " (" << (usedCount_ * 100 / POOL_SIZE) << "%)"
+                      << std::endl;
+        }
+
+        std::size_t usedCount() const { return usedCount_; }
+        std::size_t totalSlots() const { return POOL_SIZE; }
+
+    private:
+        char* rawMemory_;   // 预分配的整块内存
+        void* freeList_;    // 空闲链表头
+        std::size_t usedCount_;
+    };
+
+}  // namespace MemPool
+
+// 为 Bullet 重载 operator new/delete，自动使用内存池
+namespace MemPool {
+    // 获取全局内存池实例
+    BulletPool& getGlobalBulletPool() {
+        static BulletPool pool;  // 单例（全局唯一）
+        return pool;
+    }
+
+    // 测试用: 批量创建子弹
+    void fireBulletStorm(BulletPool& pool, int count) {
+        std::cout << "\n--- 发射 " << count << " 发子弹 ---" << std::endl;
+
+        Bullet* bullets[32] = {nullptr};  // 临时存放
+        int created = 0;
+
+        for (int i = 0; i < count; ++i) {
+            float angle = i * 0.2f;
+            Bullet* b = pool.createBullet(
+                0.0f, 0.0f,           // 位置: 原点
+                std::cos(angle), std::sin(angle),  // 速度方向
+                10 + i % 20           // 伤害
+            );
+            if (b) {
+                bullets[created++] = b;
+            } else {
+                std::cout << "  无法创建更多子弹！池已满" << std::endl;
+                break;
+            }
+        }
+
+        pool.printStats();
+
+        // 模拟几帧更新
+        for (int frame = 1; frame <= 3; ++frame) {
+            std::cout << "\n第 " << frame << " 帧:" << std::endl;
+            for (int i = 0; i < created; ++i) {
+                bullets[i]->update();
+            }
+            // 每帧输出第一发子弹的位置
+            if (created > 0) {
+                bullets[0]->print();
+            }
+        }
+
+        // 销毁所有子弹
+        std::cout << "\n--- 清除子弹 ---" << std::endl;
+        for (int i = 0; i < created; ++i) {
+            pool.destroyBullet(bullets[i]);
+        }
+        pool.printStats();
+    }
+}
+
+int main() {
+    std::cout << "╔══════════════════════════════╗" << std::endl;
+    std::cout << "║     游 戏 内 存 池          ║" << std::endl;
+    std::cout << "╚══════════════════════════════╝\n" << std::endl;
+
+    MemPool::BulletPool& pool = MemPool::getGlobalBulletPool();
+    pool.printStats();
+
+    // 场景1: 发射少量子弹（不超池容量）
+    MemPool::fireBulletStorm(pool, 5);
+
+    // 场景2: 大批量发射（会触发池满的情况）
+    MemPool::fireBulletStorm(pool, 20);
+
+    return 0;
+}
+```
+
+代码讲解：
+- 内存池在构造时一次性分配 `POOL_SIZE * sizeof(Bullet)` 字节的原始内存
+- 空闲链表（Free List）将所有空闲槽串联起来：每个槽的前8字节（sizeof(void*)）
+  存储下一个空闲槽的地址
+- `allocate()` 从链表头取出一个槽（O(1) 时间复杂度）
+- `deallocate()` 将槽插回链表头（O(1) 时间复杂度）
+- 没有像 new/delete 那样每次都走 malloc/free → brk/mmap 系统调用
+- POOL_LOG 宏（源自第二章知识）控制调试日志的输出
+
+
+案例四：图书馆图书管理系统（shared_ptr + weak_ptr）
+----------------------------------------------------------------
+
+生活场景：大学图书馆的借阅系统。一本书可以被多个读者同时预约（共享所有权）。
+读者和图书之间存在相互引用关系——读者知道自己预约了哪些书，图书也记录自己被
+哪些读者预约。如果用 shared_ptr 双向引用会产生循环引用（永远无法释放），
+必须用 weak_ptr 打破循环。
+
+本案例涉及：shared_ptr、weak_ptr、引用计数监控、循环引用问题与解决。
+
+```cpp
+#include <iostream>
+#include <memory>
+#include <string>
+#include <vector>
+#include <iomanip>
+#include <algorithm>
+
+// 前向声明
+struct Book;
+
+// ============================================================
+// 图书馆系统命名空间
+// ============================================================
+namespace Library {
+
+    // 预处理器常量（融入第二章知识）
+    #define MAX_BORROW_COUNT 5        // 每位读者最多借书数
+    #define LOAN_PERIOD_DAYS 30       // 借阅期限（天）
+    #define STRINGIFY_HELPER(x) #x
+    #define STRINGIFY(x) STRINGIFY_HELPER(x)
+
+    // 读者
+    struct Reader {
+        std::string name;
+        std::string id;                    // 读者证号
+        // 读者持有的书（shared_ptr 表示读者拥有书的借阅权）
+        std::vector<std::shared_ptr<Book>> borrowedBooks;
+
+        Reader(const std::string& n, const std::string& studentId)
+            : name(n), id(studentId) {
+            std::cout << "  [构造] 读者 " << name << " (" << id << ")" << std::endl;
+        }
+
+        ~Reader() {
+            std::cout << "  [析构] 读者 " << name << " (" << id << ")" << std::endl;
+        }
+
+        void showBorrowed() const {
+            std::cout << "\n读者 " << name << " 借阅清单:" << std::endl;
+            if (borrowedBooks.empty()) {
+                std::cout << "  (无借阅记录)" << std::endl;
+                return;
+            }
+            for (const auto& book : borrowedBooks) {
+                std::cout << "  - 《" << book->title << "》 (ISBN: "
+                          << book->isbn << ")" << std::endl;
+            }
+        }
+    };
+
+    // 图书
+    struct Book {
+        std::string title;
+        std::string isbn;
+        std::string author;
+        // 预约此书的读者列表（用 weak_ptr 避免循环引用）
+        std::vector<std::weak_ptr<Reader>> reservationList;
+
+        Book(const std::string& t, const std::string& i, const std::string& a)
+            : title(t), isbn(i), author(a) {
+            std::cout << "  [构造] 图书 《" << title << "》 (ISBN: " << isbn << ")" << std::endl;
+        }
+
+        ~Book() {
+            std::cout << "  [析构] 图书 《" << title << "》 (ISBN: " << isbn << ")" << std::endl;
+        }
+
+        // 显示预约信息
+        void showReservations() const {
+            std::cout << "\n《" << title << "》预约读者:" << std::endl;
+            int validCount = 0;
+            for (const auto& weakReader : reservationList) {
+                if (auto reader = weakReader.lock()) {
+                    std::cout << "  - " << reader->name
+                              << " (" << reader->id << ")" << std::endl;
+                    ++validCount;
+                }
+            }
+            std::cout << "  有效预约数: " << validCount
+                      << " / 总计: " << reservationList.size() << std::endl;
+        }
+
+        void printInfo() const {
+            std::cout << "《" << title << "》 "
+                      << "ISBN:" << isbn << " "
+                      << "作者:" << author;
+        }
+    };
+
+    // 图书馆管理类
+    class LibrarySystem {
+    public:
+        // 添加图书到馆藏
+        void addBook(const std::string& title,
+                     const std::string& isbn,
+                     const std::string& author) {
+            books_.push_back(std::make_shared<Book>(title, isbn, author));
+        }
+
+        // 注册读者
+        void registerReader(const std::string& name,
+                            const std::string& studentId) {
+            readers_.push_back(std::make_shared<Reader>(name, studentId));
+        }
+
+        // 借书：读者借阅图书
+        bool borrowBook(const std::string& studentId, const std::string& isbn) {
+            // 找到读者
+            std::shared_ptr<Reader> reader = findReaderById(studentId);
+            if (!reader) {
+                std::cout << "错误: 未找到读者 " << studentId << std::endl;
+                return false;
+            }
+
+            // 检查借阅数量限制
+            if (reader->borrowedBooks.size() >= MAX_BORROW_COUNT) {
+                std::cout << "错误: " << reader->name
+                          << " 已达到最大借阅数 (" << MAX_BORROW_COUNT << "本)"
+                          << std::endl;
+                return false;
+            }
+
+            // 找到图书
+            std::shared_ptr<Book> book = findBookByIsbn(isbn);
+            if (!book) {
+                std::cout << "错误: 未找到图书 " << isbn << std::endl;
+                return false;
+            }
+
+            // 检查是否已借出
+            for (const auto& b : reader->borrowedBooks) {
+                if (b->isbn == isbn) {
+                    std::cout << "错误: " << reader->name
+                              << " 已经借了《" << book->title << "》"
+                              << std::endl;
+                    return false;
+                }
+            }
+
+            // 执行借阅
+            reader->borrowedBooks.push_back(book);
+            // 图书也记录借阅者（weak_ptr 避免循环引用）
+            book->reservationList.push_back(reader);
+
+            std::cout << "√ " << reader->name << " 成功借阅《"
+                      << book->title << "》" << std::endl;
+
+            // 查看引用计数
+            std::cout << "  图书 shared_ptr 引用计数: "
+                      << book.use_count() << std::endl;
+            std::cout << "  读者 shared_ptr 引用计数: "
+                      << reader.use_count() << std::endl;
+
+            return true;
+        }
+
+        // 还书
+        bool returnBook(const std::string& studentId, const std::string& isbn) {
+            std::shared_ptr<Reader> reader = findReaderById(studentId);
+            if (!reader) return false;
+
+            std::shared_ptr<Book> book = findBookByIsbn(isbn);
+            if (!book) return false;
+
+            // 从读者的借阅列表中移除
+            auto& borrowed = reader->borrowedBooks;
+            auto it = std::find_if(borrowed.begin(), borrowed.end(),
+                [&isbn](const std::shared_ptr<Book>& b) {
+                    return b->isbn == isbn;
+                });
+            if (it != borrowed.end()) {
+                borrowed.erase(it);
+            }
+
+            // 从图书的预约列表中移除该读者
+            auto& reservations = book->reservationList;
+            reservations.erase(
+                std::remove_if(reservations.begin(), reservations.end(),
+                    [&reader](const std::weak_ptr<Reader>& wr) {
+                        auto sp = wr.lock();
+                        return sp && sp->id == reader->id;
+                    }),
+                reservations.end()
+            );
+
+            std::cout << "√ " << reader->name << " 归还了《"
+                      << book->title << "》" << std::endl;
+
+            std::cout << "  图书 shared_ptr 引用计数: "
+                      << book.use_count() << std::endl;
+
+            return true;
+        }
+
+        // 显示所有馆藏
+        void showAllBooks() const {
+            std::cout << "\n=== 图书馆馆藏 ===" << std::endl;
+            for (const auto& book : books_) {
+                std::cout << "  ";
+                book->printInfo();
+                std::cout << " (引用计数: " << book.use_count() << ")"
+                          << std::endl;
+            }
+        }
+
+        // 显示所有读者
+        void showAllReaders() const {
+            std::cout << "\n=== 注册读者 ===" << std::endl;
+            for (const auto& reader : readers_) {
+                std::cout << "  " << reader->name
+                          << " (" << reader->id << ")"
+                          << " (引用计数: " << reader.use_count() << ")"
+                          << std::endl;
+            }
+        }
+
+        // 显示系统概览
+        void showSystemStatus() const {
+            std::cout << "\n╔══════════════════════════════╗" << std::endl;
+            std::cout << "║     图书馆系统状态           ║" << std::endl;
+            std::cout << "╠══════════════════════════════╣" << std::endl;
+            std::cout << "║ 馆藏数: " << std::setw(3) << books_.size()
+                      << " 册              ║" << std::endl;
+            std::cout << "║ 注册读者: " << std::setw(3) << readers_.size()
+                      << " 人            ║" << std::endl;
+            std::cout << "║ 每位限借: " << MAX_BORROW_COUNT << " 本"
+                      << "              ║" << std::endl;
+            std::cout << "║ 借阅期限: " << LOAN_PERIOD_DAYS << " 天"
+                      << "              ║" << std::endl;
+            std::cout << "╚══════════════════════════════╝" << std::endl;
+        }
+
+    private:
+        std::vector<std::shared_ptr<Book>> books_;
+        std::vector<std::shared_ptr<Reader>> readers_;
+
+        std::shared_ptr<Reader> findReaderById(const std::string& id) {
+            for (auto& r : readers_) {
+                if (r->id == id) return r;
+            }
+            return nullptr;
+        }
+
+        std::shared_ptr<Book> findBookByIsbn(const std::string& isbn) {
+            for (auto& b : books_) {
+                if (b->isbn == isbn) return b;
+            }
+            return nullptr;
+        }
+    };
+
+}  // namespace Library
+
+int main() {
+    std::cout << "╔══════════════════════════════╗" << std::endl;
+    std::cout << "║   大 学 图 书 馆 系 统      ║" << std::endl;
+    std::cout << "╚══════════════════════════════╝\n" << std::endl;
+
+    Library::LibrarySystem lib;
+
+    // 初始化馆藏
+    lib.addBook("C++ Primer", "978-0321714114", "Stanley Lippman");
+    lib.addBook("Effective Modern C++", "978-1491903995", "Scott Meyers");
+    lib.addBook("The C++ Programming Language", "978-0321563842",
+                "Bjarne Stroustrup");
+    lib.addBook("Design Patterns", "978-0201633610",
+                "GoF (Gang of Four)");
+
+    // 注册读者
+    lib.registerReader("张三", "S2024001");
+    lib.registerReader("李四", "S2024002");
+    lib.registerReader("王五", "S2024003");
+
+    lib.showSystemStatus();
+    lib.showAllBooks();
+    lib.showAllReaders();
+
+    // 借阅操作
+    std::cout << "\n=== 借阅操作 ===" << std::endl;
+    lib.borrowBook("S2024001", "978-0321714114");  // 张三借C++ Primer
+    lib.borrowBook("S2024002", "978-0321714114");  // 李四也借同一本
+    lib.borrowBook("S2024001", "978-1491903995");  // 张三借Effective
+    lib.borrowBook("S2024003", "978-0321563842");  // 王五借TCPL
+
+    lib.showAllBooks();
+
+    // 查看读者借阅清单
+    auto findAndShow = [&lib](const std::string& id) mutable {
+        // 模拟: 遍历找到对应读者并显示（简化处理）
+    };
+
+    // 还书
+    std::cout << "\n=== 还书操作 ===" << std::endl;
+    lib.returnBook("S2024001", "978-0321714114");  // 张三还C++ Primer
+
+    lib.showAllBooks();
+
+    std::cout << "\n=== 系统运行结束，所有资源自动释放 ===" << std::endl;
+    return 0;
+}
+```
+
+代码讲解：
+- `Book` 和 `Reader` 之间用 `shared_ptr` 和 `weak_ptr` 的双向引用
+- `shared_ptr<Book>` 存储在 `books_` 和读者的 `borrowedBooks` 中 → 共享所有权
+- `weak_ptr<Reader>` 存储在图书的 `reservationList` 中 → 不增加引用计数
+- 如果 `reservationList` 也用 `shared_ptr<Reader>`，会形成循环：Reader 持有
+  Book，Book 持有 Reader → 两者的引用计数永远不会归零 → 内存泄漏
+- 代码展示了 `use_count()` 监测引用计数，`lock()` 提升 weak_ptr
+
+
+案例五：二维图像矩阵处理器 (RAII + 移动语义)
+----------------------------------------------------------------
+
+生活场景：图像处理程序需要处理像素矩阵（如 1920×1080 的 RGB 图像）。矩阵数据量
+很大（约 6MB），需要在函数间传递，但又不能频繁深拷贝（太昂贵）。实现一个完整的
+RAII 矩阵类，支持移动语义避免不必要的拷贝。
+
+本案例涉及：三/五法则（Rule of 3/5）、移动语义、RAII、operator() 访问元素、
+前三章知识综合运用。
+
+```cpp
+#include <iostream>
+#include <iomanip>
+#include <cstring>
+#include <stdexcept>
+
+// ============================================================
+// 预处理定义（融入第二章
+#define MATRIX_ASSERT(cond, msg) \
+    do { \
+        if (!(cond)) { \
+            std::cerr << "[ASSERT][" << __FILE__ << ":" << __LINE__ \
+                      << "] " << msg << std::endl; \
+        } \
+    } while(0)
+
+// 命名空间（融入第一章）
+namespace ImageProcessing {
+
+    // ============================================================
+    // Matrix<T> 二维动态矩阵（类似图像像素缓冲区）
+    // ============================================================
+    template<typename T>
+    class Matrix {
+    public:
+        // 默认构造
+        Matrix()
+            : rows_(0), cols_(0), data_(nullptr) {}
+
+        // 带参数构造 (RAII 第一部分: 资源获取即初始化)
+        Matrix(std::size_t rows, std::size_t cols)
+            : rows_(rows), cols_(cols), data_(nullptr) {
+            if (rows > 0 && cols > 0) {
+                data_ = new T[rows * cols];
+                std::memset(data_, 0, rows * cols * sizeof(T));
+            }
+        }
+
+        // 带填充值构造
+        Matrix(std::size_t rows, std::size_t cols, T fillValue)
+            : rows_(rows), cols_(cols), data_(nullptr) {
+            if (rows > 0 && cols > 0) {
+                data_ = new T[rows * cols];
+                for (std::size_t i = 0; i < rows * cols; ++i) {
+                    data_[i] = fillValue;
+                }
+            }
+        }
+
+        // 析构 (RAII 第二部分)
+        ~Matrix() {
+            delete[] data_;
+            // #ifdef ENABLE_MATRIX_DEBUG（融入第二章调试宏概念）
+            // std::cout << "[~Matrix] 释放 " << rows_ << "x" << cols_
+            //           << " 矩阵" << std::endl;
+            // #endif
+        }
+
+        // ============================================================
+        // 拷贝构造 (Rule of 5 — 深拷贝)
+        // ============================================================
+        Matrix(const Matrix& other)
+            : rows_(other.rows_), cols_(other.cols_), data_(nullptr) {
+            if (other.data_ && rows_ > 0 && cols_ > 0) {
+                std::size_t total = rows_ * cols_;
+                data_ = new T[total];
+                for (std::size_t i = 0; i < total; ++i) {
+                    data_[i] = other.data_[i];
+                }
+            }
+        }
+
+        // 拷贝赋值
+        Matrix& operator=(const Matrix& other) {
+            if (this != &other) {
+                // 释放旧资源
+                delete[] data_;
+                data_ = nullptr;
+
+                rows_ = other.rows_;
+                cols_ = other.cols_;
+
+                if (other.data_ && rows_ > 0 && cols_ > 0) {
+                    std::size_t total = rows_ * cols_;
+                    data_ = new T[total];
+                    for (std::size_t i = 0; i < total; ++i) {
+                        data_[i] = other.data_[i];
+                    }
+                }
+            }
+            return *this;
+        }
+
+        // ============================================================
+        // 移动构造 (Rule of 5 — 转移所有权)
+        // ============================================================
+        Matrix(Matrix&& other) noexcept
+            : rows_(other.rows_), cols_(other.cols_), data_(other.data_) {
+            // 将源对象置为空状态
+            other.rows_ = 0;
+            other.cols_ = 0;
+            other.data_ = nullptr;
+        }
+
+        // 移动赋值
+        Matrix& operator=(Matrix&& other) noexcept {
+            if (this != &other) {
+                // 释放当前资源
+                delete[] data_;
+
+                // "偷走" other 的资源
+                rows_ = other.rows_;
+                cols_ = other.cols_;
+                data_ = other.data_;
+
+                // 将 other 置为空状态
+                other.rows_ = 0;
+                other.cols_ = 0;
+                other.data_ = nullptr;
+            }
+            return *this;
+        }
+
+        // ============================================================
+        // 元素访问
+        // ============================================================
+        T& operator()(std::size_t row, std::size_t col) {
+            MATRIX_ASSERT(row < rows_ && col < cols_,
+                          "索引越界: (" + std::to_string(row) + ","
+                          + std::to_string(col) + ") 超出 ("
+                          + std::to_string(rows_) + "," + std::to_string(cols_) + ")");
+            return data_[row * cols_ + col];
+        }
+
+        const T& operator()(std::size_t row, std::size_t col) const {
+            MATRIX_ASSERT(row < rows_ && col < cols_, "索引越界 (const)");
+            return data_[row * cols_ + col];
+        }
+
+        // ============================================================
+        // 属性
+        // ============================================================
+        std::size_t rows() const { return rows_; }
+        std::size_t cols() const { return cols_; }
+        std::size_t totalElements() const { return rows_ * cols_; }
+        std::size_t totalBytes() const { return rows_ * cols_ * sizeof(T); }
+        bool empty() const { return data_ == nullptr; }
+
+        // ============================================================
+        // 原始数据访问
+        // ============================================================
+        T* data() { return data_; }
+        const T* data() const { return data_; }
+
+        // ============================================================
+        // 矩阵操作
+        // ============================================================
+        void fill(T value) {
+            for (std::size_t i = 0; i < rows_ * cols_; ++i) {
+                data_[i] = value;
+            }
+        }
+
+        // 转置（返回新矩阵）
+        Matrix transposed() const {
+            Matrix result(cols_, rows_);
+            for (std::size_t r = 0; r < rows_; ++r) {
+                for (std::size_t c = 0; c < cols_; ++c) {
+                    result(c, r) = (*this)(r, c);
+                }
+            }
+            return result;
+        }
+
+        // 打印矩阵（小矩阵的可视化）
+        void print(const char* name = nullptr, int width = 6) const {
+            if (name) std::cout << name << " (" << rows_ << "x" << cols_ << "):" << std::endl;
+            else std::cout << "矩阵 (" << rows_ << "x" << cols_ << "):" << std::endl;
+
+            for (std::size_t r = 0; r < rows_; ++r) {
+                std::cout << "  [";
+                for (std::size_t c = 0; c < cols_; ++c) {
+                    std::cout << std::setw(width) << (*this)(r, c);
+                }
+                std::cout << "  ]" << std::endl;
+            }
+            std::cout << std::endl;
+        }
+
+    private:
+        std::size_t rows_;
+        std::size_t cols_;
+        T* data_;
+    };
+
+    // ============================================================
+    // 图像处理工具命名空间
+    // ============================================================
+    namespace Filters {
+
+        // 模拟灰度转换（将 RGB 区域处理为灰度）
+        void adjustBrightness(Matrix<double>& image, double factor) {
+            std::size_t total = image.totalElements();
+            for (std::size_t i = 0; i < total; ++i) {
+                image.data()[i] *= factor;
+            }
+        }
+
+        // 生成高斯核（图像处理常见的卷积核）
+        Matrix<double> createGaussianKernel(int size, double sigma) {
+            Matrix<double> kernel(size, size);
+            int center = size / 2;
+            double sum = 0.0;
+
+            for (int r = 0; r < size; ++r) {
+                for (int c = 0; c < size; ++c) {
+                    double dx = static_cast<double>(c - center);
+                    double dy = static_cast<double>(r - center);
+                    double val = std::exp(-(dx * dx + dy * dy) / (2.0 * sigma * sigma));
+                    kernel(r, c) = val;
+                    sum += val;
+                }
+            }
+
+            // 归一化
+            for (int r = 0; r < size; ++r) {
+                for (int c = 0; c < size; ++c) {
+                    kernel(r, c) /= sum;
+                }
+            }
+
+            return kernel;
+        }
+
+        // 模拟边缘检测（Sobel算子的垂直部分）
+        Matrix<double> createSobelVertical() {
+            Matrix<double> sobel(3, 3);
+            sobel(0, 0) = -1; sobel(0, 1) = 0; sobel(0, 2) = 1;
+            sobel(1, 0) = -2; sobel(1, 1) = 0; sobel(1, 2) = 2;
+            sobel(2, 0) = -1; sobel(2, 1) = 0; sobel(2, 2) = 1;
+            return sobel;
+        }
+
+    }  // namespace Filters
+
+    // ============================================================
+    // 模拟图像处理管道
+    // ============================================================
+    namespace Pipeline {
+
+        // 模拟加载图像（创建随机像素矩阵）
+        Matrix<double> loadImage(int width, int height) {
+            std::cout << "加载图像 " << width << "x" << height << std::endl;
+            Matrix<double> img(height, width);
+
+            // 模拟像素数据
+            for (int r = 0; r < height; ++r) {
+                for (int c = 0; c < width; ++c) {
+                    // 简单的渐变 + 随机噪声模拟
+                    img(r, c) = static_cast<double>(r + c) * 0.5;
+                }
+            }
+
+            std::cout << "  分配内存: " << img.totalBytes() << " 字节" << std::endl;
+            return img;  // 移动语义！不是深拷贝
+        }
+
+        // 模拟保存图像
+        void saveImage(const Matrix<double>& img, const char* filename) {
+            std::cout << "保存图像到: " << filename << std::endl;
+            std::cout << "  尺寸: " << img.cols() << "x" << img.rows()
+                      << " (" << img.totalBytes() << " 字节)" << std::endl;
+        }
+
+    }  // namespace Pipeline
+
+}  // namespace ImageProcessing
+
+// 用命名空间别名简化
+namespace Img = ImageProcessing;
+namespace ImgFilters = ImageProcessing::Filters;
+namespace ImgPipeline = ImageProcessing::Pipeline;
+
+// 模拟图像编辑程序
+int main() {
+    std::cout << "╔══════════════════════════════╗" << std::endl;
+    std::cout << "║     图 像 处 理 器          ║" << std::endl;
+    std::cout << "╚══════════════════════════════╝\n" << std::endl;
+
+    // ============================================================
+    // 1. 基本操作：创建矩阵、访问元素
+    // ============================================================
+    std::cout << "=== 1. 创建简单矩阵 ===" << std::endl;
+    Img::Matrix<int> smallMat(3, 4);
+    for (int r = 0; r < 3; ++r) {
+        for (int c = 0; c < 4; ++c) {
+            smallMat(r, c) = (r + 1) * 10 + c;
+        }
+    }
+    smallMat.print("小矩阵 (3x4)", 4);
+
+    // ============================================================
+    // 2. 拷贝构造 (深拷贝)
+    // ============================================================
+    std::cout << "=== 2. 拷贝构造演示 (深拷贝) ===" << std::endl;
+    Img::Matrix<int> matCopy(smallMat);  // 深拷贝
+    matCopy(0, 0) = 999;                 // 修改拷贝不影响原矩阵
+    std::cout << "原矩阵(0,0) = " << smallMat(0, 0) << std::endl;  // 10
+    std::cout << "拷贝矩阵(0,0) = " << matCopy(0, 0) << std::endl;  // 999
+
+    // ============================================================
+    // 3. 移动构造 (转移所有权，避免深拷贝)
+    // ============================================================
+    std::cout << "\n=== 3. 移动构造演示 (零拷贝) ===" << std::endl;
+    Img::Matrix<int> matSource(3, 3, 42);   // 全填42
+    std::cout << "移动前: matSource.empty() = "
+              << matSource.empty() << std::endl;  // false
+
+    Img::Matrix<int> matDest(std::move(matSource));  // 移动构造
+    std::cout << "移动后: matSource.empty() = "
+              << matSource.empty() << std::endl;  // true (资源被转移)
+    std::cout << "移动后: matDest.empty() = "
+              << matDest.empty() << std::endl;    // false
+    matDest.print("目标矩阵 (来自移动)", 4);
+
+    // ============================================================
+    // 4. 图像处理管道（真实场景）
+    // ============================================================
+    std::cout << "\n=== 4. 图像处理管道 ===" << std::endl;
+
+    // 加载一张"图像"
+    Img::Matrix<double> photo = ImgPipeline::loadImage(1920, 1080);
+    // 返回值使用移动语义，不深拷贝
+
+    // 应用高斯模糊核
+    Img::Matrix<double> gaussian = ImgFilters::createGaussianKernel(5, 1.4);
+    gaussian.print("高斯核 5x5 (sigma=1.4)", 10);
+
+    // 应用 Sobel 边缘检测
+    Img::Matrix<double> sobel = ImgFilters::createSobelVertical();
+    sobel.print("Sobel垂直算子 3x3", 4);
+
+    // 调整亮度
+    std::cout << "调整亮度..." << std::endl;
+    ImgFilters::adjustBrightness(photo, 1.2);  // 提亮20%
+
+    // 保存处理后的图像
+    ImgPipeline::saveImage(photo, "output_processed.raw");
+
+    // ============================================================
+    // 5. 矩阵转置（返回新矩阵，使用移动语义）
+    // ============================================================
+    std::cout << "\n=== 5. 矩阵转置 ===" << std::endl;
+    Img::Matrix<int> matA(2, 3);
+    matA(0, 0) = 1; matA(0, 1) = 2; matA(0, 2) = 3;
+    matA(1, 0) = 4; matA(1, 1) = 5; matA(1, 2) = 6;
+    matA.print("原矩阵 (2x3)", 4);
+
+    Img::Matrix<int> matAT = matA.transposed();
+    matAT.print("转置矩阵 (3x2)", 4);
+    // transposed() 返回临时对象，利用移动语义避免拷贝
+
+    // ============================================================
+    // 6. 移动赋值演示
+    // ============================================================
+    std::cout << "\n=== 6. 移动赋值 ===" << std::endl;
+    Img::Matrix<int> matB(2, 2, 1);
+    Img::Matrix<int> matC(3, 3, 9);
+    std::cout << "matB 尺寸: " << matB.rows() << "x" << matB.cols() << std::endl;
+    std::cout << "matC 尺寸: " << matC.rows() << "x" << matC.cols() << std::endl;
+
+    matB = std::move(matC);  // 移动赋值：matB 释放旧资源，接管 matC 的资源
+    std::cout << "移动赋值后:" << std::endl;
+    std::cout << "matB 尺寸: " << matB.rows() << "x" << matB.cols()
+              << " (接管了matC的 3x3 数据)" << std::endl;
+    std::cout << "matC 尺寸: " << matC.rows() << "x" << matC.cols()
+              << " (变为空矩阵)" << std::endl;
+
+    std::cout << "\n=== 图像处理完毕 ===" << std::endl;
+    // 所有 Matrix 在此离开作用域，析构函数自动释放内存（RAII）
+    return 0;
+}
+```
+
+代码讲解：
+- **Rule of 5** 完整实现：拷贝构造、拷贝赋值、移动构造、移动赋值、析构函数
+- **RAII**：构造时 `new T[rows*cols]`，析构时 `delete[] data_`，绝不泄漏
+- **移动语义**：通过移动构造/赋值，在函数返回值、参数传递时避免深拷贝
+  大数据（6MB+ 的像素矩阵拷贝一次可能影响性能）
+- **operator()** 提供类二维数组的语法访问元素
+- **命名空间** 组织代码：`ImageProcessing::Matrix`、`ImageProcessing::Filters`、
+  `ImageProcessing::Pipeline`
+- **宏** (`MATRIX_ASSERT`) 提供带文件名+行号的调试断言
+- 模拟了完整的图像处理流程：加载→处理→保存
+
+
+================================================================================
+### 第四节: 课后习题
+================================================================================
+
+习题：变长字符串类 FlexString
+--------------------------------
+
+**场景描述**：
+C++ 的 std::string 功能强大，但了解其底层实现对于掌握动态内存管理至关重要。
+本题要求从零实现一个变长字符串类 FlexString，以加深对动态内存、RAII、
+Rule of 5 和拷贝控制的理解。
+
+**要求实现**：
+
+1. **内部存储**：
+   - 使用 `char* data_` 动态分配内存存储字符串内容
+   - 提供 `size_`（当前字符串长度，不含 '\0'）和 `capacity_`（已分配容量）
+   - 始终在字符串末尾保留 '\0'（兼容 C 字符串）
+
+2. **完整实现 Rule of 5 (五法则)**：
+   - 构造：`FlexString()`（空串）、`FlexString(const char*)`（从C字符串）、
+     `FlexString(const char* s, std::size_t n)`（取前 n 个字符）
+   - 拷贝构造：深拷贝
+   - 拷贝赋值：释放旧资源 → 深拷贝新数据
+   - 移动构造：转移所有权（源对象变为空）
+   - 移动赋值：释放旧资源 → 转移所有权
+   - 析构：释放 `data_`
+
+3. **成员方法**：
+   - `size()` — 返回字符串长度
+   - `capacity()` — 返回容量
+   - `c_str()` — 返回 const char*
+   - `append(const char* s)` — 追加字符串，必要时自动扩容
+   - `insert(std::size_t pos, const char* s)` — 在指定位置插入
+   - `erase(std::size_t pos, std::size_t count)` — 删除子串
+   - `find(const char* s)` — 查找子串，返回位置（找不到返回 npos）
+   - `substr(std::size_t pos, std::size_t count)` — 提取子串，返回新 FlexString
+
+4. **运算符重载**（为第7章铺垫）：
+   - `operator+` 用于字符串拼接（返回新 FlexString）
+   - `operator==` 用于字符串比较
+   - `operator<<` 用于流输出（在类外定义为友元或自由函数）
+
+5. **调试宏**（结合第二章知识）：
+   - 定义 `FLEXSTRING_DEBUG` 宏开关
+   - 在 DEBUG 模式下，构造/析构/扩容时输出文件名+行号的调试信息
+
+6. **演示程序**：
+   - 在 main 中创建多个 FlexString 对象，测试所有方法
+   - 演示拷贝构造和移动构造的区别（通过计数器或输出来体现）
+   - 演示自动扩容机制
+
+**参考答案框架**：
+
+```cpp
+#include <iostream>
+#include <cstring>
+#include <algorithm>
+#include <utility>
+
+// ============================================================
+// 调试开关（第二章：预处理器宏）
+// ============================================================
+#define FLEXSTRING_DEBUG
+
+#ifdef FLEXSTRING_DEBUG
+    #define FS_LOG(msg) \
+        std::cout << "[FlexString][" << __FILE__ << ":" << __LINE__ \
+                  << "] " << msg << std::endl
+#else
+    #define FS_LOG(msg) ((void)0)
+#endif
+
+// 最小容量（避免频繁分配微小内存）
+#define MIN_CAPACITY 16
+
+// ============================================================
+// FlexString 类定义
+// ============================================================
+class FlexString {
+public:
+    static const std::size_t npos = static_cast<std::size_t>(-1);
+
+    // 默认构造
+    FlexString() : data_(nullptr), size_(0), capacity_(0) {
+        FS_LOG("默认构造: 空字符串");
+        ensureCapacity(MIN_CAPACITY);
+        data_[0] = '\0';
+    }
+
+    // 从C字符串构造
+    FlexString(const char* s) : data_(nullptr), size_(0), capacity_(0) {
+        FS_LOG("从C字符串构造: \"" << (s ? s : "null") << "\"");
+        if (s) {
+            size_ = std::strlen(s);
+            ensureCapacity(size_ + 1);
+            std::strcpy(data_, s);
+        } else {
+            ensureCapacity(MIN_CAPACITY);
+            data_[0] = '\0';
+        }
+    }
+
+    // 取前 n 个字符构造
+    FlexString(const char* s, std::size_t n) : data_(nullptr), size_(0), capacity_(0) {
+        FS_LOG("部分构造: 取前 " << n << " 字符");
+        if (s) {
+            size_ = std::min(n, std::strlen(s));
+            ensureCapacity(size_ + 1);
+            std::strncpy(data_, s, size_);
+            data_[size_] = '\0';
+        } else {
+            ensureCapacity(MIN_CAPACITY);
+            data_[0] = '\0';
+        }
+    }
+
+    // 拷贝构造 (深拷贝)
+    FlexString(const FlexString& other)
+        : data_(nullptr), size_(other.size_), capacity_(0) {
+        FS_LOG("拷贝构造: 复制 \"" << other.c_str() << "\"");
+        ensureCapacity(size_ + 1);
+        std::strcpy(data_, other.data_);
+    }
+
+    // 移动构造
+    FlexString(FlexString&& other) noexcept
+        : data_(other.data_), size_(other.size_), capacity_(other.capacity_) {
+        FS_LOG("移动构造: 转移 \"" << (data_ ? data_ : "") << "\"");
+        other.data_ = nullptr;
+        other.size_ = 0;
+        other.capacity_ = 0;
+    }
+
+    // 析构
+    ~FlexString() {
+        FS_LOG("析构: \"" << (data_ ? data_ : "(空)") << "\""
+                << " (capacity=" << capacity_ << ")");
+        delete[] data_;
+    }
+
+    // 拷贝赋值
+    FlexString& operator=(const FlexString& other) {
+        FS_LOG("拷贝赋值: \"" << other.c_str() << "\"");
+        if (this != &other) {
+            FlexString temp(other);      // 拷贝构造临时对象
+            swap(temp);                  // 交换资源
+        }
+        return *this;
+    }
+
+    // 移动赋值
+    FlexString& operator=(FlexString&& other) noexcept {
+        FS_LOG("移动赋值: \"" << (other.data_ ? other.data_ : "") << "\"");
+        if (this != &other) {
+            delete[] data_;
+            data_ = other.data_;
+            size_ = other.size_;
+            capacity_ = other.capacity_;
+            other.data_ = nullptr;
+            other.size_ = 0;
+            other.capacity_ = 0;
+        }
+        return *this;
+    }
+
+    // ============================================================
+    // 元素访问
+    // ============================================================
+    char& operator[](std::size_t index) { return data_[index]; }
+    const char& operator[](std::size_t index) const { return data_[index]; }
+
+    const char* c_str() const { return data_ ? data_ : ""; }
+    std::size_t size() const { return size_; }
+    std::size_t capacity() const { return capacity_; }
+    bool empty() const { return size_ == 0; }
+
+    // ============================================================
+    // 操作
+    // ============================================================
+    void append(const char* s) {
+        if (!s) return;
+        std::size_t slen = std::strlen(s);
+        if (slen == 0) return;
+
+        FS_LOG("append: \"" << s << "\" (长度 " << slen << ")");
+        ensureCapacity(size_ + slen + 1);
+        std::strcpy(data_ + size_, s);
+        size_ += slen;
+    }
+
+    void insert(std::size_t pos, const char* s) {
+        if (!s) return;
+        if (pos > size_) pos = size_;
+
+        std::size_t slen = std::strlen(s);
+        FS_LOG("insert 位置 " << pos << ": \"" << s << "\"");
+        ensureCapacity(size_ + slen + 1);
+
+        // 移动 pos 之后的字符
+        std::memmove(data_ + pos + slen, data_ + pos, size_ - pos + 1);
+        // 插入新字符
+        std::memcpy(data_ + pos, s, slen);
+        size_ += slen;
+    }
+
+    void erase(std::size_t pos, std::size_t count) {
+        if (pos >= size_) return;
+        std::size_t actualCount = std::min(count, size_ - pos);
+        FS_LOG("erase 从 " << pos << " 开始删除 " << actualCount << " 字符");
+        std::memmove(data_ + pos, data_ + pos + actualCount,
+                     size_ - pos - actualCount + 1);
+        size_ -= actualCount;
+    }
+
+    std::size_t find(const char* s) const {
+        if (!s || !data_) return npos;
+        const char* pos = std::strstr(data_, s);
+        return pos ? static_cast<std::size_t>(pos - data_) : npos;
+    }
+
+    FlexString substr(std::size_t pos, std::size_t count) const {
+        if (pos >= size_) return FlexString();
+        std::size_t actualCount = std::min(count, size_ - pos);
+        return FlexString(data_ + pos, actualCount);
+    }
+
+    // ============================================================
+    // 运算符
+    // ============================================================
+    FlexString operator+(const FlexString& other) const {
+        FlexString result(data_, size_);
+        result.append(other.data_);
+        return result;
+    }
+
+    FlexString operator+(const char* s) const {
+        FlexString result(*this);
+        result.append(s);
+        return result;
+    }
+
+    bool operator==(const FlexString& other) const {
+        if (size_ != other.size_) return false;
+        return std::strcmp(data_, other.data_) == 0;
+    }
+
+    bool operator!=(const FlexString& other) const {
+        return !(*this == other);
+    }
+
+    // ============================================================
+    // 工具
+    // ============================================================
+    void clear() {
+        data_[0] = '\0';
+        size_ = 0;
+    }
+
+    void swap(FlexString& other) noexcept {
+        std::swap(data_, other.data_);
+        std::swap(size_, other.size_);
+        std::swap(capacity_, other.capacity_);
+    }
+
+    void printDebugInfo() const {
+        std::cout << "  data_ = " << (void*)data_ << std::endl;
+        std::cout << "  size_ = " << size_ << std::endl;
+        std::cout << "  capacity_ = " << capacity_ << std::endl;
+        std::cout << "  content = \"" << c_str() << "\"" << std::endl;
+    }
+
+private:
+    char* data_;
+    std::size_t size_;
+    std::size_t capacity_;
+
+    // 确保容量足够（不足则扩容）
+    void ensureCapacity(std::size_t required) {
+        if (capacity_ >= required) return;
+
+        std::size_t newCapacity = std::max(capacity_ * 2,
+                                           std::max(required,
+                                                    (std::size_t)MIN_CAPACITY));
+        FS_LOG("扩容: " << capacity_ << " → " << newCapacity
+                << " (需要 " << required << " 字节)");
+
+        char* newData = new char[newCapacity];
+        if (data_) {
+            std::strcpy(newData, data_);
+            delete[] data_;
+        } else {
+            newData[0] = '\0';
+        }
+
+        data_ = newData;
+        capacity_ = newCapacity;
+    }
+};
+
+// 流输出运算符（全局函数）
+std::ostream& operator<<(std::ostream& os, const FlexString& str) {
+    os << str.c_str();
+    return os;
+}
+
+// ============================================================
+// 测试代码
+// ============================================================
+int main() {
+    std::cout << "╔══════════════════════════════╗" << std::endl;
+    std::cout << "║     FlexString 测试          ║" << std::endl;
+    std::cout << "╚══════════════════════════════╝\n" << std::endl;
+
+    // 1. 基本构造
+    std::cout << "=== 1. 构造 ===" << std::endl;
+    FlexString s1;
+    FlexString s2("Hello");
+    FlexString s3("World!!!", 5);  // 只取前5个字符
+
+    std::cout << "s1 = \"" << s1 << "\" (size=" << s1.size() << ")" << std::endl;
+    std::cout << "s2 = \"" << s2 << "\" (size=" << s2.size() << ")" << std::endl;
+    std::cout << "s3 = \"" << s3 << "\" (size=" << s3.size() << ")" << std::endl;
+
+    // 2. 拷贝构造 vs 移动构造
+    std::cout << "\n=== 2. 拷贝 vs 移动 ===" << std::endl;
+    std::cout << "--- 拷贝构造 ---" << std::endl;
+    FlexString s4(s2);            // 拷贝
+    std::cout << "s4 = \"" << s4 << "\"" << std::endl;
+    s4[0] = 'Y';
+    std::cout << "修改 s4[0]='Y' 后: s2 = \"" << s2
+              << "\", s4 = \"" << s4 << "\"" << std::endl;
+
+    std::cout << "\n--- 移动构造 ---" << std::endl;
+    FlexString s5(std::move(s4)); // 移动
+    std::cout << "移动后 s4 = \"" << s4 << "\" (空), s5 = \""
+              << s5 << "\"" << std::endl;
+
+    // 3. append 和自动扩容
+    std::cout << "\n=== 3. Append 和扩容 ===" << std::endl;
+    FlexString s6("C++");
+    s6.append(" is");
+    s6.append(" a");
+    s6.append(" powerful");
+    s6.append(" programming");
+    s6.append(" language");
+    std::cout << "s6 = \"" << s6 << "\""
+              << " (size=" << s6.size()
+              << ", capacity=" << s6.capacity() << ")" << std::endl;
+
+    // 4. insert 和 erase
+    std::cout << "\n=== 4. Insert 和 Erase ===" << std::endl;
+    FlexString s7("Hello World");
+    std::cout << "原始: \"" << s7 << "\"" << std::endl;
+
+    s7.insert(6, "Beautiful ");
+    std::cout << "insert(6, \"Beautiful \"): \"" << s7 << "\"" << std::endl;
+
+    s7.erase(6, 10);
+    std::cout << "erase(6, 10): \"" << s7 << "\"" << std::endl;
+
+    // 5. find 和 substr
+    std::cout << "\n=== 5. Find 和 Substr ===" << std::endl;
+    FlexString s8("The quick brown fox jumps over the lazy dog");
+    std::size_t pos = s8.find("fox");
+    std::cout << "find(\"fox\") = " << pos << std::endl;
+
+    FlexString sub = s8.substr(pos, 3);
+    std::cout << "substr(" << pos << ", 3) = \"" << sub << "\"" << std::endl;
+
+    pos = s8.find("elephant");
+    std::cout << "find(\"elephant\") = "
+              << (pos == FlexString::npos ? "npos (未找到)" : std::to_string(pos))
+              << std::endl;
+
+    // 6. operator+
+    std::cout << "\n=== 6. operator+ ===" << std::endl;
+    FlexString firstName("John");
+    FlexString lastName(" Doe");
+    FlexString fullName = firstName + lastName;
+    std::cout << firstName << " + " << lastName << " = \""
+              << fullName << "\"" << std::endl;
+
+    FlexString greeting = FlexString("Hello, ") + fullName + "!";
+    std::cout << "拼接: \"" << greeting << "\"" << std::endl;
+
+    // 7. 拷贝赋值 vs 移动赋值
+    std::cout << "\n=== 7. 拷贝赋值 vs 移动赋值 ===" << std::endl;
+    FlexString sa("Original");
+    FlexString sb("Temporary");
+    std::cout << "赋值前: sa = \"" << sa << "\", sb = \"" << sb << "\"" << std::endl;
+
+    sa = sb;  // 拷贝赋值
+    std::cout << "sa=sb (拷贝赋值) 后: sa = \"" << sa << "\"" << std::endl;
+
+    FlexString sc("ToBeMoved");
+    sb = std::move(sc);  // 移动赋值
+    std::cout << "sb=move(sc) (移动赋值) 后: sb = \"" << sb
+              << "\", sc = \"" << sc << "\" (空)" << std::endl;
+
+    // 8. 比较
+    std::cout << "\n=== 8. 比较 ===" << std::endl;
+    FlexString a("abc"), b("abc"), c("xyz");
+    std::cout << "\"abc\"==\"abc\" → " << (a == b ? "true" : "false") << std::endl;
+    std::cout << "\"abc\"==\"xyz\" → " << (a == c ? "true" : "false") << std::endl;
+    std::cout << "\"abc\"!=\"xyz\" → " << (a != c ? "true" : "false") << std::endl;
+
+    // 9. 调试信息
+    std::cout << "\n=== 9. 调试信息 ===" << std::endl;
+    s6.printDebugInfo();
+
+    std::cout << "\n=== 测试完成 ===" << std::endl;
+    return 0;
+}
+```
+
+**考察要点**：
+- 动态数组管理（new[] / delete[]）
+- Rule of 5 的完整理解与实现
+- 拷贝 vs 移动的不同语义
+- 自动扩容策略
+- C 字符串底层操作（strcpy、memmove、strstr）
+- 预处理器宏用于调试日志（第2章知识）
+- 命名空间可以自行添加（第1章知识）

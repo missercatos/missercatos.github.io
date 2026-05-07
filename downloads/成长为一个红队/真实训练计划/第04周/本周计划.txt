@@ -1,0 +1,586 @@
+================================================================================
+第4周：安全基础概念 (基础打造期)
+================================================================================
+
+【本周围绕的核心渗透案例阶段】
+阶段一→阶段二过渡：信息侦察 (Reconnaissance) → 扫描与枚举 (Scanning & Enumeration)
+在掌握Linux、网络和编程基础后，本周进入安全理论体系学习。理解CIA三元组、
+PTES渗透测试执行标准、Cyber Kill Chain和MITRE ATT&CK框架，为下一阶段的
+侦察和扫描工作提供方法论指导。这些框架是红队行动的"作战手册"。
+引用：红队队员完整学习手册 → 二、完整学习路径 → 第一层：基石
+"★ 优先级1: 基础环境与命令 → 网安基础知识/06-安全基础概念.txt 
+  → 网安基础知识/07-渗透测试方法论.txt"
+引用：红队队员完整学习手册 → 三、经典渗透案例
+"阶段一: 信息侦察 → 阶段二: 扫描与枚举"
+
+【本周学习目标】
+1. 深入理解CIA三元组（机密性/完整性/可用性）及其在渗透测试中的意义
+2. 掌握STRIDE威胁建模方法
+3. 了解CVE/CVSS漏洞评分体系
+4. 完整掌握PTES渗透测试执行标准7个阶段
+5. 理解Cyber Kill Chain网络杀伤链7个步骤
+6. 了解MITRE ATT&CK框架的核心概念和使用方法
+7. 掌握OWASP Top 10的10大类Web安全风险
+8. 完成第一阶段综合考核
+
+【本周知识清单】
+• CIA三元组：机密性(Confidentiality)、完整性(Integrity)、可用性(Availability)
+• AAA认证模型：认证(Authentication)、授权(Authorization)、审计(Auditing)
+• STRIDE威胁建模：身份欺骗/篡改/抵赖/信息泄露/拒绝服务/权限提升
+• DREAD风险评估：Damage/Reproducibility/Exploitability/Affected users/Discoverability
+• CVE(Common Vulnerabilities and Exposures)编号体系
+• CVSS(Common Vulnerability Scoring System)评分标准（基础/时间/环境维度）
+• PTES 7个阶段：前期交互/情报收集/威胁建模/漏洞分析/漏洞利用/后渗透/报告
+• Cyber Kill Chain 7步：侦察/武器化/投递/利用/安装/命令控制/目标行动
+• MITRE ATT&CK矩阵(Tactics战术, Techniques技术, Procedures过程)
+• OWASP Top 10 (2021版)：访问控制失效/加密失败/注入/不安全设计/安全配置错误/
+  易受攻击和过时的组件/识别和认证失败/软件和数据完整性故障/安全日志和监控故障/SSRF
+• 红队 vs 渗透测试 vs 漏洞扫描的区别
+• 防御纵深(Defense in Depth)概念
+• 零信任架构(Zero Trust)核心理念
+
+【本周工具清单】
+• 无需特殊工具（理论为主）
+• CVE官方网站 (cve.mitre.org)
+• MITRE ATT&CK官网 (attack.mitre.org)
+• OWASP官网 (owasp.org)
+
+================================================================================
+周一：CIA三元组与安全威胁分类
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：信息安全三大核心属性CIA三元组——机密性（加密/访问控制/数据分类）、
+  完整性（哈希校验/数字签名/版本控制）、可用性（冗余/负载均衡/DR灾备）。
+  STRIDE威胁建模六大威胁类型：身份欺骗(Spoofing)、数据篡改(Tampering)、
+  抵赖(Repudiation)、信息泄露(Information Disclosure)、拒绝服务(Denial of Service)、
+  权限提升(Elevation of Privilege)。理解攻击类型分类：被动攻击(窃听/流量分析)
+  和主动攻击(篡改/伪造/重放/DDoS)。以及DAD模型（CIA的对立面）。
+  参考文件：/home/a/成长为一个红队/网安基础知识/06-安全基础概念.txt（阅读第1-6章: 信息安全概述 → 攻击类型分类）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：选择一个真实的安全事件（如某知名数据泄露事件），用STRIDE模型
+  分析该事件中的威胁类型，用CIA三元组分析哪些属性被破坏。
+  使用CVSS计算器对一个已知漏洞进行评分练习。
+  参考文件：/home/a/成长为一个红队/网安基础知识/06-安全基础概念.txt
+
+  操作步骤：
+    Step 1: STRIDE威胁建模练习
+      # 场景：一个在线银行系统
+      # 在笔记中分析每种威胁类型的具体表现：
+      cat > ~/training/week4/stride_analysis.txt << 'EOF'
+      STRIDE威胁建模分析 — 在线银行系统
+      ================================
+
+      S (Spoofing 身份欺骗):
+        - 攻击者使用钓鱼邮件获取用户登录凭证
+        - 攻击者利用XSS窃取session cookie冒用身份
+        - 防御：多因素认证、IP信誉检测
+
+      T (Tampering 数据篡改):
+        - 攻击者中间人攻击修改转账金额
+        - 攻击者SQL注入篡改数据库记录
+        - 防御：TLS加密、参数化查询、数据签名
+
+      R (Repudiation 抵赖):
+        - 用户否认已执行的转账操作
+        - 攻击者清除日志否认入侵行为
+        - 防御：完整审计日志、数字签名
+
+      I (Information Disclosure 信息泄露):
+        - 敏感API返回过多用户信息
+        - 错误页面泄露系统版本和路径
+        - 防御：最小权限原则、错误信息脱敏
+
+      D (Denial of Service 拒绝服务):
+        - DDoS攻击使网站不可用
+        - 资源耗尽攻击（如Slowloris）
+        - 防御：CDN/WAF/速率限制
+
+      E (Elevation of Privilege 权限提升):
+        - 普通用户利用SUID提权至root
+        - Web应用水平越权访问其他用户数据
+        - 防御：最小权限、定期审计
+      EOF
+      cat ~/training/week4/stride_analysis.txt
+
+    Step 2: CVE/CVSS评分练习
+      # 查询一个真实CVE并计算CVSS评分
+      # 示例: CVE-2021-44228 (Log4Shell, CVSS 10.0)
+      curl -s https://cve.circl.lu/api/cve/CVE-2021-44228 | python3 -m json.tool | head -30
+      # 手动计算CVSS 3.1分数:
+      # 攻击向量(AV): 网络(N) = 0.85
+      # 攻击复杂度(AC): 低(L) = 0.77
+      # 权限要求(PR): 无(N) = 0.85
+      # 用户交互(UI): 无(N) = 0.85
+      # 机密性(C): 高(H)
+      # 完整性(I): 高(H)
+      # 可用性(A): 高(H)
+
+    Step 3: 漏洞分类练习
+      echo "=== 常见漏洞类型 ===" > ~/training/week4/vuln_classification.txt
+      echo "Web漏洞: SQL注入, XSS, CSRF, 命令注入, 文件包含, SSRF" >> ~/training/week4/vuln_classification.txt
+      echo "网络漏洞: 开放端口, 弱口令, 未加密通信, 默认配置" >> ~/training/week4/vuln_classification.txt
+      echo "系统漏洞: 未打补丁, SUID提权, 内核漏洞, 错误配置" >> ~/training/week4/vuln_classification.txt
+      echo "人为漏洞: 弱密码, 钓鱼邮件, 社会工程学, 内部威胁" >> ~/training/week4/vuln_classification.txt
+      cat ~/training/week4/vuln_classification.txt
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：理解了CIA三元组和STRIDE威胁建模方法，能系统性地分析安全威胁
+  - 遇到问题：(记录对威胁建模概念的理解难点)
+  - 明日计划：学习PTES渗透测试执行标准
+
+================================================================================
+周二：PTES渗透测试执行标准
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：PTES (Penetration Testing Execution Standard) 是渗透测试行业最
+  公认的执行标准，分为7个阶段。阶段1-前期交互：与客户确定测试范围、规则、
+  时间窗口、授权文件。阶段2-情报收集：OSINT、网络扫描、社会工程学信息收集。
+  阶段3-威胁建模：基于收集的信息分析攻击路径和威胁。阶段4-漏洞分析：
+  主动和被动漏洞发现、验证漏洞可利用性。阶段5-漏洞利用：获取初始访问权限、
+  绕过防御机制。阶段6-后渗透：权限维持、横向移动、数据提取、清理痕迹。
+  阶段7-报告：编写专业渗透测试报告，包含执行摘要、技术发现和修复建议。
+  参考文件：/home/a/成长为一个红队/网安基础知识/07-渗透测试方法论.txt（阅读第1-2章: 渗透测试概述、PTES七阶段详解）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：绘制PTES七阶段流程图，为每个阶段列出输入输出和常用工具。
+  模拟一个渗透测试的前期交互阶段，编写测试范围文档。
+  参考文件：/home/a/成长为一个红队/网安基础知识/07-渗透测试方法论.txt
+
+  操作步骤：
+    Step 1: 绘制PTES流程图
+      cat > ~/training/week4/ptes_flow.txt << 'EOF'
+      PTES渗透测试执行标准 — 7阶段流程图
+      =============================================
+
+      输入                                     输出
+      ┌─────────────────┐    ┌─────────────────┐
+      │ 1.前期交互        │    │ 测试范围文档     │
+      │ (客户沟通/授权)    │ →  │ 授权书/NDA       │
+      │ 时间: 1-2天       │    │ 测试规则/限制     │
+      └────────┬────────┘    └─────────────────┘
+               ↓
+      ┌─────────────────┐    ┌─────────────────┐
+      │ 2.情报收集        │    │ 目标资产清单     │
+      │ (OSINT/被动/主动) │ →  │ 子域名/IP列表    │
+      │ 时间: 2-5天      │    │ 邮箱/员工信息    │
+      └────────┬────────┘    └─────────────────┘
+               ↓
+      ┌─────────────────┐    ┌─────────────────┐
+      │ 3.威胁建模        │    │ 攻击路径图       │
+      │ (分析/优先级排序) │ →  │ 高价值目标清单    │
+      │ 时间: 1-2天      │    │ 风险评估矩阵     │
+      └────────┬────────┘    └─────────────────┘
+               ↓
+      ┌─────────────────┐    ┌─────────────────┐
+      │ 4.漏洞分析        │    │ 漏洞清单         │
+      │ (扫描/验证)       │ →  │ CVSS评分        │
+      │ 时间: 2-4天      │    │ 可利用性判断     │
+      └────────┬────────┘    └─────────────────┘
+               ↓
+      ┌─────────────────┐    ┌─────────────────┐
+      │ 5.漏洞利用        │    │ 初始Shell       │
+      │ (攻击/突破)       │ →  │ 获取的权限级别    │
+      │ 时间: 2-5天      │    │ 利用的方法记录    │
+      └────────┬────────┘    └─────────────────┘
+               ↓
+      ┌─────────────────┐    ┌─────────────────┐
+      │ 6.后渗透          │    │ 域控权限         │
+      │ (提权/横向/持久化)│ →  │ 窃取的核心数据    │
+      │ 时间: 2-5天      │    │ 攻击链记录       │
+      └────────┬────────┘    └─────────────────┘
+               ↓
+      ┌─────────────────┐    ┌─────────────────┐
+      │ 7.报告            │    │ 渗透测试报告     │
+      │ (撰写/提交)       │ →  │ 执行摘要/技术报告│
+      │ 时间: 2-3天      │    │ 修复建议/复测    │
+      └─────────────────┘    └─────────────────┘
+      EOF
+      cat ~/training/week4/ptes_flow.txt
+
+    Step 2: 各阶段常用工具映射
+      cat > ~/training/week4/ptes_tools.txt << 'EOF'
+      PTES阶段 → 常用工具映射
+      =========================================
+      阶段1 (前期交互): 合同模板/邮件/会议记录
+      阶段2 (情报收集): theHarvester, recon-ng, amass, subfinder, Shodan, Google Dorks
+      阶段3 (威胁建模): Maltego, draw.io (攻击路径图)
+      阶段4 (漏洞分析): nmap, masscan, nikto, OpenVAS, Nessus
+      阶段5 (漏洞利用): Metasploit, searchsploit, sqlmap, Burp Suite
+      阶段6 (后渗透):   Mimikatz, BloodHound, chisel, CrackMapExec, impacket
+      阶段7 (报告):     CherryTree, Dradis, LaTeX, Markdown, LibreOffice
+      EOF
+
+    Step 3: 模拟编写前期交互文档
+      cat > ~/training/week4/engagement_letter.txt << 'EOF'
+      ========================================
+            渗透测试授权书 (模拟)
+      ========================================
+      甲方（委托方）: Example-Corp Inc.
+      乙方（测试方）: Red Team Alpha
+      测试范围:
+        - 外部IP范围: 203.0.113.0/24
+        - Web应用: example-corp.com, mail.example-corp.com
+        - 禁止测试: 生产数据库直接连接
+      测试时间窗口: 2024年X月X日 - 2024年X月X日 (08:00-18:00)
+      测试类型: 灰盒测试 (提供低权限账号)
+      测试方法:
+        [ ] 拒绝服务攻击 (DoS)
+        [X] 社会工程学
+        [X] Web应用渗透
+        [X] 网络渗透
+      紧急联系方式: security@example-corp.com
+      数据销毁承诺: 测试完成后7天内销毁所有测试数据
+      签署: ___________  日期: ___________
+      EOF
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：完整掌握了PTES七阶段流程，理解了渗透测试从签约到报告的完整生命周期
+  - 遇到问题：(记录对某些阶段边界理解模糊的地方)
+  - 明日计划：学习Cyber Kill Chain和MITRE ATT&CK框架
+
+================================================================================
+周三：Cyber Kill Chain与MITRE ATT&CK
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：Cyber Kill Chain（网络杀伤链）由Lockheed Martin提出，描述攻击者
+  从外部到内部的7个步骤：1.侦察(Reconnaissance)、2.武器化(Weaponization)、
+  3.投递(Delivery)、4.利用(Exploitation)、5.安装(Installation)、
+  6.命令与控制(C2)、7.目标行动(Actions on Objectives)。
+  MITRE ATT&CK是一个基于真实观测的攻击行为知识库，包含Tactics(战术，
+  攻击者的"为什么")、Techniques(技术，攻击者的"怎么做")和Procedures(过程、
+  具体攻击实例)。企业ATT&CK矩阵包含14个战术类别，每个战术下包含数十个技术。
+  参考文件：/home/a/成长为一个红队/网安基础知识/07-渗透测试方法论.txt（阅读第3-4章: Cyber Kill Chain详解、MITRE ATT&CK框架）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：绘制Cyber Kill Chain 7步图并标注防御对策。浏览MITRE ATT&CK官网，
+  了解企业矩阵的结构。将Metasploitable2的漏洞映射到ATT&CK技术中。
+  参考文件：/home/a/成长为一个红队/网安基础知识/07-渗透测试方法论.txt
+
+  操作步骤：
+    Step 1: Cyber Kill Chain分析
+      cat > ~/training/week4/kill_chain.txt << 'EOF'
+      Cyber Kill Chain — 7步杀伤链与防御对策
+      ==================================================
+
+      第1步: 侦察 (Reconnaissance)
+        攻击者: 收集目标邮箱、域名、IP、员工信息
+        防御:   信息泄露管控、社交媒体培训、DNS记录最小化
+        对应本训练: 第5-6周 (信息收集与侦察)
+
+      第2步: 武器化 (Weaponization)
+        攻击者: 制作恶意文档、编写漏洞利用代码、生成Payload
+        防御:   无法在此阶段防御(攻击者内部行为)
+
+      第3步: 投递 (Delivery)
+        攻击者: 钓鱼邮件、USB投放、水坑攻击、恶意网站
+        防御:   邮件安全网关、Web过滤、安全意识培训
+
+      第4步: 利用 (Exploitation)
+        攻击者: 利用漏洞获取初始访问权限(如Apache RCE)
+        防御:   及时打补丁、WAF规则、入侵检测
+        对应本训练: 第13-14周 (漏洞利用)
+
+      第5步: 安装 (Installation)
+        攻击者: 安装后门/远控木马、添加计划任务、注册表持久化
+        防御:   端点保护、应用白名单、注册表监控
+        对应本训练: 第23-24周 (后渗透持久化)
+
+      第6步: 命令与控制 (C2)
+        攻击者: 建立C2通道(HTTP/DNS/ICMP隧道)、接收指令
+        防御:   网络流量分析、DNS监控、出站连接控制
+        对应本训练: 第21周 (代理隧道)
+
+      第7步: 目标行动 (Actions on Objectives)
+        攻击者: 窃取数据、加密勒索、破坏系统
+        防御:   数据防泄露(DLP)、异常行为检测、权限最小化
+        对应本训练: 第25-26周 (数据提取)
+      EOF
+      cat ~/training/week4/kill_chain.txt
+
+    Step 2: MITRE ATT&CK框架浏览
+      # 由于ATT&CK网站是动态的，通过命令行了解核心概念
+      echo "MITRE ATT&CK 企业版 14个战术 (Tactics):" > ~/training/week4/attack_framework.txt
+      echo "  TA0043: Reconnaissance       侦察" >> ~/training/week4/attack_framework.txt
+      echo "  TA0042: Resource Development 资源开发" >> ~/training/week4/attack_framework.txt
+      echo "  TA0001: Initial Access        初始访问" >> ~/training/week4/attack_framework.txt
+      echo "  TA0002: Execution             执行" >> ~/training/week4/attack_framework.txt
+      echo "  TA0003: Persistence           持久化" >> ~/training/week4/attack_framework.txt
+      echo "  TA0004: Privilege Escalation  权限提升" >> ~/training/week4/attack_framework.txt
+      echo "  TA0005: Defense Evasion       防御绕过" >> ~/training/week4/attack_framework.txt
+      echo "  TA0006: Credential Access     凭证访问" >> ~/training/week4/attack_framework.txt
+      echo "  TA0007: Discovery             发现" >> ~/training/week4/attack_framework.txt
+      echo "  TA0008: Lateral Movement      横向移动" >> ~/training/week4/attack_framework.txt
+      echo "  TA0009: Collection            收集" >> ~/training/week4/attack_framework.txt
+      echo "  TA0011: C2                    命令与控制" >> ~/training/week4/attack_framework.txt
+      echo "  TA0010: Exfiltration          数据渗出" >> ~/training/week4/attack_framework.txt
+      echo "  TA0040: Impact                影响" >> ~/training/week4/attack_framework.txt
+      cat ~/training/week4/attack_framework.txt
+
+    Step 3: 映射Metasploitable2漏洞到ATT&CK
+      cat > ~/training/week4/attack_mapping.txt << 'EOF'
+      Metasploitable2 漏洞 → MITRE ATT&CK 技术映射
+      ===============================================
+
+      VSFTPD 2.3.4 后门 (端口21)
+        → TA0001 初始访问: T1190 利用面向公众的应用
+        → TA0002 执行: T1059 命令和脚本解释器
+
+      SSH弱口令 (端口22, msfadmin:msfadmin)
+        → TA0006 凭证访问: T1110 暴力破解
+        → TA0001 初始访问: T1078 有效账户
+
+      Apache Tomcat弱口令 (端口8180, tomcat:tomcat)
+        → TA0001 初始访问: T1078 有效账户
+        → TA0002 执行: T1059 命令和脚本解释器 (WAR部署)
+
+      Distcc RCE (端口3632)
+        → TA0001 初始访问: T1190 利用面向公众的应用
+        → TA0004 权限提升: T1068 利用权限提升
+
+      UnrealIRCd 后门 (端口6667)
+        → TA0001 初始访问: T1190 利用面向公众的应用
+        → TA0002 执行: T1059 命令和脚本解释器
+      EOF
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：理解了Kill Chain攻击链模型，掌握了MITRE ATT&CK框架的基本结构，学会了将漏洞映射到ATT&CK技术
+  - 遇到问题：(记录框架理解的难点)
+  - 明日计划：学习OWASP Top 10
+
+================================================================================
+周四：OWASP Top 10详解
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：OWASP Top 10 (2021版) 是Web应用安全领域最权威的风险排名。
+  1.访问控制失效(Broken Access Control)：IDOR、路径穿越、CORS配置错误。
+  2.加密失败(Cryptographic Failures)：敏感数据明文传输、弱加密算法。
+  3.注入(Injection)：SQL注入、命令注入、LDAP注入、XPath注入。
+  4.不安全设计(Insecure Design)：缺少安全控制、威胁建模缺失。
+  5.安全配置错误(Security Misconfiguration)：默认密码、错误信息泄露、不必要的功能。
+  6.易受攻击和过时的组件：使用已知漏洞的库和框架(如Log4Shell)。
+  7.识别和认证失败：弱密码策略、凭证填充、会话管理缺陷。
+  8.软件和数据完整性故障：不安全的反序列化、CI/CD管道攻击。
+  9.安全日志和监控故障：日志不足、告警缺失、无法追溯攻击。
+  10.SSRF(服务端请求伪造)：诱导服务器向内部资源发起请求。
+  参考文件：/home/a/成长为一个红队/网安基础知识/06-安全基础概念.txt（复习第4-10章）
+  参考文件：/home/a/成长为一个红队/网安基础知识/02-Web技术基础.txt（阅读全部）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：详细分析每个OWASP Top 10风险的红队攻击场景。
+  对Metasploitable2的Web应用进行初步了解，识别存在的Top 10风险。
+  参考文件：/home/a/成长为一个红队/网安基础知识/02-Web技术基础.txt
+
+  操作步骤：
+    Step 1: OWASP Top 10详细分析
+      cat > ~/training/week4/owasp_analysis.txt << 'EOF'
+      OWASP Top 10 (2021) — 红队攻击场景分析
+      ==================================================
+
+      A01: 访问控制失效 (Broken Access Control)
+        攻击场景: 修改URL中的ID参数 /user/profile?id=100 → id=101
+                 访问 /admin 路径没有权限检查
+                 路径穿越: /download?file=../../../etc/shadow
+        测试方法: 水平越权(同权限不同用户)、垂直越权(低权访问高权)
+        工具: Burp Suite Repeater修改请求参数
+
+      A02: 加密失败 (Cryptographic Failures)
+        攻击场景: HTTP明文传输登录凭证 → 中间人攻击窃取密码
+                 使用MD5/SHA1存储密码 → 彩虹表破解
+                 TLS配置错误 → POODLE/BEAST攻击
+        测试方法: Wireshark抓包检查明文传输、检查证书有效性
+
+      A03: 注入 (Injection)
+        攻击场景: SQL注入: ' OR 1=1 --      绕过登录
+                 命令注入: 127.0.0.1; cat /etc/passwd
+                 XSS跨站脚本: <script>alert(document.cookie)</script>
+        测试方法: 输入特殊字符(' " ; < >)观察响应
+        工具: sqlmap, commix, XSStrike
+
+      A04: 不安全设计 (Insecure Design)
+        攻击场景: "忘记密码"功能只有安全问题(宠物的名字 = 公开信息)
+                 无限次密码尝试(无账户锁定)
+                 密码重置token可预测(基于时间戳)
+        测试方法: 审查业务逻辑流程、测试边界条件
+
+      A05: 安全配置错误 (Security Misconfiguration)
+        攻击场景: Tomcat管理页面使用默认密码tomcat:tomcat
+                 目录列表开启 → 泄露文件结构
+                 详细错误信息暴露框架版本和路径
+        测试方法: 扫描常见管理页面、检查HTTP响应头、查看错误页面
+
+      A06: 易受攻击和过时的组件
+        攻击场景: Apache 2.2.8 (2008年版本, 大量已知漏洞)
+                 PHP 5.2.4 (超过15年的老版本)
+                 OpenSSL 0.9.8 (Heartbleed漏洞)
+        测试方法: whatweb识别技术栈 → searchsploit搜索对应漏洞
+
+      A07: 识别和认证失败
+        攻击场景: 弱密码策略(admin/admin, root/toor)
+                 会话ID在URL中传递 → Referer泄露 → 日志泄露
+                 注销不销毁服务端Session → 会话重放
+        测试方法: 暴力破解、Session分析、Cookie篡改
+
+      A08: 软件和数据完整性故障
+        攻击场景: Python pickle反序列化 → RCE
+                 Java反序列化 → ysoserial利用链
+                 插件更新未验证签名 → 恶意更新注入
+        测试方法: 分析序列化数据格式、替换签名验证
+
+      A09: 安全日志和监控故障
+        攻击场景: 攻击者扫描→利用→提权 全程无告警
+                 日志只记录成功登录, 不记录失败尝试
+                 日志存储在攻击者可访问的目录
+        测试方法: 进行测试操作后查看是否有日志记录
+
+      A10: SSRF (服务端请求伪造)
+        攻击场景: 图片URL参数: ?url=http://169.254.169.254/latest/meta-data/
+                 Webhook测试端点可以请求内部服务
+                 文件导入功能: 从URL导入 → SSRF盲打
+        测试方法: 在所有URL参数处尝试输入内部地址
+      EOF
+
+    Step 2: 对Metasploitable2识别OWASP风险
+      # 扫描Web服务基本信息
+      whatweb http://192.168.56.102 2>/dev/null || echo "whatweb未安装, 使用curl"
+      curl -I http://192.168.56.102 2>/dev/null | head -15
+      echo "\n已知存在OWASP风险:"
+      echo "  A05: phpMyAdmin默认安装 → /phpMyAdmin/"
+      echo "  A05: DVWA默认安装(可配置安全级别) → /dvwa/"
+      echo "  A05: TWiki默认安装 → /twiki/"
+      echo "  A07: DVWA默认密码 admin/password"
+      echo "  A06: Apache 2.2.8, PHP 5.2.4 过时组件"
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：完整掌握OWASP Top 10，理解了每类风险的红队攻击场景和测试方法
+  - 遇到问题：(记录对某些风险类型理解不深的地方)
+  - 明日计划：第一阶段综合考核
+
+================================================================================
+周五：第一阶段考核
+================================================================================
+
+📚 第1小时 | 理论知识考核 (19:00 - 20:00)
+  考核内容：第一阶段(第1-4周)所有知识的综合测验。考核形式：自测答题。
+  考核范围：Linux命令操作、网络原理、编程基础、安全概念四大部分。
+  参考文件：回顾前4周所有参考资料
+
+  考核题目 (20题):
+    —— Linux操作 ——
+    1. 写出将file.txt权限改为只有所有者可读写的命令: chmod 600 file.txt
+    2. 写出查找/usr/bin下所有SUID文件的命令: find /usr/bin -perm -4000 2>/dev/null
+    3. 写出查看所有TCP监听端口及进程的命令: netstat -tlnp 或 ss -tlnp
+    4. 写出给文件添加执行权限的两种方式(数字和符号): chmod 755 file / chmod u+x file
+    5. 写出查看用户shadow文件的命令和需要的权限: sudo cat /etc/shadow (需要root)
+
+    —— 网络原理 ——
+    6. 画出TCP三次握手过程并标注各阶段标志位: SYN→ SYN-ACK→ ACK
+    7. 写出/28子网掩码有多少个可用IP: 14个 (16-2)
+    8. 写出以下端口对应的服务: 22/SSH, 53/DNS, 80/HTTP, 443/HTTPS, 445/SMB, 3306/MySQL
+    9. 写出Wireshark查看HTTP POST请求的过滤器: http.request.method == "POST"
+    10. 写出从A记录到完整DNS查询的流程: 本地缓存→Hosts文件→DNS服务器→根域→COM→权威DNS
+
+    —— 编程基础 ——
+    11. 写一个Bash for循环ping 192.168.1.1-10: for i in {1..10}; do ping -c1 192.168.1.$i; done
+    12. 写Python代码发送HTTP GET请求并打印状态码: requests.get(url).status_code
+    13. 写Python socket连接目标端口并判断是否开放代码片段
+    14. 写Bash中检查参数是否为空的语句: if [ -z "$1" ]; then echo "需要参数"; fi
+    15. 写Python读取文件并逐行处理的代码: with open(f) as file: for line in file:
+
+    —— 安全概念 ——
+    16. CIA三元组分别代表什么: 机密性、完整性、可用性
+    17. PTES的7个阶段按顺序写出
+    18. Cyber Kill Chain的7个步骤按顺序写出
+    19. MITRE ATT&CK中TA0001和TA0004分别代表什么: 初始访问、权限提升
+    20. OWASP Top 10中排名第一的风险是什么: 访问控制失效(A01)
+
+💻 第2小时 | 动手实操考核 (20:00 - 21:00)
+  考核内容：在Metasploitable2上完成以下操作任务。
+  参考文件：参考前4周所有实践教程
+
+  实操任务:
+    Task 1: 在~/training/exam/目录下创建完整的工作目录结构
+      要求: 包含reports/, logs/, scans/, exploits/四个子目录
+      命令: mkdir -p ~/training/exam/{reports,logs,scans,exploits}
+
+    Task 2: 编写一个Bash脚本扫描输入IP的1-100端口
+      要求: 使用for循环和/dev/tcp方式
+      测试: bash port_scan.sh 127.0.0.1
+
+    Task 3: 对Metasploitable2执行完整nmap扫描
+      命令: nmap -sS -sV -O -p- 192.168.56.102
+      输出: 保存到 ~/training/exam/scans/nmap_full.txt
+
+    Task 4: 编写Python脚本提取扫描结果中开放端口数量
+      要求: 读取nmap输出文件，统计开放端口数量
+      测试: python3 parse_scan.py ~/training/exam/scans/nmap_full.txt
+
+    Task 5: 使用netcat获取21/22/80端口的Banner信息
+      命令: nc -v 192.168.56.102 21; nc -v 192.168.56.102 22; nc -v 192.168.56.102 80
+
+    Task 6: 使用Wireshark抓取一次完整的HTTP请求，导出为pcapng文件
+
+    Task 7: 写一份简短的第一阶段学习总结(200字以上)
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 考核得分：(自评，每题5分，共100分)
+  - 薄弱环节：记录考核中暴露的知识盲区
+  - 补强计划：制定薄弱点的补强学习安排
+  - 阶段总结：第一阶段的4周学习了什么，掌握了什么，还欠缺什么
+
+================================================================================
+周六：复习日
+================================================================================
+  上午 (2小时)：第一阶段全面回顾
+    - 制作第一阶段(1-4周)知识体系思维导图
+    - 对考核中发现的薄弱点进行针对性补强
+    - 整理第一阶段学习笔记总索引
+    - 输出第一阶段学习总结 (至少500字)
+
+  下午 (1小时)：在HackTheBox/TryHackMe上做相关挑战
+    - TryHackMe Room: Principles of Security (安全原则)
+    - TryHackMe Room: Intro to Offensive Security
+    - 浏览HackTheBox Starting Point第一个靶机Fawn (FTP)
+
+  晚间：整理本周笔记
+    - 将CTF挑战中的收获记录到笔记
+    - 完成第一阶段学习总结文档
+    - 准备进入第二阶段(侦察与扫描)
+
+================================================================================
+周日：休息日
+================================================================================
+  体能训练 | 自由活动 | 补充睡眠
+
+================================================================================
+【本周资源清单】
+================================================================================
+理论知识文件：
+  • /home/a/成长为一个红队/网安基础知识/06-安全基础概念.txt（全部）
+  • /home/a/成长为一个红队/网安基础知识/07-渗透测试方法论.txt（全部）
+  • /home/a/成长为一个红队/网安基础知识/02-Web技术基础.txt（全部）
+
+实践教程文件：
+  • /home/a/成长为一个红队/archstrike-base教学/01-基础命令与Linux安全操作.txt
+  • /home/a/成长为一个红队/archstrike-base教学/03-网络扫描与枚举技术.txt
+
+在线练习：
+  • TryHackMe Room: Principles of Security
+  • TryHackMe Room: Intro to Offensive Security
+  • HackTheBox Starting Point: Fawn
+  • Metasploitable2虚拟机 (考核目标)
+
+【本周完成检查】
+[ ] 周一任务完成
+[ ] 周二任务完成
+[ ] 周三任务完成
+[ ] 周四任务完成
+[ ] 周五考核完成
+[ ] 周六复习完成
+[ ] 本周笔记整理完成
+[ ] 体能训练完成
+[ ] 第一阶段全部打勾，进入第二阶段！

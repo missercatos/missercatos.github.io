@@ -1,0 +1,664 @@
+================================================================================
+模块08: 痕迹清除与渗透报告
+================================================================================
+
+【学习目标】
+1. 掌握Linux系统中的痕迹清除技术
+2. 了解Windows系统中的痕迹清除方法
+3. 学会渗透测试报告的标准写作规范
+4. 掌握漏洞分级 (Critical/High/Medium/Low) 和CVSS评分
+5. 完成一次完整渗透并撰写专业报告
+
+【所需工具】(archstrike-base已预装)
+- coreutils (rm, shred, dd)
+- covermyass (需手动安装)
+- Firefox (浏览器, 用于研究CVSS评分)
+- LibreOffice / 文本编辑器 (用于写报告)
+
+================================================================================
+第一部分: Linux痕迹清除
+================================================================================
+
+1.1 清除Shell历史
+--------------------------------------------------
+
+Bash历史:
+  history -c                              # 清除当前会话命令历史
+  rm -f ~/.bash_history                   # 删除bash历史文件
+  echo "" > ~/.bash_history               # 清空bash历史文件
+  unset HISTFILE                          # 禁用当前会话历史记录
+  export HISTSIZE=0                       # 设置历史记录大小为0
+  ln -sf /dev/null ~/.bash_history        # 将bash_history链接到/dev/null
+
+Zsh历史:
+  rm -f ~/.zsh_history
+  rm -f ~/.zhistory
+
+全局历史配置:
+  cat /etc/profile | grep HIST            # 查看全局历史配置
+
+1.2 清除系统日志
+--------------------------------------------------
+
+主要日志文件位置:
+  /var/log/syslog         或 /var/log/messages      # 系统主日志
+  /var/log/auth.log       或 /var/log/secure        # 认证日志
+  /var/log/kern.log                                 # 内核日志
+  /var/log/dpkg.log      或 /var/log/pacman.log     # 包管理器日志
+  /var/log/faillog                                  # 登录失败
+  /var/log/lastlog                                  # 最后登录
+  /var/log/wtmp                                     # 登录记录(二进制)
+  /var/log/btmp                                     # 失败登录(二进制)
+
+清除方法:
+
+  # 清空文本日志
+  echo "" > /var/log/auth.log
+  echo "" > /var/log/syslog
+  echo "" > /var/log/messages
+  echo "" > /var/log/kern.log
+  cat /dev/null > /var/log/wtmp
+  cat /dev/null > /var/log/btmp
+  cat /dev/null > /var/log/lastlog
+
+  # 使用shred安全删除 (多次覆写)
+  shred -zu /var/log/auth.log
+  shred -zu /var/log/syslog
+  shred -zu /var/log/messages
+
+  shred参数:
+    -z   最后用0覆写 (隐藏shred操作)
+    -u   覆写后删除文件
+    -n 5 覆写5次 (默认3次)
+    -v   显示进度
+
+  # 批量清除所有日志
+  find /var/log -type f -exec shred -zu {} \;
+
+  # 清除journalctl日志 (systemd)
+  journalctl --rotate           # 轮转日志
+  journalctl --vacuum-time=1s   # 清除1秒前的日志
+  journalctl --vacuum-size=1M   # 缩小日志到1MB
+  rm -rf /var/log/journal/*     # 直接删除日志文件
+
+1.3 清除命令执行的证据
+--------------------------------------------------
+
+  # 确认这些服务是否运行, 如有则清除:
+  systemctl stop rsyslog 2>/dev/null
+  systemctl stop syslog-ng 2>/dev/null
+  systemctl stop auditd 2>/dev/null
+
+  # 清除audit日志
+  cat /dev/null > /var/log/audit/audit.log 2>/dev/null
+
+  # 清除utmp/wtmp/btmp 二进制日志
+  # utmp: 当前登录用户 (/var/run/utmp)
+  # wtmp: 所有登录记录 (/var/log/wtmp)
+  # btmp: 失败登录记录 (/var/log/btmp)
+
+  # 使用工具写入假记录覆盖
+  # 删除指定用户的登录记录 (需要工具如utmp_cleaner)
+
+1.4 清除文件系统痕迹
+--------------------------------------------------
+
+  # 删除下载的工具/后门文件
+  rm -f /tmp/.update.sh
+  rm -f /tmp/backdoor.py
+  rm -f /var/tmp/nc
+  rm -rf /tmp/.hidden/
+
+  # 清除目录中的隐藏文件
+  find /tmp -name ".*" -type f -delete
+  find /var/tmp -name ".*" -type f -delete
+
+  # 修改文件时间戳 (触地时间抹除)
+  touch -r /etc/passwd ~/.bash_history     # 将bash_history时间改为passwd
+
+  # touch -t 使用特定时间
+  touch -t 202401011200 ~/.bash_history    # 设时间为你指定的时间
+
+  # 全盘安全删除
+  dd if=/dev/zero of=/tmp/bigfile bs=1M count=100
+  rm /tmp/bigfile
+
+1.5 清除网络痕迹
+--------------------------------------------------
+
+  # 清除防火墙日志
+  iptables -Z                         # 清零iptables计数器
+  nft reset counters                  # 清零nftables计数器
+
+  # 清除ARP表 (自己的MAC暴露)
+  arp -d 192.168.1.1
+
+  # 查看并清除网络配置痕迹
+  # 如果有修改过网络配置, 恢复原始配置
+
+1.6 退出时干净清理
+--------------------------------------------------
+
+  # 执行完毕后, 清除当前会话
+  history -c && history -w            # 清除并写入(清空)历史
+  rm -f ~/.bash_history ~/.zsh_history
+
+================================================================================
+第二部分: Windows痕迹清除
+================================================================================
+
+2.1 清除事件日志
+--------------------------------------------------
+
+PowerShell (需要管理员权限):
+  # 清除安全日志
+  Clear-EventLog -LogName Security
+  # 清除系统日志
+  Clear-EventLog -LogName System
+  # 清除应用日志
+  Clear-EventLog -LogName Application
+
+  或者清除所有事件日志:
+  wevtutil el | ForEach-Object { wevtutil cl $_ }
+
+CMD:
+  # 清除安全日志 (仅保留最新的1条)
+  wevtutil cl Security
+  wevtutil cl System
+  wevtutil cl Application
+
+Meterpreter方法:
+  # 使用Incognito模拟SYSTEM身份后清除
+  clearev                     # 清除应用程序/系统/安全日志
+
+2.2 清除命令历史
+--------------------------------------------------
+
+  # PowerShell历史
+  Clear-History
+  Remove-Item (Get-PSReadlineOption).HistorySavePath
+
+  # CMD历史 (注册表)
+  reg delete HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\RunMRU /f
+
+  # 清除回收站
+  Clear-RecycleBin -Force
+  rd /s /q C:\$Recycle.Bin
+
+2.3 清除文件和MFT痕迹
+--------------------------------------------------
+
+  # 安全删除 (需要sdelete工具)
+  sdelete -p 3 C:\temp\payload.exe
+
+  # 使用cipher覆盖空余空间
+  cipher /w:C:\
+
+  # 清除Prefetch文件 (程序执行痕迹)
+  del C:\Windows\Prefetch\*.pf
+
+  # 清除最近使用文件记录
+  del %APPDATA%\Microsoft\Windows\Recent\* /q
+
+  # 清除跳转列表
+  del %APPDATA%\Microsoft\Windows\Recent\AutomaticDestinations\* /q
+
+2.4 注册表痕迹清除
+--------------------------------------------------
+
+  # 查看Run键 (持久化记录)
+  reg query HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run
+  # 删除后门条目
+  reg delete HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run /v "BackupService" /f
+
+================================================================================
+第三部分: 自动化痕迹清除工具
+================================================================================
+
+3.1 CoverMyAss (CMA)
+--------------------------------------------------
+如有安装:
+  # 基本使用
+  covermyass now          # 立即清除常见痕迹
+
+3.2 自定义清理脚本
+--------------------------------------------------
+创建: /tmp/cleanup.sh
+  #!/bin/bash
+  echo "[*] 开始清除痕迹..."
+
+  # 清除bash历史
+  history -c
+  rm -f ~/.bash_history ~/.zsh_history
+
+  # 清除关键日志
+  for log in /var/log/auth.log /var/log/syslog /var/log/messages /var/log/kern.log; do
+    if [ -f "$log" ]; then
+      echo "  清除: $log"
+      shred -zu "$log" 2>/dev/null || echo "" > "$log"
+    fi
+  done
+
+  # 清除二进制日志
+  for log in /var/log/wtmp /var/log/btmp /var/log/lastlog; do
+    if [ -f "$log" ]; then
+      echo "  清除: $log"
+      cat /dev/null > "$log"
+    fi
+  done
+
+  # 清除journald
+  journalctl --rotate 2>/dev/null
+  journalctl --vacuum-time=1s 2>/dev/null
+
+  # 删除临时文件
+  rm -rf /tmp/.hidden* /tmp/.*.tmp /var/tmp/nc /var/tmp/backdoor*
+  rm -f /tmp/.update.sh /tmp/backdoor.py
+
+  # 清除环境变量痕迹
+  unset HISTFILE
+  export HISTSIZE=0
+
+  echo "[*] 痕迹清除完成"
+  echo "[!] 立即退出此shell: exit"
+
+================================================================================
+第四部分: 渗透测试报告写作规范
+================================================================================
+
+4.1 报告目的
+--------------------------------------------------
+渗透测试报告向客户传达:
+  - 发现了哪些漏洞
+  - 这些漏洞可能造成的业务影响
+  - 如何修复这些漏洞
+  - 测试的范围和方法
+
+4.2 报告结构
+--------------------------------------------------
+
+标准渗透测试报告结构:
+
+  1. 封面 (Cover Page)
+     - 项目名称
+     - 测试类型 (黑盒/白盒/灰盒)
+     - 测试日期
+     - 测试人员/团队
+     - 文档密级
+
+  2. 执行摘要 (Executive Summary)
+     - 1-2页的高层摘要
+     - 面向管理层 (非技术人员)
+     - 总体风险评估
+     - 关键发现概述
+     - 改进建议优先级
+
+  3. 测试方法 (Methodology)
+     - 测试范围
+     - 测试阶段 (侦察→扫描→利用→后渗透→报告)
+     - 工具列表
+     - 限制条件
+
+  4. 发现详情 (Findings)
+     每个漏洞包含:
+     - 漏洞编号 (如 VULN-001)
+     - 漏洞标题
+     - 严重等级 (Critical/High/Medium/Low)
+     - CVSS评分 (及向量)
+     - 影响资产
+     - 漏洞描述
+     - 复现步骤 (Reproduction Steps)
+     - 概念验证 (PoC)
+     - 影响说明
+     - 修复建议
+     - 参考链接 (CVE, OWASP等)
+
+  5. 附录 (Appendices)
+     - 工具输出日志
+     - 截图证据
+     - 网络拓扑图
+     - 使用的字典/脚本
+     - 术语表
+
+4.3 漏洞分级标准
+--------------------------------------------------
+
+Critical (严重) - 9.0-10.0:
+  - 无需用户交互的远程代码执行
+  - 可导致整个系统被完全控制的漏洞
+  - 可直接获取域管理员权限
+  - SQL注入可读取敏感数据库
+  - 示例: MS17-010 EternalBlue, 匿名FTP可写Web目录
+
+High (高危) - 7.0-8.9:
+  - 需要认证但可提升权限
+  - 敏感信息泄露 (数据库, 凭证)
+  - 需要用户交互的远程代码执行
+  - 未授权的管理功能访问
+  - 示例: SUID提权, 弱密码+可远程登录
+
+Medium (中危) - 4.0-6.9:
+  - 存储型XSS
+  - CSRF (可导致操作更改)
+  - 目录列表
+  - 服务器信息泄露
+  - 示例: 目录列表泄露源码, XSS获得Session
+
+Low (低危) - 0.1-3.9:
+  - 反射型XSS (低影响)
+  - 缺少安全HTTP头
+  - 版本信息暴露
+  - 默认凭证 (无实际数据访问)
+  - 示例: X-Content-Type-Options未设置
+
+Informational (信息) - 0.0:
+  - 非直接风险但可优化的配置
+  - SSL证书即将到期
+  - 使用的技术和框架列表
+
+4.4 CVSS 3.1 评分快速指南
+--------------------------------------------------
+
+CVSS (Common Vulnerability Scoring System) 由三组指标组成:
+
+基本指标 (Base):
+  - 攻击向量 (AV): Network / Adjacent / Local / Physical
+  - 攻击复杂度 (AC): Low / High
+  - 权限要求 (PR): None / Low / High
+  - 用户交互 (UI): None / Required
+  - 范围 (S): Unchanged / Changed
+  - 机密性影响 (C): None / Low / High
+  - 完整性影响 (I): None / Low / High
+  - 可用性影响 (A): None / Low / High
+
+时间指标 (Temporal):
+  - 利用代码成熟度 (E): Not Defined / High / Functional / PoC / Unproven
+  - 修复级别 (RL): Not Defined / Official Fix / Temporary Fix / Workaround / Unavailable
+  - 报告可信度 (RC): Not Defined / Confirmed / Reasonable / Unknown
+
+环境指标 (Environmental):
+  - 根据目标环境定制的基础指标修正
+
+CVSS计算器: 浏览器打开 https://nvd.nist.gov/vuln-metrics/cvss/v3-calculator
+
+示例评分:
+  - VSFTPD后门 (RCE, root): CVSS 10.0 (Critical)
+    向量: AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H
+
+  - SSH弱密码: CVSS 7.5-8.0 (High)
+    向量: AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
+
+  - 目录列表信息泄露: CVSS 5.3 (Medium)
+    向量: AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N
+
+4.5 报告中的截图和证据
+--------------------------------------------------
+
+截图要求:
+  - 清晰显示漏洞参数或输入
+  - 包含目标URL/IP和测试时间 (浏览器地址栏)
+  - 显示漏洞利用结果 (获取的Shell, 读取的数据等)
+  - 使用红框标注关键信息
+  - 截图命名: VULN-001_poC.png, VULN-001_impact.png
+
+工具输出:
+  - nmap扫描结果 (关键部分)
+  - Metasploit利用成功的回显
+  - Wireshark捕获的分析图
+  - 敏感数据样本 (脱敏处理后)
+
+4.6 修复建议 (Remediation)
+--------------------------------------------------
+好的修复建议应:
+  - 具体可操作 (不是"加强安全"这种泛泛之谈)
+  - 按优先级排序
+  - 短期修复 + 长期改进
+  - 提供验证方法 (如何确认修复成功)
+  - 参考权威来源 (CIS Benchmarks, OWASP, vendor advisory)
+
+示例:
+  不好: "修复SSH配置"
+  好: "在 /etc/ssh/sshd_config 中将 PermitRootLogin 设为 no,
+        重启 sshd 服务后, 使用 ssh root@host 确认无法登录"
+
+================================================================================
+第五部分: 实践练习
+================================================================================
+
+【路线指引 - 完成完整渗透并撰写报告】
+
+=== 阶段一: 完整渗透测试流程回顾 ===
+
+Step 1: 信息收集阶段
+  - 使用whois, dnsrecon, theharvester收集目标信息
+  - 记录所有发现的域名, IP, 子域名
+  - 使用Google Dork搜索目标相关信息
+
+Step 2: 扫描枚举阶段
+  - nmap全面扫描: nmap -sS -sV -sC -p- -oA full_scan <target>
+  - 漏洞扫描: nmap --script=vuln -p- <target>
+  - SMB枚举: enum4linux -a <target>
+  - HTTP扫描: nikto -h http://<target>
+
+Step 3: 漏洞利用阶段
+  - 识别可利用的漏洞 (服务版本, CVE对应)
+  - 使用Metasploit: msfconsole 搜索和利用漏洞
+  - 获取初始Shell/Access
+  - 记录每次利用成功的确切步骤和截图
+
+Step 4: 后渗透阶段
+  - 信息收集: 系统信息, 网络环境, 凭证
+  - 提权尝试: suid, sudo, kernel exploit
+  - 持久化: SSH密钥, crontab, 服务
+  - 横向移动: SSH隧道, 端口转发
+
+Step 5: 清理阶段
+  - 清除所有添加的后门和持久化
+  - 清除日志痕迹
+  - 恢复修改的配置
+  - 确认无残留文件
+
+=== 阶段二: 整理发现和证据 ===
+
+Step 6: 创建证据目录
+  mkdir -p ~/penetration_report/evidence/screenshots
+  mkdir -p ~/penetration_report/evidence/scans
+  mkdir -p ~/penetration_report/evidence/logs
+
+Step 7: 整理扫描输出
+  cp ~/scan/ms2/nmap_full.* ~/penetration_report/evidence/scans/
+  cp ~/scan/ms2/nmap_vuln.txt ~/penetration_report/evidence/scans/
+  cp ~/scan/ms2/nikto_scan.html ~/penetration_report/evidence/scans/
+
+Step 8: 整理利用截图
+  # 对每个成功利用的漏洞, 截图记录:
+  # 方法1: 使用Metasploit的screenshots功能
+  # 方法2: 手动截图终端中的成功提示
+  # 方法3: 截图Wireshark中的捕获分析
+
+  截图1: VSFTPD后门利用成功屏幕
+  截图2: Meterpreter sysinfo输出
+  截图3: hashdump结果
+  截图4: SSH密钥后门配置完成
+
+Step 9: 整理目击记录 (Observation Log)
+  创建文件: ~/penetration_report/observation_log.txt
+  内容格式:
+  [时间] 2024-01-15 14:30 - nmap扫描完成, 发现21个开放端口
+  [时间] 2024-01-15 14:45 - VSFTPD v2.3.4发现, CVE-2011-2523
+  [时间] 2024-01-15 14:50 - 利用成功, 获得root shell
+  [时间] 2024-01-15 15:00 - SSH持久化建立
+
+=== 阶段三: 撰写报告 ===
+
+Step 10: 创建报告文件
+  nano ~/penetration_report/penetration_test_report.md
+
+Step 11: 撰写执行摘要
+  报告内容:
+
+  # Metasploitable2 渗透测试报告
+
+  ## 1. 执行摘要
+  本次渗透测试针对Metasploitable2靶机(192.168.1.100)进行。
+  测试方法为黑盒测试, 模拟外部攻击者的视角。
+
+  **总体风险等级: Critical (严重)**
+
+  测试发现6个严重漏洞, 包括多个远程代码执行漏洞和
+  后门账号, 攻击者可以轻易获取系统的root权限。
+
+  **关键发现:**
+  1. VSFTPD v2.3.4后门 - 匿名远程代码执行 (Critical)
+  2. UnrealIRCd后门 - 远程代码执行 (Critical)
+  3. DistCC远程代码执行 (Critical)
+  4. 多个弱密码账号 (High)
+  5. 开放的敏感服务 (High)
+  6. 目录列表信息泄露 (Medium)
+
+  **建议:**
+  - 立即升级或替换存在后门的服务软件
+  - 实施强密码策略, 禁用不必要的服务
+  - 配置防火墙, 限制不必要的端口访问
+  - 部署入侵检测系统(IDS)
+
+  ## 2. 测试方法
+
+  **测试范围:** Metasploitable2系统及所有开放服务
+  **测试时间:** 2024-01-15
+  **测试IP:** 192.168.1.100
+  **攻击机IP:** 192.168.1.50
+
+  **测试阶段:**
+  1. 信息收集 (被动+主动)
+  2. 漏洞扫描与识别
+  3. 漏洞利用
+  4. 后渗透与信息收集
+  5. 痕迹清除
+
+  **使用工具:**
+  nmap, searchsploit, Metasploit, John the Ripper, hydra, sqlmap
+
+  **限制条件:**
+  测试在隔离的实验室环境中进行, 无外部网络依赖
+
+  ## 3. 发现详情
+
+  ### VULN-001: VSFTPD v2.3.4 后门远程代码执行
+  - **严重等级:** Critical (CVSS 10.0)
+  - **CVSS向量:** AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H
+  - **影响资产:** 192.168.1.100:21 (FTP服务)
+  - **描述:**
+    Metasploitable2上的VSFTPD版本2.3.4包含已知后门(CVE-2011-2523)。
+    攻击者可以通过发送特定的用户名触发后门, 在6200端口获得root shell。
+  - **复现步骤:**
+    1. 使用Metasploit: msfconsole
+    2. use exploit/unix/ftp/vsftpd_234_backdoor
+    3. set RHOSTS 192.168.1.100
+    4. exploit
+    5. 获得root shell
+  - **PoC:** (附截图 VULN-001_exploit.png)
+  - **影响:**
+    攻击者可获得root权限, 完全控制目标系统。
+    可进行任意文件操作, 窃取敏感数据, 或作为跳板攻击内网。
+  - **修复建议:**
+    1. 立即升级VSFTPD到最新版本 (修复后的版本为3.0.3+)
+    2. 如不需要FTP服务, 停止并禁用: systemctl stop vsftpd && systemctl disable vsftpd
+    3. 扫描系统确认无其他后门: rkhunter --check
+  - **参考:**
+    - CVE-2011-2523
+    - https://www.exploit-db.com/exploits/17491
+
+  ### VULN-002: UnrealIRCd 3.2.8.1 后门 (Critical)
+  [类似格式...]
+
+  ### VULN-003: DistCC 远程代码执行 (Critical)
+  [类似格式...]
+
+  ### VULN-004: 弱密码账号 (High)
+  - **严重等级:** High (CVSS 8.0)
+  - **CVSS向量:** AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
+  - **影响资产:** 192.168.1.100:22 (SSH), :21 (FTP)
+  - **描述:**
+    系统存在多个使用弱密码的账号, 攻击者可通过暴力破解获取访问。
+    发现的弱账号包括msfadmin:msfadmin, user:user, service:service。
+  - **复现步骤:**
+    1. hydra -l msfadmin -P /usr/share/wordlists/fasttrack.txt ssh://192.168.1.100
+    2. 成功登录
+  - **修复建议:**
+    1. 强制密码策略: 最小8位, 含大小写+数字+特殊字符
+    2. 启用账户锁定策略 (fail2ban)
+    3. 使用SSH密钥认证替代密码
+
+  ### VULN-005: 多个匿名可访问服务 (High)
+  ### VULN-006: 敏感信息泄露 (Medium)
+
+  ## 4. 附录
+
+  **附录A: 完整nmap扫描输出** (见 evidence/scans/nmap_full.nmap)
+  **附录B: Nikto Web扫描报告** (见 evidence/scans/nikto_scan.html)
+  **附录C: 证据截图** (见 evidence/screenshots/)
+
+Step 12: 完善报告格式
+  检查报告是否包含所有必要元素:
+  - [x] 执行摘要
+  - [x] 测试方法
+  - [x] 每个漏洞的详细描述
+  - [x] CVSS评分
+  - [x] 复现步骤
+  - [x] 修复建议
+  - [x] 证据引用
+
+Step 13: 审查和定稿
+  阅读整个报告, 确保:
+  - 无技术错误
+  - 无敏感信息泄露 (如真实凭证已脱敏)
+  - 报告语气专业客观
+  - 建议可行且具体
+
+=== 阶段四: 最终清理 ===
+
+Step 14: 确认所有后门已移除
+  ssh root@192.168.1.100
+  rm -f ~/.ssh/backdoor ~/.ssh/backdoor.pub
+  rm -f /etc/cron.d/backup
+  nano ~/.ssh/authorized_keys      # 删除后门公钥
+  exit
+
+Step 15: 清除攻击机上的临时文件
+  rm -rf ~/scan/ms2
+  rm -rf ~/recon/target
+  rm -rf ~/mitm_lab
+  rm -f ~/.ssh/ms2_backdoor
+
+Step 16: 归档报告
+  cd ~/penetration_report
+  tar czf metasploitable2_pentest_20240115.tar.gz *
+  echo "报告归档完成: metasploitable2_pentest_20240115.tar.gz"
+
+Step 17: 最终检查清单
+  echo "=== 渗透测试完成检查单 ===" > final_checklist.txt
+  echo "[ ] 信息收集完成" >> final_checklist.txt
+  echo "[ ] 扫描枚举完成" >> final_checklist.txt
+  echo "[ ] 漏洞利用验证" >> final_checklist.txt
+  echo "[ ] 后渗透信息收集" >> final_checklist.txt
+  echo "[ ] 所有截图已保存" >> final_checklist.txt
+  echo "[ ] 报告已撰写" >> final_checklist.txt
+  echo "[ ] 后门已清除" >> final_checklist.txt
+  echo "[ ] 日志痕迹已清除" >> final_checklist.txt
+  echo "[ ] 测试环境已恢复" >> final_checklist.txt
+  echo "[ ] 报告已提交" >> final_checklist.txt
+
+【注意事项与提示】
+- 渗透测试仅在授权范围内进行, 超出范围的操作可能违约违法
+- 报告中的漏洞分级应基于实际业务影响, 而非仅CVSS分数
+- 截图中应避免包含攻击者个人信息 (真实IP, 主机名等)
+- 演示目标(Metasploitable2)的漏洞勿发布到公网
+- 清除日志的操作本身也会产生日志 (journald/systemd记录服务停止)
+- 痕迹清除应在完全授权的情况下进行, 否则属于破坏证据
+- 专业报告中包含建议的修复优先级和时间框架
+- 某些法规环境(如PCI-DSS)可能要求特定格式的报告
+- 习惯性进行"湿擦除"(wet cleanup): 先列出做了什么改变, 再逐项恢复
+- 建立签名模板, 可快速生成报告结构
+
+================================================================================

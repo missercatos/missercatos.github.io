@@ -1,0 +1,481 @@
+================================================================================
+模块: 高级子域名与资产发现
+学习目标: 掌握amass、subfinder、assetfinder三大子域名发现工具，学会横向对比结果并构建完整资产图谱
+目标工具: amass, subfinder, assetfinder
+所需环境: ArchStrike (Arch Linux), 互联网连接
+================================================================================
+
+一、工具概览与对比
+--------------------------------------------------------------------------------
+
+在红队侦察阶段，子域名发现是最关键的环节之一。一个组织可能在主域名下部署了数十甚至数百个子域名，
+其中往往包含测试环境、开发服务器、老旧系统等安全防护薄弱的入口点。
+
+本教程涉及的三个工具各有侧重：
+
+  amass      - OWASP旗舰级资产发现工具，功能最全面，支持被动/主动枚举、暴力破解、可视化
+  subfinder  - 基于被动源的子域名发现工具，速度快，API源丰富
+  assetfinder - 轻量级被动子域名发现工具，Twitter/Bug Bounty社区常用
+
+横向对比:
+  ┌──────────────┬──────────┬──────────┬────────────┐
+  │ 功能          │  amass   │ subfinder │ assetfinder│
+  ├──────────────┼──────────┼──────────┼────────────┤
+  │ 被动枚举      │    ✓     │    ✓     │     ✓      │
+  │ 主动枚举      │    ✓     │    ✗     │     ✗      │
+  │ 暴力破解      │    ✓     │    ✗     │     ✗      │
+  │ API密钥支持   │    ✓     │    ✓     │     ✗      │
+  │ 可视化        │    ✓     │    ✗     │     ✗      │
+  │ 速度          │   中     │   快     │    快      │
+  │ 结果数量      │   多     │   中     │    少      │
+  └──────────────┴──────────┴──────────┴────────────┘
+
+二、amass - OWASP资产发现工具
+--------------------------------------------------------------------------------
+
+2.1 安装
+
+在ArchStrike上，amass已包含在官方仓库中:
+
+  sudo pacman -S amass
+
+安装后验证:
+
+  amass -version
+
+amass的主要子命令:
+
+  amass enum      - 枚举子域名（核心功能）
+  amass intel     - 情报收集（发现相关域名、ASN、CIDR）
+  amass db        - 数据库管理（查看、导入导出发现结果）
+  amass viz       - 可视化资产关系图
+  amass track     - 持续监控域名变化（对比历史结果）
+
+2.2 被动枚举
+
+被动枚举不直接与目标交互，仅通过公开数据源收集信息:
+
+  amass enum -passive -d example.com
+
+参数说明:
+  -passive      仅使用被动源（不直接查询目标DNS）
+  -d            目标域名
+
+添加输出选项:
+
+  amass enum -passive -d example.com -o passive_results.txt -dir ./amass_output
+
+参数说明:
+  -o            输出文件路径
+  -dir          指定amass数据存储目录（保存到数据库供后续查询）
+
+2.3 主动枚举
+
+主动枚举会直接查询目标DNS服务器，并结合被动源:
+
+  amass enum -active -d example.com -o active_results.txt
+
+进阶主动枚举:
+
+  amass enum -active -d example.com -p 80,443,8080 -o active_results.txt
+
+参数说明:
+  -p            指定扫描端口（默认443和80，添加8080可以发现更多Web服务）
+
+2.4 综合扫描（最强大模式）
+
+结合所有技术进行深度扫描:
+
+  amass enum -d example.com \
+    -src \           # 显示数据来源
+    -ip \            # 显示IP地址
+    -brute \         # 启用暴力破解子域名
+    -min-for-recursive 2 \   # 暴力破解发现≥2个子域时递归扫描
+    -norecursive \   # 禁用递归（若目标太大可开启以加速）
+    -o comprehensive.txt \
+    -dir ./amass_db
+
+全部参数详解:
+  -src              在输出中标注每个子域名的发现来源（如DNS、Certificate、API等）
+  -ip               解析并显示每个子域名对应的IP地址
+  -brute            启用字典暴力破解（使用默认字典或自定义字典）
+  -w /path/dict.txt 使用自定义字典进行暴力破解
+  -min-for-recursive  设置递归阈值（发现N个子域后才对该子域进行递归扫描）
+  -max-dns-queries   限制DNS查询速率（默认无限制，建议设置以免被WAF封禁）
+
+2.5 使用API密钥提升效果
+
+许多数据源需要API密钥才能发挥全部能力。创建配置文件:
+
+  mkdir -p ~/.config/amass
+  nano ~/.config/amass/config.ini
+
+配置文件内容示例:
+
+  [data_sources]
+  [data_sources.Shodan]
+  apikey = YOUR_SHODAN_API_KEY
+  [data_sources.Censys]
+  apikey = YOUR_CENSYS_API_ID
+  secret = YOUR_CENSYS_API_SECRET
+  [data_sources.SecurityTrails]
+  apikey = YOUR_SECURITYTRAILS_API_KEY
+  [data_sources.VirusTotal]
+  apikey = YOUR_VIRUSTOTAL_API_KEY
+  [data_sources.GitHub]
+  apikey = YOUR_GITHUB_TOKEN
+
+使用配置文件执行扫描:
+
+  amass enum -d example.com -config ~/.config/amass/config.ini
+
+免费API密钥获取地址:
+  - Shodan: https://account.shodan.io (注册即可获得)
+  - SecurityTrails: https://securitytrails.com (免费套餐有限额)
+  - VirusTotal: https://virustotal.com (注册免费)
+
+2.6 情报收集 - 发现更多相关域名
+
+在枚举之前，先用intel子命令扩大攻击面:
+
+  amass intel -d example.com
+
+这会输出:
+  1. 发现的相关域名（通过SSL证书、Whois、ASN关联）
+  2. 目标拥有的ASN编号
+  3. 目标拥有的IP段(CIDR)
+  4. 反向Whois查询结果
+
+进阶用法:
+
+  amass intel -d example.com -whois   # 利用Whois反向查询发现更多域名
+
+将发现的关联域名保存，后续统一扫描:
+
+  amass intel -d example.com -o associated_domains.txt
+
+2.7 数据库管理
+
+amass将所有发现保存在本地Graph数据库中，可随时查询:
+
+  amass db -d example.com -show      # 显示该域名的所有发现
+  amass db -d example.com -show -ip  # 显示IP相关数据
+  amass db -list                     # 列出数据库中扫描过的所有域名
+  amass db -d example.com -names     # 仅列出子域名（不含IP等）
+
+2.8 可视化
+
+生成D3.js可视化关系图:
+
+  amass viz -d example.com -d3        # 生成D3.js格式的HTML图表
+
+生成后会在当前目录产生amass_d3.html文件:
+
+  ls -la amass_d3.html
+  firefox amass_d3.html &             # 在Firefox中打开查看
+
+图表展示:
+  - 域名之间的关联关系（圆点=子域名，颜色表示不同来源）
+  - SSL证书共享关系
+  - 域名到IP的映射关系
+  - WhoIs关联
+
+2.9 持续监控
+
+跟踪域名的变化:
+
+  amass track -d example.com -last 2   # 对比最近2次扫描的差异
+  amass track -d example.com -history  # 显示所有历史记录
+
+三、subfinder - 快速被动子域名发现
+--------------------------------------------------------------------------------
+
+3.1 安装
+
+  sudo pacman -S subfinder
+
+或使用go安装:
+
+  go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+
+3.2 基本使用
+
+  subfinder -d example.com
+
+输出到文件:
+
+  subfinder -d example.com -o subfinder_output.txt
+
+批量扫描多个域名:
+
+  subfinder -dL domains.txt -o all_subs.txt
+
+3.3 高级参数
+
+  subfinder -d example.com \
+    -all \              # 使用所有数据源（包括需要API密钥的）
+    -silent \           # 静默模式（仅输出子域名）
+    -o subfinder_output.txt \
+    -oI \               # 仅输出IPv4对应的子域名
+    -timeout 5 \        # 超时时间（秒）
+    -max-time 10        # 该扫描最大执行时间（分钟）
+
+3.4 配置API密钥
+
+subfinder的配置文件位于:
+
+  ~/.config/subfinder/provider-config.yaml
+
+编辑此文件添加各数据源的API密钥:
+
+  nano ~/.config/subfinder/provider-config.yaml
+
+格式示例:
+
+  shodan: [YOUR_API_KEY]
+  virustotal: [YOUR_API_KEY]
+  securitytrails: [YOUR_API_KEY]
+  chaos: [YOUR_API_KEY]
+  github: [YOUR_GITHUB_TOKEN]
+
+3.5 常用数据源说明
+
+subfinder支持超过50个被动数据源，最常用的包括:
+
+  crtsh           - SSL证书透明度日志
+  dnsdumpster     - DNS Dumpster搜索
+  alienvault      - AlienVault OTX威胁情报
+  censys          - Censys搜索引擎
+  github          - GitHub代码仓库
+  shodan          - Shodan搜索引擎
+  virustotal      - VirusTotal
+  waybackarchive  - Wayback Machine
+
+查看所有可用数据源:
+
+  subfinder -list
+
+四、assetfinder - 轻量级资产发现
+--------------------------------------------------------------------------------
+
+4.1 安装
+
+  sudo pacman -S assetfinder
+
+或:
+
+  go install github.com/tomnomnom/assetfinder@latest
+
+4.2 基本使用
+
+  assetfinder example.com
+
+输出到文件:
+
+  assetfinder example.com | tee assetfinder_output.txt
+
+4.3 assetfinder特点
+
+  - 极其轻量，适合快速扫描
+  - 主要利用Certificate Transparency日志、crt.sh
+  - 结合httprobe可以快速发现活跃Web服务:
+
+    assetfinder example.com | httprobe -c 50 > live_subs.txt
+
+  - 与其他工具链结合:
+
+    assetfinder example.com | sort -u | while read sub; do
+      curl -s -o /dev/null -w "%{http_code}" "http://$sub"
+      echo "  $sub"
+    done
+
+五、三种工具结果整合与对比
+--------------------------------------------------------------------------------
+
+5.1 执行三工具扫描
+
+  # 工具1: amass
+  amass enum -passive -d example.com -o amass_subs.txt
+
+  # 工具2: subfinder
+  subfinder -d example.com -silent -o subfinder_subs.txt
+
+  # 工具3: assetfinder
+  assetfinder example.com | tee assetfinder_subs.txt
+
+5.2 合并结果并去重
+
+  cat amass_subs.txt subfinder_subs.txt assetfinder_subs.txt | sort -u > all_subs.txt
+  wc -l all_subs.txt
+
+5.3 分析各工具独有发现
+
+  # amass独有的子域名
+  comm -23 <(sort amass_subs.txt) <(sort subfinder_subs.txt assetfinder_subs.txt | sort -u)
+
+  # subfinder独有的子域名
+  comm -23 <(sort subfinder_subs.txt) <(sort amass_subs.txt assetfinder_subs.txt | sort -u)
+
+  # assetfinder独有的子域名
+  comm -23 <(sort assetfinder_subs.txt) <(sort amass_subs.txt subfinder_subs.txt | sort -u)
+
+  # 三个工具都发现的子域名（交集）
+  comm -12 <(sort amass_subs.txt) <(sort subfinder_subs.txt | sort) | comm -12 - <(sort assetfinder_subs.txt)
+
+5.4 验证子域名存活状态
+
+安装httpx:
+
+  go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
+
+验证并发现活跃Web服务:
+
+  cat all_subs.txt | httpx -silent -status-code -title -tech-detect -o live_assets.txt
+
+5.5 筛选重要资产
+
+筛选带有登录页面的子域名:
+
+  cat all_subs.txt | httpx -silent -match-string "login" -o login_pages.txt
+
+筛选使用特定技术的子域名:
+
+  cat all_subs.txt | httpx -silent -tech-detect | grep -i "wordpress" > wordpress_sites.txt
+
+六、完整实践流程
+--------------------------------------------------------------------------------
+
+以下是一个针对公开目标的完整子域名发现实践流程。
+
+目标: tesla.com (仅供教学演示，请遵守当地法律和授权范围)
+
+Step 1: 创建项目目录，开始被动枚举
+
+  mkdir ~/recon-tesla && cd ~/recon-tesla
+  amass enum -passive -d tesla.com -o tesla_passive.txt -dir ./amass_db
+
+Step 2: 执行amass情报收集，发现关联域名
+
+  amass intel -d tesla.com -o tesla_intel.txt
+  cat tesla_intel.txt
+  # 记录发现的关联域名和ASN信息
+
+Step 3: 对主域名执行深入主动枚举
+
+  amass enum -active -d tesla.com -o tesla_active.txt -dir ./amass_db -ip -src
+
+Step 4: 暴力破解子域名
+
+  amass enum -d tesla.com -brute -w /usr/share/amass/wordlists/subdomains.lst -o tesla_brute.txt
+
+Step 5: 使用subfinder补充被动发现
+
+  subfinder -d tesla.com -all -silent -o tesla_subfinder.txt
+
+Step 6: 使用assetfinder快速补充
+
+  assetfinder tesla.com | tee tesla_assetfinder.txt
+
+Step 7: 合并去重
+
+  cat tesla_passive.txt tesla_active.txt tesla_brute.txt tesla_subfinder.txt tesla_assetfinder.txt | sort -u > tesla_all_subs.txt
+  wc -l tesla_all_subs.txt
+
+Step 8: 查看amass数据库中的完整发现
+
+  amass db -d tesla.com -show
+  amass db -d tesla.com -names
+
+Step 9: 验证哪些子域名上有活跃Web服务
+
+  cat tesla_all_subs.txt | httpx -silent -status-code -title -o tesla_live.txt
+  cat tesla_live.txt | wc -l
+
+Step 10: 在浏览器中手动访问有趣的子域名
+
+  打开Firefox，逐个访问live列表中带有以下特征的目标:
+  - 状态码200且有登录页面的子域名
+  - 状态码401/403（存在Web服务但需要认证）
+  - 带有dev, staging, test, admin, portal, api前缀的子域名
+  - 状态码500+的子域名（可能存在配置问题）
+
+Step 11: 生成可视化资产图
+
+  amass viz -d tesla.com -d3
+  firefox amass_d3.html
+
+Step 12: 导出完整报告
+
+  将以下信息整合为一个侦察报告:
+  1. 发现的子域名总数
+  2. 活跃Web服务列表（含状态码和标题）
+  3. 已解析的IP地址列表
+  4. 使用的技术栈
+  5. 关联域名和ASN信息
+  6. 可能的攻击入口点（登录页、测试环境等）
+
+七、常见问题与排错
+--------------------------------------------------------------------------------
+
+Q: amass报告"too many DNS queries"？
+A: 使用参数限制速率: --max-dns-queries 3 (每秒3个查询)
+
+Q: subfinder结果很少？
+A: 检查provider-config.yaml，添加API密钥可以大幅提升结果数量
+
+Q: assfinder只返回了几个结果？
+A: assetfinder主要依赖crt.sh，对于冷门域名结果较少是正常的，建议结合amass和subfinder
+
+Q: 扫描时间太长？
+A: 先用amass passive和subfinder快速获得初步结果，再针对性地做active扫描
+
+Q: 目标使用了Cloudflare/WAF怎么绕过？
+A: 
+  1. 使用SSL证书透明度日志（crtsh）是绕过CDN的有效方法
+  2. 查找历史DNS记录（SecurityTrails）
+  3. 暴力破解+反向DNS查询
+  4. 使用amass的-asn参数查询同ASN下的其他IP
+
+八、自动化脚本示例
+--------------------------------------------------------------------------------
+
+创建一个简单的子域名发现自动化脚本:
+
+  #!/bin/bash
+  # recon.sh - 自动子域名发现脚本
+  TARGET=$1
+  
+  if [ -z "$TARGET" ]; then
+    echo "用法: ./recon.sh example.com"
+    exit 1
+  fi
+  
+  mkdir -p recon_$TARGET && cd recon_$TARGET
+  
+  echo "[+] amass被动枚举..."
+  amass enum -passive -d $TARGET -o amass_passive.txt 2>/dev/null &
+  
+  echo "[+] subfinder枚举..."
+  subfinder -d $TARGET -silent -o subfinder.txt 2>/dev/null &
+  
+  echo "[+] assetfinder枚举..."
+  assetfinder $TARGET | tee assetfinder.txt 2>/dev/null &
+  
+  wait
+  
+  echo "[+] 合并去重..."
+  cat amass_passive.txt subfinder.txt assetfinder.txt | sort -u > all_subs.txt
+  echo "[+] 共发现 $(wc -l < all_subs.txt) 个子域名"
+  
+  echo "[+] 验证存活..."
+  cat all_subs.txt | httpx -silent -status-code -title -o live.txt 2>/dev/null
+  echo "[+] 活跃Web服务: $(wc -l < live.txt) 个"
+  
+  echo "[+] 完成! 结果在 recon_$TARGET/ 目录中"
+
+================================================================================
+总结: 单一工具永远无法发现全部子域名。amass+subfinder+assetfinder三管齐下，
+结合Certificate Transparency、DNS暴力破解和API数据源，才能构建最完整的资产图谱。
+红队侦察的一般原则是"能发现多少发现多少"，因为攻击面最小的往往不是主站，
+而是被遗忘的子域名或老旧服务器。
+================================================================================

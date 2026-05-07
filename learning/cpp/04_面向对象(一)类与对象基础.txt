@@ -1,0 +1,2571 @@
+================================================================================
+  C++ 深化教程：第四章 面向对象(一) —— 类与对象基础
+================================================================================
+
+【本章目标】
+  1. 掌握类的定义、访问控制(public/private/protected)
+  2. 理解构造函数和析构函数的工作机制
+  3. 深入理解对象内存布局、this指针等底层原理
+  4. 熟练使用static成员、const成员函数、explicit等进阶特性
+  5. 通过5个生活场景案例综合运用所学知识
+
+================================================================================
+
+                            === 第一节：基础示例代码 + 计算机底层原理 ===
+================================================================================
+
+一、类定义与访问控制：基础示例
+------------------------------------
+
+在C++中，类是面向对象编程的核心。一个类将数据（成员变量）和操作数据的函数（成员函数）封装在一起。
+
+【示例1-1】一个简单的BankAccount类：
+
+```cpp
+#include <iostream>
+#include <string>
+
+class BankAccount {
+public:    // 公有成员：外部可以直接访问
+    // 构造函数
+    BankAccount(const std::string& owner, double initialBalance)
+        : ownerName(owner), balance(initialBalance) {
+        std::cout << "Account created for " << ownerName << std::endl;
+    }
+
+    // 公有成员函数：提供对外接口
+    void deposit(double amount) {
+        if (amount > 0) {
+            balance += amount;
+            std::cout << "Deposited: " << amount << std::endl;
+        }
+    }
+
+    bool withdraw(double amount) {
+        if (amount > 0 && amount <= balance) {
+            balance -= amount;
+            std::cout << "Withdrawn: " << amount << std::endl;
+            return true;
+        }
+        return false;
+    }
+
+    double getBalance() const {   // const成员函数：不修改成员变量
+        return balance;
+    }
+
+private:   // 私有成员：外部无法直接访问
+    std::string ownerName;
+    double balance;
+    int internalID;   // 内部ID，外部无需知道
+};
+
+int main() {
+    BankAccount acc("Alice", 1000.0);
+    acc.deposit(500.0);
+    acc.withdraw(200.0);
+    std::cout << "Balance: " << acc.getBalance() << std::endl;
+    // acc.balance = 10000;  // 编译错误！balance是private的
+    return 0;
+}
+```
+
+访问控制说明：
+  public    — 类的用户（外部代码）可以访问
+  private   — 只有类自身的成员函数可以访问（默认访问级别，class关键字）
+  protected — 类自身和派生类可以访问（第5章继承中详述）
+
+【示例1-2】构造函数与析构函数：
+
+```cpp
+#include <iostream>
+#include <cstring>
+
+class Message {
+private:
+    char* content;     // 动态分配的字符数组
+    size_t length;
+    static int msgCount;  // 静态成员变量
+
+public:
+    // 默认构造函数
+    Message() : content(nullptr), length(0) {
+        msgCount++;
+        std::cout << "Default constructor: empty message created" << std::endl;
+    }
+
+    // 带参构造函数
+    Message(const char* msg) : length(std::strlen(msg)) {
+        content = new char[length + 1];
+        std::strcpy(content, msg);
+        msgCount++;
+        std::cout << "Parameterized constructor: \"" << content << "\"" << std::endl;
+    }
+
+    // 拷贝构造函数——深拷贝
+    Message(const Message& other) : length(other.length) {
+        content = new char[length + 1];
+        std::strcpy(content, other.content);
+        msgCount++;
+        std::cout << "Copy constructor" << std::endl;
+    }
+
+    // 析构函数
+    ~Message() {
+        delete[] content;
+        msgCount--;
+        std::cout << "Destructor: message destroyed" << std::endl;
+    }
+
+    void print() const {
+        if (content)
+            std::cout << "Message: " << content << std::endl;
+        else
+            std::cout << "Message: (empty)" << std::endl;
+    }
+
+    static int getCount() { return msgCount; }
+};
+
+int Message::msgCount = 0;  // 静态成员变量类外定义
+
+int main() {
+    Message m1("Hello, World!");  // 带参构造
+    Message m2(m1);               // 拷贝构造
+    Message m3;                   // 默认构造
+    m1.print();
+    m2.print();
+    m3.print();
+    std::cout << "Live messages: " << Message::getCount() << std::endl;
+    return 0;
+}
+// 三个对象的析构函数在此处自动调用（按构造的逆序）
+```
+
+================================================================================
+
+二、计算机底层原理：对象内存布局
+------------------------------------
+
+【原理2-1】对象内存布局——成员变量在内存中的排列
+
+考虑以下类定义：
+
+```cpp
+class Demo {
+public:
+    int a;      // 4字节 (假设32位系统)
+    char b;     // 1字节
+    double c;   // 8字节
+    short d;    // 2字节
+    void func(); // 成员函数不占对象空间！
+};
+```
+
+该对象在内存中的布局如下（假设64位系统，默认对齐为8字节）：
+
+  偏移量    内容
+  ────────────────────────────────────
+  0x00     a (int, 4 bytes)
+  0x04     b (char, 1 byte)
+  0x05     [padding: 3 bytes]      ← 内存对齐填充
+  0x08     c (double, 8 bytes)
+  0x10     d (short, 2 bytes)
+  0x12     [padding: 6 bytes]      ← 对齐到8的倍数
+  ────────────────────────────────────
+  总大小: 24 bytes (不是4+1+8+2=15!)
+
+内存对齐（Padding/Alignment）规则：
+  - 每个成员变量的地址必须是其类型大小的整数倍
+    （如int对齐到4的倍数，double对齐到8的倍数）
+  - 整个对象的大小必须是最大对齐要求的整数倍
+  - 编译器这样做的原因：CPU读取对齐的内存地址更高效；
+    未对齐的访问可能导致两次内存读取甚至硬件异常
+
+【原理2-2】sizeof运算符验证对象大小
+
+```cpp
+#include <iostream>
+
+class Demo {
+public:
+    int a;      // 4
+    char b;     // 1
+    double c;   // 8
+    short d;    // 2
+    // 成员函数不增加对象大小！
+    void func() { a = 10; }
+    void func2() { b = 'x'; }
+};
+
+class Empty {};  // 空类
+
+int main() {
+    std::cout << "sizeof(Demo): " << sizeof(Demo) << std::endl;   // 输出24
+    std::cout << "sizeof(Empty): " << sizeof(Empty) << std::endl; // 输出1
+    // 空类大小为1字节，因为C++保证每个对象必须有唯一地址
+    // 这个1字节不存储任何数据，仅用于地址区分
+    return 0;
+}
+```
+
+对象大小计算要点：
+  1. 非静态成员变量才占用对象空间
+  2. 成员函数不占用对象空间（代码在代码段中，所有对象共享）
+  3. 静态成员变量不占用对象空间（在全局数据段中）
+  4. 虚函数会增加一个vptr（虚函数表指针），通常8字节（64位系统）
+     ——第6章详述
+
+【原理2-3】this指针——成员函数的隐式参数
+
+每个非静态成员函数都隐含地接收一个指向当前对象的指针，名为this。
+
+```cpp
+class Point {
+private:
+    int x, y;
+public:
+    Point(int x, int y) {
+        // this->x 指成员变量，x 指参数
+        this->x = x;   // 等价于 Point::x = x
+        this->y = y;
+    }
+
+    Point& setX(int x) {
+        this->x = x;          // 区分成员变量和参数
+        return *this;         // 返回对象自身，支持链式调用
+    }
+
+    Point& setY(int y) {
+        this->y = y;
+        return *this;
+    }
+};
+
+int main() {
+    Point p(3, 4);
+    p.setX(10).setY(20);  // 链式调用：p.setX(10)返回p自身
+    return 0;
+}
+```
+
+this指针的工作机制（底层）：
+
+  调用 p.setX(10) 时，编译器将其转换为：
+      setX(&p, 10);    // this = &p
+
+  在成员函数内部：
+      this->x = x;     // 通过this指针访问成员变量
+
+  编译后的汇编伪代码：
+      mov rax, rdi          ; rdi = this指针（第一个参数）
+      mov [rax], esi        ; 将参数值写入 this->x（偏移0处）
+      ret
+
+  调用约定说明：
+  - 在x86-64 System V ABI（Linux）中，this指针通过rdi寄存器传递
+  - 在x86-64 Microsoft ABI（Windows）中，this指针通过rcx寄存器传递
+  - this指针本质上就是成员函数的第一个隐式参数
+
+【原理2-4】构造函数初始化顺序
+
+```cpp
+#include <iostream>
+
+class Member {
+public:
+    Member(const char* name) : name_(name) {
+        std::cout << "Member " << name_ << " constructed" << std::endl;
+    }
+private:
+    const char* name_;
+};
+
+class Container {
+private:
+    Member m1;    // 第一个声明的成员
+    Member m2;    // 第二个声明的成员
+    const int id;
+public:
+    // 初始化列表中的顺序不重要！实际初始化顺序 = 成员声明顺序！
+    Container() : m2("second"), m1("first"), id(42) {
+        std::cout << "Container constructed" << std::endl;
+    }
+};
+
+int main() {
+    Container c;
+    // 输出：
+    // Member first constructed    ← m1先初始化（尽管初始化列表中m2在前）
+    // Member second constructed   ← m2后初始化
+    // Container constructed
+    return 0;
+}
+```
+
+关键规则：
+  1. 成员变量按照它们在类中声明的顺序初始化，与初始化列表的顺序无关
+  2. 基类子对象先于成员变量初始化（第5章详述）
+  3. const成员和引用成员必须在初始化列表中初始化
+  4. 初始化列表的执行先于构造函数体
+
+为什么必须遵循声明顺序？
+  因为对象析构是初始化的逆序，编译器需要保证确定的构造/析构顺序。
+  如果按照初始化列表的顺序构造，析构时无法保证正确的逆序。
+
+【原理2-5】成员函数调用约定深入
+
+考虑以下代码：
+
+```cpp
+class Calculator {
+    int value;
+public:
+    Calculator(int v) : value(v) {}
+    int add(int x) { return value + x; }      // 非const成员函数
+    int get() const { return value; }          // const成员函数
+    static int version() { return 1; }         // 静态成员函数
+};
+
+// 调用时的底层对应关系：
+int main() {
+    Calculator calc(10);
+
+    int r1 = calc.add(5);
+    // 编译器转换为: int r1 = Calculator::add(&calc, 5);
+    // 函数签名实际是: int add(Calculator* this, int x)
+
+    int r2 = calc.get();
+    // 编译器转换为: int r2 = Calculator::get(&calc);
+    // const成员函数对应的this是: const Calculator* this
+
+    int v = Calculator::version();
+    // 静态函数无this指针，直接调用: int v = Calculator::version();
+
+    return 0;
+}
+```
+
+类型修饰与this指针的关系：
+  - 非const成员函数：this类型为 T* const（指针本身不可改，指向内容可改）
+  - const成员函数：   this类型为 const T* const（指针和内容都不可改）
+  - 这就是const成员函数不能修改成员变量的根本原因
+
+【原理2-6】虚函数指针（vptr）预留给对象空间的说明
+
+如果一个类包含虚函数，编译器会在对象内存布局的最前面插入一个vptr：
+
+```cpp
+class Base {
+    int data;
+public:
+    virtual void func() {}   // 有虚函数 → 包含vptr
+};
+
+class NoVirtual {
+    int data;
+public:
+    void func() {}           // 无虚函数 → 无vptr
+};
+
+// sizeof(Base) == 16 (vptr=8字节 + int=4字节 + padding=4字节)
+// sizeof(NoVirtual) == 4  (只有int成员)
+
+// vptr指向虚函数表(vtable)，vtable中存储所有虚函数的地址
+// vtable位于只读数据段(.rodata)，所有同类对象共享同一个vtable
+// 详细内容在第6章"多态与虚函数"中深入学习
+```
+
+================================================================================
+
+                            === 第二节：所有用法大全（标准库/关键字/函数） ===
+================================================================================
+
+2.1 class vs struct 的区别
+------------------------------------
+
+```cpp
+// class: 默认访问级别为 private
+class C {
+    int a;          // private（默认）
+public:
+    int b;          // public
+};
+
+// struct: 默认访问级别为 public
+struct S {
+    int a;          // public（默认）
+private:
+    int b;          // private
+};
+
+// 除此之外，class和struct在C++中几乎完全相同
+// 都可以有成员函数、构造函数、析构函数、继承等
+
+// 约定俗成：
+// struct 用于简单的数据聚合（POD类型）
+// class  用于有封装逻辑的复杂类型
+```
+
+2.2 构造函数大全
+------------------------------------
+
+【默认构造函数】
+没有参数（或所有参数都有默认值）的构造函数。
+
+```cpp
+class Widget {
+    int id;
+public:
+    Widget() : id(0) { }              // 默认构造函数
+    Widget(int i = 0) : id(i) { }     // 也是默认构造函数（参数有默认值）
+};
+// 注意：如果类中没有任何构造函数，编译器会自动生成默认构造函数
+// 一旦定义了任何构造函数，编译器就不再自动生成
+```
+
+【带参构造函数】
+
+```cpp
+class Point {
+    int x, y;
+public:
+    Point(int xVal, int yVal) : x(xVal), y(yVal) { }
+    // 也可用构造函数体赋值，但效率较低：
+    // Point(int xVal, int yVal) { x = xVal; y = yVal; }
+};
+```
+
+【拷贝构造函数】
+用同类型对象初始化新对象时调用。
+
+```cpp
+class Buffer {
+    int* data;
+    size_t size;
+public:
+    Buffer(size_t s) : size(s), data(new int[s]) { }
+
+    // 拷贝构造函数——深拷贝
+    Buffer(const Buffer& other) : size(other.size), data(new int[other.size]) {
+        for (size_t i = 0; i < size; ++i)
+            data[i] = other.data[i];
+    }
+
+    ~Buffer() { delete[] data; }
+};
+
+// 调用时机：
+// Buffer b2(b1);        // 直接初始化
+// Buffer b3 = b1;       // 拷贝初始化
+// void func(Buffer b);  // 值传递参数
+// Buffer func() { return b; } // 返回值（可能被RVO优化掉）
+```
+
+【委托构造函数 (C++11)】
+一个构造函数调用同类中的另一个构造函数。
+
+```cpp
+class Employee {
+    std::string name;
+    int id;
+    double salary;
+public:
+    // 主构造函数
+    Employee(const std::string& n, int i, double s)
+        : name(n), id(i), salary(s) { }
+
+    // 委托给主构造函数
+    Employee(const std::string& n, int i)
+        : Employee(n, i, 0.0) { }         // 只提供姓名和工号，薪资默认0
+
+    Employee(const std::string& n)
+        : Employee(n, 0, 0.0) { }         // 只提供姓名
+
+    Employee()
+        : Employee("Unknown", 0, 0.0) { } // 无参，全部默认
+
+    void print() const {
+        std::cout << name << " (ID:" << id << ") $" << salary << std::endl;
+    }
+};
+
+// 使用：
+// Employee e1("Alice", 1001, 50000.0);  // 主构造
+// Employee e2("Bob", 1002);             // 委托构造
+// Employee e3("Charlie");              // 委托构造
+// Employee e4;                          // 委托构造
+```
+
+注意：使用委托构造时，初始化列表中不能有其他成员初始化器。
+即 `Employee(const std::string& n) : name(n), Employee(n, 0, 0.0) {}` 是错误的！
+
+2.3 析构函数
+------------------------------------
+
+```cpp
+class FileHandler {
+    FILE* file;
+public:
+    FileHandler(const char* filename) {
+        file = fopen(filename, "r");
+    }
+
+    // 析构函数——自动清理资源
+    ~FileHandler() {
+        if (file) {
+            fclose(file);
+            std::cout << "File closed" << std::endl;
+        }
+    }
+    // 析构函数的特点：
+    // 1. 不接受参数，没有返回值
+    // 2. 每个类只能有一个析构函数
+    // 3. 对象离开作用域时自动调用
+    // 4. 析构顺序 = 构造函数序的逆序
+};
+
+// 析构函数的调用时机：
+// 1. 栈对象离开作用域
+// 2. delete 释放堆对象
+// 3. 临时对象生命周期结束
+// 4. 程序结束时全局/静态对象析构
+```
+
+2.4 成员初始化列表 vs 构造函数体内赋值
+------------------------------------
+
+```cpp
+#include <iostream>
+#include <string>
+#include <chrono>
+
+class Inefficient {
+    std::string name;
+    int value;
+public:
+    // 构造函数体内赋值：成员先默认初始化，再赋值（两步操作）
+    Inefficient(const std::string& n, int v) {
+        name = n;     // 1. name先执行默认构造（空串）
+                      // 2. 再执行赋值操作（拷贝n的内容）
+        value = v;    // 对于基本类型，赋值和初始化效率相同
+    }
+};
+
+class Efficient {
+    std::string name;
+    int value;
+public:
+    // 初始化列表：成员直接初始化（一步到位）
+    Efficient(const std::string& n, int v)
+        : name(n), value(v) { }  // name直接调用拷贝构造，无需默认+赋值
+};
+
+// 必须使用初始化列表的情况：
+class MustUseInitList {
+    const int MAX_SIZE;       // const成员必须初始化
+    int& ref;                 // 引用成员必须初始化
+    std::string name;
+public:
+    MustUseInitList(int max, int& r, const std::string& n)
+        : MAX_SIZE(max), ref(r), name(n) { }
+    // 以下写法错误：
+    // MustUseInitList(int max) {
+    //     MAX_SIZE = max;    // 错误：const成员不能赋值
+    // }
+};
+```
+
+效率对比总结：
+  初始化列表：   成员 → 直接构造（如调用拷贝构造）
+  函数体赋值：   成员 → 默认构造 → 赋值操作（多一步）
+  对于基本类型（int, double等）：效率相同
+  对于类类型（string, vector等）：初始化列表明显更优
+
+2.5 this指针的更多用法
+------------------------------------
+
+```cpp
+class Chain {
+    int val;
+public:
+    Chain(int v) : val(v) { }
+
+    // 1. 返回*this实现链式调用
+    Chain& increment() { ++val; return *this; }
+    Chain& multiply(int factor) { val *= factor; return *this; }
+
+    // 2. 比较时使用this
+    bool isEqual(const Chain& other) const {
+        return this == &other;  // 判断是否为同一对象
+    }
+
+    // 3. 在const成员函数中使用this
+    const Chain* getPointer() const {
+        return this;  // this类型为 const Chain*
+    }
+
+    // 4. delete this（极少使用，但在某些设计模式中会出现）
+    void destroySelf() {
+        // 仅当对象由new分配时才能安全调用
+        delete this;
+    }
+
+    int getVal() const { return val; }
+};
+
+int main() {
+    Chain c(1);
+    c.increment().multiply(5).increment();  // ((1+1)*5)+1 = 11
+    std::cout << c.getVal() << std::endl;    // 输出11
+    return 0;
+}
+```
+
+this指针的使用场景总结：
+  1. 区分成员变量和参数同名的情况
+  2. 返回*this以支持链式调用
+  3. 返回对象自身的指针/引用
+  4. 判断参数是否为当前对象自身
+  5. 在模板中获取派生类的类型（CRTP模式，第8章）
+
+2.6 static成员变量和静态成员函数
+------------------------------------
+
+```cpp
+#include <iostream>
+
+class Product {
+private:
+    std::string name;
+    double price;
+
+    static int totalProducts;     // 静态成员变量声明
+    static double totalRevenue;   // 静态成员变量声明
+
+public:
+    Product(const std::string& n, double p) : name(n), price(p) {
+        totalProducts++;
+        totalRevenue += p;
+    }
+
+    ~Product() {
+        totalProducts--;
+    }
+
+    // 静态成员函数——只能访问静态成员
+    static int getTotalProducts() { return totalProducts; }
+    static double getTotalRevenue() { return totalRevenue; }
+    static double getAveragePrice() {
+        if (totalProducts == 0) return 0.0;
+        return totalRevenue / totalProducts;
+    }
+
+    // 静态成员函数中没有this指针！
+    // 因此不能访问非静态成员
+    // static void printName() { std::cout << name; }  // 错误！
+};
+
+// 静态成员变量必须在类外定义（分配存储空间）
+int Product::totalProducts = 0;
+double Product::totalRevenue = 0.0;
+
+int main() {
+    Product p1("Laptop", 999.99);
+    Product p2("Phone", 699.99);
+    Product p3("Tablet", 399.99);
+
+    // 通过类名访问静态成员（推荐）
+    std::cout << "Total products: " << Product::getTotalProducts() << std::endl;
+    std::cout << "Total revenue: $" << Product::getTotalRevenue() << std::endl;
+    std::cout << "Average price: $" << Product::getAveragePrice() << std::endl;
+
+    // 也可以通过对象访问（不推荐）
+    // std::cout << p1.getTotalProducts() << std::endl;  // 可以但不好
+
+    return 0;
+}
+```
+
+static成员底层原理：
+  - 静态成员变量存储在全局数据段（.data或.bss），不属于任何对象
+  - 静态成员变量的生命周期是整个程序运行期间
+  - 静态成员函数没有this指针，因此是真正的"类级函数"
+  - C++17起，静态成员变量可用inline在类内定义：
+    `static inline int count = 0;  // C++17起可以在类内初始化`
+
+2.7 const成员函数、mutable关键字
+------------------------------------
+
+```cpp
+#include <iostream>
+#include <string>
+
+class Sensor {
+private:
+    std::string id;
+    double temperature;
+    mutable int readCount;  // mutable: 即使在const函数中也可以修改
+
+public:
+    Sensor(const std::string& sensorId)
+        : id(sensorId), temperature(0.0), readCount(0) { }
+
+    void setTemperature(double t) {
+        temperature = t;  // 非const函数可以修改任何成员
+    }
+
+    // const成员函数承诺不修改对象状态
+    double getTemperature() const {
+        readCount++;  // 可以修改mutable成员（如统计读取次数）
+        return temperature;
+    }
+
+    // const重载——根据调用对象的constness自动选择
+    std::string& getID() {               // 非const版本
+        std::cout << "Non-const getID called" << std::endl;
+        return id;
+    }
+
+    const std::string& getID() const {   // const版本
+        std::cout << "Const getID called" << std::endl;
+        return id;
+    }
+
+    int getReadCount() const { return readCount; }
+};
+
+int main() {
+    Sensor s("TEMP001");
+    s.setTemperature(25.5);
+
+    std::cout << "Temp: " << s.getTemperature() << std::endl;
+    std::cout << "ReadCount: " << s.getReadCount() << std::endl;  // 1
+    std::cout << "Temp: " << s.getTemperature() << std::endl;
+    std::cout << "ReadCount: " << s.getReadCount() << std::endl;  // 2
+
+    // const对象只能调用const成员函数
+    const Sensor cs("TEMP002");
+    std::cout << "Temp: " << cs.getTemperature() << std::endl;  // 调用const版本
+    // cs.setTemperature(30.0);  // 错误！const对象不能调用非const函数
+
+    // const重载测试
+    s.getID();   // 调用非const版本
+    cs.getID();  // 调用const版本
+
+    return 0;
+}
+```
+
+mutable的使用场景：
+  1. 缓存计算结果（如计算代价高，缓存到mutable成员中）
+  2. 统计访问次数、调试日志等不影响对象逻辑状态的成员
+  3. 同步锁（mutex成员通常声明为mutable，因为加锁不影响逻辑const）
+
+2.8 explicit关键字（阻止隐式转换）
+------------------------------------
+
+```cpp
+#include <iostream>
+
+class Dollar {
+private:
+    double amount;
+public:
+    // 没有explicit——允许隐式转换
+    Dollar(double amt) : amount(amt) {
+        std::cout << "Dollar constructed from double: " << amt << std::endl;
+    }
+
+    double getAmount() const { return amount; }
+};
+
+class ExplicitDollar {
+private:
+    double amount;
+public:
+    // 使用explicit——禁止隐式转换
+    explicit ExplicitDollar(double amt) : amount(amt) {
+        std::cout << "ExplicitDollar constructed from double: " << amt << std::endl;
+    }
+
+    double getAmount() const { return amount; }
+};
+
+void processDollar(const Dollar& d) {
+    std::cout << "Processing: $" << d.getAmount() << std::endl;
+}
+
+void processExplicitDollar(const ExplicitDollar& d) {
+    std::cout << "Processing: $" << d.getAmount() << std::endl;
+}
+
+int main() {
+    Dollar d1(99.99);     // 直接构造，OK
+    Dollar d2 = 199.99;   // 隐式转换，OK（因为没有explicit）
+
+    processDollar(299.99);  // 隐式转换：double → Dollar，OK
+    // 这行代码悄悄地创建了一个临时Dollar对象，可能不是程序员的本意
+
+    ExplicitDollar ed1(99.99);     // 直接构造，OK
+    // ExplicitDollar ed2 = 199.99;   // 错误！explicit禁止隐式转换
+    // processExplicitDollar(299.99); // 错误！explicit禁止隐式转换
+
+    ExplicitDollar ed3 = ExplicitDollar(199.99);  // 显式转换，OK
+    processExplicitDollar(ExplicitDollar(299.99)); // 显式转换，OK
+
+    return 0;
+}
+```
+
+explicit的建议：
+  大多数单参数构造函数都应该加explicit，除非你明确希望支持隐式转换。
+  这样可以防止意外的类型转换带来的bug。
+
+explicit也可用于转换运算符（C++11起）：
+```cpp
+class Wrapper {
+    int value;
+public:
+    Wrapper(int v) : value(v) {}
+    explicit operator int() const { return value; }  // 需要显式转换
+    operator bool() const { return value != 0; }     // 允许隐式转bool
+};
+
+// Wrapper w(42);
+// int x = w;         // 错误！explicit operator int()
+// int x = int(w);    // OK，显式转换
+// int x = static_cast<int>(w); // OK
+// if (w) { ... }     // OK，operator bool() 非explicit
+```
+
+2.9 =default 和 =delete (C++11)
+------------------------------------
+
+```cpp
+#include <iostream>
+
+// =default: 显式要求编译器生成默认版本
+class DefaultDemo {
+public:
+    DefaultDemo() = default;                        // 默认构造
+    DefaultDemo(const DefaultDemo&) = default;      // 拷贝构造
+    DefaultDemo& operator=(const DefaultDemo&) = default;  // 拷贝赋值
+    ~DefaultDemo() = default;                       // 析构
+};
+
+// =delete: 显式禁用某个函数
+class NonCopyable {
+public:
+    NonCopyable() = default;
+
+    // 禁用拷贝构造和拷贝赋值
+    NonCopyable(const NonCopyable&) = delete;
+    NonCopyable& operator=(const NonCopyable&) = delete;
+
+    // 允许移动
+    NonCopyable(NonCopyable&&) = default;
+    NonCopyable& operator=(NonCopyable&&) = default;
+};
+
+// =delete 还可以用来禁用特定的隐式转换
+class OnlyInt {
+public:
+    OnlyInt(int value) : val(value) {}
+    OnlyInt(double) = delete;          // 禁止从double构造
+    OnlyInt(char) = delete;            // 禁止从char构造
+    // OnlyInt(long) = delete;         // 需要时也可以禁用long
+
+    int getVal() const { return val; }
+private:
+    int val;
+};
+
+int main() {
+    NonCopyable obj1;
+    // NonCopyable obj2 = obj1;  // 错误：拷贝构造已删除
+    // NonCopyable obj3(obj1);   // 错误：拷贝构造已删除
+
+    NonCopyable obj2 = std::move(obj1);  // OK，移动构造
+
+    OnlyInt oi1(42);     // OK
+    // OnlyInt oi2(3.14);   // 错误：从double构造已删除
+    // OnlyInt oi3('A');    // 错误：从char构造已删除
+
+    return 0;
+}
+```
+
+=default 的应用场景：
+  1. 当自定义了其他构造函数，但仍需要编译器生成的默认构造
+  2. 显式声明意图，让代码可读性更好
+  3. 可以在类外将=default用于定义（将实现放在.cpp文件中）
+
+=delete 的应用场景：
+  1. 禁止拷贝（单例模式、资源独占类）
+  2. 禁止某些不安全的隐式转换
+  3. 禁用模板的某些特化（第8章）
+  4. 禁止在堆/栈上分配（配合new/delete运算符）
+
+================================================================================
+
+                            === 第三节：实用代码案例（生活场景举例） ===
+================================================================================
+
+案例1：温度转换器（Temperature类）
+------------------------------------
+
+【生活场景】天气App需要支持摄氏、华氏、开氏三种温度单位的显示和转换。
+使用const成员函数保证获取温度时不修改状态，使用static统计转换次数。
+
+```cpp
+#include <iostream>
+#include <string>
+#include <iomanip>
+
+// ====== 第二章的调试宏（融入前章知识）======
+#ifdef DEBUG_MODE
+    #define DEBUG_LOG(msg) std::cout << "[DEBUG] " << msg << std::endl
+#else
+    #define DEBUG_LOG(msg)
+#endif
+
+class Temperature {
+private:
+    double celsius;                    // 内部统一以摄氏温度存储
+    static size_t conversionCount;     // 全局转换次数统计
+
+public:
+    // 构造函数——默认0度
+    Temperature() : celsius(0.0) {
+        DEBUG_LOG("Temperature default constructed: 0°C");
+    }
+
+    explicit Temperature(double c) : celsius(c) {
+        DEBUG_LOG(std::string("Temperature constructed: ") +
+                  std::to_string(c) + "°C");
+    }
+
+    // 拷贝构造
+    Temperature(const Temperature& other) : celsius(other.celsius) {
+        DEBUG_LOG("Temperature copy constructed");
+    }
+
+    // ========== 温度获取（const成员函数）==========
+    double getCelsius() const {
+        conversionCount++;
+        return celsius;
+    }
+
+    double getFahrenheit() const {
+        conversionCount++;
+        return celsius * 9.0 / 5.0 + 32.0;
+    }
+
+    double getKelvin() const {
+        conversionCount++;
+        return celsius + 273.15;
+    }
+
+    // ========== 温度设置 ==========
+    void setCelsius(double c) {
+        celsius = c;
+        DEBUG_LOG(std::string("Set to ") + std::to_string(c) + "°C");
+    }
+
+    void setFahrenheit(double f) {
+        celsius = (f - 32.0) * 5.0 / 9.0;
+        DEBUG_LOG(std::string("Set from Fahrenheit: ") + std::to_string(f) + "°F");
+    }
+
+    void setKelvin(double k) {
+        celsius = k - 273.15;
+        DEBUG_LOG(std::string("Set from Kelvin: ") + std::to_string(k) + "K");
+    }
+
+    // ========== 静态成员 ==========
+    static size_t getConversionCount() { return conversionCount; }
+    static void resetConversionCount() { conversionCount = 0; }
+
+    // ========== 温度比较 ==========
+    bool isFreezing() const { return celsius <= 0.0; }
+    bool isBoiling() const { return celsius >= 100.0; }
+
+    // ========== 天气描述 ==========
+    std::string weatherDescription() const {
+        if (celsius < 0)       return "严寒";
+        else if (celsius < 10) return "寒冷";
+        else if (celsius < 20) return "凉爽";
+        else if (celsius < 30) return "温暖";
+        else if (celsius < 38) return "炎热";
+        else                   return "酷热";
+    }
+};
+
+// 静态成员变量类外定义
+size_t Temperature::conversionCount = 0;
+
+// ========== 演示代码 ==========
+int main() {
+    // 模拟天气App的温度显示
+    Temperature today(28.5);  // 某天28.5°C
+
+    std::cout << "===== 天气App温度显示 =====\n";
+    std::cout << "摄氏温度: " << std::fixed << std::setprecision(1)
+              << today.getCelsius() << "°C" << std::endl;
+    std::cout << "华氏温度: " << today.getFahrenheit() << "°F" << std::endl;
+    std::cout << "开氏温度: " << today.getKelvin() << "K" << std::endl;
+    std::cout << "天气描述: " << today.weatherDescription() << std::endl;
+    std::cout << "是否冰点: " << (today.isFreezing() ? "是" : "否") << std::endl;
+
+    std::cout << "\n===== 国际城市温度 =====\n";
+
+    Temperature tokyo;
+    tokyo.setCelsius(22.0);
+    std::cout << "东京: " << tokyo.getCelsius() << "°C / "
+              << tokyo.getFahrenheit() << "°F" << std::endl;
+
+    Temperature newYork;
+    newYork.setFahrenheit(77.0);  // 美国习惯用华氏
+    std::cout << "纽约: " << newYork.getCelsius() << "°C / "
+              << newYork.getFahrenheit() << "°F" << std::endl;
+
+    Temperature northPole;
+    northPole.setKelvin(243.15);  // 科学数据用开氏
+    std::cout << "北极: " << northPole.getCelsius() << "°C - "
+              << northPole.weatherDescription() << std::endl;
+
+    std::cout << "\n温度读取总次数: " << Temperature::getConversionCount() << std::endl;
+
+    return 0;
+}
+```
+
+编译方式（如需调试输出）：
+  g++ -DDEBUG_MODE -std=c++11 program.cpp -o program
+
+知识点融入：
+  - 类的封装（private celsius + public接口）
+  - const成员函数（get系列函数不修改状态）
+  - static成员变量和函数（转换计数器）
+  - explicit构造函数（避免隐式转换）
+  - 拷贝构造函数
+  - 第二章的预处理宏（DEBUG_LOG）
+  - 成员初始化列表
+
+================================================================================
+
+案例2：智能闹钟（AlarmClock类）
+------------------------------------
+
+【生活场景】手机闹钟App的底层实现。支持多种方式设置时间，
+验证时间合法性，能够模拟时间流逝(tick)。
+
+```cpp
+#include <iostream>
+#include <iomanip>
+#include <stdexcept>
+
+// ====== 使用命名空间组织代码（融入第3章知识）======
+namespace chrono {
+
+class AlarmClock {
+private:
+    int hour;
+    int minute;
+    int second;
+    bool isAM;          // true=AM, false=PM (24小时制时忽略)
+    bool use24Hour;     // 制式标志
+
+    static int totalAlarms;       // 创建的闹钟总数
+    static const int MAX_HOUR_24 = 23;
+    static const int MAX_HOUR_12 = 12;
+    static const int MAX_MINUTE = 59;
+    static const int MAX_SECOND = 59;
+
+    // 时间验证私有辅助函数
+    void validateTime(int h, int m, int s, bool is24) {
+        if (is24) {
+            if (h < 0 || h > MAX_HOUR_24)
+                throw std::invalid_argument("Invalid hour for 24-hour format");
+        } else {
+            if (h < 1 || h > MAX_HOUR_12)
+                throw std::invalid_argument("Invalid hour for 12-hour format");
+        }
+        if (m < 0 || m > MAX_MINUTE)
+            throw std::invalid_argument("Invalid minute");
+        if (s < 0 || s > MAX_SECOND)
+            throw std::invalid_argument("Invalid second");
+    }
+
+public:
+    // ====== 构造函数重载 ======
+
+    // 默认构造函数——设为00:00:00, 24小时制
+    AlarmClock() : hour(0), minute(0), second(0), isAM(true), use24Hour(true) {
+        totalAlarms++;
+        std::cout << "[构造] 默认闹钟创建: 00:00:00 (24小时制)" << std::endl;
+    }
+
+    // 带参构造——24小时制
+    AlarmClock(int h, int m, int s)
+        : hour(h), minute(m), second(s), isAM(true), use24Hour(true) {
+        validateTime(h, m, s, true);
+        totalAlarms++;
+        std::cout << "[构造] 闹钟创建: " << toString() << std::endl;
+    }
+
+    // 带参构造——12小时制
+    AlarmClock(int h, int m, int s, bool am)
+        : hour(h), minute(m), second(s), isAM(am), use24Hour(false) {
+        validateTime(h, m, s, false);
+        totalAlarms++;
+        std::cout << "[构造] 闹钟创建: " << toString() << std::endl;
+    }
+
+    // 拷贝构造函数
+    AlarmClock(const AlarmClock& other)
+        : hour(other.hour), minute(other.minute), second(other.second),
+          isAM(other.isAM), use24Hour(other.use24Hour) {
+        totalAlarms++;
+        std::cout << "[构造] 闹钟拷贝创建: " << toString() << std::endl;
+    }
+
+    // 析构函数
+    ~AlarmClock() {
+        totalAlarms--;
+        std::cout << "[析构] 闹钟销毁: " << toString() << std::endl;
+    }
+
+    // ====== 模拟时间流逝 ======
+    void tick() {
+        second++;
+        if (second > MAX_SECOND) {
+            second = 0;
+            minute++;
+            if (minute > MAX_MINUTE) {
+                minute = 0;
+                if (use24Hour) {
+                    hour = (hour + 1) % 24;
+                } else {
+                    hour++;
+                    if (hour > MAX_HOUR_12) {
+                        hour = 1;
+                    }
+                    if (hour == 12 && minute == 0 && second == 0) {
+                        isAM = !isAM;  // 越过12点切换上下午
+                    }
+                }
+            }
+        }
+    }
+
+    // 前进n秒
+    void tick(int n) {
+        for (int i = 0; i < n; ++i) {
+            tick();
+        }
+    }
+
+    // ====== 时间显示（const成员函数）======
+    std::string toString() const {
+        std::ostringstream oss;
+        oss << std::setfill('0') << std::setw(2) << hour << ":"
+            << std::setw(2) << minute << ":"
+            << std::setw(2) << second;
+        if (!use24Hour) {
+            oss << " " << (isAM ? "AM" : "PM");
+        }
+        return oss.str();
+    }
+
+    void display() const {
+        std::cout << "当前时间: " << toString() << std::endl;
+    }
+
+    // ====== Getter/Setter ======
+    int getHour() const   { return hour; }
+    int getMinute() const { return minute; }
+    int getSecond() const { return second; }
+    bool isAMTime() const { return isAM; }
+    bool is24HourFormat() const { return use24Hour; }
+
+    void setTime(int h, int m, int s) {
+        validateTime(h, m, s, use24Hour);
+        hour = h; minute = m; second = s;
+    }
+
+    // 转换为总秒数（用于时间比较）
+    int totalSeconds() const {
+        return hour * 3600 + minute * 60 + second;
+    }
+
+    // ====== 静态成员 ======
+    static int getTotalAlarms() { return totalAlarms; }
+
+    // ====== 运算符重载（为第7章铺垫）======
+    bool operator==(const AlarmClock& other) const {
+        return totalSeconds() == other.totalSeconds();
+    }
+
+    bool operator<(const AlarmClock& other) const {
+        return totalSeconds() < other.totalSeconds();
+    }
+};
+
+int AlarmClock::totalAlarms = 0;
+
+}  // namespace chrono
+
+// ========== 演示代码 ==========
+int main() {
+    using namespace chrono;
+
+    std::cout << "===== 闹钟设置演示 =====\n";
+
+    // 多种构造方式
+    AlarmClock defaultClock;                          // 默认构造
+    AlarmClock morning(7, 0, 0);                     // 24小时制: 07:00:00
+    AlarmClock afternoon(3, 30, 0, true);            // 12小时制: 03:30:00 AM
+    AlarmClock evening(10, 15, 0, false);            // 12小时制: 10:15:00 PM
+    AlarmClock copied(morning);                       // 拷贝构造
+
+    std::cout << "\n所有闹钟时间:\n";
+    defaultClock.display();
+    morning.display();
+    afternoon.display();
+    evening.display();
+    copied.display();
+
+    std::cout << "\n当前活跃闹钟数量: " << AlarmClock::getTotalAlarms() << std::endl;
+
+    // 时间流逝模拟
+    std::cout << "\n===== 时间为7:00的闹钟启动，模拟时间流逝 =====\n";
+
+    AlarmClock stopwatch(6, 59, 50);  // 从6:59:50开始
+    std::cout << "起始时间: " << stopwatch.toString() << std::endl;
+
+    for (int i = 0; i < 15; i++) {
+        stopwatch.tick();
+        std::cout << "Tick " << (i+1) << ": " << stopwatch.toString() << std::endl;
+    }
+
+    // 12小时制时间越过12点的测试
+    std::cout << "\n===== 12小时制跨12点测试 =====\n";
+    AlarmClock amClock(11, 59, 55, true);  // 11:59:55 AM
+    for (int i = 0; i < 10; i++) {
+        amClock.tick();
+        std::cout << "  " << amClock.toString() << std::endl;
+    }
+
+    // 比较时间
+    std::cout << "\n===== 时间比较 =====\n";
+    AlarmClock t1(8, 30, 0);
+    AlarmClock t2(9, 0, 0);
+    std::cout << "8:30 < 9:00 ? " << (t1 < t2 ? "是" : "否") << std::endl;
+    std::cout << "8:30 == 9:00 ? " << (t1 == t2 ? "是" : "否") << std::endl;
+
+    return 0;
+}
+// 所有局部对象离开作用域时自动调用析构函数
+```
+
+知识点融入：
+  - 命名空间 chrono 组织代码（第3章）
+  - 构造函数重载（默认、带参、拷贝）
+  - 析构函数
+  - const成员函数
+  - static成员变量和函数
+  - 时间验证逻辑
+  - 运算符重载概念（== 和 <）——为第7章铺垫
+
+================================================================================
+
+案例3：银行卡账户系统（BankAccount类）
+------------------------------------
+
+【生活场景】ATM机操作的后台系统。封装卡号、余额，使用动态数组存储交易记录，
+用unique_ptr管理内存，实现存款/取款/查询功能。
+
+```cpp
+#include <iostream>
+#include <string>
+#include <memory>    // unique_ptr
+#include <iomanip>
+#include <vector>
+#include <sstream>
+
+// ====== 调试宏（第2章知识）======
+#ifdef ENABLE_LOGGING
+    #define LOG(msg) std::cout << "[LOG] " << msg << std::endl
+#else
+    #define LOG(msg)
+#endif
+
+namespace bank {
+
+// 单条交易记录结构
+struct Transaction {
+    std::string timestamp;
+    std::string type;   // "DEPOSIT", "WITHDRAW", "TRANSFER_IN", "TRANSFER_OUT"
+    double amount;
+    double balanceAfter;
+
+    Transaction(const std::string& ts, const std::string& tp,
+                double amt, double bal)
+        : timestamp(ts), type(tp), amount(amt), balanceAfter(bal) {
+        LOG("Transaction recorded: " + type + " $" +
+            std::to_string(amount));
+    }
+};
+
+class BankAccount {
+private:
+    std::string accountNumber;      // 卡号
+    std::string ownerName;          // 户主姓名
+    double balance;                 // 余额
+    // 使用unique_ptr管理动态数组——自动释放内存
+    std::unique_ptr<Transaction[]> transactions;
+    size_t transactionCount;        // 当前交易记录数
+    size_t transactionCapacity;     // 当前容量
+    static size_t totalAccounts;    // 系统总账户数
+    static double totalBalance;     // 系统总资金
+
+    // 扩展交易记录数组容量
+    void expandCapacity() {
+        size_t newCapacity = transactionCapacity * 2;
+        std::unique_ptr<Transaction[]> newArray(
+            new Transaction[newCapacity]);
+        // 移动旧数据到新数组
+        for (size_t i = 0; i < transactionCount; ++i) {
+            newArray[i] = transactions[i];
+        }
+        transactions = std::move(newArray);
+        transactionCapacity = newCapacity;
+        LOG("Transaction capacity expanded to " +
+            std::to_string(newCapacity));
+    }
+
+    // 添加交易记录
+    void addTransaction(const std::string& timestamp,
+                       const std::string& type, double amount) {
+        if (transactionCount >= transactionCapacity) {
+            expandCapacity();
+        }
+        transactions[transactionCount++] =
+            Transaction(timestamp, type, amount, balance);
+    }
+
+public:
+    // ====== 构造函数 ======
+    BankAccount(const std::string& accNum, const std::string& owner,
+                double initialDeposit)
+        : accountNumber(accNum), ownerName(owner),
+          balance(initialDeposit),
+          transactions(new Transaction[8]),  // 初始容量8
+          transactionCount(0),
+          transactionCapacity(8) {
+        totalAccounts++;
+        totalBalance += initialDeposit;
+        addTransaction("初始化", "DEPOSIT", initialDeposit);
+        LOG("Account created: " + accNum + " (" + owner + ")");
+    }
+
+    // 拷贝构造（复制账户）
+    BankAccount(const BankAccount& other)
+        : accountNumber(other.accountNumber + "_COPY"),
+          ownerName(other.ownerName),
+          balance(other.balance),
+          transactions(new Transaction[other.transactionCapacity]),
+          transactionCount(other.transactionCount),
+          transactionCapacity(other.transactionCapacity) {
+        for (size_t i = 0; i < other.transactionCount; ++i) {
+            transactions[i] = other.transactions[i];
+        }
+        totalAccounts++;
+        totalBalance += balance;
+        LOG("Account copied: " + accountNumber);
+    }
+
+    // 析构函数
+    ~BankAccount() {
+        totalAccounts--;
+        totalBalance -= balance;
+        LOG("Account closed: " + accountNumber);
+        // unique_ptr自动释放transaction数组内存
+    }
+
+    // ====== 存款操作 ======
+    bool deposit(double amount) {
+        if (amount <= 0) {
+            std::cerr << "错误: 存款金额必须为正数" << std::endl;
+            return false;
+        }
+        if (amount > 1000000) {  // 单笔存款上限
+            std::cerr << "错误: 单笔存款不能超过100万元" << std::endl;
+            return false;
+        }
+        balance += amount;
+        totalBalance += amount;
+        addTransaction("即时", "DEPOSIT", amount);
+        std::cout << "存款成功! $" << amount
+                  << " 当前余额: $" << balance << std::endl;
+        return true;
+    }
+
+    // ====== 取款操作 ======
+    bool withdraw(double amount) {
+        if (amount <= 0) {
+            std::cerr << "错误: 取款金额必须为正数" << std::endl;
+            return false;
+        }
+        // 验证余额——异常概念的铺垫（第9章将学习完整的异常处理）
+        if (amount > balance) {
+            std::cerr << "错误: 余额不足! 当前余额: $" << balance
+                      << " 取款金额: $" << amount << std::endl;
+            return false;
+        }
+        if (amount > 50000) {  // 单笔取款上限
+            std::cerr << "错误: 单笔取款不能超过5万元" << std::endl;
+            return false;
+        }
+        balance -= amount;
+        totalBalance -= amount;
+        addTransaction("即时", "WITHDRAW", -amount);
+        std::cout << "取款成功! $" << amount
+                  << " 当前余额: $" << balance << std::endl;
+        return true;
+    }
+
+    // ====== 转账操作 ======
+    bool transfer(BankAccount& target, double amount) {
+        if (&target == this) {
+            std::cerr << "错误: 不能转账给自己" << std::endl;
+            return false;
+        }
+        if (!withdraw(amount))
+            return false;
+        target.deposit(amount);
+        // 覆盖取款记录的类型
+        addTransaction("即时", "TRANSFER_OUT to " + target.accountNumber, -amount);
+        target.addTransaction("即时", "TRANSFER_IN from " + accountNumber, amount);
+        std::cout << "转账成功! $" << amount
+                  << " 从 " << accountNumber << " 到 " << target.accountNumber
+                  << std::endl;
+        return true;
+    }
+
+    // ====== 查询操作（const成员函数）======
+    double getBalance() const { return balance; }
+    const std::string& getAccountNumber() const { return accountNumber; }
+    const std::string& getOwnerName() const { return ownerName; }
+
+    // ====== 打印交易流水 ======
+    void printStatement() const {
+        std::cout << "\n========== 交易流水 ==========" << std::endl;
+        std::cout << "账户: " << accountNumber
+                  << " 户主: " << ownerName << std::endl;
+        std::cout << "当前余额: $" << std::fixed << std::setprecision(2)
+                  << balance << std::endl;
+        std::cout << "交易记录数: " << transactionCount << std::endl;
+        std::cout << "-------------------------------" << std::endl;
+
+        for (size_t i = 0; i < transactionCount; ++i) {
+            std::cout << std::left
+                      << "#" << std::setw(3) << (i + 1)
+                      << std::setw(18) << transactions[i].type
+                      << " $" << std::setw(10) << transactions[i].amount
+                      << " 余额: $" << transactions[i].balanceAfter
+                      << std::endl;
+        }
+        std::cout << "===============================" << std::endl;
+    }
+
+    // ====== 账户信息摘要 ======
+    void printSummary() const {
+        std::cout << "[" << accountNumber << "] "
+                  << ownerName << " - 余额: $"
+                  << balance << " - 交易: " << transactionCount << "笔"
+                  << std::endl;
+    }
+
+    // ====== 静态成员 ======
+    static size_t getTotalAccounts() { return totalAccounts; }
+    static double getTotalBalance()  { return totalBalance; }
+    static double getAverageBalance() {
+        return totalAccounts == 0 ? 0.0 : totalBalance / totalAccounts;
+    }
+};
+
+// 静态成员定义
+size_t BankAccount::totalAccounts = 0;
+double BankAccount::totalBalance = 0.0;
+
+}  // namespace bank
+
+// ========== 演示代码：模拟ATM操作 ==========
+int main() {
+    using namespace bank;
+
+    std::cout << "===== 银行账户系统 =====" << std::endl;
+
+    // 创建账户
+    BankAccount alice("6222021001000001", "Alice Wang", 5000.0);
+    BankAccount bob("6222021001000002", "Bob Li", 3000.0);
+    BankAccount charlie("6222021001000003", "Charlie Zhang", 10000.0);
+
+    std::cout << "\n--- 初始账户概况 ---" << std::endl;
+    alice.printSummary();
+    bob.printSummary();
+    charlie.printSummary();
+    std::cout << "系统总账户: " << BankAccount::getTotalAccounts()
+              << " | 总资金: $" << BankAccount::getTotalBalance() << std::endl;
+
+    // Alice存款
+    std::cout << "\n--- Alice存款 ---" << std::endl;
+    alice.deposit(2000.0);
+    alice.deposit(500.0);
+
+    // Alice取款
+    std::cout << "\n--- Alice取款 ---" << std::endl;
+    alice.withdraw(1500.0);
+    alice.withdraw(10000.0);  // 余额不足
+    alice.withdraw(60000.0);  // 超过单笔限额
+
+    // Alice向Bob转账
+    std::cout << "\n--- Alice转账给Bob ---" << std::endl;
+    alice.transfer(bob, 1000.0);
+
+    // Charlie取款
+    std::cout << "\n--- Charlie取款 ---" << std::endl;
+    charlie.withdraw(3000.0);
+
+    // 打印流水
+    std::cout << "\n--- 打印Alice的交易流水 ---" << std::endl;
+    alice.printStatement();
+
+    std::cout << "\n--- 打印Bob的交易流水 ---" << std::endl;
+    bob.printStatement();
+
+    std::cout << "\n--- 打印Charlie的交易流水 ---" << std::endl;
+    charlie.printStatement();
+
+    // 系统统计
+    std::cout << "\n===== 系统统计 =====" << std::endl;
+    std::cout << "总账户数: " << BankAccount::getTotalAccounts() << std::endl;
+    std::cout << "总资金: $" << BankAccount::getTotalBalance() << std::endl;
+    std::cout << "平均余额: $" << BankAccount::getAverageBalance() << std::endl;
+
+    return 0;
+}
+// 程序结束时，所有BankAccount对象析构，unique_ptr自动释放内存
+```
+
+知识点融入：
+  - 类的深度封装（private + public接口）
+  - unique_ptr管理动态数组（第3章动态内存）
+  - 构造函数（带参、拷贝）、析构函数
+  - const成员函数
+  - static成员变量和函数
+  - this指针（transfer中判断自己转自己）
+  - 调试宏（第2章）
+  - 命名空间（第3章）
+  - 异常概念铺垫（余额不足时cerr输出）
+
+================================================================================
+
+案例4：学生成绩档案系统（Student/Course类综合）
+------------------------------------
+
+【生活场景】学校教务处需要管理学生信息和课程成绩。
+两个类互相配合，使用shared_ptr共享课程数据。
+
+```cpp
+#include <iostream>
+#include <string>
+#include <memory>   // shared_ptr, make_shared
+#include <vector>
+#include <iomanip>
+#include <algorithm>
+#include <map>
+
+// ====== 调试宏（第2章）======
+#define GRADE_DEBUG 1
+#if GRADE_DEBUG
+    #define G_LOG(msg) std::cout << "[教务处] " << msg << std::endl
+#else
+    #define G_LOG(msg)
+#endif
+
+namespace school {
+
+// ====== 课程类 ======
+class Course {
+private:
+    std::string courseID;       // 课程编号，如 "MATH101"
+    std::string courseName;     // 课程名称，如 "高等数学"
+    int credits;                // 学分
+    double maxScore;            // 满分（通常100）
+    static int totalCourses;    // 全校课程总数
+
+public:
+    Course() : courseID("N/A"), courseName("未知"), credits(0), maxScore(100.0) {
+        totalCourses++;
+        G_LOG("默认课程创建");
+    }
+
+    Course(const std::string& id, const std::string& name,
+           int cr, double max = 100.0)
+        : courseID(id), courseName(name), credits(cr), maxScore(max) {
+        totalCourses++;
+        G_LOG("课程创建: " + id + " " + name);
+    }
+
+    Course(const Course& other)
+        : courseID(other.courseID + "(副本)"),
+          courseName(other.courseName),
+          credits(other.credits),
+          maxScore(other.maxScore) {
+        totalCourses++;
+        G_LOG("课程拷贝: " + courseID);
+    }
+
+    ~Course() {
+        totalCourses--;
+        G_LOG("课程销毁: " + courseID);
+    }
+
+    // const成员函数
+    const std::string& getID()   const { return courseID; }
+    const std::string& getName() const { return courseName; }
+    int getCredits()             const { return credits; }
+    double getMaxScore()         const { return maxScore; }
+
+    void display() const {
+        std::cout << "[" << courseID << "] " << courseName
+                  << " (" << credits << "学分, 满分" << maxScore << ")"
+                  << std::endl;
+    }
+
+    static int getTotalCourses() { return totalCourses; }
+};
+
+int Course::totalCourses = 0;
+
+// ====== 学生类 ======
+class Student {
+private:
+    std::string studentID;      // 学号
+    std::string name;           // 姓名
+    int grade;                  // 年级（1-4）
+    std::string major;          // 专业
+
+    // 成绩单：课程ID → 分数
+    std::map<std::string, double> scores;
+
+    // 每个学生都持有一个课程表的共享引用（shared_ptr），
+    // 所有学生共享同一份课程数据
+    std::shared_ptr<std::vector<Course>> courseCatalog;
+
+    static int totalStudents;
+
+    // 计算GPA（4.0制）
+    double calculateGPA() const {
+        if (scores.empty()) return 0.0;
+        double totalGradePoints = 0.0;
+        int totalCredits = 0;
+
+        for (const auto& [courseID, score] : scores) {
+            // 在课程表中查找课程获取学分
+            bool found = false;
+            int credits = 0;
+            if (courseCatalog) {
+                for (const auto& course : *courseCatalog) {
+                    if (course.getID() == courseID) {
+                        credits = course.getCredits();
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if (!found) continue;  // 课程不存在于目录中
+
+            // 百分制转4.0制绩点
+            double gradePoint;
+            if (score >= 90)      gradePoint = 4.0;
+            else if (score >= 85) gradePoint = 3.7;
+            else if (score >= 80) gradePoint = 3.3;
+            else if (score >= 75) gradePoint = 3.0;
+            else if (score >= 70) gradePoint = 2.7;
+            else if (score >= 65) gradePoint = 2.3;
+            else if (score >= 60) gradePoint = 2.0;
+            else                  gradePoint = 0.0;  // 挂科
+
+            totalGradePoints += gradePoint * credits;
+            totalCredits += credits;
+        }
+
+        return totalCredits == 0 ? 0.0 : totalGradePoints / totalCredits;
+    }
+
+public:
+    Student(const std::string& id, const std::string& n,
+            int gr, const std::string& maj,
+            std::shared_ptr<std::vector<Course>> catalog)
+        : studentID(id), name(n), grade(gr), major(maj),
+          courseCatalog(catalog) {
+        totalStudents++;
+        G_LOG("学生入学: " + id + " " + n + " (" + maj + ")");
+    }
+
+    ~Student() {
+        totalStudents--;
+        G_LOG("学生毕业/退学: " + studentID + " " + name);
+    }
+
+    // ====== 录分 ======
+    void recordScore(const std::string& courseID, double score) {
+        // 验证课程是否存在
+        if (courseCatalog) {
+            bool courseExists = false;
+            double maxScore = 100.0;
+            for (const auto& course : *courseCatalog) {
+                if (course.getID() == courseID) {
+                    courseExists = true;
+                    maxScore = course.getMaxScore();
+                    break;
+                }
+            }
+            if (!courseExists) {
+                std::cerr << "错误: 课程 " << courseID << " 不存在于课程目录中"
+                          << std::endl;
+                return;
+            }
+            if (score < 0 || score > maxScore) {
+                std::cerr << "错误: 分数 " << score << " 超出有效范围 [0, "
+                          << maxScore << "]" << std::endl;
+                return;
+            }
+        }
+
+        scores[courseID] = score;
+        G_LOG(name + " (" + studentID + ") " + courseID + ": " +
+              std::to_string(score));
+    }
+
+    // ====== 查询成绩 ======
+    double getScore(const std::string& courseID) const {
+        auto it = scores.find(courseID);
+        if (it != scores.end()) {
+            return it->second;
+        }
+        return -1.0;  // 未录入
+    }
+
+    bool hasScore(const std::string& courseID) const {
+        return scores.find(courseID) != scores.end();
+    }
+
+    // ====== 排名 ======
+    int getRank() const {
+        // 简化实现：按平均分排名（如果有多个学生对象可以互相比较）
+        return 0;  // 实际排名需要外部管理所有学生
+    }
+
+    // ====== 获取信息（const成员函数）======
+    const std::string& getID()   const { return studentID; }
+    const std::string& getName() const { return name; }
+    int getGrade()               const { return grade; }
+    const std::string& getMajor() const { return major; }
+
+    double getAverageScore() const {
+        if (scores.empty()) return 0.0;
+        double total = 0.0;
+        for (const auto& [id, score] : scores) {
+            total += score;
+        }
+        return total / scores.size();
+    }
+
+    double getGPA() const { return calculateGPA(); }
+
+    // ====== 成绩等级 ======
+    std::string getGradeLevel(double score) const {
+        if (score >= 90) return "优秀 (A)";
+        if (score >= 80) return "良好 (B)";
+        if (score >= 70) return "中等 (C)";
+        if (score >= 60) return "及格 (D)";
+        return "不及格 (F)";
+    }
+
+    // ====== 打印成绩单 ======
+    void printTranscript() const {
+        std::cout << "\n╔═══════════════════════════════════╗" << std::endl;
+        std::cout << "║       成  绩  单                  ║" << std::endl;
+        std::cout << "╠═══════════════════════════════════╣" << std::endl;
+        std::cout << "║ 学号: " << std::left << std::setw(24) << studentID << "║" << std::endl;
+        std::cout << "║ 姓名: " << std::setw(24) << name << "║" << std::endl;
+        std::cout << "║ 年级: " << grade << "年级 专业: " << std::setw(16)
+                  << major << "║" << std::endl;
+        std::cout << "╠═══════════════════════════════════╣" << std::endl;
+
+        if (scores.empty()) {
+            std::cout << "║   暂无成绩记录                    ║" << std::endl;
+        } else {
+            for (const auto& [courseID, score] : scores) {
+                std::string courseName = courseID;
+                if (courseCatalog) {
+                    for (const auto& course : *courseCatalog) {
+                        if (course.getID() == courseID) {
+                            courseName = course.getName();
+                            break;
+                        }
+                    }
+                }
+                std::cout << "║ " << std::left << std::setw(10) << courseID
+                          << std::setw(12) << courseName
+                          << std::right << std::setw(7) << score
+                          << " " << getGradeLevel(score) << " ║" << std::endl;
+            }
+        }
+
+        std::cout << "╠═══════════════════════════════════╣" << std::endl;
+        std::cout << "║ 平均分: " << std::fixed << std::setprecision(1)
+                  << std::setw(24) << getAverageScore() << "║" << std::endl;
+        std::cout << "║ GPA: " << std::setw(27)
+                  << getGPA() << "║" << std::endl;
+        std::cout << "╚═══════════════════════════════════╝" << std::endl;
+    }
+
+    static int getTotalStudents() { return totalStudents; }
+};
+
+int Student::totalStudents = 0;
+
+}  // namespace school
+
+// ========== 演示代码 ==========
+int main() {
+    using namespace school;
+
+    // 创建共享课程目录（所有学生共享）
+    auto catalog = std::make_shared<std::vector<Course>>();
+    catalog->push_back(Course("MATH101", "高等数学", 5, 100));
+    catalog->push_back(Course("ENG201",  "大学英语", 3, 100));
+    catalog->push_back(Course("CS101",   "C++程序设计", 4, 100));
+    catalog->push_back(Course("PHY101",  "大学物理", 4, 100));
+    catalog->push_back(Course("HIS101",  "中国近代史", 2, 100));
+
+    std::cout << "===== 全校课程目录 =====" << std::endl;
+    for (const auto& course : *catalog) {
+        course.display();
+    }
+    std::cout << "全校课程总数: " << Course::getTotalCourses() << std::endl;
+
+    // 创建学生
+    Student alice("2024001", "Alice Wang", 1, "计算机科学", catalog);
+    Student bob("2024002", "Bob Li", 1, "计算机科学", catalog);
+    Student charlie("2024003", "Charlie Zhang", 1, "数学", catalog);
+
+    std::cout << "\n===== 学生入学完成 =====" << std::endl;
+    std::cout << "在校学生总数: " << Student::getTotalStudents() << std::endl;
+
+    // 录分
+    std::cout << "\n===== 录入成绩 =====" << std::endl;
+
+    alice.recordScore("MATH101", 95);
+    alice.recordScore("ENG201", 88);
+    alice.recordScore("CS101", 92);
+    alice.recordScore("PHY101", 78);
+
+    bob.recordScore("MATH101", 80);
+    bob.recordScore("ENG201", 75);
+    bob.recordScore("CS101", 85);
+    bob.recordScore("HIS101", 90);
+
+    charlie.recordScore("MATH101", 98);
+    charlie.recordScore("PHY101", 95);
+    charlie.recordScore("CS101", 90);
+    charlie.recordScore("ENG201", 82);
+
+    // 打印成绩单
+    alice.printTranscript();
+    bob.printTranscript();
+    charlie.printTranscript();
+
+    // 统计
+    std::cout << "\n===== 教务处统计 =====" << std::endl;
+    std::cout << "在校学生: " << Student::getTotalStudents() << std::endl;
+    std::cout << "课程总数: " << Course::getTotalCourses() << std::endl;
+    std::cout << "\n各学生平均分:" << std::endl;
+    std::cout << "  Alice: " << alice.getAverageScore()
+              << " (GPA: " << alice.getGPA() << ")" << std::endl;
+    std::cout << "  Bob: " << bob.getAverageScore()
+              << " (GPA: " << bob.getGPA() << ")" << std::endl;
+    std::cout << "  Charlie: " << charlie.getAverageScore()
+              << " (GPA: " << charlie.getGPA() << ")" << std::endl;
+
+    return 0;
+}
+```
+
+知识点融入：
+  - 两个类互相配合（Student使用Course）
+  - shared_ptr共享课程目录（第3章动态内存）
+  - 构造函数、析构函数、const成员函数
+  - static成员统计全校数据
+  - 命名空间 school
+  - 调试宏（第2章）
+  - 初始化列表
+  - std::map（标准库的使用）
+
+================================================================================
+
+案例5：从零实现自定义字符串类（MyString）
+------------------------------------
+
+【生活场景】文字编辑器底层需要高效的字符串存储。
+从零实现一个字符串类，全面展示Rule of Five（五法则）。
+
+```cpp
+#include <iostream>
+#include <cstring>
+#include <utility>   // std::move, std::swap
+#include <cassert>
+
+// ====== 调试宏 ======
+#define MYSTRING_DEBUG 1
+#if MYSTRING_DEBUG
+    #define MSG_LOG(msg) std::cout << "[MyString] " << msg << std::endl
+#else
+    #define MSG_LOG(msg)
+#endif
+
+class MyString {
+private:
+    char* data;          // 动态分配的字符数组
+    size_t length;       // 字符串长度（不含'\0'）
+    size_t capacity;     // 当前分配的内存容量
+
+    static size_t totalChars;   // 所有字符串的总字符数
+    static int stringCount;     // 当前存活的字符串对象数
+
+    // 重新分配内存
+    void reallocate(size_t newCapacity) {
+        char* newData = new char[newCapacity + 1];  // +1 for '\0'
+        if (data) {
+            std::strcpy(newData, data);
+            newData[length] = '\0';
+        } else {
+            newData[0] = '\0';
+        }
+        delete[] data;
+        data = newData;
+        capacity = newCapacity;
+        MSG_LOG("Reallocated to capacity " + std::to_string(newCapacity));
+    }
+
+public:
+    // ====== 1. 默认构造函数 ======
+    MyString() : data(nullptr), length(0), capacity(0) {
+        stringCount++;
+        MSG_LOG("Default constructed");
+    }
+
+    // ====== 2. 带参构造函数（从C字符串）======
+    MyString(const char* str) {
+        length = std::strlen(str);
+        capacity = length;
+        data = new char[capacity + 1];
+        std::strcpy(data, str);
+        totalChars += length;
+        stringCount++;
+        MSG_LOG(std::string("Constructed from C-string: \"") + str + "\"");
+    }
+
+    // ====== 3. 拷贝构造函数（Rule of Five - 1）======
+    MyString(const MyString& other) {
+        length = other.length;
+        capacity = other.capacity;
+        if (other.data) {
+            data = new char[capacity + 1];
+            std::strcpy(data, other.data);
+        } else {
+            data = nullptr;
+        }
+        totalChars += length;
+        stringCount++;
+        MSG_LOG("Copy constructed");
+    }
+
+    // ====== 4. 移动构造函数（Rule of Five - 2）=======
+    MyString(MyString&& other) noexcept
+        : data(other.data), length(other.length), capacity(other.capacity) {
+        // 将源对象置为有效但未指定的状态
+        other.data = nullptr;
+        other.length = 0;
+        other.capacity = 0;
+        stringCount++;
+        MSG_LOG("Move constructed");
+    }
+
+    // ====== 5. 拷贝赋值运算符（Rule of Five - 3）======
+    MyString& operator=(const MyString& other) {
+        if (this != &other) {
+            // 先分配新内存，再释放旧内存（异常安全）
+            char* newData = nullptr;
+            if (other.data) {
+                newData = new char[other.capacity + 1];
+                std::strcpy(newData, other.data);
+            }
+            delete[] data;
+
+            totalChars -= length;
+            data = newData;
+            length = other.length;
+            capacity = other.capacity;
+            totalChars += length;
+        }
+        MSG_LOG("Copy assigned");
+        return *this;
+    }
+
+    // ====== 6. 移动赋值运算符（Rule of Five - 4）======
+    MyString& operator=(MyString&& other) noexcept {
+        if (this != &other) {
+            delete[] data;
+            totalChars -= length;
+
+            data = other.data;
+            length = other.length;
+            capacity = other.capacity;
+
+            other.data = nullptr;
+            other.length = 0;
+            other.capacity = 0;
+        }
+        MSG_LOG("Move assigned");
+        return *this;
+    }
+
+    // ====== 7. 析构函数（Rule of Five - 5）======
+    ~MyString() {
+        delete[] data;
+        totalChars -= length;
+        stringCount--;
+        MSG_LOG("Destructed (data@" +
+                std::to_string(reinterpret_cast<uintptr_t>(data)) + ")");
+    }
+
+    // ====== 基本操作 ======
+    // 获取长度
+    size_t size() const { return length; }
+    size_t getCapacity() const { return capacity; }
+    bool empty() const { return length == 0; }
+
+    // 获取C字符串
+    const char* c_str() const { return data ? data : ""; }
+
+    // 追加字符串
+    MyString& append(const MyString& str) {
+        if (str.empty()) return *this;
+        size_t newLength = length + str.length;
+        if (newLength > capacity) {
+            reallocate(newLength * 2);  // 分配2倍空间以减少未来重分配
+        }
+        std::strcpy(data + length, str.data);
+        totalChars += str.length;
+        length = newLength;
+        return *this;
+    }
+
+    MyString& append(const char* str) {
+        return append(MyString(str));  // 委托给上面的重载
+    }
+
+    // 清空
+    void clear() {
+        if (data) {
+            data[0] = '\0';
+        }
+        totalChars -= length;
+        length = 0;
+    }
+
+    // ====== 运算符重载（第7章将深入学习）======
+    // 下标运算符——非const版本
+    char& operator[](size_t index) {
+        assert(index < length && "Index out of bounds");
+        return data[index];
+    }
+
+    // 下标运算符——const版本
+    const char& operator[](size_t index) const {
+        assert(index < length && "Index out of bounds");
+        return data[index];
+    }
+
+    // 比较运算符
+    bool operator==(const MyString& other) const {
+        if (length != other.length) return false;
+        if (!data && !other.data) return true;
+        if (!data || !other.data) return false;
+        return std::strcmp(data, other.data) == 0;
+    }
+
+    bool operator!=(const MyString& other) const {
+        return !(*this == other);
+    }
+
+    // 流输出运算符（友元函数，为第7章铺垫）
+    friend std::ostream& operator<<(std::ostream& os, const MyString& str) {
+        if (str.data) {
+            os << str.data;
+        }
+        return os;
+    }
+
+    // ====== 静态成员 ======
+    static size_t getTotalChars() { return totalChars; }
+    static int getStringCount() { return stringCount; }
+
+    // ====== 实用工具 ======
+    // 交换两个字符串
+    friend void swap(MyString& a, MyString& b) noexcept {
+        using std::swap;
+        swap(a.data, b.data);
+        swap(a.length, b.length);
+        swap(a.capacity, b.capacity);
+    }
+
+    // 在指定位置插入字符串
+    MyString& insert(size_t pos, const MyString& str) {
+        if (pos > length) return *this;
+        size_t newLength = length + str.length;
+        if (newLength > capacity) {
+            char* newData = new char[newLength * 2 + 1];
+            std::strncpy(newData, data, pos);
+            std::strcpy(newData + pos, str.data);
+            std::strcpy(newData + pos + str.length, data + pos);
+            delete[] data;
+            data = newData;
+            capacity = newLength * 2;
+        } else {
+            // 移动后面的字符
+            for (size_t i = length; i >= pos; --i) {
+                data[i + str.length] = data[i];
+            }
+            std::strncpy(data + pos, str.data, str.length);
+        }
+        totalChars += str.length;
+        length = newLength;
+        return *this;
+    }
+
+    // 取子串
+    MyString substr(size_t pos, size_t count) const {
+        if (pos >= length) return MyString();
+        if (count > length - pos) count = length - pos;
+        char* temp = new char[count + 1];
+        std::strncpy(temp, data + pos, count);
+        temp[count] = '\0';
+        MyString result(temp);
+        delete[] temp;
+        return result;
+    }
+};
+
+// 静态成员变量初始化
+size_t MyString::totalChars = 0;
+int MyString::stringCount = 0;
+
+// ========== 演示代码：模拟文本编辑器 ==========
+int main() {
+    std::cout << "===== 自定义字符串类完整演示 =====\n" << std::endl;
+
+    // 1. 构造
+    std::cout << "--- 1. 构造 ---" << std::endl;
+    MyString s1("Hello");
+    MyString s2(" World");
+    MyString s3;  // 空字符串
+
+    std::cout << "s1: " << s1 << " (size=" << s1.size() << ")" << std::endl;
+    std::cout << "s2: " << s2 << " (size=" << s2.size() << ")" << std::endl;
+    std::cout << "s3: \"" << s3 << "\" (empty=" << s3.empty() << ")" << std::endl;
+
+    // 2. 拷贝构造
+    std::cout << "\n--- 2. 拷贝构造 ---" << std::endl;
+    MyString s4(s1);
+    std::cout << "s4 (copy of s1): " << s4 << std::endl;
+    // 修改s1不影响s4（深拷贝）
+    s1[0] = 'h';
+    std::cout << "After s1[0]='h': s1=" << s1 << " s4=" << s4 << std::endl;
+
+    // 3. 移动构造
+    std::cout << "\n--- 3. 移动构造 ---" << std::endl;
+    MyString s5(std::move(s2));
+    std::cout << "s5 (moved from s2): " << s5 << std::endl;
+    std::cout << "s2 after move: \"" << s2 << "\" (empty=" << s2.empty() << ")"
+              << std::endl;
+
+    // 4. 拷贝赋值
+    std::cout << "\n--- 4. 拷贝赋值 ---" << std::endl;
+    s3 = s1;  // s3之前是空字符串
+    std::cout << "s3 after copy assignment from s1: " << s3 << std::endl;
+
+    // 5. 移动赋值
+    std::cout << "\n--- 5. 移动赋值 ---" << std::endl;
+    MyString s6("Temporary String");
+    s6 = std::move(s5);
+    std::cout << "s6 after move assignment from s5: " << s6 << std::endl;
+
+    // 6. append操作
+    std::cout << "\n--- 6. 追加操作 ---" << std::endl;
+    MyString s7("C++");
+    s7.append(" is ").append("awesome!");
+    std::cout << "s7: " << s7 << " (size=" << s7.size()
+              << " cap=" << s7.getCapacity() << ")" << std::endl;
+
+    // 7. insert操作
+    std::cout << "\n--- 7. 插入操作 ---" << std::endl;
+    MyString s8("Hello World!");
+    std::cout << "Before insert: " << s8 << std::endl;
+    s8.insert(6, MyString("Beautiful "));
+    std::cout << "After insert: " << s8 << std::endl;
+
+    // 8. substr操作
+    std::cout << "\n--- 8. 子串 ---" << std::endl;
+    MyString s9("The quick brown fox");
+    MyString sub = s9.substr(4, 5);  // "quick"
+    std::cout << "s9: " << s9 << std::endl;
+    std::cout << "substr(4, 5): " << sub << std::endl;
+
+    // 9. 下标访问
+    std::cout << "\n--- 9. 下标访问 ---" << std::endl;
+    MyString s10("Indexable");
+    std::cout << "s10: " << s10 << std::endl;
+    for (size_t i = 0; i < s10.size(); ++i) {
+        std::cout << "  s10[" << i << "] = '" << s10[i] << "'" << std::endl;
+    }
+
+    // 10. 统计信息
+    std::cout << "\n--- 10. 统计信息 ---" << std::endl;
+    std::cout << "存活字符串对象数: " << MyString::getStringCount() << std::endl;
+    std::cout << "总字符数: " << MyString::getTotalChars() << std::endl;
+
+    // 11. 文本编辑器模拟
+    std::cout << "\n--- 11. 文本编辑器模拟 ---" << std::endl;
+    // 编辑器的行缓冲
+    MyString line("Welcome to the Text Editor!");
+    std::cout << "当前行: " << line << std::endl;
+
+    // 输入新字符
+    line.clear();
+    line.append("Editing ").append("mode: ").append("Insert");
+    std::cout << "编辑后: " << line << std::endl;
+
+    // 删除和替换
+    line.clear();
+    line.append("Final document content...");
+    std::cout << "最终内容: " << line << std::endl;
+
+    return 0;
+}
+```
+
+Rule of Five 完整演示：
+  1. 析构函数                   — delete[] data
+  2. 拷贝构造函数                — 深拷贝data
+  3. 拷贝赋值运算符              — 先分配新内存再释放旧内存
+  4. 移动构造函数                — 窃取源对象的资源
+  5. 移动赋值运算符              — 窃取源对象的资源
+
+知识点融入：
+  - Rule of Five 完整实现
+  - 动态内存管理（new[] / delete[]）
+  - 运算符重载（[], ==, !=, <<）——第7章铺垫
+  - 友元函数（operator<<, swap）
+  - static成员变量
+  - 调试宏（第2章）
+  - std::move、std::swap（第3章）
+
+================================================================================
+
+                            === 第四节：课后习题 ===
+================================================================================
+
+习题：设计一个"智能手环数据记录器"类 SmartBand
+======================================================
+
+【生活场景】
+某科技公司需要为自家智能手环产品开发数据记录模块。手环需要记录用户的
+个人信息、7天步数数据、心率数据、卡路里消耗等健康信息。
+
+【要求】
+1. 类名：SmartBand
+
+2. 私有成员变量：
+   - userName:    用户名 (std::string)
+   - userAge:     用户年龄 (int)
+   - userHeight:  用户身高cm (double)
+   - userWeight:  用户体重kg (double)
+   - steps:       每日步数 (int*，动态数组，固定7天)
+   - heartRates:  心率记录 (int*，动态数组，初始容量8)
+   - heartRateCount:  当前心率记录数 (size_t)
+   - heartRateCapacity: 心率数组容量 (size_t)
+   - calories:    每日卡路里消耗 (double*，动态数组，固定7天)
+   - static totalBandsCreated: 已创建的手环总数 (int)
+
+3. 构造函数（至少3种）：
+   (a) 默认构造函数：初始化所有指针为nullptr，数值为0
+   (b) 带参构造函数：接收姓名、年龄、身高、体重，分配steps和calories为7天数组
+   (c) 拷贝构造函数：深拷贝所有动态数组
+
+4. 析构函数：
+   - 释放所有动态内存（steps, heartRates, calories）
+   - 递减totalBandsCreated
+
+5. const成员函数（至少4个）：
+   - getAverageSteps():      返回7天平均步数
+   - getTotalCalories():     返回7天总卡路里消耗
+   - getAverageHeartRate():  返回所有心率记录的平均值
+   - 合适的getter函数获取个人信息
+
+6. 功能性成员函数：
+   - setDailySteps(int dayIndex, int stepCount):  设置第dayIndex天(0-6)的步数
+   - setDailyCalories(int dayIndex, double cal):  设置第dayIndex天的卡路里
+   - recordHeartRate(int hr):  记录一次心率，数组满时扩容（2倍策略）
+   - calculateBMI() const:    计算BMI = 体重/(身高^2)，注意单位转换
+   - printSummary() const:    打印手环数据摘要
+   - printDailyReport(int day) const: 打印某天的详细报告
+
+7. static成员：
+   - static int getTotalBandsCreated(): 返回已创建总数
+
+8. 在 main() 函数中创建至少2个SmartBand对象，录入数据并演示所有功能。
+
+【提示】
+- 身高单位cm要转换为米(m)用于BMI计算
+- 心率记录数组的动态扩容参考案例3的expandCapacity模式
+- 拷贝构造函数必须进行深拷贝
+- 可以用调试宏辅助调试（第二章知识）
+
+【预期输出示例】
+===== 智能手环数据记录 =====
+用户: Alice, 年龄: 25, 身高: 165.0cm, 体重: 55.0kg
+BMI: 20.2 (正常)
+7天平均步数: 8520步
+7天总卡路里: 3150大卡
+平均心率: 72bpm
+手环总数: 2
+
+【评分要点】
+- 正确使用构造函数重载 (+2分)
+- 正确实现析构函数释放所有内存 (+2分)
+- const成员函数正确使用 (+2分)
+- 拷贝构造函数正确深拷贝 (+2分)
+- static成员正确使用 (+1分)
+- 心率数组动态扩容逻辑正确 (+1分)
+- 代码风格和注释 (+1分)
+- main函数演示完整 (+1分)
+总分：12分
+
+================================================================================
+
+                            === 附：深入理解与实践要点 ===
+================================================================================
+
+一、对象生命周期管理最佳实践
+------------------------------------
+
+【RAII原则（资源获取即初始化）】
+C++最重要的资源管理原则之一。将资源的生命周期与对象生命周期绑定。
+
+```cpp
+// 不好的做法——手动管理资源
+void badPractice() {
+    int* data = new int[100];
+    FILE* file = fopen("data.txt", "r");
+
+    if (someError) {
+        delete[] data;          // 容易忘记清理！
+        fclose(file);
+        return;
+    }
+
+    // 更多代码...可能在中间return而忘记清理
+
+    delete[] data;
+    fclose(file);
+}
+
+// 好的做法——RAII
+class FileGuard {
+    FILE* file;
+public:
+    explicit FileGuard(const char* name) : file(fopen(name, "r")) {}
+    ~FileGuard() { if(file) fclose(file); }
+    FILE* get() const { return file; }
+    FileGuard(const FileGuard&) = delete;
+    FileGuard& operator=(const FileGuard&) = delete;
+};
+
+class ArrayGuard {
+    int* data;
+public:
+    explicit ArrayGuard(size_t size) : data(new int[size]) {}
+    ~ArrayGuard() { delete[] data; }
+    int* get() const { return data; }
+};
+
+void goodPractice() {
+    ArrayGuard arr(100);
+    FileGuard f("data.txt");
+
+    if (someError) {
+        return;  // 自动调用~ArrayGuard和~FileGuard清理资源
+    }
+    // 自动清理，无内存泄漏！
+}
+```
+
+二、构造函数和析构函数中的异常安全
+------------------------------------
+
+构造函数中抛出异常时，已经构造完成的成员和基类子对象会自动析构。
+但构造函数体本身不完整执行。
+
+```cpp
+#include <iostream>
+
+class Resource {
+public:
+    Resource(int id) : id_(id) {
+        std::cout << "Resource(" << id_ << ") acquired" << std::endl;
+        if (id_ < 0) {
+            throw std::runtime_error("Invalid resource ID");
+        }
+    }
+    ~Resource() {
+        std::cout << "Resource(" << id_ << ") released" << std::endl;
+    }
+private:
+    int id_;
+};
+
+class Manager {
+    Resource r1;
+    Resource r2;
+public:
+    Manager() : r1(1), r2(2) {  // r1, r2通过初始化列表构造
+        std::cout << "Manager constructed" << std::endl;
+    }
+    // 如果r1构造成功但r2抛异常，r1会自动析构
+    // 这样保证了资源不会泄漏
+};
+
+// 构造函数中的异常安全建议：
+// 1. 在初始化列表中初始化所有成员
+// 2. 使用RAII资源管理类（如unique_ptr）而非裸指针
+// 3. 不要在本类构造函数中手动释放资源
+```
+
+三、C++11/14/17/20 类特性速查
+------------------------------------
+
+```cpp
+#include <iostream>
+#include <string>
+#include <memory>
+
+// C++11: 委托构造、默认/删除、移动语义、override/final、explicit转换
+// C++14: 无显著类特性变化（主要增强了lambda和constexpr）
+// C++17: inline static成员变量、结构化绑定、类模板参数推导(CTAD)
+// C++20: 默认比较运算符(<=>)、consteval
+
+class ModernFeatures {
+    static inline int s_globalCount = 0;  // C++17: inline static初始化
+    std::string name;
+
+public:
+    ModernFeatures() = default;                           // C++11: =default
+    ModernFeatures(const ModernFeatures&) = delete;       // C++11: =delete
+    ModernFeatures(ModernFeatures&&) noexcept = default;  // C++11: 移动构造
+    explicit ModernFeatures(const std::string& n)         // C++11: explicit
+        : name(n) { s_globalCount++; }
+
+    explicit operator bool() const noexcept {             // C++11: explicit转换
+        return !name.empty();                             // + noexcept
+    }
+
+    // C++20: 用<=>自动生成比较运算符
+    // auto operator<=>(const ModernFeatures&) const = default;
+
+    static int count() { return s_globalCount; }
+};
+```
+
+四、常见面试题解析
+------------------------------------
+
+【问题1】空类的大小为什么是1而不是0？
+答：C++标准要求每个对象都必须有唯一的地址。如果空类大小为0，
+   那么两个空类对象可能占据相同地址，这违反了内存模型。
+
+【问题2】为什么成员函数不占用对象空间？
+答：成员函数的代码存储在代码段(.text)中，所有对象共享同一份代码。
+   只有对象特有数据（非静态成员变量）才需要为每个对象分配存储。
+
+【问题3】初始化列表比构造函数体内赋值快的原因？
+答：
+  对于基本类型(int, double等)：效率相同。
+  对于类类型(string, vector等)：初始化列表→直接调用拷贝/移动构造；
+  函数体赋值→先调用默认构造（创建空对象），再调用赋值运算符。
+  多了一次默认构造+赋值操作。
+
+通过以下代码验证：
+```cpp
+#include <iostream>
+class Logger {
+public:
+    Logger()                 { std::cout << "  Default ctor\n"; }
+    Logger(const Logger&)    { std::cout << "  Copy ctor\n"; }
+    Logger& operator=(const Logger&) {
+        std::cout << "  Copy assignment\n"; return *this;
+    }
+};
+
+class WithInitList {
+    Logger log;
+public:
+    WithInitList(const Logger& l) : log(l) { }
+    // 输出: "  Copy ctor" (仅一次拷贝构造)
+};
+
+class WithoutInitList {
+    Logger log;
+public:
+    WithoutInitList(const Logger& l) {
+        log = l;
+    }
+    // 输出: "  Default ctor" (先默认构造) + "  Copy assignment" (再赋值)
+};
+```
+
+【问题4】const成员函数可以修改哪些数据？
+答：
+  - 不能修改非mutable的非静态成员变量
+  - 可以修改mutable成员变量（设计意图：用于缓存、日志等）
+  - 可以修改静态成员变量（静态成员不属于具体对象）
+  - 可以修改指针指向的内容（但指针本身不能改变）
+  示例：int* const p 在const函数中p不可改，但*p可改
+
+【问题5】this指针的类型是什么？
+答：
+  - 非const成员函数中：T* const（指针常量，指向可修改）
+  - const成员函数中：const T* const（指向常量的指针常量）
+  - volatile成员函数中：volatile T* const
+
+================================================================================
+                       第四章完 —— 继续学习第五章：继承
+================================================================================

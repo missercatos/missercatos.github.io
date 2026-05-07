@@ -1,0 +1,713 @@
+================================================================================
+模块: OSINT与人肉搜索技术
+学习目标: 掌握搜索引擎Dorking、Shodan/Censys/Maltego等OSINT工具链，学会对公开目标做完整情报收集
+目标工具: Shodan, Censys, Maltego CE, Google Dorks, GitHub Dorking
+所需环境: ArchStrike, Firefox浏览器, 互联网连接
+================================================================================
+
+一、什么是OSINT
+--------------------------------------------------------------------------------
+
+OSINT (Open Source Intelligence) - 开源情报，指从公开可获取的信息来源
+收集情报的技术。在红队行动中，OSINT通常是最初阶段的工作，目的是尽可能
+多地了解目标组织的信息，同时不直接接触目标系统。
+
+OSINT信息的分类:
+
+  ┌─────────────────────────────────────────────────────┐
+  │ 技术类          │ 人员类          │ 组织类          │
+  ├─────────────────────────────────────────────────────┤
+  │ 子域名/IP       │ 员工姓名/职位   │ 组织架构        │
+  │ 技术栈/端口     │ 邮箱/电话       │ 关联公司        │
+  │ SSL证书         │ 社交媒体账号    │ 供应商/合作伙伴  │
+  │ 代码仓库泄露    │ 公开简历/技能   │ 物理地址/分支机构│
+  │ 云服务/存储桶   │ 会议演讲/论文   │ 商业注册信息    │
+  └─────────────────────────────────────────────────────┘
+
+二、搜索引擎Dorking进阶
+--------------------------------------------------------------------------------
+
+2.1 Google Dorks基础
+
+Google Hacking Database (GHDB) 包含数千个搜索技巧。
+在线资源: https://www.exploit-db.com/google-hacking-database
+
+常用Google Dorks分类:
+
+  查找子域名:
+    site:example.com -www
+
+  查找特定文件类型:
+    site:example.com filetype:pdf
+    site:example.com filetype:doc OR filetype:docx
+    site:example.com filetype:xls OR filetype:xlsx
+    site:example.com filetype:sql  (极度危险 - 数据库备份泄露)
+    site:example.com filetype:bak
+    site:example.com filetype:log
+    site:example.com filetype:env  (可能包含凭证)
+
+  查找目录列表:
+    site:example.com intitle:"Index of"
+    site:example.com intitle:"Index of /admin"
+
+  查找登录页面:
+    site:example.com inurl:login
+    site:example.com inurl:admin
+    site:example.com intitle:"Login"
+
+  查找配置文件:
+    site:example.com inurl:config.php
+    site:example.com inurl:wp-config.php.bak
+    site:example.com intitle:"phpinfo()"
+    site:example.com ext:conf OR ext:cfg OR ext:ini
+
+  查找错误信息:
+    site:example.com "SQL syntax" OR "mysql_fetch"
+    site:example.com "Warning: include("
+    site:example.com "Fatal error"
+
+  查找暴露的备份文件:
+    site:example.com intitle:"index of" "backup"
+    site:example.com intitle:"index of" "sql"
+
+  查找内部文档和敏感信息:
+    site:example.com intext:"password" filetype:txt
+    site:example.com intext:"confidential" OR intext:"internal only"
+    site:example.com intext:"SSN" OR intext:"social security"
+
+2.2 高级Google Dorking技巧
+
+组合多个操作符:
+
+  site:example.com (inurl:dev OR inurl:staging OR inurl:test) -inurl:www
+
+使用通配符:
+
+  site:example.com "Powered by * Forum"  (发现论坛平台)
+  
+排除特定结果:
+
+  site:example.com -inurl:www -inurl:blog -inurl:support
+
+查找特定时间段内容:
+
+  使用Google的Tools → Time → Custom range
+  可以在Web界面选择特定时间段
+
+2.3 其他搜索引擎的Dorking
+
+Bing搜索技巧:
+  ip:1.2.3.4            查找同IP的其他域名
+  contains:malware      查找包含恶意软件的页面
+  
+DuckDuckGo:
+  site:example.com "password"   (DuckDuckGo有较少的爬取限制)
+
+2.4 Shodan搜索语法（Web界面）
+
+Shodan专门索引联网设备的banner信息，是红队必备的搜索引擎。
+
+在Firefox中打开Shodan:
+  Step 1: 打开Firefox
+  Step 2: 访问 https://shodan.io
+  Step 3: 注册免费账户（或使用会员账户获得更多功能）
+
+Shodan核心搜索语法:
+
+  查找特定组织:
+    org:"Example Corp"
+    org:"Google Inc"
+
+  查找特定产品/服务:
+    product:Apache
+    product:nginx
+    product:"Microsoft IIS"
+
+  查找特定端口:
+    port:22
+    port:3389        (远程桌面)
+    port:445         (SMB)
+
+  查找特定国家/城市:
+    country:CN
+    city:"San Francisco"
+
+  查找特定HTTP标题:
+    http.title:"Login"
+    http.title:"Dashboard"
+
+  设备类型:
+    category:ics     (工业控制系统)
+    has_screenshot:true
+
+  查找开放数据库:
+    port:27017       (MongoDB默认端口)
+    port:6379         (Redis默认端口)
+    port:3306         (MySQL默认端口)
+    port:5432         (PostgreSQL默认端口)
+
+  组合搜索:
+    org:"Example Corp" port:3389
+    country:US product:Apache http.title:"Test Page"
+    city:"Shanghai" port:22
+
+Shodan高级过滤器:
+  os:Linux / os:Windows
+  vuln:CVE-2021-44228    (Log4j漏洞)
+  vuln:CVE-2019-0708     (BlueKeep)
+  ssl:"*.example.com"    (通过SSL证书查找子域名)
+
+2.5 Shodan CLI工具（可选）
+
+在ArchStrike上安装Shodan CLI:
+
+  sudo pacman -S python-shodan
+  shodan init YOUR_API_KEY
+
+命令行搜索:
+
+  shodan search "org:'Example Corp'"
+  shodan search "product:nginx country:CN" --fields ip_str,port,org
+  shodan host 1.2.3.4
+  shodan count "apache"
+
+2.6 Censys搜索（Web界面）
+
+Censys是另一个强大的互联网扫描引擎，侧重SSL证书和数据统计。
+
+在Firefox中打开Censys:
+  Step 1: 打开Firefox
+  Step 2: 访问 https://search.censys.io
+  Step 3: 注册免费账户
+
+Censys搜索语法:
+
+  查找目标域名的SSL证书:
+    certificates.query: "example.com"
+    
+  查找同组织的主机:
+    hosts.query: "autonomous_system.organization: 'Example Corp'"
+    
+  查找运行特定服务的主机:
+    hosts.query: "services.service_name: HTTP"
+    
+  查找特定端口的服务:
+    hosts.query: "services.port: 3389"
+
+  组合搜索:
+    hosts.query: "services.service_name: HTTP AND location.country: 'China'"
+
+Censys和Shodan的区别:
+  ┌──────────────┬───────────────────┬───────────────────┐
+  │ 特性          │  Shodan           │  Censys           │
+  ├──────────────┼───────────────────┼───────────────────┤
+  │ 数据刷新      │ 较频繁            │ 较慢(但有历史)    │
+  │ SSL证书搜索   │ 基本支持          │ 强大              │
+  │ 免费额度      │ 有限              │ 较宽松            │
+  │ 数据处理能力  │ 强大              │ 适合统计分析      │
+  │ 界面友好度    │ 较高              │ 中等              │
+  └──────────────┴───────────────────┴───────────────────┘
+
+三、Maltego社区版 - 关系图谱分析
+--------------------------------------------------------------------------------
+
+3.1 简介
+
+Maltego是一个强大的情报分析和数据挖掘工具，通过图形化界面展示
+实体（Entity）之间的关系。ArchStrike中包含Maltego社区版(CE)。
+
+社区版的限制:
+  - 最多12个Transforms同时运行
+  - 一些高级数据源不可用
+  - 不能使用商业Transforms
+
+3.2 安装与配置
+
+在ArchStrike上:
+
+  sudo pacman -S maltego
+
+首次启动需要注册Paterva账户:
+  Step 1: 访问 https://www.paterva.com 注册账户
+  Step 2: 启动Maltego: maltego
+  Step 3: 使用注册的账户登录
+  Step 4: 选择社区版(CE)许可证
+
+3.3 Maltego基本概念
+
+Entity (实体):
+  - Domain (域名)
+  - DNS Name (DNS名称)
+  - IP Address (IPv4地址)
+  - Person (人物)
+  - Email Address (邮箱)
+  - URL
+  - Phone Number (电话号码)
+
+Transform (变换):
+  - 从一个实体获取关联的其他实体
+  - 如: Domain → To DNS Name [Find DNS names via DNS]
+  - 如: IP Address → To Domain [Reverse DNS]
+
+Graph (图谱):
+  - 所有实体和关系的可视化展示
+  - 可以导出为PDF、CSV等格式
+
+3.4 基本操作流程
+
+创建一个新图谱:
+  Step 1: 点击 New Graph (Ctrl+T)
+  Step 2: 从左侧Palette拖入一个Domain实体到画布
+  Step 3: 双击实体设置目标域名（如 example.com）
+  Step 4: 右键点击实体 → 选择Transforms
+
+常用Transforms:
+  - "To DNS Name [DNS]"             → 发现子域名
+  - "To IP Address [DNS]"           → 解析IP地址
+  - "To Domain [From whois]"        → 通过Whois发现关联域名
+  - "To Email [From whois]"         → 获取注册人邮箱
+  - "To DNS Name [Search engine]"   → 用搜索引擎发现子域名
+  - "To Website [Find webpages]"    → 发现目标网站
+
+高级Transforms:
+  - "To DNS Name [SPF Record]"      → 从SPF记录提取IP
+  - "To IP Address [DNS Reverse]"   → 反向DNS
+  - "To URLs [from Archive.org]"    → Wayback Machine查找
+  - "To Technical Information [Shodan]" → Shodan信息
+
+3.5 实战 - 构建目标资产图谱
+
+目标: 构建example.com的完整数字资产关系图
+
+操作流程:
+  Step 1: 新建Graph
+  Step 2: 拖入Domain实体 "example.com"
+  Step 3: 右键 → All Transforms → "To DNS Name [DNS]"
+  Step 4: 对发现的子域名运行 "To IP Address [DNS]"
+  Step 5: 对IP运行 "To Location"
+  Step 6: 对IP运行 "To DNS Name [Reverse DNS]"
+  Step 7: 对域名运行 "To Domain [From whois]"
+  Step 8: 运行 "To Email [From whois]"
+  Step 9: 对邮箱运行 "To Person" (如果可用)
+
+完成后你将看到一个完整的关系网，展示:
+  - 主域名 → 子域名 → IP地址的层次关系
+  - 不同域名之间的Whois关联
+  - 管理员邮箱和可能的关联人员
+
+3.6 canari集成
+
+canari是Maltego Transforms的Python开发框架，允许创建自定义Transforms。
+
+安装canari:
+
+  sudo pacman -S canari python-canari
+  canari create-package mytransforms
+
+这会在当前目录创建一个Transforms包模板，你可以自定义Transforms来实现:
+  - 从内部API收集数据
+  - 自定义的信息处理流程
+  - 内部工具集成
+
+四、社交媒体侦察
+--------------------------------------------------------------------------------
+
+4.1 LinkedIn人员信息收集
+
+LinkedIn是获取目标组织员工信息的金矿。
+
+在Firefox中操作:
+  Step 1: 打开Firefox (隐私/无痕模式)
+  Step 2: 访问 https://linkedin.com
+  Step 3: 搜索: "Example Corp" 或目标公司名
+  Step 4: 点击 "People" 标签
+  Step 5: 过滤条件:
+    - 按职位筛选: IT管理员、系统工程师、安全工程师
+    - 按地点筛选
+    - 按过去公司筛选
+
+LinkedIn可获取的关键信息:
+  - 员工真实姓名 → 推测用户名格式
+  - 技术栈 → "我在使用AWS/Docker/Kubernetes"
+  - 项目经验 → 了解使用的产品和架构
+  - 背调信息 → 了解组织架构
+  - 技能认证 → 推断的安全防护水平
+
+4.2 Twitter侦察
+
+Twitter（现X.com）也是重要的OSINT来源:
+
+  搜索语法:
+    from:@用户名               查看某人的推文
+    near:"城市"                指定地点
+    since:2023-01-01           指定时间
+    to:@用户名                 发送给某人的推文
+    filter:links              仅含链接的推文
+
+  在Firefox中操作:
+    Step 1: 访问 https://x.com
+    Step 2: 搜索目标公司名
+    Step 3: 查看目标员工和官方账号的推文
+
+  关键发现:
+    - 员工抱怨内部技术问题（暴露使用的系统）
+    - 发布截图意外暴露内部信息
+    - 技术讨论暴露使用的工具链
+    - 工作相关推文暴露项目细节
+
+4.3 GitHub代码泄露侦察
+
+GitHub是最容易忽略的OSINT信息源。开发人员经常意外将敏感信息
+推送到公开仓库。
+
+在Firefox中操作:
+  Step 1: 打开Firefox
+  Step 2: 访问 https://github.com
+  Step 3: 使用GitHub搜索语法:
+
+GitHub搜索语法:
+
+  搜索目标组织的代码:
+    org:ExampleCorp
+
+  搜索暴露的密码/密钥:
+    "Example Corp" password OR secret OR key OR token
+    "Example Corp" api_key OR apikey
+    "Example Corp" BEGIN RSA PRIVATE KEY
+
+  搜索配置文件:
+    "example.com" filename:.env
+    "example.com" filename:config.php
+    "example.com" filename:wp-config.php
+    "example.com" filename:settings.py
+
+  搜索数据库连接字符串:
+    "example.com" "connection string" OR "jdbc:" OR "mongodb://"
+
+  搜索AWS凭证:
+    "example.com" "AKIA" OR "ASIA"  (AWS Access Key格式)
+
+  搜索内部URL:
+    "example.com" "internal" OR "admin" OR "staging"
+
+  搜索目标域名:
+    "example.com" language:python
+    "example.com" language:javascript
+
+4.4 代码泄露搜索工具
+
+truffleHog (扫描Git仓库中的密钥):
+
+  sudo pacman -S trufflehog
+  trufflehog git https://github.com/target/repo.git
+
+git-secrets (防止你自己泄露密钥):
+
+  sudo pacman -S git-secrets
+
+4.5 其他社交媒体平台
+
+Reddit:
+  - 访问 https://reddit.com
+  - 搜索目标公司名: site:reddit.com "company name"
+  - 关注员工在工作相关的subreddit（/r/sysadmin等）
+
+Pastebin:
+  - 访问 https://pastebin.com
+  - 搜索: "example.com" 或 "Company Name"
+  - 可能会发现泄露的配置、日志、凭证
+
+图片搜索:
+  - 使用Google图片搜索上传目标公司Logo
+  - 查看谁在使用相同的Logo
+  - ExifTool提取照片元数据: exiftool photo.jpg
+
+五、综合OSINT工具链
+--------------------------------------------------------------------------------
+
+5.1 theHarvester（已在基础中涉及，高级用法）
+
+  邮箱枚举 + 社交媒体:
+    theHarvester -d example.com -b google,linkedin,twitter,yahoo,bing -l 500 -f harvester.html
+    用Firefox打开 harvester.html 查看格式化报告
+
+5.2 recon-ng（高级自动化）
+
+  recon-ng模块化工作流:
+    marketplace install discovery/info_disclosure/interesting_files
+    marketplace install recon/domains-hosts/bing_domain_web
+    创建工作空间:
+      workspaces create example
+      add domains example.com
+      run
+
+5.3 组合amass整合OSINT发现
+
+将OSINT发现的子域名/域名输入amass进行深入扫描:
+
+  amass enum -d example.com -o osint_subs.txt
+  amass intel -d example.com -whois   # 发现关联域名和机构
+
+5.4 IntelTechniques搜索工具
+
+IntelTechniques提供了一套浏览器搜索书签和工具。
+在线资源: https://inteltechniques.com/tools/
+
+这些工具可以帮助快速进行:
+  - 用户名跨平台搜索
+  - 邮箱地址验证
+  - 电话号码查询
+  - 社交媒体元数据提取
+
+六、完整OSINT实践流程
+--------------------------------------------------------------------------------
+
+以下是对一个公开目标做完整OSINT的逐步操作指南。
+
+目标: "Example Corp" (example.com)
+
+Phase 1: 组织信息收集
+
+Step 1: 打开Firefox，执行Google搜索
+  "Example Corp" + "about" / "employees" / "headquarters"
+
+Step 2: 打开Firefox，访问目标官网
+  - 记录: 产品/服务列表、联系方式、分公司地址
+  - 查看 /about, /careers, /contact, /team 页面
+  - 查看页面源码: 按F12 → 查看注释、隐藏链接
+
+Step 3: 执行WHOIS查询
+  whois example.com | tee whois_info.txt
+  # 记录: 注册人、邮箱、电话、注册商
+
+Step 4: 查询行业信息
+  - 访问 https://crunchbase.com 搜索目标
+  - 访问 https://linkedin.com/company/ 搜索目标
+  - 记录: 成立时间、融资轮次、关键高管
+
+Phase 2: 技术资产发现
+
+Step 5: 子域名和IP收集
+  amass enum -passive -d example.com -o amass_output.txt
+  subfinder -d example.com -silent -o subfinder_output.txt
+  assetfinder example.com | tee assetfinder_output.txt
+  cat *_output.txt | sort -u > all_subs.txt
+
+Step 6: 验证活跃服务
+  cat all_subs.txt | httpx -silent -status-code -title -tech-detect -o live.txt
+
+Step 7: 打开Firefox，进行Shodan搜索
+  访问 https://shodan.io
+  搜索: org:"Example Corp"
+  搜索: hostname:example.com
+  搜索: ssl:"*.example.com"
+  筛选: port:3389 (RDP), port:22 (SSH), port:3306 (MySQL)
+  记录: 所有开放的端口和服务及版本号
+
+Step 8: 打开Firefox，进行Censys搜索
+  访问 https://search.censys.io
+  搜索: example.com (查看SSL证书)
+  搜索: hosts.query: "services.tls.certificates.leaf_data.subject.common_name: *.example.com"
+  记录: SSL证书中的额外子域名
+
+Step 9: SSL证书分析
+  使用crt.sh (浏览器访问):
+    访问 https://crt.sh/?q=%.example.com
+    记录所有通过SSL证书暴露的子域名
+  或命令行:
+    curl -s "https://crt.sh/?q=%25.example.com&output=json" | jq -r '.[].name_value' | sort -u
+
+Phase 3: 代码和信息泄露搜索
+
+Step 10: 打开Firefox，进行GitHub搜索
+  访问 https://github.com
+  搜索: "example.com" NOT .md
+  搜索: "Example Corp" password
+  搜索: "example.com" filename:.env
+  搜索: org:ExampleCorp (如果目标有公开组织)
+  记录: 发现的所有敏感信息
+
+Step 11: Google Dorking全面搜索
+  在Firefox中依次搜索(无痕模式):
+    site:example.com filetype:pdf
+    site:example.com filetype:sql
+    site:example.com filetype:env
+    site:example.com intitle:"Index of"
+    site:example.com inurl:backup
+    site:example.com "password" OR "secret"
+    site:example.com intitle:"phpinfo()"
+
+Step 12: 下载所有发现的公开文件，检查元数据
+  exiftool downloaded_file.pdf
+  strings downloaded_file.doc | grep -E "(password|user|admin|secret)"
+
+Phase 4: 社交媒体与人员收集
+
+Step 13: 打开Firefox，LinkedIn搜索
+  访问 https://linkedin.com (使用无痕模式或专用账户)
+  搜索公司 "Example Corp"
+  浏览员工列表:
+    - 记录IT/DevOps/Security员工的姓名和职位
+    - 推断用户名命名规则
+    - 记录技术栈关键词描述
+
+Step 14: Twitter/X搜索
+  访问 https://x.com
+  搜索: "Example Corp" (filter:latest)
+  搜索: ExampleCorp (官方账号)
+  记录: 可能有用的技术讨论或截图
+
+Step 15: 构建员工邮箱列表（推测）
+  根据LinkedIn收集的姓名和域名推断:
+    - firstname.lastname@example.com
+    - firstname@example.com
+    - f.lastname@example.com
+    - flastname@example.com
+    - firstname_l@example.com
+
+Phase 5: 使用Maltego整合
+
+Step 16: 启动Maltego
+  maltego
+
+Step 17: 创建新Graph，进行以下操作:
+  - 添加Domain实体 example.com
+  - 运行 "To DNS Name [DNS]" 和 "To DNS Name [Search engine]"
+  - 运行 "To IP Address [DNS]"
+  - 运行 "To Domain [From whois]" 发现关联域名
+  - 添加收集到的邮箱实体
+  - 运行 "To Person" 查找更多关联人员
+  - 导出图谱为PDF: File → Export as → PDF
+
+Phase 6: 整合与报告
+
+Step 18: 将所有信息整合为一个OSINT报告:
+  1. 组织概览
+     - 公司名称、行业、规模
+     - 总部地址、分支机构
+     - 关键高管和联系人
+  2. 技术资产清单
+     - 发现的子域名 (总计N个)
+     - 活跃的Web服务 (总计N个)
+     - 使用的技术栈
+     - 暴露的端口和服务
+  3. 安全意识评估
+     - 是否有文件泄露 (PDF, SQL, ENV等)
+     - GitHub代码泄露情况
+     - 社交媒体安全意识
+  4. 潜在攻击向量
+     - 老旧/测试服务器
+     - 暴露的管理后台
+     - 弱安全的邮件配置
+     - 代码中发现的凭证
+  5. 人员攻击面
+     - 推测的用户名列表
+     - 邮箱地址列表
+     - 可能的社会工程学切入点
+
+Phase 7: 存储和共享
+
+Step 19: 将所有收集的文件和截图整理
+  建议目录结构:
+    ~/osint_ExampleCorp/
+    ├── 01_organization/         (组织信息)
+    │   ├── whois.txt
+    │   ├── linkedin_profiles.txt
+    │   └── crunchbase.txt
+    ├── 02_technical/            (技术资产)
+    │   ├── subdomains.txt
+    │   ├── live_services.txt
+    │   ├── shodan_results.txt
+    │   └── censys_results.txt
+    ├── 03_leaks/                (泄露信息)
+    │   ├── github_findings.txt
+    │   ├── google_dorks.txt
+    │   └── downloaded_files/
+    ├── 04_social_media/         (社交媒体)
+    │   ├── linkedin_employees.txt
+    │   └── twitter_findings.txt
+    └── 05_report/               (最终报告)
+        ├── osint_report.md
+        └── maltego_graph.pdf
+
+七、OSINT的伦理与法律考量
+--------------------------------------------------------------------------------
+
+在进行OSINT活动时必须注意以下几点:
+
+  1. 合法性原则
+     - 仅收集公开可获取的信息
+     - 不绕过任何访问控制（包括但不限于登录墙、验证码等）
+     - 遵守网站的服务条款(TOS)
+     - 不爬取有robots.txt禁止的页面
+
+  2. 隐私保护
+     - 尊重个人隐私
+     - 不滥用收集到的个人信息
+     - 仅在授权渗透测试范围内使用
+
+  3. 数据存储
+     - 安全存储收集的数据
+     - 按期删除不再需要的数据
+     - 遵守GDPR等数据保护法规
+
+  4. 测试授权
+     - 仅对明确授权的目标进行OSINT
+     - 记住: OSINT ≠ 无害
+     - 有些国家/地区对OSINT有专门的法律限制
+
+八、自动化OSINT脚本
+
+  #!/bin/bash
+  # osint_gather.sh - 自动化OSINT收集脚本
+  TARGET=$1
+  DOMAIN=$2
+  
+  if [ -z "$TARGET" ] || [ -z "$DOMAIN" ]; then
+    echo "用法: ./osint_gather.sh 'Company Name' example.com"
+    exit 1
+  fi
+  
+  DIR="osint_$(echo $DOMAIN | tr '.' '_')"
+  mkdir -p $DIR && cd $DIR
+  
+  echo "[Phase 1] WHOIS查询..."
+  whois $DOMAIN > whois.txt 2>/dev/null
+  
+  echo "[Phase 2] 子域名枚举..."
+  subfinder -d $DOMAIN -silent -o subdomains.txt 2>/dev/null &
+  assetfinder $DOMAIN > assetfinder.txt 2>/dev/null &
+  amass enum -passive -d $DOMAIN -o amass_passive.txt 2>/dev/null &
+  wait
+  
+  echo "[Phase 3] 合并子域名..."
+  cat subdomains.txt assetfinder.txt amass_passive.txt | sort -u > all_subs.txt
+  
+  echo "[Phase 4] HTTPS验证..."
+  httpx -l all_subs.txt -silent -status-code -title -tech-detect -o live.txt 2>/dev/null
+  
+  echo "[Phase 5] SSL证书子域名..."
+  curl -s "https://crt.sh/?q=%25.$DOMAIN&output=json" | jq -r '.[].name_value' 2>/dev/null | sort -u > crtsh.txt
+  
+  echo "[Phase 6] Google Dorking URL生成..."
+  echo "https://www.google.com/search?q=site:$DOMAIN+filetype:pdf" > google_dorks.txt
+  echo "https://www.google.com/search?q=site:$DOMAIN+inurl:admin" >> google_dorks.txt
+  echo "https://www.google.com/search?q=site:$DOMAIN+intitle:\"Index of\"" >> google_dorks.txt
+  
+  echo "[Phase 7] theHarvester..."
+  theHarvester -d $DOMAIN -b google,linkedin -l 200 -f harvester.html 2>/dev/null
+  
+  echo "[*] 自动化OSINT完成！"
+  echo "[*] 请在Firefox中手动执行以下搜索:"
+  echo "    - Shodan: org:'$TARGET'"
+  echo "    - GitHub: '$DOMAIN' filename:.env"
+  echo "    - LinkedIn: 搜索公司 '$TARGET'"
+  echo "    - Google Dorks: 查看 google_dorks.txt 中的URL"
+
+================================================================================
+总结: OSINT是红队行动的起点，也是信息最密集的阶段。一个优秀的红队队员
+应该在未接触目标系统之前，就能通过公开信息构建出目标的完整画像。
+关键在于耐心和系统化的方法：从组织信息到技术资产，从代码泄露到社交媒体，
+逐步拼接出一个完整的攻击面图谱。记住：目标往往自己都不知道在网上暴露了
+多少信息。
+================================================================================

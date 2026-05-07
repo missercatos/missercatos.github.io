@@ -1,0 +1,814 @@
+================================================================================
+                          密码学基础
+            网安基础知识系列 · 红队入门必读
+================================================================================
+
+【目录】
+  一、密码学概述
+  二、哈希函数
+  三、对称加密
+  四、非对称加密
+  五、数字签名
+  六、PKI/CA证书体系
+  七、SSL/TLS详解
+  八、Base64/Hex编码
+  九、常见编码方式
+  十、Kerberos认证原理
+  十一、NTLM认证流程
+  十二、红队视角总结
+
+================================================================================
+一、密码学概述
+================================================================================
+
+密码学是安全的基础科学。对于红队来说，理解密码学不是为了自己发明算法，
+而是为了：
+  1. 破解弱加密的密码(Hash破解)
+  2. 理解认证协议的弱点(Kerberos/NTLM攻击)
+  3. 识别不安全的加密配置(TLS弱密码套件)
+  4. 绕过基于密码学的防御
+
+密码学三大分支：
+  - 对称加密：加密和解密使用同一密钥(AES, DES)
+  - 非对称加密：公钥加密、私钥解密(RSA, ECC)
+  - 哈希函数：单向不可逆的摘要算法(MD5, SHA256)
+
+红队核心应用：
+  哈希   -> 密码存储，破解密码哈希
+  对称   -> 数据保护，解密窃取的配置文件
+  非对称 -> TLS/SSH，证书伪造，协议理解
+  签名   -> JWT，SAML，软件签名绕过
+
+================================================================================
+二、哈希函数
+================================================================================
+
+哈希函数（散列函数）将任意长度的数据映射为固定长度的输出。
+
+【核心特性】
+  1. 确定性：相同输入永远产生相同输出
+  2. 单向性：从哈希无法推出原始输入（不可逆）
+  3. 雪崩效应：输入微小变化导致输出巨大变化
+  4. 抗碰撞性：难以找到两个不同输入产生相同哈希
+  5. 固定长度输出：无论输入多大，输出长度固定
+
+【常见哈希算法对比表】
+
++----------+----------+----------------+----------------+----------------+
+|  算法    |  输出长度|  安全性         |  是否推荐      |  典型用途      |
++----------+----------+----------------+----------------+----------------+
+|  CRC32   |  32 bit  |  完全不安全    |  不用          |  校验和(非安全) |
+|  MD5     |  128 bit |  已破解        |  禁止!         |  老旧系统遗留   |
+|  SHA-1   |  160 bit |  已破解(SHAttered)| 禁止!      |  Git(过渡中)   |
+|  SHA-256 |  256 bit |  安全          |  推荐使用      |  现代密码存储   |
+|  SHA-512 |  512 bit |  安全          |  推荐使用      |  高安全场景     |
+|  SHA-3   |  可变    |  安全(最新)    |  推荐(新项目)  |  未来标准       |
+|  bcrypt  |  N/A     |  安全+慢       |  推荐密码存储  |  Web密码存储    |
+|  Argon2  |  N/A     |  最安全+最慢   |  首选密码存储  |  现代密码存储   |
+|  NTLM    |  128 bit |  Windows特有   |  遗留系统      |  Windows认证   |
++----------+----------+----------------+----------------+----------------+
+
+【MD5详解】
+  全称：Message Digest 5
+  输出：128 bit (32位十六进制)
+  速度：极快(GPU可达数百亿次/秒)
+  问题：
+    - 2004年发现碰撞攻击(两个不同文件产生相同MD5)
+    - 2008年利用选择前缀碰撞伪造CA证书
+    - 彩虹表可瞬间逆向大部分短密码
+  红队：
+    - 许多老旧系统仍使用MD5存储密码
+    - 已知MD5密文可用crackstation.net免费查询
+    - hashcat -m 0 爆破MD5
+
+【SHA家族详解】
+  SHA-1: 160 bit，2017年Google完成首次碰撞(SHAttered攻击)
+  SHA-2: 包含SHA-224/256/384/512，目前安全
+  SHA-3: 2015年发布，基于Keccak，结构不同于SHA-2
+
+  Linux密码存储：$6$ 表示 SHA-512 (crypt)
+  hashcat模式: 1800 = sha512crypt ($6$)
+
+【bcrypt/Argon2 - 密码专用哈希】
+  特点：故意设计为慢速，对抗暴力破解
+  包含：盐值(salt) + 成本因子(cost factor)
+  bcrypt: $2a$10$salt+hash，10是成本因子(迭代2^10次)
+  Argon2: 2015年密码哈希竞赛冠军，抗GPU/ASIC
+
+【加盐(Salt)】
+  在密码后附加随机字符串再进行哈希，防止：
+  1. 彩虹表攻击(预计算的哈希->明文映射表)
+  2. 相同密码产生不同哈希
+  3. 批量破解(不同用户的相同密码需要逐个破解)
+
+  注意：每个用户必须有独立的随机盐值！
+
+【红队哈希破解实践】
+  识别哈希类型工具：hashid, hash-identifier
+  hashcat基本用法：
+    hashcat -m 0 -a 0 hashes.txt rockyou.txt        # MD5字典攻击
+    hashcat -m 0 -a 3 hashes.txt ?l?l?l?l?d?d?d?d  # MD5掩码攻击(4小写+4数字)
+    hashcat -m 1000 hashes.txt rockyou.txt          # NTLM字典攻击
+    hashcat -m 1800 hashes.txt rockyou.txt          # SHA512 crypt ($6$)
+    hashcat -m 18200 hashes.txt rockyou.txt         # Kerberos 5 TGS-REP
+
+  常用掩码字符：
+    ?l = abcdefghijklmnopqrstuvwxyz
+    ?u = ABCDEFGHIJKLMNOPQRSTUVWXYZ
+    ?d = 0123456789
+    ?s = 特殊字符
+    ?a = ?l?u?d?s (全部)
+    ?h = 0-9a-f (十六进制小写)
+
+  约翰爆破(JtR)：
+    john --wordlist=rockyou.txt hashes.txt
+    john --format=Raw-MD5 hashes.txt
+
+  hash-identifier工具识别哈希类型：
+    hash-identifier
+    输入哈希值，自动识别哈希类型
+
+================================================================================
+三、对称加密
+================================================================================
+
+对称加密：加密和解密使用相同的密钥。
+
+【核心概念】
+  明文(Plaintext):  原始数据
+  密文(Ciphertext):  加密后的数据
+  密钥(Key):  加密/解密用的秘密值
+  算法(Algorithm):  加密和解密的数学方法
+
+【常见对称加密算法对比】
+
++----------+----------+-----------+----------+-------------------+
+|  算法    |  密钥长  |  块大小   |  安全性  |  说明              |
++----------+----------+-----------+----------+-------------------+
+|  DES     |  56 bit  |  64 bit   |  已破解  |  历史标准，可暴力  |
+|  3DES    |  168 bit |  64 bit   |  弱      |  3次DES，慢且弱    |
+|  AES-128 |  128 bit |  128 bit  |  安全    |  现代标准          |
+|  AES-256 |  256 bit |  128 bit  |  最安全  |  高安全场景        |
+|  RC4     |  40-2048 |  流密码   |  已破解  |  WEP/WPA使用，弃用 |
+|  ChaCha20|  256 bit |  流密码   |  安全    |  TLS 1.3推荐       |
+|  Blowfish|  32-448  |  64 bit   |  安全    |  传统替代          |
++----------+----------+-----------+----------+-------------------+
+
+【AES详解 - 当前最常用的对称加密算法】
+
+AES采用Rijndael算法，固定块大小128 bit，密钥可选128/192/256 bit。
+
+加密模式（Block Cipher Modes）：
+
+  ECB (Electronic Codebook) 电子密码本模式：
+    每个块独立加密，相同明文块得到相同密文块
+    问题：严重泄露数据模式！
+    示例：加密一张BMP图像，ECB模式下图像轮廓清晰可见
+    红队：绝对不要用ECB！识别ECB模式->已知明文的可推理
+
+  CBC (Cipher Block Chaining) 密码块链接模式：
+    每个明文块先与上一个密文块XOR再加密
+    需要IV(初始化向量)，IV必须随机且不可预测
+    问题：
+      - 没有完整性校验，可被篡改(Padding Oracle攻击)
+      - 不能并行加密
+    红队：Padding Oracle攻击利用！改变IV/密文填充分组观察响应差异
+
+  CTR (Counter) 计数器模式：
+    将块密码转为流密码，加密计数器产生密钥流与明文XOR
+    优点：可并行，不用填充，随机访问
+    需要：Nonce(只用一次的数)+Counter组合必须唯一
+
+  GCM (Galois/Counter Mode) - 推荐模式：
+    CTR加密 + GMAC认证(提供完整性和认证)
+    同时提供：机密性 + 完整性 + 认证 (AEAD)
+    TLS 1.3推荐GCM
+    红队：GCM有认证标签，篡改会被发现
+
+  XTS (XEX Tweakable Block Cipher with Ciphertext Stealing)：
+    专门为磁盘加密设计(LUKS, BitLocker, FileVault)
+    特点：处理类似磁盘扇区大小(512/4096字节)
+
+【IV (Initialization Vector)的重要性】
+  作用：确保相同明文不同次加密产生不同密文
+  要求：
+    - 必须随机(CBC模式)或唯一(CTR模式)
+    - 不需要保密，但必须不可预测
+    - 对于CTR/GCM的Nonce绝对不能重用！(Nonce重用=密钥流重用=破解)
+
+【Padding Oracle攻击（红队重点）】
+  场景：CBC模式，服务器对填充错误返回不同响应
+  原理：逐字节修改IV，根据服务器响应推断明文
+  工具：PadBuster, python-paddingoracle
+  经典漏洞：ASP.NET POET(CVE-2010-3332), Lucky13(CBC padding timing)
+  防御：使用AEAD模式(GCM)，或不返回填充错误
+
+================================================================================
+四、非对称加密
+================================================================================
+
+非对称加密：加密和解密使用不同的密钥。
+
+【核心概念】
+  公钥(Public Key):  公开分发，用于加密或验证签名
+  私钥(Private Key):  保密保存，用于解密或产生签名
+  数学基础：大整数分解(RSA)或椭圆曲线(ECC)的数学困难问题
+  特点：
+    - 慢！比对称加密慢100-1000倍
+    - 通常用于密钥交换(用非对称交换对称密钥)
+    - 不需要事先共享密钥(解决了密钥分发问题)
+
+【RSA详解】
+
+  密钥生成：
+    1. 选择两个大质数 p 和 q
+    2. n = p * q (模数，公钥和私钥的一部分)
+    3. 计算欧拉函数 phi(n) = (p-1)*(q-1)
+    4. 选择公钥 e (通常为 65537)
+    5. 计算私钥 d = e^-1 mod phi(n) (模逆元)
+    6. 公钥：(n, e)；私钥：(n, d)
+
+  加密：c = m^e mod n
+  解密：m = c^d mod n
+
+  密钥长度：
+    1024 bit - 不安全(已可被破解)
+    2048 bit - 当前标准(预计安全至2030年)
+    4096 bit - 高安全需求
+
+  安全问题：
+    - 如果p和q太接近，n可被高效分解
+    - 同一n的不同e/d可导致私钥泄露
+    - 公钥e太小(如e=3)且同消息发给多个接收方->Hastad广播攻击
+    - PKCS#1 v1.5填充有Bleichenbacher攻击(填充Oracle)
+
+  RSA签名：
+    s = m^d mod n (用私钥签名)
+    m = s^e mod n (用公钥验证)
+
+【ECC (Elliptic Curve Cryptography)详解】
+
+  与RSA对比：
+    + 同样安全性，密钥更短(256bit ECC ~ 3072bit RSA)
+    + 计算更快(移动端友好)
+    + 更小的签名
+    - 实现更复杂
+    - 某些曲线被怀疑有后门
+
+  常用曲线：
+    P-256 (NIST)      - 最广泛使用
+    P-384 / P-521     - 更高安全级别
+    Curve25519        - 安全且高效，现代推荐
+    secp256k1         - 比特币使用
+
+  应用：ECDHE密钥交换(TLS), ECDSA签名, Ed25519签名
+
+【非对称加密的实际应用流程】
+
+实际通信中非对称加密不直接加密大块数据：
+
+  场景：Alice向Bob发送加密消息
+  1. Bob生成RSA密钥对，将公钥发给Alice
+  2. Alice生成随机AES对称密钥
+  3. Alice用Bob的公钥加密AES密钥 (非对称)
+  4. Alice用AES密钥加密消息 (对称)
+  5. Alice发送(加密的AES密钥 + 加密的消息)给Bob
+  6. Bob用自己的私钥解密得到AES密钥
+  7. Bob用AES密钥解密消息
+
+  这就是TLS的基本工作方式(简化版)！
+
+【密钥交换(Key Exchange)】
+  Diffie-Hellman (DH)：
+    双方在不安全的信道上协商出共享密钥
+    步骤：
+      1. 双方约定公共参数(g, p)
+      2. Alice选随机数a, 发送 g^a mod p
+      3. Bob选随机数b, 发送 g^b mod p
+      4. Alice计算 (g^b)^a mod p = g^(ab) mod p
+      5. Bob计算 (g^a)^b mod p = g^(ab) mod p
+      6. 双方都得到相同的共享密钥
+
+  ECDHE (Elliptic Curve Diffie-Hellman Ephemeral)：
+    DH的椭圆曲线版本，使用临时密钥(前向安全)
+    TLS 1.3标准的密钥交换方式
+
+  前向安全(Forward Secrecy)：
+    即使长期私钥泄露，过去的会话密钥也无法解密
+    ECDHE/DHE提供前向安全，RSA密钥交换不提供
+
+================================================================================
+五、数字签名
+================================================================================
+
+数字签名用于验证消息的：真实性(谁发送的) + 完整性(没被修改)
+
+【签名流程】
+  签名过程：
+    1. 发件人对消息计算哈希
+    2. 发件人用私钥加密此哈希 -> 签名
+    3. 发件人发送 (消息 + 签名)
+
+  验证过程：
+    1. 收件人对消息计算哈希(哈希1)
+    2. 收件人用发件人公钥解密签名得到哈希2
+    3. 比较哈希1 == 哈希2 ?
+       相等 -> 签名有效(消息未被修改，确实来自发件人)
+       不等 -> 签名无效
+
+  注意：实际上"私钥加密哈希"因算法不同而有差异
+    RSA签名: 哈希值用PKCS#1填充后用私钥加密
+    ECDSA: 签名由(r, s)两个值组成
+
+【签名的安全属性】
+  不可否认性(Non-repudiation): 签名者不能否认自己签过名
+  完整性(Integrity): 任何修改都会使签名失效
+  认证性(Authentication): 确认消息来源
+
+【红队关注点】
+
+  1. JWT攻击：
+     JWT由Header.Payload.Signature组成
+     如果签名算法设为"none" -> 无签名，可伪造
+     如果算法混淆(RS256 vs HS256) -> 用公钥作为HMAC密钥
+
+  2. SAML签名绕过：
+     SAML断言签名验证中的XML签名包装(XSW)攻击
+     修改XML结构但签名块不受影响
+
+  3. 软件签名伪造：
+     通过Rootkit/木马攻击证书存储
+     利用过期或弱签名的驱动加载恶意代码
+
+  4. 代码签名(PFX文件窃取)：
+     获取到代码签名证书后，可用于签名恶意软件绕过AV
+
+================================================================================
+六、PKI/CA证书体系
+================================================================================
+
+PKI (Public Key Infrastructure) 公钥基础设施，用于管理数字证书。
+
+【核心组件】
+  CA (Certificate Authority):  证书颁发机构，签发和管理证书
+  RA (Registration Authority):  注册机构，验证证书申请者身份
+  CRL (Certificate Revocation List):  证书吊销列表
+  OCSP (Online Certificate Status Protocol):  在线证书状态查询
+  CT (Certificate Transparency):  证书透明日志
+
+【数字证书内容(X.509标准)】
+  Subject:    证书持有者(CN=example.com)
+  Issuer:     颁发者CA
+  Validity:   有效期(Not Before/Not After)
+  Public Key: 持有者的公钥
+  Serial Number: 证书序列号
+  Extensions:  SAN(Subject Alternative Name) - 多域名支持
+               Key Usage - 密钥用途(签名/加密等)
+               Extended Key Usage - 扩展用途(服务器认证/客户端认证等)
+  Signature:  CA对上述所有字段的签名
+
+【证书链(Chain of Trust)】
+
+  Root CA (自签名)
+    |-- Intermediate CA 1 (由Root CA签发)
+         |-- Intermediate CA 2 (由Int CA 1签发)
+              |-- Server Certificate (由Int CA 2签发)
+                    CN=example.com
+
+  信任锚(Trust Anchor): 根证书预置在OS/浏览器中
+  验证过程: 逐级验证签名直到信任的根证书
+
+【CA/证书安全问题(红队核心)】
+
+  1. 证书伪造：
+     2011 DigiNotar: CA被入侵，攻击者签发了google.com等域名的假证书
+     2015 Comodo, StartSSL等多次事故
+     利用: 获取CA私钥 -> 签发任意域名证书 -> MITM
+
+  2. 弱签名算法的证书(已过期但仍有风险):
+     MD5签名的CA证书(SHA-1的中间CA)
+     利用: 碰撞攻击伪造具有相同签名的证书
+
+  3. 证书域名验证缺陷：
+     Let's Encrypt通过HTTP/01或DNS/01验证域名所有权
+     某些CA验证不严格(如email验证可被接管)
+     利用: 获得目标域名的证书
+
+  4. CT日志泄露(被动信息收集)：
+     crt.sh: 查询所有已签发的证书(包括历史)
+     红队: 搜索 *.target.com 发现所有子域名！
+     certspotter, certgraph 等工具
+
+================================================================================
+七、SSL/TLS详解
+================================================================================
+
+【TLS版本历史】
+
++----------+--------+-------------------------------------------+
+|  版本    |  年份  |  说明                                      |
++----------+--------+-------------------------------------------+
+|  SSL 1.0 |  1994  |  未公开发布                                |
+|  SSL 2.0 |  1995  |  多个严重漏洞，2011年禁用(RFC 6176)        |
+|  SSL 3.0 |  1996  |  POODLE攻击(CVE-2014-3566)，2015年禁用     |
+|  TLS 1.0 |  1999  |  基于SSL 3.0改进，BEAST攻击，2021年弃用    |
+|  TLS 1.1 |  2006  |  修复BEAST，2021年弃用                     |
+|  TLS 1.2 |  2008  |  当前主流，广泛使用，RFC 5246              |
+|  TLS 1.3 |  2018  |  最新标准，大幅简化，RFC 8446              |
++----------+--------+-------------------------------------------+
+
+  红队测试: sslscan, testssl.sh, nmap --script ssl-enum-ciphers
+
+【TLS密码套件(Cipher Suite)格式】
+  TLS 1.2示例: TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+                |   |     |        |    |    +-- PRF(伪随机函数)
+                |   |     |        |    +------- 加密算法+模式
+                |   |     |        +------------ 加密算法
+                |   |     +--------------------- 签名算法
+                |   +--------------------------- 认证算法
+                +------------------------------- 密钥交换算法
+
+  TLS 1.3简化示例: TLS_AES_128_GCM_SHA256
+                    只需: 加密 + 认证 + 密钥交换合一
+
+【不安全的密码套件(红队目标)】
+  包含以下任何一项的套件都是不安全的:
+    - NULL加密(无加密!): TLS_RSA_WITH_NULL_SHA
+    - 匿名DH(无认证): TLS_DH_anon_WITH_AES_128_CBC_SHA
+    - 出口级加密(40/56bit密钥): TLS_RSA_EXPORT_WITH_RC4_40_MD5
+    - RC4加密: TLS_RSA_WITH_RC4_128_SHA
+    - DES/3DES: TLS_RSA_WITH_3DES_EDE_CBC_SHA
+    - CBC模式(有Padding Oracle风险): TLS_RSA_WITH_AES_128_CBC_SHA
+    - MD5哈希: 任何包含MD5的套件
+
+【TLS攻击面(红队)】
+
+  1. TLS降级攻击：
+     强迫客户端使用较弱的TLS版本或密码套件
+     工具: sslstrip2, BetterCAP
+
+  2. CRIME/BREACH (压缩侧信道)：
+     利用TLS压缩泄露Cookie/CSRF Token
+     BREACH影响HTTP压缩，CRIME影响TLS压缩
+
+  3. POODLE (Padding Oracle On Downgraded Legacy Encryption)：
+     SSL 3.0的填充缺陷，诱使SSL 3.0降级
+
+  4. Heartbleed (CVE-2014-0160)：
+     OpenSSL心跳扩展的缓冲区过读
+     影响: OpenSSL 1.0.1-1.0.1f
+     后果: 泄露服务器内存(私钥、会话、密码!)
+
+  5. FREAK/Logjam：
+     出口级密码套件降级攻击
+     FREAK: 强迫使用512位RSA(可破解)
+     Logjam: 强迫使用512位DH(可破解)
+
+  6. ROBOT (Return Of Bleichenbacher's Oracle Threat)：
+     RSA PKCS#1填充Oracle，可恢复TLS PreMaster Secret
+
+  7. Lucky13：
+     CBC模式MAC验证的计时侧信道
+
+================================================================================
+八、Base64/Hex编码
+================================================================================
+
+重要提醒：Base64和Hex是编码，不是加密！无密钥=无安全性。
+
+【Base64编码】
+  原理：将任意二进制数据转换为纯ASCII文本
+       每3字节(24bit) -> 4个Base64字符(6bit/字符)
+
+  编码表(64个字符)：
+    0-25:  A-Z (26个大写字母)
+   26-51:  a-z (26个小写字母)
+   52-61:  0-9 (10个数字)
+      62:  +
+      63:  /
+
+  填充：输入不是3的倍数时用=号填充
+       1个多余字节 -> 末尾加 ==
+       2个多余字节 -> 末尾加 =
+
+  示例："Man" -> "TWFu"
+       "M"  -> "TQ=="
+
+  应用场景：
+    - HTTP Basic Auth: Authorization: Basic base64(user:pass)
+    - JWT: Header.Payload都是Base64URL编码
+    - HTML: <img src="data:image/png;base64,...">
+    - 数据混淆: 恶意软件常将Shellcode base64编码
+    - SMTP: MIME附件编码
+
+  变体：
+    Base64URL: - 替代 +, _ 替代 /, 省略末尾 =
+    Base32:    用于人可读编码、二维码
+    Base85:    更紧凑，Adobe的PostScript中使用
+
+  红队：
+    - 识别base64字符串(字母数字+ / = 组合)
+    - 发现base64编码的payload
+    - 利用bash: echo "base64str" | base64 -d
+    - CyberChef线上工具快速解码
+
+【Hex编码（十六进制）】
+  每个字节表示为两个十六进制字符
+  0x00-0xFF -> "00"-"FF"
+
+  示例："Hello" -> "48656c6c6f"（ASCII码的十六进制表示）
+
+  应用：
+    - 哈希展示(SHA256通常显示为64位十六进制)
+    - 内存地址(0x7fffffff)
+    - URL编码中的十六进制部分(%20)
+    - 二进制数据的可读表示
+    - 网络数据包的十六进制dump
+
+  操作：echo "48656c6c6f" | xxd -r -p  // 十六进制转文本
+
+================================================================================
+九、常见编码方式
+================================================================================
+
+【URL编码 (Percent-Encoding)】
+  格式：%XX (XX为十六进制字节值)
+  保留字符：
+    空格 -> %20 (或 +)
+    ! -> %21   # -> %23   $ -> %24   & -> %26
+    ' -> %27   ( -> %28   ) -> %29   * -> %2A
+    + -> %2B   , -> %2C   / -> %2F   : -> %3A
+    ; -> %3B   = -> %3D   ? -> %3F   @ -> %40
+    [ -> %5B   ] -> %5D
+
+  红队绕过技巧：
+    双重编码: %25%33%43 -> %3C -> <
+    大小写变体: %2f vs %2F
+    Unicode编码: %u002F / %u2215
+
+【HTML实体编码】
+  命名实体: &lt; (<)  &gt; (>)  &amp; (&)  &quot; (")
+           &apos; (')
+  数值实体:
+    十进制: &#60; (<)  &#62; (>)
+    十六进制: &#x3C; (<)  &#x3E; (>)
+
+  XSS绕过: <img src=x onerror=alert(1)> ->
+           &#x3C;img src=x onerror=alert(1)&#x3E;
+
+【Unicode编码】
+  UTF-8:  'A'=0x41, '中'=0xE4B8AD
+  UTF-16: 'A'=0x0041, '中'=0x4E2D
+  JavaScript: \u0041 = 'A', \u4E2D = '中'
+
+  Unicode规范化攻击：
+    有些字符规范化后变成其他字符
+    如：W(全角W, U+FF37)规范化后变成W(U+0057)
+    可绕过基于黑名单的过滤
+
+================================================================================
+十、Kerberos认证原理
+================================================================================
+
+Kerberos是Windows Active Directory的核心认证协议。
+
+【Kerberos核心角色】
+  Client (客户端):    请求服务的用户/主机
+  KDC (Key Distribution Center): 密钥分发中心=DC(域控制器)
+    AS (Authentication Server): 认证服务器
+    TGS (Ticket Granting Server): 票据授予服务器
+  Service (服务):     客户端想要访问的目标服务(如文件服务器)
+
+【Kerberos认证流程 - 详细图解】
+
+  第1步 - AS_REQ (KRB_AS_REQ) 认证服务请求：
+    客户端 -> AS
+    内容：用户名(明文) + 用用户密码哈希加密的时间戳(预认证)
+    AS收到后：
+      1. 用存储的用户哈希解密时间戳
+      2. 验证时间戳在允许的偏差内(默认5分钟)
+      3. 验证通过 -> 准备TGT
+
+  第2步 - AS_REP (KRB_AS_REP) 认证服务响应：
+    AS -> 客户端
+    包含两部分：
+      Part A: 用用户哈希加密的Session Key (会话密钥)
+      Part B: TGT (Ticket Granting Ticket) - 用krbtgt账户哈希加密
+        内容: 用户名+Session Key+有效期+用户SID+PAC
+    客户端解密Part A获得Session Key
+
+  第3步 - TGS_REQ (KRB_TGS_REQ) 票据授予请求：
+    客户端 -> TGS
+    包含：
+      1. TGT (第2步获得，客户端无法解密但可传递)
+      2. Authenticator (用Session Key加密的时间戳+用户名)
+      3. 请求的目标服务名(SPN)
+    TGS收到后：
+      1. 用krbtgt哈希解密TGT，获得Session Key
+      2. 用Session Key解密Authenticator，验证时间戳
+      3. 生成 Service Ticket
+
+  第4步 - TGS_REP (KRB_TGS_REP) 票据授予响应：
+    TGS -> 客户端
+    包含两部分：
+      Part A: 用Session Key加密的新Session Key
+      Part B: Service Ticket (ST) - 用目标服务的账户哈希加密
+        内容: 用户名+新Session Key+有效期+PAC
+    客户端解密Part A获得新Session Key
+
+  第5步 - AP_REQ (KRB_AP_REQ) 应用请求：
+    客户端 -> 服务
+    包含：
+      1. Service Ticket (ST)
+      2. Authenticator (用新Session Key加密的时间戳+用户名)
+    服务收到后：
+      1. 用自己的哈希解密ST，获得Session Key
+      2. 用Session Key解密Authenticator
+      3. 验证用户名一致、时间戳合理
+      4. 可选验证PAC(需要联系DC)
+      5. 验证通过 -> 服务接受连接
+
+  第6步 - AP_REP (可选，双向认证)：
+    服务 -> 客户端
+    用Session Key加密Authenticator中的时间戳
+    客户端验证服务确实是目标服务
+
+【关键密钥(Key)总结】
+  User Hash:         用户密码的NTLM哈希(用于解密AS_REP Part A)
+  krbtgt Hash:       域控krbtgt账户哈希(用于解密TGT)
+  Service Hash:      服务账户的NTLM哈希(用于解密Service Ticket)
+  Session Key:       KDC分发的临时会话密钥
+
+【Kerberos红队攻击技术】
+
+  1. Kerberoasting (Kerberos服务票据爆破):
+     任何域用户都可以请求任何SPN的Service Ticket
+     Service Ticket用服务账户的NTLM哈希加密
+     离线程取哈希并通过hashcat爆破!
+     请求: GetUserSPNs.py domain/user:pass -request
+     破解: hashcat -m 13100 ticket.txt rockyou.txt
+
+  2. AS-REP Roasting (不需要预认证用户的攻击):
+     如果用户账户设置了"不要求Kerberos预认证"
+     攻击者可以请求AS-REP，用用户哈希加密的数据可离线爆破
+     工具: GetNPUsers.py domain/ -usersfile users.txt -format hashcat
+
+  3. Golden Ticket (金票攻击):
+     获取krbtgt账户的哈希后
+     可以伪造任意用户的TGT
+     拥有完全的域权限且持久(有效期内)
+     工具: mimikatz kerberos::golden
+
+  4. Silver Ticket (银票攻击):
+     获取服务账户的哈希后
+     可以伪造特定服务的Service Ticket
+     比金票隐蔽(不经过KDC)
+     工具: mimikatz kerberos::golden /service:cifs
+
+  5. Pass The Ticket (PtT, 票据传递):
+     窃取内存中的Kerberos票据(TGT/ST)
+     导入到其他主机上的会话中
+     工具: mimikatz sekurlsa::tickets /export -> kerberos::ptt
+
+  6. Overpass The Hash (过哈希):
+     用NTLM哈希请求TGT
+     工具: mimikatz sekurlsa::pth
+
+================================================================================
+十一、NTLM认证流程
+================================================================================
+
+NTLM (NT LAN Manager) 是Windows的另一种认证协议，较Kerberos更老但更广泛。
+
+【NTLM版本】
+  LM Hash:  极度不安全! Windows 95/98时代，可秒破，Vista后默认禁用
+  NTLMv1:   不安全，有已知弱点
+  NTLMv2:   当前版本，相对安全但仍存在中继攻击风险
+
+【NTLM哈希格式】
+  NTLM Hash = MD4(Unicode密码)
+  示例: user:500:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::
+         LM哈希(已废弃)                  NTLM哈希
+
+  注意：LM和NTLM都不加盐！相同密码总是产生相同哈希
+
+【Net-NTLM 响应式认证（Challenge-Response）】
+
+  这是NTLM在实际网络认证中使用的方式：
+
+  第1步 - Negotiate (协商):
+    客户端 -> 服务端: NTLMSSP_NEGOTIATE
+    内容: 支持的NTLM版本等
+
+  第2步 - Challenge (挑战):
+    服务端 -> 客户端: NTLMSSP_CHALLENGE
+    内容: 8字节随机挑战值(Nonce/Challenge)
+
+  第3步 - Authenticate (认证):
+    客户端 -> 服务端: NTLMSSP_AUTH
+    计算过程:
+      Net-NTLMv1:
+        DES(每个7字节密码块)(Challenge) = 24字节响应
+      Net-NTLMv2:
+        HMAC-MD5(NTLM Hash, Challenge + 客户端Nonce + 时间戳等) = 可变长度响应
+    服务端验证:
+      1. 从SAM/NTDS获取用户的NTLM Hash
+      2. 用同样的Challenge计算期望的响应
+      3. 比对响应是否一致
+
+【Net-NTLMv1 vs Net-NTLMv2 区别】
+  v1: 8字节Challenge，24字节响应，无时间戳，易破解
+  v2: 客户端添加时间戳和随机数，HMAC-MD5，较安全
+
+【NTLM红队攻击技术】
+
+  1. NTLM哈希传递 (Pass The Hash, PtH):
+     不需要知道明文密码，直接用NTLM哈希认证
+     用NTLM哈希计算合法的Net-NTLM响应
+     工具: mimikatz sekurlsa::pth /user:admin /domain:domain /ntlm:HASH
+           impacket-wmiexec -hashes :HASH domain/user@IP
+           crackmapexec smb target -u user -H HASH
+
+  2. NTLM中继攻击 (NTLM Relay):
+     MITM位置窃取客户端的Net-NTLM认证请求
+     将认证转发/中继到目标服务器
+     工具: impacket-ntlmrelayx, Responder (MultiRelay)
+     条件: 需要在认证路径中(ARP欺骗/DHCPv6欺骗/LLMNR欺骗)
+
+  3. SMB签名禁用 + NTLM中继:
+     如果目标SMB服务器禁用了SMB消息签名
+     可以将认证中继到此服务器并执行命令
+
+  4. LLMNR/NBT-NS/mDNS投毒 (内网欺骗):
+     Responder监听网络中的广播查询
+     当有机器查询不存在的地址时，Responder回应"我就是"
+     受害者尝试认证到Responder -> 捕获Net-NTLM哈希
+     捕获后：
+       a. 离线破解(hashcat -m 5600)
+       b. 中继到其他支持NTLM的服务
+
+  5. SMB到HTTP的中继:
+     将捕获的Net-NTLM中继到支持NTLM认证的Web服务器
+     如Exchange EWS, ADFS, SCCM等
+
+  6. WebDAV + NTLM:
+     利用CobaltStrike/WebDAV服务器
+     诱导目标访问\\attacker_ip\share -> 捕获Net-NTLM!
+
+【NTLM破解】
+  hashcat -m 1000 ntlm_hash.txt rockyou.txt   # NTLM哈希(从SAM获取)
+  hashcat -m 5600 netntlmv2.txt rockyou.txt   # Net-NTLMv2(从Responder获取)
+  hashcat -m 5500 netntlmv1.txt rockyou.txt   # Net-NTLMv1
+
+================================================================================
+十二、红队视角总结
+================================================================================
+
+密码学知识的红队应用对照表：
+
++-----------------------+---------------------------------------+
+|  知识点               |  红队应用                              |
++-----------------------+---------------------------------------+
+|  哈希函数             |  密码哈希破解(hashcat)                 |
+|                       |  文件完整性绕过(哈希碰撞)              |
++-----------------------+---------------------------------------+
+|  对称加密 AES         |  配置文件解密(数据库密码)              |
+|                       |  加密C2通信                            |
++-----------------------+---------------------------------------+
+|  非对称加密 RSA/ECC   |  TLS证书理解                           |
+|                       |  SSH密钥窃取利用                       |
++-----------------------+---------------------------------------+
+|  数字签名             |  JWT伪造攻击                           |
+|                       |  SAML签名绕过                          |
+|                       |  Authenticode签名验证绕过             |
++-----------------------+---------------------------------------+
+|  PKI/CA               |  SSL/TLS MITM证书欺骗                  |
+|                       |  CT日志子域名发现                      |
++-----------------------+---------------------------------------+
+|  SSL/TLS              |  弱密码套件列表化利用                  |
+|                       |  SSL Strip降级攻击                     |
++-----------------------+---------------------------------------+
+|  Kerberos             |  Kerberoasting爆破服务账户密码         |
+|                       |  Golden/Silver Ticket持久化           |
+|                       |  AS-REP Roasting                      |
++-----------------------+---------------------------------------+
+|  NTLM                 |  Pass The Hash哈希传递                |
+|                       |  NTLM Relaying中继攻击                |
+|                       |  Responder LLMNR/NBT-NS欺骗           |
++-----------------------+---------------------------------------+
+|  Base64/编码          |  载荷编码/解码(Shellcode混淆)          |
+|                       |  Credential数据提取                    |
++-----------------------+---------------------------------------+
+
+核心工具速查：
+  密码破解: hashcat, john, crackmapexec(含爆破)
+  Kerberos: impacket(GetUserSPNs, GetNPUsers, ticketer),
+            Rubeus, mimikatz
+  NTLM:     impacket(secretsdump, wmiexec, psexec, smbexec),
+            crackmapexec, Responder, Inveigh
+  TLS检测:  sslscan, testssl.sh, nmap ssl-enum-ciphers
+  编码:     CyberChef, base64, xxd, od
+
+================================================================================
+                        文档结束
+================================================================================

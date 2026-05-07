@@ -1,0 +1,457 @@
+================================================================================
+第25周：痕迹清除与报告 (后渗透期)
+================================================================================
+
+【本周围绕的核心渗透案例阶段】
+引用红队队员完整学习手册中的案例：
+渗透测试的收尾阶段——攻击者在完成渗透目标后，需要对操作过程中
+产生的系统日志、网络流量痕迹、临时文件等进行清理。同时需要将
+渗透过程和发现的漏洞整理成符合行业标准的渗透测试报告。
+
+【本周学习目标】
+1. 掌握Linux系统下的痕迹清除技术（bash history、日志清理、时间戳还原）
+2. 理解取证与反取证的基本概念，建立防御/检测视角
+3. 掌握渗透测试报告的标准结构和写作方法
+4. 学会使用CVSS 3.1对发现漏洞进行评分
+5. 能够完成从渗透到报告输出的全流程演练
+6. 理解渗透测试报告中的法律与合规要求
+
+【本周知识清单】
+- Linux痕迹清除核心操作：
+  - Shell历史清除：history -c, rm ~/.bash_history, unset HISTFILE
+  - 日志清除：/var/log/ 下的auth.log, syslog, kern.log, wtmp, btmp, lastlog
+  - 安全日志：auditd, SELinux/AppArmor审计
+  - 文件时间戳修改：touch -t 修改文件atime/mtime
+  - 安全删除：shred 多次覆写
+- Windows痕迹清除核心操作：
+  - EventLog清除：wevtutil, Clear-EventLog, 事件日志服务停止
+  - 注册表痕迹：MRU、RecentFiles、RunMRU
+  - Prefetch文件、Jump Lists、LNK文件
+  - 回收站清除
+  - USN Journal
+- 取证基础概念：
+  - 磁盘取证：文件系统残留、Slack Space、删除恢复
+  - 内存取证：volatility, rekall
+  - 网络取证：PCAP分析
+  - 反取证技术概述
+- 渗透测试报告结构：
+  - 封面、目录、执行摘要、方法论、漏洞详情、修复建议
+  - OWASP Testing Guide报告模板参考
+  - PTES (Penetration Testing Execution Standard)报告标准
+- CVSS 3.1评分体系：
+  - Base Metrics: AV, AC, PR, UI, S, C, I, A
+  - Temporal Metrics: E, RL, RC
+  - Environmental Metrics: CR, IR, AR, modified base metrics
+
+【本周工具清单】
+- shred — Linux文件安全删除（多次覆写后删除）
+- touch — 修改文件访问/修改时间戳
+- rm / unlink — 文件删除
+- auditctl / ausearch — Linux审计日志操作
+- wevtutil (Windows) — 事件日志管理工具
+- volatility3 — 内存镜像分析
+- Autopsy / sleuthkit — 磁盘取证分析
+- Wireshark / tshark — PCAP流量分析
+- nmap — 输出扫描报告
+- CVSS Calculator (online tool) — CVSS 3.1评分计算
+- 渗透测试报告模板（个人积累）
+
+================================================================================
+周一：Linux痕迹清除
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：Linux痕迹清除方法论
+    - 入侵痕迹分布在哪些位置：
+      - Shell层面：~/.bash_history, ~/.zsh_history, ~/.mysql_history, ~/.python_history
+      - 系统日志：/var/log/auth.log, /var/log/syslog, /var/log/secure
+      - 服务日志：/var/log/apache2/, /var/log/mysql/, /var/log/nginx/
+      - 登录记录：/var/log/wtmp, /var/log/btmp, /var/log/lastlog
+      - 文件系统：创建/修改的文件时间戳
+      - 进程列表：攻击留下的运行中进程
+    - history -c 清除当前会话历史
+    - rm ~/.bash_history 清除历史文件
+    - unset HISTFILE 阻止Shell记录新历史
+    - 日志清除方法：
+      - > /var/log/auth.log 清空文件内容
+      - shred -z -n 3 /var/log/auth.log 安全覆写后删除
+      - echo "" > /var/log/syslog
+    - touch -t 修改文件时间戳
+      - touch -t YYYYMMDDhhmm.ss 文件名
+      - 恢复文件原始时间戳
+    - 安全删除工具：shred -f -z -n 3 文件
+    - 高级清除：auditd日志、SELinux AVC记录、systemd-journald日志
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/08-痕迹清除与渗透报告.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：Linux痕迹清除全流程实战
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/08-痕迹清除与渗透报告.txt
+
+  操作步骤：
+    Step 1: 检查当前攻击足迹
+      history | tail -20 → 查看最近20条命令
+      cat ~/.bash_history → 查看完整历史
+      ls -la /tmp/ → 查看上传的临时文件
+      cat /var/log/auth.log | grep "Session opened" → 查看SSH登录记录
+      cat /var/log/syslog | grep -i "cron" → 查看Cron执行痕迹
+    Step 2: 清除Shell历史
+      history -c
+      rm ~/.bash_history
+      unset HISTFILE
+      重新登录shell验证: history (应为空)
+    Step 3: 安全删除上传的工具文件
+      ls /tmp/ → 列出所有上传文件
+      shred -z /tmp/linpeas.sh
+      shred -z /tmp/dirtycow
+      rm -f /tmp/*.sh /tmp/*.elf /tmp/output*.txt
+    Step 4: 清除认证相关日志
+      shred -z /var/log/auth.log
+      > /var/log/auth.log
+      或针对特定IP清除:
+        sed -i '/192.168.1.100/d' /var/log/auth.log
+    Step 5: 修改关键文件时间戳
+      查看原始时间戳: stat /etc/passwd
+      若修改过/etc/passwd或/etc/shadow:
+        touch -t 201906010830.00 /etc/passwd (恢复为2019年6月1日8:30)
+        touch -t 201906010830.00 /etc/shadow
+      验证: stat /etc/passwd → Access/Modify/Change时间
+    Step 6: 清除其他日志来源
+      清除systemd-journald日志:
+        journalctl --vacuum-time=1s (只保留最后1秒)
+      清除auditd日志:
+        > /var/log/audit/audit.log
+      清除wtmp/btmp/lastlog:
+        > /var/log/wtmp
+        > /var/log/btmp
+        > /var/log/lastlog
+      验证: last (应无记录), lastb (应无记录)
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：掌握Linux系统下的痕迹清除全流程
+  - 遇到问题：____________________
+  - 明日计划：学习反取证技术基础，理解检测和防御视角
+
+================================================================================
+周二：反取证技术理解
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：取证与反取证基础概念
+    - 数字取证基本流程：
+      - 证据识别 → 证据保全 → 证据提取 → 证据分析 → 报告呈现
+      - 取证顺序：最易失到最不易失（网路连接→内存→磁盘→备份）
+    - 磁盘取证核心概念：
+      - 文件系统结构：inode、目录项、数据块
+      - 文件删除原理：仅删除目录项和inode指针，数据块仍存在
+      - Slack Space(松弛空间)：文件结尾到扇区结尾的未用空间
+      - unallocated space(未分配空间)
+      - 文件雕刻(File Carving)：foremost, scalpel, photorec
+    - 内存取证核心概念：
+      - 内存Dump获取：LiME (Linux), win32dd (Windows), VMWare快照
+      - volatility插件：pslist, netscan, cmdscan, filescan, dumpfiles
+      - 内存证据：运行中进程、网络连接、注册表、凭据残留、注入代码
+    - 反取证技术概述：
+      - 数据擦除(加密覆写)：shred, wipe, srm
+      - 内存清理：进程结束、内存覆写
+      - 时间戳篡改：timestomp
+      - 日志注入与欺骗
+      - 文件隐藏与Steganography(隐写)
+  参考文件：/home/a/成长为一个红队/archstrike-forensics教学/01-磁盘取证与反取证.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：从防御视角理解操作留下的痕迹
+  参考文件：/home/a/成长为一个红队/archstrike-forensics教学/01-磁盘取证与反取证.txt
+
+  操作步骤：
+    Step 1: 模拟攻击后在系统中留下痕迹
+      在测试Linux上执行典型攻击操作:
+        - SSH登录
+        - 执行wget下载工具到/tmp
+        - 执行whoami, id, uname -a
+        - 执行find / -perm -4000
+      记录时间戳和每一步的操作
+    Step 2: 查看攻击操作在auth.log中的痕迹
+      cat /var/log/auth.log | tail -50
+      查看: Accepted password for root from IP
+      cat /var/log/auth.log | grep "session opened"
+      确认所有SSH登录都被记录
+    Step 3: 查看攻击操作在syslog中的痕迹
+      cat /var/log/syslog | tail -50
+      关注: Cron执行记录、系统事件
+    Step 4: 使用find查找攻击者创建/修改的文件
+      find /tmp -mmin -30 → 最近30分钟内修改的文件
+      find / -type f -perm -4000 -newer /etc/passwd 2>/dev/null → 比passwd更新的SUID文件
+      find /home -name "*.sh" -mtime -1 → 最近1天修改的脚本
+    Step 5: 使用sleuthkit/bulk_extractor分析残留文件
+      fls -r /dev/sda1 → 列出文件系统所有条目（包括已删除的）
+      bulk_extractor -o output/ 磁盘镜像 → 提取邮箱、URL、信用卡等
+      理解：即使文件被rm删除，数据块仍可被恢复
+    Step 6: 测试文件恢复工具
+      创建测试文件: echo "SECRET_DATA_123456" > /tmp/test_secret.txt
+      删除: rm /tmp/test_secret.txt
+      尝试恢复: foremost /dev/sda1 -o /tmp/recovered/
+      或: testdisk /dev/sda1
+      检查/tmp/recovered/中是否恢复了test_secret.txt内容
+      结论: 简单rm删除不可靠，需要shred覆写
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：从取证视角理解攻击痕迹的持久性，掌握shred安全删除的必要性
+  - 遇到问题：____________________
+  - 明日计划：学习渗透测试报告的标准结构和写作方法
+
+================================================================================
+周三：渗透测试报告写作
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：渗透测试报告标准结构
+    - 报告整体结构（PTES标准）：
+      章节1: 封面 — 项目名称、日期、测试方、被测试方、密级标注
+      章节2: 执行摘要 (Executive Summary) — 1-2页，面向管理层
+        - 测试范围概述、关键发现、风险评分、总体建议
+      章节3: 测试方法论 — 测试阶段、工具、标准（OWASP/PTES/OSSTMM）
+      章节4: 漏洞详情 (Findings) — 报告核心部分
+        - 每个漏洞包含：标题、CVSS评分、风险等级、描述、影响、复现步骤、修复建议、参考资料
+      章节5: 资产清单 — 测试过程中发现的IP、端口、服务
+      章节6: 附录 — 工具命令、原始输出片段、字典定义
+    - 报告写作原则：
+      - 面向受众：管理层看重业务影响 → 技术层看重细节和修复
+      - 漏洞复现步骤要清晰：每一步含命令/截图/时间
+      - 修复建议要具体可操作：给出配置示例或代码
+      - 使用截图辅助说明（打码敏感信息）
+    - 报告工具推荐：
+      - 模板工具：PlexTrac, AttackForge, Dradis, Faraday
+      - 截图工具：flameshot, shutter, greenshot
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/08-痕迹清除与渗透报告.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：编写渗透测试报告
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/08-痕迹清除与渗透报告.txt
+
+  操作步骤：
+    Step 1: 准备报告素材
+      回顾前几周在Metasploitable2/HTB上的渗透过程
+      整理每个漏洞的以下信息:
+        - 漏洞名称和描述
+        - 发现过程（命令+输出）
+        - 利用方法和成功的截图
+        - 提权/横向移动后的影响
+    Step 2: 撰写执行摘要框架
+      模板:
+        【测试概述】本次测试针对XXX系统，测试时间为X月X日至X月X日
+        【关键发现】共发现X个漏洞：高危X个、中危X个、低危X个
+        【总体风险】根据CVSS评分，系统总体风险等级为XXX
+        【优先建议】建议立即修复以下高危漏洞：...
+    Step 3: 撰写漏洞详情之—Web漏洞
+      以一个DVWA的SQL注入漏洞为例撰写:
+        标题: SQL注入漏洞 - DVWA首页搜索功能
+        CVSS: 8.6 (High)
+        描述: 目标在搜索参数处存在SQL注入，攻击者可获取数据库中所有数据
+        影响: 可读取/修改/删除数据库数据，可能导致数据泄露
+        复现步骤:
+          1. 访问 http://target/dvwa/vulnerabilities/sqli/
+          2. 在输入框输入: 1' OR '1'='1' --
+          3. 页面返回所有用户数据
+          4. 继续使用sqlmap进一步利用...
+        修复建议:
+          1. 使用参数化查询(Prepared Statements)
+          2. 实施输入验证和白名单过滤
+          3. 最小化数据库用户权限
+    Step 4: 撰写漏洞详情之—权限提升
+      以Linux SUID提权为例撰写漏洞详情
+    Step 5: 整理修复建议优先级表
+      创建表格: 优先级 | 漏洞 | 影响资产 | 修复时间建议 | 修复难度
+      高优先级项建议修复时间: 7-14天
+      中优先级: 30天
+      低优先级: 90天
+    Step 6: 完成报告草稿
+      整合所有章节成为完整的报告草稿
+      检查: 是否每个漏洞都有CVSS评分、复现步骤、修复建议
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：掌握渗透测试报告的标准结构和写作方法
+  - 遇到问题：____________________
+  - 明日计划：学习CVSS 3.1评分体系，对已发现漏洞进行精确评分
+
+================================================================================
+周四：CVSS评分练习
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：CVSS 3.1评分体系详解
+    - CVSS 3.1 版本与3.0的区别
+    - Base Score (基础评分) Metrics:
+      - Attack Vector (AV): Network(N) / Adjacent(A) / Local(L) / Physical(P)
+      - Attack Complexity (AC): Low(L) / High(H)
+      - Privileges Required (PR): None(N) / Low(L) / High(H)
+      - User Interaction (UI): None(N) / Required(R)
+      - Scope (S): Unchanged(U) / Changed(C)
+      - Confidentiality Impact (C): None(N) / Low(L) / High(H)
+      - Integrity Impact (I): None(N) / Low(L) / High(H)
+      - Availability Impact (A): None(N) / Low(L) / High(H)
+    - Temporal Score (时间评分):
+      - Exploit Code Maturity (E): Not Defined(X) / High(H) / Functional(F) / Proof-of-Concept(P) / Unproven(U)
+      - Remediation Level (RL): Not Defined(X) / Unavailable(U) / Workaround(W) / Temporary Fix(T) / Official Fix(O)
+      - Report Confidence (RC): Not Defined(X) / Confirmed(C) / Reasonable(R) / Unknown(U)
+    - Environmental Score (环境评分):
+      - Security Requirements: CR, IR, AR — Critical/High/Medium/Low
+      - Modified Base Metrics: 根据环境调整
+    - 风险等级划分 (根据Base Score):
+      - Critical: 9.0 - 10.0
+      - High: 7.0 - 8.9
+      - Medium: 4.0 - 6.9
+      - Low: 0.1 - 3.9
+      - None: 0.0
+    - 评分技巧：保守原则 — 不确定时选择较低的分数
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/08-痕迹清除与渗透报告.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：对已发现的漏洞做CVSS 3.1评分
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/08-痕迹清除与渗透报告.txt
+
+  操作步骤：
+    Step 1: 使用在线CVSS计算器
+      打开: https://www.first.org/cvss/calculator/3.1
+      熟悉计算器界面和各个Metric的选择项
+    Step 2: 评分练习1 — SQL注入漏洞
+      漏洞: 登录页面SQL注入，可获取数据库所有数据
+      AV:N (通过网络), AC:L (不需要特殊条件), PR:N (不需要登录), UI:N
+      S:C (影响其他组件-数据库), C:H (完全泄露数据), I:H (可修改数据), A:N (不影响可用性)
+      计算: CVSS 3.1 = 9.8 (Critical)
+      验证在线计算器结果
+    Step 3: 评分练习2 — 文件上传漏洞
+      漏洞: 可上传PHP文件但需要登录
+      AV:N, AC:L, PR:L (需要登录), UI:N
+      S:U (影响范围未变化), C:H (可读系统文件), I:H (可写WebShell), A:N
+      计算: CVSS 3.1 = 8.8 (High)
+    Step 4: 评分练习3 — Linux SUID提权
+      漏洞: find命令SUID位可被低权限用户利用
+      AV:L (本地利用), AC:L, PR:L (需要低权限Shell), UI:N
+      S:C, C:H, I:H, A:H
+      计算: CVSS 3.1 = 7.8 (High)
+    Step 5: 评分练习4 — XSS漏洞
+      漏洞: 反射型XSS
+      AV:N, AC:L, PR:N, UI:R (需要用户点击)
+      S:C (可攻击其他用户), C:L (只能读Cookie), I:L, A:N
+      计算: CVSS 3.1 = 6.1 (Medium)
+    Step 6: 对前四周发现的漏洞进行CVSS评分
+      回顾笔记，每个漏洞计算CVSS 3.1评分
+      记录: 漏洞名、CVSS向量串(如CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:N)、分数、风险等级
+      验证自己计算的准确性
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：掌握CVSS 3.1评分体系的各项指标和计算方式
+  - 遇到问题：____________________
+  - 明日计划：完整渗透→报告全流程演练
+
+================================================================================
+周五：完整渗透→报告全流程演练
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：渗透测试全流程回顾
+    - 阶段0: 前期准备 — 授权书、测试范围、RoE(Rules of Engagement)
+    - 阶段1: 信息收集 — 被动信息收集(OSINT) + 主动扫描
+    - 阶段2: 漏洞发现 — 端口扫描、Web扫描、目录枚举、漏洞扫描器
+    - 阶段3: 漏洞利用 — 初始访问(Web/网络/社工) → 武器化
+    - 阶段4: 后渗透 — 提权 → 信息收集 → 凭证提取 → 持久化
+    - 阶段5: 横向移动 — 内网扫描 → 凭据利用 → 域渗透
+    - 阶段6: 痕迹清除 — 日志清理 → 工具清理 → 时间戳还原
+    - 阶段7: 报告输出 — 执行摘要 → 漏洞详情 → 修复建议
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/08-痕迹清除与渗透报告.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：完整渗透→报告全流程实战
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/08-痕迹清除与渗透报告.txt
+
+  操作步骤：
+    Step 1: 选择目标并搭建环境
+      选择Metasploitable2或一台HTB Easy靶机
+      确保目标环境可用
+    Step 2: 执行完整渗透（2小时加速版）
+      信息收集(15分钟): nmap扫描 → Web目录扫描 → 服务版本识别
+      漏洞利用(30分钟): 利用发现的漏洞获得初始Shell
+      后渗透(30分钟): 提权 → 信息收集 → 持久化
+      痕迹清除(15分钟): 清理日志和临时文件
+      注意: 全程做详细笔记，每个命令都复制输出结果
+    Step 3: 整理渗透笔记为报告素材
+      将笔记整理成结构化的报告框架:
+        漏洞1: 名称、发现方式、利用步骤、截图、影响、修复
+        漏洞2: ...
+        后渗透发现: ...
+    Step 4: 为每个漏洞计算CVSS 3.1评分
+      使用在线计算器计算每个漏洞的CVSS
+      记录完整的CVSS向量字符串
+    Step 5: 撰写报告草稿
+      封面信息
+      执行摘要
+      漏洞详情（3-5个漏洞）
+      修复建议优先级表
+      附录（工具命令清单）
+    Step 6: 自检报告质量
+      Check: 执行摘要是否简明扼要，面向管理层
+      Check: 每个漏洞是否有明确的复现步骤（可复现）
+      Check: 修复建议是否具体可操作
+      Check: 是否包含CVSS评分和风险等级
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：完成渗透→报告的完整闭环
+  - 遇到问题：____________________
+  - 明日计划：复习本周内容，完善报告模板
+
+================================================================================
+周六：复习日 (2h 复习 + 1h HTB/THM)
+================================================================================
+
+📚 复习内容（2小时）
+  1. 完善个人渗透测试报告模板（Word/LaTeX/Markdown格式）
+  2. 整理Linux和Windows痕迹清除checklist
+  3. 复习CVSS 3.1评分，练习5个不同类型的漏洞评分
+  4. 阅读一份公开的渗透测试报告（可从GitHub搜索Sample Penetration Test Report）
+  5. 总结本阶段（后渗透期）学到的核心技能
+
+💻 HTB/THM练习（1小时）
+  - 登录TryHackMe平台
+  - 完成 "VulnNet: Roasted" 或 "VulnNet: Active" 房间
+  - 重点练习：完整渗透流程 + 撰写一份简版渗透报告
+  - 对比官方Writeup检查自己的方法论差距
+
+📝 复习笔记
+  - 本周最有效的技术：____________________
+  - 需要加强的部分：____________________
+  - 下周预习计划：综合渗透实战，准备挑战HTB Medium难度靶机
+
+================================================================================
+周日：休息日
+================================================================================
+
+【本周资源清单】
+理论知识文件：
+  /home/a/成长为一个红队/archstrike-base教学/08-痕迹清除与渗透报告.txt
+  /home/a/成长为一个红队/archstrike-forensics教学/01-磁盘取证与反取证.txt
+  /home/a/成长为一个红队/网安基础知识/XX-渗透测试报告标准.txt
+
+实践教程文件：
+  /home/a/成长为一个红队/archstrike-base教学/08-痕迹清除与渗透报告.txt
+  /home/a/成长为一个红队/archstrike-forensics教学/01-磁盘取证与反取证.txt
+
+在线练习：
+  TryHackMe: VulnNet系列, 渗透测试过程相关
+  HackTheBox: 选择Easy机器练习完整流程+写报告
+
+工具下载：
+  shred: Linux内置，sudo apt install coreutils
+  volatility3: https://github.com/volatilityfoundation/volatility3
+  Autopsy: https://www.autopsy.com/download/
+  foremost: sudo apt install foremost
+  testdisk: sudo apt install testdisk
+  flameshot: sudo apt install flameshot
+  CVSS Calculator: https://www.first.org/cvss/calculator/3.1
+
+在线报告模板参考：
+  PTES Technical Guidelines: http://www.pentest-standard.org/
+  OWASP Testing Guide: https://owasp.org/www-project-web-security-testing-guide/
+
+【本周完成检查】
+[ ] 周一 [ ] 周二 [ ] 周三 [ ] 周四 [ ] 周五
+[ ] 周六复习 [ ] 笔记 [ ] 体能

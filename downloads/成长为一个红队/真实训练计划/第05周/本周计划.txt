@@ -1,0 +1,615 @@
+================================================================================
+第5周：信息收集与侦察 (侦察期)
+================================================================================
+
+【本周围绕的核心渗透案例阶段】
+阶段一：信息侦察 (Reconnaissance) —— 渗透测试的第一步永远是信息收集
+完整学习手册经典案例中的操作1-4全部属于本阶段。红队队员从"零知识起点"
+开始，通过OSINT收集员工信息、amass/subfinder发现子域名、fierce/dnsenum
+深度DNS侦察、Google Dorking和Shodan搜索。信息收集的质量直接决定后续
+攻击路径的成败——80%的时间用于侦察，20%的时间用于利用。
+引用：红队队员完整学习手册 → 三、经典渗透案例 → 阶段一: 信息侦察
+"操作1: OSINT信息收集 → 操作2: 子域名与资产发现 → 
+ 操作3: DNS深度侦察 → 操作4: 搜索引擎Dorking"
+
+【本周学习目标】
+1. 理解被动信息收集(OSINT)的核心概念和方法论
+2. 掌握theHarvester进行邮箱和子域名收集
+3. 熟练使用recon-ng模块化侦察框架
+4. 掌握amass/subfinder高级子域名发现
+5. 深入理解HTTP协议请求/响应格式
+6. 理解OSINT与人肉搜索技术的综合应用
+
+【本周知识清单】
+• 被动信息收集 vs 主动信息收集的区别（前者不接触目标，后者直接交互）
+• OSINT信息来源分类（技术类：子域名/IP/证书；人员类：邮箱/社交；组织类：架构/关联公司）
+• whois查询的字段含义（注册商、注册人、DNS服务器、过期时间）
+• theHarvester的数据源（Google/Bing/Shodan/LinkedIn/DNSDumpster）
+• recon-ng的模块化架构（marketplace安装模块、workspace管理）
+• amass的枚举模式（passive被动/alte被动+主动/brute暴力破解）
+• subfinder的工作机制（基于API的被动子域名收集）
+• HTTP请求结构：请求行（方法/URI/版本）、请求头（Host/Cookie/User-Agent）、请求体
+• HTTP响应结构：状态行（状态码/原因短语）、响应头、响应体
+• HTTP状态码分类（1xx信息/2xx成功/3xx重定向/4xx客户端错误/5xx服务端错误）
+• HTTPS/TLS加密原理和握手过程
+• OSINT综合工作流：从目标名称→域名→子域名→IP→端口→技术栈→漏洞
+
+【本周工具清单】
+• theHarvester (邮箱/子域名OSINT收集)
+• recon-ng (模块化侦察框架)
+• amass (OWASP旗舰级资产发现)
+• subfinder (高速被动子域名发现)
+• whois (域名注册信息查询)
+• Firefox浏览器 (Google Dorking, Shodan, LinkedIn搜索)
+• curl (命令行HTTP请求)
+
+================================================================================
+周一：被动信息收集基础
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：被动信息收集的核心概念——在不直接与目标系统交互的情况下收集情报。
+  理解OSINT方法论：定义目标→确定数据源→收集数据→分析关联→构建情报。
+  学习whois查询的字段解读：Registrar(注册商)、Creation Date(首次注册时间)、
+  Name Server(DNS服务器)、Registrant Contact(注册人联系信息)。
+  DNSDumpster和crt.sh(证书透明度日志)的使用场景——通过SSL证书发现所有
+  关联的子域名。理解为什么信息收集是渗透测试中最关键的阶段。
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/02-信息收集与侦察技术.txt（阅读第一部分: OSINT概念与方法论、第二部分: theHarvester）
+  参考文件：/home/a/成长为一个红队/网安基础知识/02-Web技术基础.txt（阅读HTTP协议部分）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：学习whois查询工具的使用，使用theHarvester进行第一次OSINT侦察，
+  了解recon-ng的界面和基本操作。选择一个公开目标进行练习。
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/02-信息收集与侦察技术.txt
+
+  操作步骤：
+    Step 1: whois域名信息查询
+      whois example.com             # 查询example.com的注册信息
+      whois github.com | head -40   # 查看关键字段
+      # 注意观察：Creation Date, Registry Expiry Date, Name Server, DNSSEC
+
+    Step 2: 安装并运行theHarvester
+      sudo pacman -S theharvester 2>/dev/null || echo "跳过安装"
+      # 对测试目标进行OSINT收集
+      mkdir -p ~/training/week5/osint_results
+
+      theHarvester -d example.com -b google,linkedin -l 100 \
+        -f ~/training/week5/osint_results/harvester_example.html 2>/dev/null
+
+      # 查看结果
+      cat ~/training/week5/osint_results/harvester_example.html 2>/dev/null | head -50
+
+    Step 3: theHarvester多数据源扫描
+      theHarvester -d tesla.com -b all -l 200 \
+        -f ~/training/week5/osint_results/harvester_tesla.html 2>/dev/null
+      # 分析收集到的邮箱地址格式: firstname.lastname@company.com
+      # 这对后续的社会工程学攻击非常有价值
+
+    Step 4: DNSDumpster在线侦察（通过Firefox）
+      # 打开Firefox访问：https://dnsdumpster.com/
+      # 输入目标域名，观察生成的域名拓扑图
+      # 注意：MX服务器、子域名、同IP的其他站点
+
+    Step 5: crt.sh证书透明度日志查询
+      # 通过Firefox访问：https://crt.sh/?q=%.example.com
+      # 或使用命令行
+      curl -s 'https://crt.sh/?q=%.github.com&output=json' | python3 -m json.tool 2>/dev/null | grep common_name | head -20
+
+    Step 6: 整理OSINT收集结果
+      cat > ~/training/week5/osint_results/summary.txt << 'EOF'
+      =========================================
+      OSINT信息收集结果汇总
+      =========================================
+      目标: example.com
+      --- 域名信息 ---
+      (记录whois查询结果的关键字段)
+      --- 邮箱地址 ---
+      (记录theHarvester发现的邮箱)
+      --- 子域名 ---
+      (记录发现的子域名)
+      --- DNS记录 ---
+      (记录A/MX/NS等记录)
+      =========================================
+      EOF
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：掌握了被动信息收集的基本方法论，学会了whois和theHarvester的使用
+  - 遇到问题：(记录theHarvester安装问题、某些数据源被墙或限速等)
+  - 明日计划：深入学习theHarvester和recon-ng
+
+================================================================================
+周二：theHarvester与recon-ng入门
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：theHarvester的高级用法——理解每个数据源的侧重点：
+  google/bing搜索公共信息、linkedin收集员工资料、shodan收集技术情报、
+  dnsdumpster收集DNS数据。recon-ng的模块化侦察框架概念：
+  marketplace(模块市场)、workspace(工作空间隔离不同目标)、
+  模块流水线(上一个模块的输出作为下一个模块的输入)。
+  recon-ng的核心模块：discovery/info_disclosure(信息泄露发现)、
+  recon/contacts-contacts(联系人收集)、recon/hosts-hosts(主机发现)。
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/02-信息收集与侦察技术.txt（阅读theHarvester深入和recon-ng部分）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：theHarvester完整侦察练习，recon-ng从安装到完整侦察流程。
+  参考文件：/home/a/成长为一个红队/archstrike-base教学/02-信息收集与侦察技术.txt
+
+  操作步骤：
+    Step 1: theHarvester扩展数据源练习
+      # 使用不同数据源组合
+      theHarvester -d github.com -b google -l 50 2>/dev/null | tee ~/training/week5/osint_results/h_google.txt
+      theHarvester -d github.com -b linkedin -l 50 2>/dev/null | tee ~/training/week5/osint_results/h_linkedin.txt
+      theHarvester -d github.com -b dnsdumpster -l 50 2>/dev/null | tee ~/training/week5/osint_results/h_dnsdumpster.txt
+
+      # 比较不同数据源的结果差异
+      echo "=== 邮箱对比 ==="
+      echo "Google: $(grep -c '@' ~/training/week5/osint_results/h_google.txt 2>/dev/null) 个"
+      echo "LinkedIn: $(grep -c '@' ~/training/week5/osint_results/h_linkedin.txt 2>/dev/null) 个"
+
+    Step 2: recon-ng安装和初始配置
+      sudo pacman -S recon-ng 2>/dev/null || echo "跳过安装"
+      # recon-ng第一次运行会自动创建~/.recon-ng目录
+      recon-ng --no-version-check << 'RCMD'
+      # 创建workspace
+      workspaces create week5_target
+      workspaces list
+      # 查看可安装的模块
+      marketplace search
+      # 安装核心侦察模块
+      marketplace install recon/domains-hosts/google_site_web
+      marketplace install recon/contacts-contacts/mailtester
+      marketplace install discovery/info_disclosure/interesting_files
+      exit
+      RCMD
+
+    Step 3: recon-ng完整侦察流程
+      recon-ng --no-version-check << 'RCMD'
+      workspaces select week5_target
+
+      # 添加初始种子(目标域名)
+      db insert domains example.com
+      db insert domains github.com
+      show domains
+
+      # 运行whois模块
+      modules load recon/domains-contacts/whois_pocs
+      run
+
+      # 运行Google站点搜索模块
+      modules load recon/domains-hosts/google_site_web
+      run
+
+      # 查看收集结果
+      show hosts
+      show contacts
+      show domains
+
+      # 生成报告
+      modules load reporting/list
+      set FILENAME /home/$USER/training/week5/reconng_report.html
+      set TABLE hosts
+      run
+
+      exit
+      RCMD
+
+    Step 4: recon-ng模块流水线操作
+      recon-ng --no-version-check << 'RCMD'
+      workspaces select week5_target
+
+      # 查看workspace中的hosts
+      show hosts
+
+      # 对发现的hosts进行反向DNS查询
+      modules load recon/hosts-hosts/reverse_resolve
+      run
+
+      # 查看新发现的主机名
+      show hosts
+
+      # 对hosts进行端口扫描(使用内置模块)
+      # 注意：recon-ng内置扫描器较慢，实际工作中配合外部扫描器使用
+      exit
+      RCMD
+
+    Step 5: 导出recon-ng数据
+      recon-ng --no-version-check << 'RCMD'
+      workspaces select week5_target
+
+      # 导出为CSV方便后续处理
+      modules load reporting/list
+      set FILENAME /home/$USER/training/week5/hosts.csv
+      set TABLE hosts
+      run
+
+      set FILENAME /home/$USER/training/week5/contacts.csv
+      set TABLE contacts
+      run
+      exit
+      RCMD
+      cat ~/training/week5/hosts.csv 2>/dev/null | head -20
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：掌握了theHarvester的多数据源收集能力，学会了recon-ng的模块化侦察流程
+  - 遇到问题：(记录recon-ng模块安装失败、API密钥缺失等问题)
+  - 明日计划：学习amass和subfinder高级子域名发现
+
+================================================================================
+周三：高级子域名发现 (amass, subfinder)
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：子域名发现的技术原理——被动枚举(通过DNSDumpster/crt.sh/VirusTotal/
+  Shodan等第三方API获取已索引的子域名)、主动枚举(通过DNS区域传输/DNSSEC/
+  证书透明度/搜索引擎直接收集)、暴力破解(使用字典对一个已知域名批量猜测子域名)。
+  amass三种枚举模式：passive(纯被动，不接触目标)、alte(被动+主动混合)、
+  brute(暴力破解字典)的适用场景和区别。subfinder的被动源API(BeVigil/Chaos/
+  Censys/CertSpotter等30+数据源)。横向对比amass vs subfinder vs assetfinder。
+  参考文件：/home/a/成长为一个红队/archstrike-recon教学/01-高级子域名与资产发现.txt（阅读全部）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：安装并使用amass和subfinder，对比三个工具的扫描结果差异。
+  参考文件：/home/a/成长为一个红队/archstrike-recon教学/01-高级子域名与资产发现.txt
+
+  操作步骤：
+    Step 1: 安装amass和subfinder
+      sudo pacman -S amass subfinder 2>/dev/null || echo "跳过安装"
+      # 验证安装
+      amass -version
+      subfinder -version
+
+    Step 2: amass被动模式枚举
+      amass enum -passive -d example.com -o ~/training/week5/amass_passive_example.txt 2>/dev/null
+      cat ~/training/week5/amass_passive_example.txt 2>/dev/null
+      wc -l ~/training/week5/amass_passive_example.txt 2>/dev/null
+
+    Step 3: amass完整枚举（被动+主动+暴力破解）
+      amass enum -d example.com -o ~/training/week5/amass_full_example.txt \
+        -config ~/.config/amass/config.ini 2>/dev/null
+      # 注意：完整模式需要配置API密钥，否则会降级为被动模式
+      cat ~/training/week5/amass_full_example.txt 2>/dev/null
+
+    Step 4: subfinder被动子域名发现
+      subfinder -d example.com -o ~/training/week5/subfinder_example.txt 2>/dev/null
+      cat ~/training/week5/subfinder_example.txt 2>/dev/null
+      wc -l ~/training/week5/subfinder_example.txt 2>/dev/null
+
+      # subfinder详细模式查看每个数据源的贡献
+      subfinder -d example.com -v -o ~/training/week5/subfinder_example_verbose.txt 2>/dev/null | head -40
+
+    Step 5: 多工具结果横向对比（使用bash脚本）
+      cat > ~/training/week5/compare_subdomains.sh << 'EOF'
+      #!/bin/bash
+      # 横向对比amass/subfinder的子域名发现结果
+
+      target=${1:-"example.com"}
+      echo "[*] 开始对 $target 进行多工具子域名发现..."
+
+      # amass被动枚举
+      echo "[1/2] amass passive..."
+      amass enum -passive -d $target -o /tmp/amass_$$.txt 2>/dev/null
+
+      # subfinder被动枚举
+      echo "[2/2] subfinder..."
+      subfinder -d $target -o /tmp/subfinder_$$.txt 2>/dev/null
+
+      # 合并去重
+      cat /tmp/amass_$$.txt /tmp/subfinder_$$.txt 2>/dev/null | sort -u > /tmp/all_subdomains_$$.txt
+
+      amass_count=$(wc -l < /tmp/amass_$$.txt 2>/dev/null)
+      subfinder_count=$(wc -l < /tmp/subfinder_$$.txt 2>/dev/null)
+      total_unique=$(wc -l < /tmp/all_subdomains_$$.txt 2>/dev/null)
+
+      echo "=========================================="
+      echo "amass 发现:     $amass_count 个子域名"
+      echo "subfinder 发现: $subfinder_count 个子域名"
+      echo "去重后总数:     $total_unique 个唯一子域名"
+      echo "=========================================="
+      echo "全部子域名:"
+      cat /tmp/all_subdomains_$$.txt 2>/dev/null
+      rm -f /tmp/amass_$$.txt /tmp/subfinder_$$.txt /tmp/all_subdomains_$$.txt
+      EOF
+      chmod +x ~/training/week5/compare_subdomains.sh
+      ~/training/week5/compare_subdomains.sh example.com 2>/dev/null || echo "执行被限速或API限制"
+
+    Step 6: amass可视化输出
+      # 生成DNS拓扑图的D3.js可视化
+      amass viz -d3 -dir ~/training/week5/amass_viz -d example.com 2>/dev/null || echo "可视化需要额外配置"
+      ls -la ~/training/week5/amass_viz/ 2>/dev/null
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：掌握了amass和subfinder两个子域名发现工具，理解了被动/主动/暴力破解三种枚举模式
+  - 遇到问题：(记录API速率限制、某些数据源需要密钥等问题)
+  - 明日计划：深入学习HTTP协议
+
+================================================================================
+周四：HTTP协议深度
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：HTTP协议深度解析——请求方法(GET/POST/PUT/DELETE/HEAD/OPTIONS/PATCH)
+  的语义和使用场景。请求头详解：Host(虚拟主机)、User-Agent(客户端标识)、
+  Cookie(会话标识)、Referer(来源页面)、Authorization(认证凭据)。
+  响应状态码分类：1xx信息(100 Continue)、2xx成功(200 OK, 201 Created)、
+  3xx重定向(301永久/302临时/304 Not Modified)、4xx客户端错误(401未授权/
+  403禁止/404未找到/405方法不允许)、5xx服务端错误(500内部错误/502网关错误)。
+  HTTP/1.1 vs HTTP/2的主要区别（多路复用、头部压缩、服务端推送）。
+  从红队视角：理解HTTP是Web渗透的基础，每一个Web漏洞都是通过对HTTP的深度理解来发现和利用的。
+  参考文件：/home/a/成长为一个红队/网安基础知识/02-Web技术基础.txt（阅读第2-8章: HTTP协议深度解析 → URL编码/解码）
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/01-Web基础与HTTP协议.txt（第一部分: HTTP协议详解）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：使用curl发送各种HTTP请求，观察请求响应过程，理解HTTP方法、头、状态码。
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/01-Web基础与HTTP协议.txt
+
+  操作步骤：
+    Step 1: curl基础HTTP请求练习
+      # GET请求，显示详细信息
+      curl -v http://httpbin.org/get
+
+      # 只显示响应头
+      curl -I http://httpbin.org/get
+
+      # POST请求提交表单数据
+      curl -v -X POST http://httpbin.org/post \
+        -d "username=admin&password=test123"
+
+      # PUT请求
+      curl -v -X PUT http://httpbin.org/put \
+        -H "Content-Type: application/json" \
+        -d '{"key": "value"}'
+
+      # DELETE请求
+      curl -v -X DELETE http://httpbin.org/delete
+
+    Step 2: HTTP请求头自定义和测试
+      # 修改User-Agent模拟不同浏览器
+      curl -v http://httpbin.org/headers \
+        -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64)"
+
+      # 发送自定义Cookie
+      curl -v http://httpbin.org/cookies \
+        -H "Cookie: session=abc123; user=admin"
+
+      # 设置Referer（模拟来自搜索引擎的访问）
+      curl -v http://httpbin.org/headers \
+        -H "Referer: https://www.google.com/search?q=test"
+
+      # 使用Authorization头（Basic认证）
+      curl -v http://httpbin.org/basic-auth/admin/password \
+        -u admin:password
+
+    Step 3: HTTP状态码和重定向测试
+      # 跟踪重定向
+      curl -v -L http://httpbin.org/redirect/3
+
+      # 不跟踪重定向，观察302响应
+      curl -v http://httpbin.org/redirect/1
+
+      # 测试404
+      curl -v http://httpbin.org/status/404
+
+      # 测试500
+      curl -v http://httpbin.org/status/500
+
+      # 测试各种状态码
+      for code in 200 301 302 400 401 403 404 405 500 502 503; do
+          echo "=== 状态码 $code ==="
+          curl -s -o /dev/null -w "HTTP状态: %{http_code}\n" http://httpbin.org/status/$code
+      done
+
+    Step 4: curl实用渗透技巧
+      # 查看完整请求响应过程（包括TLS握手）
+      curl -v https://example.com 2>&1 | head -50
+
+      # 测试HTTP方法（OPTIONS请求查看支持的方法）
+      curl -X OPTIONS http://httpbin.org -v 2>&1 | grep -i "allow:"
+
+      # PUT方法上传文件（测试PUT漏洞）
+      echo "test content" > /tmp/test_put.txt
+      curl -X PUT http://httpbin.org/put -d @/tmp/test_put.txt
+
+      # 通过代理发送请求
+      # curl -x http://127.0.0.1:8080 http://target.com
+
+    Step 5: curl保存和重放请求
+      # 保存完整响应
+      curl -v -o /tmp/response.html http://httpbin.org/html 2>/tmp/headers.txt
+
+      # 查看响应头
+      cat /tmp/headers.txt | head -20
+
+      # 保存cookie
+      curl -c /tmp/cookies.txt http://httpbin.org/cookies/set?test=value
+      # 使用保存的cookie
+      curl -b /tmp/cookies.txt http://httpbin.org/cookies
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：深入理解了HTTP协议的请求响应结构和各种方法/头/状态码，curl是HTTP测试的瑞士军刀
+  - 遇到问题：(记录HTTP方法语义理解不清楚的地方)
+  - 明日计划：学习OSINT与人肉搜索综合技术
+
+================================================================================
+周五：OSINT与人肉搜索
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：人肉搜索(OSINT)的三种信息维度——技术类(子域名/IP/技术栈/SSL证书/
+  云存储)、人员类(员工姓名/职位/邮箱/电话/社交媒体/公开简历)、组织类(组织架构/
+  关联公司/供应商/物理地址/商业注册信息)。Google Dorking进阶操作符：
+  site:, filetype:, intitle:, inurl:, intext:, ext:, after:, before:等。
+  GitHub Dorking通过代码仓库搜索敏感信息（API密钥/密码/配置文件）。
+  社交媒体OSINT（LinkedIn员工搜索、Twitter/Discord信息收集）。
+  Shodan搜索引擎基础：搜索IP段、组织名称、特定服务，定位暴露的IoT设备/数据库。
+  参考文件：/home/a/成长为一个红队/archstrike-recon教学/03-OSINT与人肉搜索技术.txt（阅读全部）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：Google Dorking实战练习，GitHub搜索敏感信息，Shodan基础使用。
+  参考文件：/home/a/成长为一个红队/archstrike-recon教学/03-OSINT与人肉搜索技术.txt
+
+  操作步骤：
+    Step 1: Google Dorking练习（在Firefox中手动搜索，记录查询语法）
+      cat > ~/training/week5/google_dorks.txt << 'EOF'
+      === Google Dorking 查询语法清单 ===
+      基础操作符:
+        site:example.com              → 只搜索该站点
+        filetype:pdf                  → 只搜索PDF文件
+        intitle:"index of"            → 搜索网页标题
+        inurl:admin                   → URL中包含admin
+        intext:"password"             → 网页正文包含password
+        ext:php                       → 搜索.php扩展名的文件
+
+      实战Dork组合:
+        site:example.com filetype:pdf "confidential"
+        site:example.com inurl:admin
+        site:example.com intitle:"index of" "parent directory"
+        site:pastebin.com "example.com" password
+        site:github.com "example.com" "api key"
+        site:example.com ext:sql "password"
+        site:example.com ext:log
+        site:example.com "powered by wordpress"
+        site:example.com inurl:wp-content
+        intitle:"phpMyAdmin" "Welcome to phpMyAdmin"
+        intitle:"Apache2 Ubuntu Default Page"
+        inurl:"/phpinfo.php"
+        intitle:"system(" inurl:*.php
+
+      人员搜索Dork:
+        site:linkedin.com "example company" "security"
+        site:linkedin.com "example company" "system administrator"
+        "example.com" email "@gmail.com"
+      EOF
+      cat ~/training/week5/google_dorks.txt
+
+    Step 2: GitHub Dorking实践
+      # 在Firefox中打开GitHub搜索：
+      # https://github.com/search?q=example.com+password&type=code
+      # https://github.com/search?q=example.com+api_key&type=code
+      # https://github.com/search?q=example.com+secret&type=code
+      # https://github.com/search?q=example.com+AWS_SECRET_ACCESS_KEY&type=code
+      echo "在Firefox浏览器中手动搜索GitHub，记录任何发现的敏感信息"
+
+    Step 3: Shodan命令行搜索（使用shodan CLI）
+      sudo pacman -S python-shodan 2>/dev/null || pip install shodan --user
+      # 注意：Shodan需要API密钥（免费账户每月有限额）
+      # shodan init YOUR_API_KEY
+
+      # 搜索特定组织
+      shodan search 'org:"Google"' --fields ip_str,port,org,hostnames --limit 5 2>/dev/null || echo "未配置API密钥"
+
+      # 搜索Metasploitable2常见服务
+      shodan search 'product:"Apache httpd" port:80' --limit 5 2>/dev/null || echo "未配置API密钥"
+
+      # 搜索暴露的数据库
+      shodan search 'port:3306 product:MySQL' --limit 5 2>/dev/null || echo "未配置API密钥"
+
+    Step 4: Firefox手动OSINT练习
+      cat > ~/training/week5/osint_manual_guide.txt << 'EOF'
+      === 手动OSINT操作指南 ===
+      在Firefox浏览器中依次完成:
+
+      1. crt.sh 证书透明度日志
+         https://crt.sh/?q=%.example.com
+         → 从SSL证书中发现所有子域名
+
+      2. DNSDumpster DNS侦察
+         https://dnsdumpster.com/
+         → 输入目标域名，查看DNS拓扑图
+
+      3. Wayback Machine 历史快照
+         https://web.archive.org/web/*/example.com
+         → 查看旧版网站可能泄露的信息
+
+      4. Shodan Web搜索
+         https://www.shodan.io/search?query=org%3A%22Example+Corp%22
+         → 搜索组织的暴露设备
+
+      5. LinkedIn员工搜索
+         https://www.linkedin.com/search/results/people/?keywords=example%20corp
+         → 了解IT团队规模和使用的技术
+      EOF
+
+    Step 5: 整合本周所有OSINT结果
+      cat > ~/training/week5/final_recon_report.txt << 'EOF'
+      ===============================================
+      第5周 OSINT综合侦察报告
+      ===============================================
+      目标: (填入你的练习目标)
+
+      --- 域名信息 (whois/crt.sh) ---
+      (记录域名注册信息和证书发现)
+
+      --- 子域名清单 (amass/subfinder/theHarvester) ---
+      (列出所有发现的子域名)
+
+      --- 邮箱地址 ---
+      (列出发现的邮箱和推测的邮箱格式)
+
+      --- 技术栈 ---
+      (记录Web服务器、CMS、框架版本)
+
+      --- 潜在攻击入口 ---
+      (基于收集信息，分析可能的攻击路径)
+
+      ===============================================
+      EOF
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：掌握了Google Dorking和GitHub搜索技巧，理解了Shodan的基础用法，完成了本周OSINT综合侦察
+  - 遇到问题：(记录Shodan API限制、某些网站需要科学上网等问题)
+  - 明日计划：周六复习日，回顾本周所有侦察方法
+
+================================================================================
+周六：复习日
+================================================================================
+  上午 (2小时)：回顾本周所有侦察知识点
+    - 用whois/theHarvester/amass/subfinder对一个新的公开目标做完整侦察
+    - 整理所有收集到的子域名，分析攻击面
+    - 重新编写Google Dorking查询语法清单(不看文档)
+
+  下午 (1小时)：在HackTheBox/TryHackMe上做相关挑战
+    - TryHackMe Room: Passive Reconnaissance
+    - TryHackMe Room: Active Reconnaissance
+    - HackTheBox Starting Point: Meow (Telnet)
+
+  晚间：整理本周笔记
+    - 制作OSINT工具体系图谱
+    - 整理信息收集SOP（标准操作流程）
+    - 归档所有收集到的情报
+
+================================================================================
+周日：休息日
+================================================================================
+  体能训练 | 自由活动 | 补充睡眠
+
+================================================================================
+【本周资源清单】
+================================================================================
+理论知识文件：
+  • /home/a/成长为一个红队/archstrike-base教学/02-信息收集与侦察技术.txt（全部）
+  • /home/a/成长为一个红队/archstrike-recon教学/01-高级子域名与资产发现.txt（全部）
+  • /home/a/成长为一个红队/archstrike-recon教学/03-OSINT与人肉搜索技术.txt（第1-2章）
+  • /home/a/成长为一个红队/网安基础知识/02-Web技术基础.txt（HTTP协议部分）
+
+实践教程文件：
+  • /home/a/成长为一个红队/archstrike-base教学/02-信息收集与侦察技术.txt
+  • /home/a/成长为一个红队/archstrike-recon教学/01-高级子域名与资产发现.txt
+  • /home/a/成长为一个红队/archstrike-recon教学/03-OSINT与人肉搜索技术.txt
+  • /home/a/成长为一个红队/archstrike-web教学/01-Web基础与HTTP协议.txt（第一部分）
+
+在线练习：
+  • TryHackMe Room: Passive Reconnaissance
+  • TryHackMe Room: Active Reconnaissance
+  • HackTheBox Starting Point: Meow (Telnet)
+  • crt.sh / DNSDumpster / Shodan (在线OSINT平台)
+
+【本周完成检查】
+[ ] 周一任务完成
+[ ] 周二任务完成
+[ ] 周三任务完成
+[ ] 周四任务完成
+[ ] 周五任务完成
+[ ] 周六复习完成
+[ ] 本周笔记整理完成
+[ ] 体能训练完成

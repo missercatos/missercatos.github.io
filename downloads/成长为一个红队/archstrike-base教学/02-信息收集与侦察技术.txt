@@ -1,0 +1,494 @@
+================================================================================
+模块02: 信息收集与侦察技术
+================================================================================
+
+【学习目标】
+1. 理解被动信息收集(OSINT)概念和方法论
+2. 掌握theharvester工具进行邮箱和子域名收集
+3. 熟练使用recon-ng模块化侦察框架
+4. 掌握DNS枚举工具(dnsrecon/dnsenum)
+5. 学会whois查询和Google Dork技巧
+6. 了解Shodan搜索引擎基础用法
+7. 能对目标域名完成完整的信息收集流程
+
+【所需工具】(archstrike-base已预装)
+- theharvester
+- recon-ng
+- dnsrecon / dnsenum
+- whois
+- Firefox (浏览器, 用于OSINT和Shodan)
+
+================================================================================
+第一部分: OSINT (开源情报) 概念与方法论
+================================================================================
+
+1.1 什么是OSINT
+--------------------------------------------------
+OSINT (Open Source Intelligence) 是指从公开可用资源收集和分析信息的
+过程。在渗透测试中, OSINT是信息收集的第一步, 主要特征:
+  - 被动收集: 不直接与目标系统交互, 不易被察觉
+  - 信息来源: 搜索引擎, DNS, 社交媒体, 代码仓库, 证书透明度日志等
+  - 目标: 域名, IP段, 员工邮箱, 技术栈, 文档元数据等
+
+1.2 信息收集金字塔 (自上而下)
+--------------------------------------------------
+  组织信息 (行业, 地点, 规模)
+    → 域名与IP段 (whois, DNS, 证书)
+      → 子域名与服务 (DNS枚举, 搜索引擎)
+        → 技术栈 (HTTP头, 错误页面, 源码)
+          → 人员信息 (邮箱, 社交媒体)
+            → 漏洞与披露 (CVE, 公开漏洞)
+
+1.3 收集的信息类型
+--------------------------------------------------
+- 技术信息: 域名, 子域名, IP地址, 开放端口, 服务版本
+- 组织信息: 员工名单, 邮箱格式, 组织结构
+- 基础设施: DNS服务器, 邮件服务器, CDN, 云服务
+- 凭证泄露: GitHub泄露, 公开数据库, Pastebin
+
+================================================================================
+第二部分: theharvester 使用教程
+================================================================================
+
+2.1 工具介绍
+--------------------------------------------------
+theharvester 是一款强大的OSINT工具, 用于从多个公开来源收集:
+  - 邮箱地址 (email addresses)
+  - 子域名 (subdomains)
+  - 主机名 (hostnames)
+  - 员工姓名 (employee names)
+  - 开放端口 (open ports)
+  - Banner信息
+
+2.2 基本用法
+--------------------------------------------------
+
+基础命令格式:
+  theharvester -d <domain> -b <source> [options]
+
+参数说明:
+  -d    目标域名
+  -b    数据来源 (google, bing, linkedin, all等)
+  -l    限制结果数量
+  -f    输出文件名
+  -s    从Shodan获取结果 (需API key)
+
+常用命令:
+  # 使用所有来源收集
+  theharvester -d example.com -b all
+
+  # 限制结果数量
+  theharvester -d example.com -b google -l 200
+
+  # 输出到HTML文件
+  theharvester -d example.com -b all -f report.html
+
+  # 使用特定来源组合
+  theharvester -d example.com -b google,bing,linkedin
+
+  # DNS暴力破解子域名
+  theharvester -d example.com -c
+
+  # 使用Shodan (需要API key)
+  theharvester -d example.com -b shodan -s
+
+2.3 可用数据源列表
+--------------------------------------------------
+  google, googleCSE, bing, bingapi,
+  linkedin, twitter, yahoo,
+  baidu, shodan, dnsdumpster,
+  crtsh (证书透明度), virustotal,
+  threatcrowd, securityTrails, etc.
+
+2.4 输出解读
+--------------------------------------------------
+运行 theharvester -d example.com -b all 后, 输出结构:
+
+  [+] Emails found:               # 发现的邮箱
+  [+] Hosts found:                # 发现的主机/子域名
+  [+] IPs found:                  # 发现的相关IP
+  [+] LinkedIn users:             # LinkedIn上相关用户
+  [+] Twitter accounts:           # Twitter相关账号
+
+================================================================================
+第三部分: recon-ng 使用教程
+================================================================================
+
+3.1 工具介绍
+--------------------------------------------------
+recon-ng 是一个全功能的Web侦察框架, 采用模块化设计,
+类似Metasploit的操作风格, 使用独立模块进行信息收集。
+
+3.2 环境准备
+--------------------------------------------------
+
+首次运行前安装依赖:
+  recon-ng                    # 启动recon-ng
+  marketplace refresh         # 刷新模块市场
+  marketplace search          # 搜索可用模块
+  marketplace install all     # 安装所有模块 (或安装特定模块)
+
+3.3 基础操作流程
+--------------------------------------------------
+
+Step 1: 创建工作区
+  recon-ng
+  workspaces create mytarget        # 创建名为mytarget的工作区
+
+Step 2: 添加种子信息 (域名/公司/联系人)
+  add domains example.com           # 添加域名
+  add domains example.org
+  show domains                      # 查看已添加的域名
+
+Step 3: 加载并运行模块
+
+  # DNS枚举 - 使用Bing搜索引擎收集子域名
+  modules load recon/domains-hosts/bing_domain_web
+  show options                      # 查看模块选项
+  run                               # 运行模块
+  back                              # 返回主菜单
+
+  # 证书透明度日志
+  modules load recon/domains-hosts/certspotter
+  run
+
+  # Google搜索收集主机
+  modules load recon/domains-hosts/google_site_web
+  set SOURCE example.com
+  run
+
+  # LinkedIn信息收集 (需API key配置)
+  modules load recon/contacts-contacts/linkedin_contacts
+  show options
+  run
+
+Step 4: 查看收集结果
+  show hosts                        # 查看发现的主机
+  show contacts                     # 查看发现的联系方式
+  show domains                      # 查看域名
+  show companies                    # 查看公司信息
+
+Step 5: 导出数据
+  # 导出为CSV
+  modules load reporting/csv
+  set FILENAME /root/report.csv
+  run
+
+  # 导出为HTML报告
+  modules load reporting/html
+  set FILENAME /root/report.html
+  set CREATOR "RedTeam Training"
+  set CUSTOMER "Target Corp"
+  run
+
+3.4 常用模块列表
+--------------------------------------------------
+
+域名/主机发现:
+  recon/domains-hosts/bing_domain_web
+  recon/domains-hosts/google_site_web
+  recon/domains-hosts/certspotter
+  recon/domains-hosts/builtwith         # 技术栈识别
+  recon/domains-hosts/threatcrowd
+  recon/domains-hosts/virustotal
+
+联系人发现:
+  recon/contacts-contacts/whois_pocs
+  recon/contacts-contacts/linkedin_contacts
+  recon/contacts-contacts/mailtester
+
+凭证/泄露:
+  recon/contacts-credentials/hibp_paste
+  recon/companies-contacts/bing_linkedin_cache
+
+地理位置:
+  recon/locations-locations/geocode
+
+3.5 recon-ng 工作流程最佳实践
+--------------------------------------------------
+1. 为每个目标创建独立工作区
+2. 先添加域名或公司名称作为种子
+3. 使用被动模块(不需要直接访问目标)
+4. 交叉验证从不同来源收集的信息
+5. 定期导出数据库备份
+6. 使用show schema查看数据库结构
+
+================================================================================
+第四部分: DNS枚举
+================================================================================
+
+4.1 dnsrecon 使用
+--------------------------------------------------
+
+功能: DNS记录枚举, 子域名暴力破解, DNSSEC测试, 区域传输测试
+
+基本命令:
+  # 标准DNS记录枚举
+  dnsrecon -d example.com
+
+  # 枚举所有记录类型
+  dnsrecon -d example.com -t std
+
+  # 测试DNS区域传输
+  dnsrecon -d example.com -t axfr
+
+  # 子域名暴力破解 (使用字典)
+  dnsrecon -d example.com -D /usr/share/wordlists/subdomains.txt -t brt
+
+  # 反向DNS查找
+  dnsrecon -r 192.168.1.0/24
+
+  # 输出为XML
+  dnsrecon -d example.com --xml output.xml
+
+4.2 dnsenum 使用
+--------------------------------------------------
+
+功能: 全面的DNS枚举, 包含区域传输, whois, Google Dork
+
+基本命令:
+  # 完整枚举 (子域名爆破 + 反向查找 + whois + Google)
+  dnsenum example.com
+
+  # 使用自定义子域名字典
+  dnsenum -f /usr/share/wordlists/subdomains.txt example.com
+
+  # 使用自定义DNS服务器
+  dnsenum --dnsserver 8.8.8.8 example.com
+
+  # 启用线程
+  dnsenum --threads 50 example.com
+
+  # 输出XML
+  dnsenum -o output.xml example.com
+
+4.3 dig / nslookup 基础DNS查询
+--------------------------------------------------
+
+  # A记录
+  dig example.com A
+  # MX记录 (邮件服务器)
+  dig example.com MX
+  # NS记录 (名称服务器)
+  dig example.com NS
+  # TXT记录 (含SPF, DKIM等)
+  dig example.com TXT
+  # 全部记录
+  dig example.com ANY
+  # 指定DNS服务器
+  dig @8.8.8.8 example.com A
+  # 反向查询
+  dig -x 192.168.1.1
+
+================================================================================
+第五部分: WHOIS 查询
+================================================================================
+
+5.1 基础用法
+--------------------------------------------------
+
+命令行:
+  whois example.com                    # 查询域名whois信息
+  whois 192.168.1.1                   # 查询IP whois信息
+  whois -h whois.arin.net 192.168.1.1  # 指定whois服务器
+
+5.2 关键信息提取
+--------------------------------------------------
+WHOIS记录中重点查看:
+  - Registry Domain ID            # 域名注册ID
+  - Registrar                     # 注册商
+  - Creation Date                 # 创建日期
+  - Registry Expiry Date          # 过期日期
+  - Name Server                   # DNS服务器
+  - Registrant Organization       # 注册组织
+  - Registrant Email              # 注册者邮箱
+  - Tech Email                    # 技术联系人邮箱
+  - IP Range (对于IP whois)       # IP地址段
+
+5.3 注意事项
+--------------------------------------------------
+- 许多域名启用了WHOIS隐私保护, 信息可能被隐藏
+- 历史WHOIS记录可能比当前更有价值 (使用whoisxmlapi等服务)
+- 组合使用多个WHOIS服务器获取更完整信息
+
+================================================================================
+第六部分: Google Dork 技巧
+================================================================================
+
+6.1 基础搜索操作符
+--------------------------------------------------
+  site:example.com                # 限制搜索特定网站
+  intitle:"index of"              # 页面标题包含指定文字
+  inurl:admin                     # URL包含指定文字
+  filetype:pdf                    # 搜索特定文件类型
+  intitle:"index of" "parent directory"  # 目录列表
+  intext:password                 # 页面文本包含指定文字
+  cache:example.com               # 查看Google缓存的页面
+  link:example.com                # 链接到指定页面的页面
+  related:example.com             # 相似网站
+
+6.2 常用渗透测试Dork
+--------------------------------------------------
+  site:target.com filetype:pdf                    # PDF文件
+  site:target.com inurl:login                     # 登录页面
+  site:target.com intitle:"index of"              # 目录列表
+  site:target.com ext:sql | ext:bak | ext:zip     # 敏感文件
+  site:target.com intext:"password" filetype:xls  # 含密码的Excel
+  site:github.com "target.com" password           # GitHub泄露
+  intitle:"phpinfo.php"                           # PHP信息页面
+  inurl:/wp-content/uploads/                      # WordPress上传目录
+  intitle:"Dashboard" inurl:admin                 # 管理面板
+
+6.3 安全搜索注意事项
+--------------------------------------------------
+- Google会记录搜索行为, 使用VPN或代理保护隐私
+- 高频自动化搜索可能触发Google验证码和封禁
+- 建议使用Bing, DuckDuckGo等替代搜索引擎分散请求
+- 遵守目标站点的服务条款和robots.txt
+
+================================================================================
+第七部分: Shodan 搜索基础
+================================================================================
+
+7.1 Shodan简介
+--------------------------------------------------
+Shodan是互联网设备搜索引擎, 可搜索:
+  - 开放端口和服务
+  - IoT设备 (摄像头, 路由器)
+  - 工业控制系统 (ICS/SCADA)
+  - 数据库 (MySQL, MongoDB, ElasticSearch等)
+
+7.2 基础搜索语法 (通过网站或CLI)
+--------------------------------------------------
+  hostname:example.com            # 搜索域名相关
+  org:"Company Name"              # 搜索组织拥有的IP
+  port:22                         # 搜索开放22端口的设备
+  product:nginx                   # 搜索运行nginx的设备
+  country:CN                      # 搜索特定国家
+  city:"Beijing"                  # 搜索特定城市
+  os:"Windows 10"                 # 搜索Windows 10设备
+  vuln:CVE-2021-44228             # 搜索有特定漏洞的设备
+
+组合查询:
+  org:"Target Corp" port:3389     # 某组织的RDP服务
+  country:US product:Apache       # 美国的Apache服务器
+
+7.3 使用Shodan CLI (需要API key)
+--------------------------------------------------
+  shodan init YOUR_API_KEY           # 初始化API密钥
+  shodan search "nginx"              # 搜索
+  shodan host 192.168.1.1           # 查询特定IP
+  shodan stats --facets port nginx  # 统计信息
+
+================================================================================
+第八部分: 实践练习 - 完整信息收集流程
+================================================================================
+
+目标: 对一个公开测试域名进行完整的信息收集
+
+【路线指引 - 完整信息收集流程】
+
+=== 阶段一: 被动信息收集 ===
+
+Step 1: 打开终端, 创建工作目录
+  mkdir -p ~/recon/target && cd ~/recon/target
+
+Step 2: WHOIS查询
+  在终端输入: whois testfire.net > whois.txt
+  cat whois.txt
+  记录: 注册商, 创建日期, DNS服务器, 注册者信息
+
+Step 3: DNS记录枚举
+  在终端输入: dnsrecon -d testfire.net -t std > dns.txt
+  cat dns.txt
+  记录: A记录, MX记录, NS记录, TXT记录
+
+Step 4: theharvester 收集
+  在终端输入: theharvester -d testfire.net -b all -f harvester.html
+  查看: Firefox打开harvester.html查看结果
+
+Step 5: recon-ng 模块化收集
+  在终端输入: recon-ng
+  workspaces create testfire
+  add domains testfire.net
+  modules load recon/domains-hosts/bing_domain_web
+  run
+  modules load recon/domains-hosts/certspotter
+  run
+  back
+  show hosts
+  modules load reporting/html
+  set FILENAME /root/recon/target/recon-ng-report.html
+  run
+  exit
+
+=== 阶段二: Google Dork ===
+
+Step 6: 打开Firefox
+  在浏览器地址栏输入: https://www.google.com
+
+Step 7: 执行Google Dork搜索
+  在搜索框输入: site:testfire.net
+  查看搜索结果, 了解网站公开页面结构
+
+Step 8: 搜索特定文件类型
+  在搜索框输入: site:testfire.net filetype:pdf
+  查看是否有公开的PDF文档
+
+Step 9: 搜索后台登录页面
+  在搜索框输入: site:testfire.net inurl:login OR inurl:admin
+  记录发现的登录入口
+
+=== 阶段三: Shodan搜索 ===
+
+Step 10: 浏览器访问Shodan
+  打开Firefox, 在地址栏输入: https://www.shodan.io
+
+Step 11: 搜索目标组织
+  在搜索框输入: hostname:testfire.net
+  查看搜索结果: 开放端口, 服务版本, 地理位置
+
+Step 12: 记录发现
+  在终端中汇总所有发现:
+  echo "=== 信息收集报告 ===" > final_report.txt
+  echo "域名: testfire.net" >> final_report.txt
+  echo "" >> final_report.txt
+  echo "--- WHOIS信息 ---" >> final_report.txt
+  cat whois.txt | grep -E "Creation|Registry|Registrar|Name Server" >> final_report.txt
+  echo "" >> final_report.txt
+  echo "--- DNS记录 ---" >> final_report.txt
+  cat dns.txt >> final_report.txt
+  echo "" >> final_report.txt
+  echo "--- 子域名 ---" >> final_report.txt
+  cat ~/.recon-ng/workspaces/testfire/data.db 2>/dev/null
+  echo "--- 报告完成 ---" >> final_report.txt
+
+=== 阶段四: 信息整理与分析 ===
+
+Step 13: 整理发现的所有子域名
+  从theharvester, dnsrecon, recon-ng的结果中提取所有子域名
+  保存到subdomains.txt: 每行一个子域名
+
+Step 14: 技术栈识别
+  对每个子域名, 查看HTTP响应头识别技术栈:
+  for sub in $(cat subdomains.txt); do
+    curl -sI "http://$sub" 2>/dev/null | grep -i "server:\|x-powered-by"
+  done
+
+Step 15: 生成最终收集清单
+  - 所有子域名和IP地址
+  - 开放端口和服务
+  - 技术栈和框架
+  - 员工邮箱格式
+  - 潜在弱点(过期软件, 默认配置等)
+
+【注意事项与提示】
+- 始终确认你有权利对目标进行信息收集 (授权测试范围内)
+- 被动信息收集优于主动扫描, 更不易被检测
+- 交叉验证多个来源的信息, 单一来源可能不准确
+- 记录所有操作的时间戳和来源, 便于报告撰写
+- 敏感信息(如发现泄露的凭证)立即通过安全渠道报告
+- Firefox隐私模式可减少搜索记录: Ctrl+Shift+P
+- recon-ng的工作区数据库位于 ~/.recon-ng/workspaces/
+
+================================================================================

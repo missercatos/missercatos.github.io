@@ -1,0 +1,2892 @@
+================================================================================
+                  第十四章  C++标准库 (C++ Standard Library)
+================================================================================
+
+
+### 第一节: 基础示例代码 + 计算机底层原理
+================================================================================
+
+【14.1.1 STL六大组件概览】
+
+C++标准模板库(STL)由六大核心组件构成，它们共同组成了一套强大的数据结构和
+算法框架。理解这些组件的关系是掌握C++的关键。
+
+一、容器 (Containers)
+   存储数据的对象。分为：
+   - 序列容器: vector, deque, list, forward_list, array, string
+   - 关联容器: set, multiset, map, multimap
+   - 无序关联容器: unordered_set, unordered_multiset,
+                    unordered_map, unordered_multimap
+   - 容器适配器: stack, queue, priority_queue
+
+二、算法 (Algorithms)
+   操作容器中数据的函数，定义在 <algorithm> 和 <numeric> 中：
+   - 非修改式算法: find, count, search, equal, for_each
+   - 修改式算法: copy, transform, fill, generate, remove, replace
+   - 排序算法: sort, stable_sort, partial_sort, nth_element
+   - 二分查找: binary_search, lower_bound, upper_bound
+   - 其他: reverse, rotate, shuffle, min, max
+
+三、迭代器 (Iterators)
+   连接容器和算法的桥梁，提供统一的访问接口：
+   - 输入迭代器 (Input Iterator): 单向读取
+   - 输出迭代器 (Output Iterator): 单向写入
+   - 前向迭代器 (Forward Iterator): 单向读写
+   - 双向迭代器 (Bidirectional Iterator): 双向读写
+   - 随机访问迭代器 (Random Access Iterator): 随机位置 + 双向
+
+四、函数对象 (Function Objects / Functors)
+   重载了 operator() 的类，可以像函数一样调用：
+   - 算术: plus, minus, multiplies, divides, modulus, negate
+   - 比较: equal_to, not_equal_to, greater, less, greater_equal, less_equal
+   - 逻辑: logical_and, logical_or, logical_not
+   - C++11 Lambda表达式是最常用的函数对象
+
+五、适配器 (Adapters)
+   修改容器、迭代器或函数对象的接口：
+   - 容器适配器: stack, queue, priority_queue
+   - 迭代器适配器: back_inserter, front_inserter, inserter, reverse_iterator
+   - 函数适配器: bind, mem_fn (C++11起被lambda替代)
+
+六、分配器 (Allocators)
+   控制容器内存分配策略的对象：
+   - 默认: std::allocator<T> (使用new/delete)
+   - 自定义: 可以实现内存池、共享内存等
+
+
+================================================================================
+【14.1.2 底层原理：各容器的底层数据结构】
+================================================================================
+
+一、vector<T> —— 连续数组
+
+   内存布局：
+   ┌───┬───┬───┬───┬───┬─────────────┐
+   │ 0 │ 1 │ 2 │ 3 │ 4 │ (预留空间)   │
+   └───┴───┴───┴───┴───┴─────────────┘
+   ├── size() = 5 ──┤├─ capacity()-size() ─┤
+
+   三层指针（典型实现）：
+   - _start:    指向第一个元素
+   - _finish:   指向最后一个元素的下一个位置
+   - _end_of_storage: 指向分配内存的末尾
+
+   操作复杂度：
+   - 随机访问: O(1)       v[100] 直接偏移
+   - 末尾插入: 均摊 O(1)   push_back (偶尔reallocate)
+   - 中间插入: O(n)       需要移动后续元素
+   - 查找: O(n)           线性扫描
+
+   增长策略: 当size() == capacity()时，分配新内存（通常为原大小的2倍或1.5倍），
+   将旧元素移动/拷贝到新内存，释放旧内存。这导致：
+   - 迭代器/指针/引用在reallocation后全部失效
+   - push_back的均摊时间复杂度为O(1)
+
+二、list<T> —— 双向链表
+
+   内存布局（非连续）：
+   ┌──────┐    ┌──────┐    ┌──────┐
+   │ prev │←──→│ prev │←──→│ prev │
+   │ data │    │ data │    │ data │
+   │ next │←──→│ next │←──→│ next │
+   └──────┘    └──────┘    └──────┘
+
+   每个节点是独立的堆分配块，包含数据和两个指针(prev/next)。
+   典型每个节点内存开销：sizeof(T) + 2 * sizeof(void*) + malloc元数据(约16字节)。
+
+   操作复杂度：
+   - 任意位置插入/删除: O(1)  (已知迭代器位置)
+   - 访问第n个元素: O(n)      需要从头/尾遍历
+   - 排序: O(n log n)         但常数因子大（指针追踪+内存不连续）
+
+   迭代器失效: 插入和删除操作不会使其他元素的迭代器失效（仅被删除元素本身的迭代器
+   失效）。这与vector相反——vector的中间插入会使后续所有迭代器失效。
+
+三、deque<T> —— 分段连续数组（双端队列）
+
+   内存布局：
+   ┌──────────────────────┐
+   │  指针数组 (map)       │
+   │ ┌──┬──┬──┬──┬──┐   │
+   │ │  │  │  │  │  │   │──→ 每个指针指向一个固定大小的块
+   │ └──┴──┴──┴──┴──┘   │    (通常512字节或4096字节)
+   └──────────────────────┘
+
+   结构是一个中控器（指针数组）加上多个固定大小的连续存储块。
+   双端插入时，如果需要新的块，在中控器两端分配新的指针。
+
+   操作复杂度：
+   - 随机访问: O(1), 但比vector慢（需要两次解引用：先通过map找到块，再偏移）
+   - 头/尾插入: O(1), 均摊
+   - 中间插入: O(n)  (移动元素)
+
+四、map<K,V> / set<K> —— 红黑树
+
+   红黑树是一种自平衡二叉搜索树，保证：
+   - 根节点是黑色
+   - 所有叶子(NIL)是黑色
+   - 红节点的子节点必须是黑色
+   - 从任意节点到其所有叶子路径上的黑色节点数相同
+
+   操作复杂度：查找 O(log n)，插入 O(log n)，删除 O(log n)
+
+   map vs unordered_map 选择：
+   - map: 有序遍历、范围查询(lower_bound/upper_bound)、稳定的迭代器
+   - unordered_map: O(1)平均查找、对顺序无要求
+
+五、unordered_map<K,V> / unordered_set<K> —— 哈希表
+
+   典型实现：开链法(Separate Chaining)
+
+   ┌──────────────┐
+   │ 桶数组(buckets) │
+   │ [0] → Node → Node
+   │ [1] → null
+   │ [2] → Node → Node → Node
+   │ [3] → Node
+   │ ...           │
+   └──────────────┘
+
+   - 通过 hash(key) % bucket_count 计算桶索引
+   - 同一桶中的元素用链表连接
+   - 负载因子(load_factor) = size / bucket_count，超过max_load_factor时rehash
+
+   操作复杂度：
+   - 平均: 查找O(1), 插入O(1), 删除O(1)
+   - 最坏: 全部O(n) (所有key碰撞在同一桶)
+   - rehash: O(n)
+
+六、string —— 类似vector<char>但带优化
+
+   现代实现使用小字符串优化(SSO, Small String Optimization)：
+   - 短字符串(≤15字符): 存储在string对象内部（栈上），无堆分配
+   - 长字符串: 堆上分配，类似vector<char>
+
+   GCC libstdc++ 64-bit上 sizeof(std::string) = 32 bytes：
+   ┌──────────────────────────────────────┐
+   │ pointer to data (8 bytes)            │
+   │ size (8 bytes)                       │
+   │ union { capacity / local_buffer[16] }│
+   └──────────────────────────────────────┘
+
+
+================================================================================
+【14.1.3 底层原理：迭代器失效场景】
+================================================================================
+
+迭代器失效是C++中最常见的bug来源之一：
+
+容器                 操作                   迭代器失效
+────────────────────────────────────────────────────────────
+vector               插入(push_back)       若size==capacity，全部失效
+                     插入(insert/emplace)  插入位置及之后全部失效
+                     删除(erase/pop_back)  删除位置及之后全部失效
+vector<bool>         任何修改              由于bit压缩存储，行为特殊
+
+deque                两端插入              可能使所有迭代器失效，但指针/引用不失效
+                     中间插入              所有迭代器失效
+                     两端删除              仅删除端迭代器失效
+                     中间删除              所有迭代器失效
+
+list                 插入/删除             仅被删除节点的迭代器失效（其他不受影响）
+
+set/map              插入                  不失效
+                     删除                  仅被删除节点迭代器失效
+
+unordered_map/set    插入                  若rehash全部失效；否则不失效
+                     删除                  仅被删除节点迭代器失效
+
+常见bug示例：
+
+// 危险: vector插入后的迭代器使用
+std::vector<int> v = {1, 2, 3, 4, 5};
+auto it = v.begin() + 2;  // 指向元素3
+v.push_back(6);            // 可能触发reallocation！
+// *it   // 未定义行为！it已失效
+
+// 危险: 遍历时删除元素
+for (auto it = v.begin(); it != v.end(); ++it) {
+    if (*it % 2 == 0) v.erase(it);  // erase后it失效，++it错误！
+}
+
+// 正确: 使用erase返回的迭代器
+for (auto it = v.begin(); it != v.end(); ) {
+    if (*it % 2 == 0) it = v.erase(it);  // erase返回下一个有效迭代器
+    else ++it;
+}
+
+// 正确: Erase-Remove Idiom
+v.erase(std::remove_if(v.begin(), v.end(),
+    [](int x) { return x % 2 == 0; }), v.end());
+
+
+### 第二节: 所有用法大全（标准库/关键字/函数）
+================================================================================
+
+【14.2.1 序列容器完整用法】
+================================================================================
+
+// ============================================================
+// 示例 14-1: vector 所有重要操作
+// ============================================================
+#include <iostream>
+#include <vector>
+#include <algorithm>
+
+void vector_operations() {
+    // 构造
+    std::vector<int> v1;                        // 空
+    std::vector<int> v2(10);                    // 10个0
+    std::vector<int> v3(5, 42);                 // 5个42
+    std::vector<int> v4 = {1, 2, 3, 4, 5};      // 初始化列表
+    std::vector<int> v5(v4.begin(), v4.end());  // 迭代器范围
+    std::vector<int> v6(v4);                    // 拷贝构造
+
+    // 容量操作
+    std::cout << "size:     " << v4.size() << "\n";
+    std::cout << "capacity: " << v4.capacity() << "\n";
+    std::cout << "max_size: " << v4.max_size() << "\n";
+    std::cout << "empty:    " << v4.empty() << "\n";
+
+    // 预留空间（避免多次reallocation）
+    v4.reserve(100);        // 预留至少100个元素的空间
+    v4.shrink_to_fit();     // 释放多余容量(C++11)
+
+    // 元素访问
+    int& a = v4[2];         // 不检查边界 (快速)
+    int& b = v4.at(2);      // 检查边界，越界抛std::out_of_range
+    int& c = v4.front();    // 第一个元素
+    int& d = v4.back();     // 最后一个元素
+    int* ptr = v4.data();   // 获取底层数组指针
+
+    // 修改容器
+    v4.push_back(42);       // 末尾插入
+    v4.pop_back();          // 末尾删除
+    v4.insert(v4.begin() + 2, 99);           // 在位置2插入99
+    v4.insert(v4.begin(), 3, 100);           // 插入3个100
+    v4.emplace_back(1);                      // 末尾原位构造(C++11)
+    v4.emplace(v4.begin(), 88);              // 指定位置原位构造
+    v4.erase(v4.begin() + 2);                // 删除位置2的元素
+    v4.erase(v4.begin(), v4.begin() + 3);    // 删除范围的元素
+    v4.clear();             // 清空(size变为0, capacity不变)
+
+    // 交换
+    std::vector<int> other = {10, 20, 30};
+    v4.swap(other);         // 交换两个vector的内容(O(1), 交换指针)
+
+    // 赋值
+    v4.assign(5, 77);       // 赋值5个77
+    v4.assign({1, 2, 3});   // 赋值初始化列表
+}
+
+
+// ============================================================
+// 示例 14-2: deque / list / forward_list
+// ============================================================
+#include <deque>
+#include <list>
+#include <forward_list>
+
+void deque_operations() {
+    std::deque<int> dq = {1, 2, 3};
+
+    // deque特有：高效的双端操作
+    dq.push_front(0);       // O(1) 头端插入
+    dq.pop_front();         // O(1) 头端删除
+    dq.push_back(4);        // O(1) 尾端插入
+    dq.pop_back();          // O(1) 尾端删除
+
+    // 随机访问（比vector稍慢）
+    dq[0] = 100;
+    dq.at(2) = 200;
+
+    // 其他操作与vector类似
+    dq.insert(dq.begin() + 1, 50);
+    dq.erase(dq.begin());
+}
+
+void list_operations() {
+    std::list<int> lst = {1, 2, 3, 4, 5};
+
+    // list特有操作
+    lst.push_front(0);      // O(1) 头端插入
+    lst.pop_front();        // O(1) 头端删除
+
+    // 拼接 (Splice) —— 将另一个list的元素移动到指定位置(O(1))
+    std::list<int> other = {10, 20, 30};
+    lst.splice(lst.begin(), other);           // 移动other全部到lst开头
+    lst.splice(lst.end(), other, other.begin()); // 移动单个元素
+
+    // 排序和合并
+    lst.sort();             // list专用sort (O(n log n), 稳定)
+    // std::sort(lst.begin(), lst.end());  // 错误！list不支持随机访问
+    lst.sort(std::greater<int>());  // 降序排列
+    lst.reverse();          // 反转链表
+    lst.unique();           // 删除连续重复元素（需先排序）
+
+    std::list<int> lst2 = {1, 3, 5, 7};
+    lst.merge(lst2);        // 合并两个已排序的list（lst2变为空）
+
+    // 删除特定值
+    lst.remove(3);          // 删除所有值为3的元素
+    lst.remove_if([](int x) { return x % 2 == 0; });  // 删除所有偶数
+}
+
+void forward_list_operations() {
+    // forward_list: 单向链表（C++11）—— 比list更省内存
+    std::forward_list<int> fl = {1, 2, 3, 4, 5};
+
+    fl.push_front(0);       // O(1) 头端插入
+    fl.pop_front();         // O(1) 头端删除
+
+    // 在位置后插入（只有insert_after，没有insert）
+    auto it = fl.before_begin();  // 第一个元素"之前"的迭代器
+    fl.insert_after(it, 99);      // 在begin()之前插入
+
+    it = fl.begin();
+    fl.insert_after(it, 100);     // 在第一个元素之后插入
+
+    // 删除位置后的元素
+    fl.erase_after(fl.before_begin());  // 删除第一个元素
+    fl.erase_after(fl.begin());         // 删除第二个元素
+}
+
+
+// ============================================================
+// 示例 14-3: std::array (C++11)
+// ============================================================
+#include <array>
+
+void array_operations() {
+    // array: 固定大小数组（编译期确定大小），不退化指针
+    std::array<int, 5> arr = {1, 2, 3, 4, 5};
+
+    std::cout << "size: " << arr.size() << "\n";        // 5
+    std::cout << "max_size: " << arr.max_size() << "\n"; // 5
+    std::cout << "empty: " << arr.empty() << "\n";       // false
+
+    // 访问
+    arr[0] = 10;
+    arr.at(1) = 20;     // 抛异常检查
+    arr.front() = 30;
+    arr.back() = 50;
+    int* raw = arr.data();  // 获取底层C数组指针
+
+    // 填充
+    arr.fill(42);        // 所有元素设为42
+
+    // 交换
+    std::array<int, 5> arr2 = {10, 20, 30, 40, 50};
+    arr.swap(arr2);
+
+    // 使用标准算法（与vector一样）
+    std::sort(arr.begin(), arr.end());
+
+    // sizeof: array不包含额外成员
+    static_assert(sizeof(std::array<int, 5>) == sizeof(int) * 5);
+}
+
+
+// ============================================================
+// 示例 14-4: std::string 完整操作
+// ============================================================
+#include <string>
+
+void string_operations() {
+    std::string s1;                              // 空字符串
+    std::string s2 = "Hello";                    // C字符串构造
+    std::string s3("World", 3);                  // "Wor" (取前3个)
+    std::string s4(10, 'X');                     // "XXXXXXXXXX"
+    std::string s5(s2);                          // 拷贝
+    std::string s6(s2, 1, 3);                    // "ell" (从1开始3个字符)
+    std::string s7(s2.begin(), s2.begin() + 3);  // "Hel"
+
+    // 容量
+    s2.size();           // 或 length() (等价)
+    s2.capacity();
+    s2.max_size();
+    s2.empty();
+    s2.reserve(100);
+    s2.shrink_to_fit();
+    s2.resize(10, '!');  // 调整为10个字符，多的用'!'填充
+    s2.clear();
+
+    // 访问
+    char ch1 = s2[0];        // 不检查
+    char ch2 = s2.at(0);     // 检查，抛std::out_of_range
+    char& front = s2.front();  // C++11
+    char& back = s2.back();    // C++11
+    const char* cstr = s2.c_str();   // 获取C风格字符串(null-terminated)
+    const char* data = s2.data();    // 获取字符数组
+    s2.push_back('!');               // 追加一个字符
+    s2.pop_back();                   // 删除最后一个字符(C++11)
+
+    // 修改
+    s2 += " World";             // 追加
+    s2.append("!!!");           // 追加
+    s2.append("123", 2);        // 追加"12"(取前2个)
+    s2.insert(0, "Prefix: ");   // 在位置0插入
+    s2.insert(s2.end(), 'X');   // 在末尾插入字符
+    s2.erase(0, 7);             // 删除[0,7)的字符
+    s2.replace(0, 3, "NEW");    // 替换[0,3)的字符
+    s2.replace(0, 3, 5, '*');   // 替换为5个'*'
+
+    // 子串
+    std::string sub = s2.substr(0, 5);   // [0,5)
+    std::string sub2 = s2.substr(3);     // [3,end)
+
+    // 比较 (也可用 ==, !=, <, >, <=, >=)
+    int cmp = s2.compare(s3);             // 与s3比较 (0相等, <0或>0)
+    int cmp2 = s2.compare(0, 3, s3);      // 比较s2[0,3)与s3
+
+    // 查找
+    size_t pos = s2.find("or");            // 查找"or"(正向)
+    size_t pos2 = s2.find('o', 5);         // 从位置5查找'o'
+    s2.rfind("or");                        // 反向查找
+    s2.find_first_of("aeiou");             // 查找第一个元音字母
+    s2.find_last_of("aeiou");              // 查找最后一个元音字母
+    s2.find_first_not_of("aeiou");         // 查找第一个非元音
+    s2.find_last_not_of("aeiou");          // 查找最后一个非元音
+
+    // 数值转换 (C++11)
+    int i = std::stoi("123");              // string to int
+    long l = std::stol("123");
+    double d = std::stod("3.14159");
+    std::string si = std::to_string(123);   // int to string
+    std::string sf = std::to_string(3.14);  // float to string
+
+    // C++17: string_view
+    std::string_view sv = "Hello World";    // 不分配内存
+    std::string_view sv2 = s2;
+    std::cout << "string_view: " << sv.substr(0, 5) << "\n";
+    // 注意: string_view不保证null-terminated
+}
+
+
+================================================================================
+【14.2.2 关联容器完整用法】
+================================================================================
+
+// ============================================================
+// 示例 14-5: set / multiset / map / multimap
+// ============================================================
+#include <set>
+#include <map>
+#include <iostream>
+
+void set_operations() {
+    // set: 唯一键，自动排序（默认 less<T>）
+    std::set<int> s;
+
+    // 插入
+    auto result = s.insert(42);   // pair<iterator, bool>
+    if (result.second) std::cout << "插入成功\n";
+
+    s.insert(10); s.insert(30); s.insert(20);
+    s.emplace(50);       // 原位构造(C++11)
+
+    // 遍历（自动按升序排列）
+    std::cout << "set: ";
+    for (int x : s) std::cout << x << " ";  // 10 20 30 42 50
+    std::cout << "\n";
+
+    // 查找
+    auto it = s.find(30);
+    if (it != s.end()) std::cout << "找到: " << *it << "\n";
+    std::cout << "存在42? " << s.count(42) << "\n";  // 0或1
+    std::cout << "存在99? " << s.contains(99) << "\n";// C++20
+
+    // 范围查询
+    auto lower = s.lower_bound(25);  // 第一个 >= 25 的元素
+    auto upper = s.upper_bound(25);  // 第一个 > 25 的元素
+
+    // 删除
+    s.erase(30);             // 按键删除
+    s.erase(s.begin());      // 按迭代器删除
+    s.clear();
+
+    // 自定义比较器
+    std::set<int, std::greater<int>> descending = {1, 3, 2, 5, 4};
+    // 遍历: 5 4 3 2 1
+}
+
+void multiset_operations() {
+    // multiset: 允许重复键，自动排序
+    std::multiset<int> ms = {1, 3, 3, 2, 3, 1};
+    ms.insert(3);   // 可以插入重复值
+    std::cout << "count of 3: " << ms.count(3) << "\n";  // 4
+
+    // 删除
+    ms.erase(3);    // 删除所有值为3的元素！
+    // 只删除一个: auto it = ms.find(3); if (it != ms.end()) ms.erase(it);
+}
+
+void map_operations() {
+    // map: 键值对，按键自动排序，键唯一
+    std::map<std::string, int> ages;
+
+    // 插入方式
+    ages["Alice"] = 25;                    // 最直观(会覆盖已有值)
+    ages.insert({"Bob", 30});              // 插入（不覆盖已有值）
+    ages.insert(std::make_pair("Charlie", 35));
+    ages.emplace("David", 40);             // 原位构造(C++11)
+    ages.try_emplace("Eve", 22);           // C++17
+
+    // 访问
+    std::cout << "Alice: " << ages["Alice"] << "\n";
+    // 注意: ages["Zoe"] 如果Zoe不存在，会插入默认值！
+    ages.at("Bob");        // 如果key不存在，抛std::out_of_range
+
+    // 检查存在
+    if (ages.find("Bob") != ages.end()) std::cout << "Bob exists\n";
+    if (ages.contains("Bob")) std::cout << "Bob exists (C++20)\n";
+
+    // 遍历（按key排序 + 结构化绑定 C++17）
+    for (const auto& [name, age] : ages) {
+        std::cout << name << ": " << age << "\n";
+    }
+
+    // 合并两个map (C++17 merge)
+    std::map<std::string, int> more = {{"Frank", 28}, {"Alice", 26}};
+    ages.merge(more);  // Alice仍然25(已存在不覆盖)，Frank被移入
+}
+
+void multimap_operations() {
+    // multimap: 允许重复键
+    std::multimap<std::string, std::string> phonebook;
+    phonebook.insert({"Alice", "123-4567"});
+    phonebook.insert({"Alice", "987-6543"});  // Alice有多个号码
+    phonebook.insert({"Bob", "555-1212"});
+
+    // 查找所有Alice的号码
+    auto range = phonebook.equal_range("Alice");
+    std::cout << "Alice的电话:\n";
+    for (auto it = range.first; it != range.second; ++it) {
+        std::cout << "  " << it->second << "\n";
+    }
+}
+
+
+================================================================================
+【14.2.3 无序容器完整用法】
+================================================================================
+
+// ============================================================
+// 示例 14-6: unordered_map / unordered_set 等
+// ============================================================
+#include <unordered_map>
+#include <unordered_set>
+#include <string>
+#include <iostream>
+
+// 自定义类型的哈希函数
+struct Person {
+    std::string name;
+    int age;
+    bool operator==(const Person& other) const {
+        return name == other.name && age == other.age;
+    }
+};
+
+// 方式1: 特化 std::hash
+namespace std {
+    template<>
+    struct hash<Person> {
+        size_t operator()(const Person& p) const {
+            return hash<string>()(p.name) ^ (hash<int>()(p.age) << 1);
+        }
+    };
+}
+
+// 方式2: 自定义哈希仿函数
+struct PersonHash {
+    size_t operator()(const Person& p) const {
+        return std::hash<std::string>()(p.name) ^ std::hash<int>()(p.age);
+    }
+};
+struct PersonEqual {
+    bool operator()(const Person& a, const Person& b) const {
+        return a.name == b.name && a.age == b.age;
+    }
+};
+
+void unordered_operations() {
+    // unordered_set: 无序唯一键集
+    std::unordered_set<int> us = {1, 3, 5, 7, 9};
+    us.insert(2);
+    us.emplace(4);
+    us.erase(3);
+    std::cout << "count of 5: " << us.count(5) << "\n";
+    std::cout << "contains 7? " << us.contains(7) << "\n"; // C++20
+
+    // 桶信息
+    std::cout << "bucket_count: " << us.bucket_count() << "\n";
+    std::cout << "load_factor: " << us.load_factor() << "\n";
+    std::cout << "max_load_factor: " << us.max_load_factor() << "\n";
+
+    // 手动rehash
+    us.rehash(100);         // 设置桶数为至少100
+    us.reserve(1000);       // 预留足够桶数以容纳1000个元素
+
+    // unordered_map: 无序键值对
+    std::unordered_map<std::string, int> scores;
+    scores["Alice"] = 95;
+    scores.insert({"Bob", 87});
+    scores.emplace("Charlie", 92);
+    scores.try_emplace("David", 78);  // C++17
+
+    // 查找（平均O(1)）
+    auto it = scores.find("Alice");
+    if (it != scores.end()) std::cout << "Alice: " << it->second << "\n";
+
+    // C++17: insert_or_assign (插入或覆盖)
+    scores.insert_or_assign("Alice", 100);
+
+    // 使用自定义类型作为键
+    std::unordered_set<Person, PersonHash, PersonEqual> people;
+    people.insert({"Alice", 25});
+    people.insert({"Bob", 30});
+
+    // unordered_multiset / unordered_multimap
+    std::unordered_multiset<int> ums = {1, 2, 2, 3, 3, 3};
+    std::cout << "count of 3: " << ums.count(3) << "\n";  // 3
+}
+
+
+================================================================================
+【14.2.4 容器适配器：stack / queue / priority_queue】
+================================================================================
+
+// ============================================================
+// 示例 14-7: 容器适配器
+// ============================================================
+#include <stack>
+#include <queue>
+#include <vector>
+#include <functional>
+
+void stack_operations() {
+    // stack: 默认基于deque
+    std::stack<int> s;
+    std::stack<int, std::vector<int>> sv;   // 基于vector
+
+    s.push(1); s.push(2); s.push(3);
+    std::cout << "top: " << s.top() << "\n";  // 3
+    s.pop();  // 移除3（不返回值！）
+    std::cout << "size: " << s.size() << "\n";
+    s.emplace(4);
+}
+
+void queue_operations() {
+    // queue: 默认基于deque
+    std::queue<int> q;
+    std::queue<int, std::list<int>> ql;     // 基于list
+
+    q.push(1); q.push(2); q.push(3);
+    std::cout << "front: " << q.front() << "\n";  // 1
+    std::cout << "back:  " << q.back() << "\n";    // 3
+    q.pop();
+    q.emplace(4);
+}
+
+void priority_queue_operations() {
+    // priority_queue: 默认最大堆（基于vector）
+    std::priority_queue<int> pq;  // 默认 less<int>, 大顶堆
+
+    pq.push(5); pq.push(1); pq.push(8); pq.push(3);
+    while (!pq.empty()) {
+        std::cout << pq.top() << " ";  // 8 5 3 1
+        pq.pop();
+    }
+    std::cout << "\n";
+
+    // 最小堆（小顶堆）
+    std::priority_queue<int, std::vector<int>, std::greater<int>> min_pq;
+    min_pq.push(5); min_pq.push(1); min_pq.push(8); min_pq.push(3);
+    while (!min_pq.empty()) {
+        std::cout << min_pq.top() << " ";  // 1 3 5 8
+        min_pq.pop();
+    }
+    std::cout << "\n";
+
+    // 自定义比较器（Lambda + decltype）
+    using P = std::pair<std::string, int>;
+    auto cmp = [](const P& a, const P& b) { return a.second < b.second; };
+    std::priority_queue<P, std::vector<P>, decltype(cmp)> custom_pq(cmp);
+    custom_pq.emplace("TaskA", 5);
+    custom_pq.emplace("TaskB", 1);
+    custom_pq.emplace("TaskC", 10);
+}
+
+
+================================================================================
+【14.2.5 迭代器适配器】
+================================================================================
+
+// ============================================================
+// 示例 14-8: 迭代器适配器
+// ============================================================
+#include <iterator>
+#include <vector>
+#include <list>
+
+void iterator_adapters() {
+    std::vector<int> v = {1, 2, 3};
+
+    // back_insert_iterator: 在容器末尾插入
+    auto bi = std::back_inserter(v);
+    *bi = 4; *bi = 5;  // v: {1,2,3,4,5}
+
+    // front_insert_iterator: 在容器开头插入
+    std::list<int> lst = {1, 2, 3};
+    auto fi = std::front_inserter(lst);
+    *fi = 0; *fi = -1;  // lst: {-1, 0, 1, 2, 3}
+
+    // insert_iterator: 在指定位置插入
+    auto ii = std::inserter(v, v.begin() + 2);
+    *ii = 99; *ii = 100;  // 在位置2插入99和100
+
+    // reverse_iterator: 反向遍历
+    for (auto rit = v.rbegin(); rit != v.rend(); ++rit) {
+        std::cout << *rit << " ";
+    }
+    std::cout << "\n";
+
+    // istream_iterator / ostream_iterator: 流迭代器
+    std::vector<int> data;
+    std::copy(std::istream_iterator<int>(std::cin),
+              std::istream_iterator<int>(),
+              std::back_inserter(data));
+}
+
+// ============================================================
+// 示例 14-9: 非修改式算法
+// ============================================================
+#include <algorithm>
+#include <numeric>
+
+void non_modifying_algorithms() {
+    std::vector<int> v = {1, 3, 5, 7, 9, 2, 4, 6, 8, 10};
+
+    // find / find_if / find_if_not
+    auto it = std::find(v.begin(), v.end(), 7);
+    auto it2 = std::find_if(v.begin(), v.end(),
+                            [](int x) { return x > 8; });
+    auto it3 = std::find_if_not(v.begin(), v.end(),
+                                 [](int x) { return x % 2 == 1; });
+
+    // count / count_if
+    std::cout << "count(7): " << std::count(v.begin(), v.end(), 7) << "\n";
+    std::cout << "count_if(odd): "
+              << std::count_if(v.begin(), v.end(),
+                               [](int x) { return x % 2 == 1; }) << "\n";
+
+    // search: 查找子序列
+    std::vector<int> sub = {2, 4, 6};
+    auto it5 = std::search(v.begin(), v.end(), sub.begin(), sub.end());
+
+    // equal / mismatch
+    std::vector<int> v2 = {1, 3, 5, 7, 9, 2, 4, 6, 8, 10};
+    std::cout << "equal: " << std::equal(v.begin(), v.end(), v2.begin()) << "\n";
+
+    // all_of / any_of / none_of (C++11)
+    std::cout << "all_of(>0):  " << std::all_of(v.begin(), v.end(),
+        [](int x) { return x > 0; }) << "\n";
+    std::cout << "any_of(<0):  " << std::any_of(v.begin(), v.end(),
+        [](int x) { return x < 0; }) << "\n";
+    std::cout << "none_of(>100):" << std::none_of(v.begin(), v.end(),
+        [](int x) { return x > 100; }) << "\n";
+
+    // min / max / minmax (C++11)
+    std::cout << "min(3,7): " << std::min(3, 7) << "\n";
+    auto [min_v, max_v] = std::minmax(3, 7);  // C++17结构化绑定
+
+    // min_element / max_element
+    auto min_it = std::min_element(v.begin(), v.end());
+    auto max_it = std::max_element(v.begin(), v.end());
+    std::cout << "min: " << *min_it << ", max: " << *max_it << "\n";
+
+    // is_sorted (C++11)
+    std::cout << "is_sorted: " << std::is_sorted(v.begin(), v.end()) << "\n";
+}
+
+
+// ============================================================
+// 示例 14-10: 修改式算法
+// ============================================================
+void modifying_algorithms() {
+    std::vector<int> v = {1, 3, 5, 7, 9, 2, 4, 6, 8, 10};
+    std::vector<int> dest(v.size());
+
+    // copy / copy_if
+    std::copy(v.begin(), v.end(), dest.begin());
+    std::vector<int> evens;
+    std::copy_if(v.begin(), v.end(), std::back_inserter(evens),
+                 [](int x) { return x % 2 == 0; });
+
+    // transform: 对每个元素应用函数
+    std::vector<int> squares(v.size());
+    std::transform(v.begin(), v.end(), squares.begin(),
+                   [](int x) { return x * x; });
+
+    // fill / fill_n
+    std::fill(dest.begin(), dest.end(), 42);
+    std::fill_n(dest.begin(), 3, 99);
+
+    // generate
+    int counter = 0;
+    std::generate(dest.begin(), dest.end(),
+                  [&]() { return counter++; });
+
+    // replace / replace_if
+    std::replace(v.begin(), v.end(), 7, 777);
+    std::replace_if(v.begin(), v.end(),
+                    [](int x) { return x % 2 == 0; }, 0);
+
+    // remove / remove_if (Erase-Remove Idiom)
+    auto new_end = std::remove(v.begin(), v.end(), 5);
+    v.erase(new_end, v.end());
+
+    auto new_end2 = std::remove_if(v.begin(), v.end(),
+        [](int x) { return x > 100; });
+    v.erase(new_end2, v.end());
+
+    // unique: 移除连续重复
+    std::vector<int> v3 = {1, 1, 2, 2, 2, 3, 3, 4};
+    auto new_end3 = std::unique(v3.begin(), v3.end());
+    v3.erase(new_end3, v3.end());  // {1, 2, 3, 4}
+
+    // reverse / rotate
+    std::reverse(v.begin(), v.end());
+    std::vector<int> v4 = {1, 2, 3, 4, 5};
+    std::rotate(v4.begin(), v4.begin() + 2, v4.end());
+    // 结果: {3, 4, 5, 1, 2}
+
+    // swap / iter_swap
+    int a = 10, b = 20;
+    std::swap(a, b);
+}
+
+
+// ============================================================
+// 示例 14-11: 排序和查找算法
+// ============================================================
+void sorting_and_searching() {
+    std::vector<int> v = {5, 2, 8, 1, 9, 3, 7, 4, 6};
+
+    // sort: 快速排序（混合内省排序）O(n log n)
+    std::sort(v.begin(), v.end());                   // 升序
+    std::sort(v.begin(), v.end(), std::greater<int>()); // 降序
+
+    // stable_sort: 稳定排序（相等元素相对顺序不变）
+    std::vector<std::pair<int, char>> pv = {{1,'a'},{3,'b'},{1,'c'}};
+    std::stable_sort(pv.begin(), pv.end());
+
+    // partial_sort: 部分排序
+    std::partial_sort(v.begin(), v.begin() + 3, v.end());
+
+    // nth_element: 第n小元素归位
+    std::nth_element(v.begin(), v.begin() + 4, v.end());
+
+    // 二分查找（要求序列已排序）
+    std::vector<int> sorted = {1, 3, 5, 7, 9, 11, 13};
+    bool found = std::binary_search(sorted.begin(), sorted.end(), 7);
+
+    // lower_bound / upper_bound / equal_range
+    auto lb = std::lower_bound(sorted.begin(), sorted.end(), 6);
+    auto ub = std::upper_bound(sorted.begin(), sorted.end(), 7);
+    std::cout << "lower_bound(6): " << *lb << "\n";  // 7
+    std::cout << "upper_bound(7): " << *ub << "\n";  // 9
+
+    // partition / stable_partition
+    std::vector<int> pv2 = {1, 2, 3, 4, 5, 6, 7, 8};
+    auto mid = std::partition(pv2.begin(), pv2.end(),
+        [](int x) { return x % 2 == 1; });
+    // 奇数在前，偶数在后（不保证相对顺序）
+
+    std::stable_partition(pv2.begin(), pv2.end(),
+        [](int x) { return x % 2 == 1; });
+    // 奇数在前，保持原顺序
+}
+
+
+// ============================================================
+// 示例 14-12: 其他重要算法
+// ============================================================
+#include <numeric>
+#include <random>
+
+void other_algorithms() {
+    std::vector<int> v = {1, 2, 3, 4, 5};
+
+    // for_each
+    std::for_each(v.begin(), v.end(), [](int& x) { x *= 2; });
+
+    // accumulate
+    int sum = std::accumulate(v.begin(), v.end(), 0);
+    std::cout << "sum: " << sum << "\n";
+
+    // inner_product (点积)
+    std::vector<int> w = {1, 1, 1, 1, 1};
+    int dot = std::inner_product(v.begin(), v.end(), w.begin(), 0);
+
+    // iota: 递增填充
+    std::vector<int> seq(10);
+    std::iota(seq.begin(), seq.end(), 1);  // 1,2,3,...,10
+
+    // merge: 合并两个已排序序列
+    std::vector<int> a = {1, 3, 5};
+    std::vector<int> b = {2, 4, 6, 8};
+    std::vector<int> merged(a.size() + b.size());
+    std::merge(a.begin(), a.end(), b.begin(), b.end(), merged.begin());
+
+    // set_union / set_intersection / set_difference
+    std::vector<int> s1 = {1, 2, 3, 4, 5};
+    std::vector<int> s2 = {3, 4, 5, 6, 7};
+    std::vector<int> result(10);
+    auto it = std::set_union(s1.begin(), s1.end(),
+                             s2.begin(), s2.end(), result.begin());
+    result.resize(it - result.begin());  // {1,2,3,4,5,6,7}
+
+    // next_permutation / prev_permutation
+    std::vector<int> perm = {1, 2, 3};
+    do {
+        for (int x : perm) std::cout << x << " ";
+        std::cout << " | ";
+    } while (std::next_permutation(perm.begin(), perm.end()));
+    std::cout << "\n";
+
+    // shuffle: 随机重排
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::shuffle(v.begin(), v.end(), gen);
+
+    // 堆操作: make_heap / push_heap / pop_heap / sort_heap
+    // is_heap (C++11)
+}
+
+
+================================================================================
+【14.2.6 Lambda表达式 (C++11)】
+================================================================================
+
+// ============================================================
+// 示例 14-13: Lambda 完整用法
+// ============================================================
+// 语法: [capture](parameters) mutable -> return_type { body }
+
+#include <functional>
+#include <memory>
+#include <iostream>
+
+void lambda_basics() {
+    // 最简单的lambda
+    auto hello = []() { std::cout << "Hello\n"; };
+    hello();
+
+    // 带参数和返回值（返回类型可自动推导）
+    auto add = [](int a, int b) { return a + b; };
+    std::cout << "add(3,4) = " << add(3, 4) << "\n";
+
+    // === Capture（捕获）===
+    int x = 10, y = 20;
+
+    // [=] 按值捕获所有
+    auto by_value = [=]() { return x + y; };  // x,y都是副本
+    std::cout << "by_value: " << by_value() << "\n";
+
+    // [&] 按引用捕获所有
+    auto by_ref = [&]() { x += 5; y += 5; };
+    by_ref();
+    std::cout << "x=" << x << ", y=" << y << "\n";  // 15, 25
+
+    // [x, &y] 混合捕获
+    auto mixed = [x, &y]() { /* x是副本 */ y += x; };
+    mixed();
+
+    // [this] 捕获this指针（成员函数中使用）
+    // [*this] C++17: 按值捕获*this
+
+    // 初始化捕获 (C++14): [var = expr]
+    auto ptr = std::make_unique<int>(42);
+    auto init_cap = [p = std::move(ptr)]() { return *p; };
+
+    // mutable: 允许修改按值捕获的变量
+    int counter = 0;
+    auto mut = [counter]() mutable { return ++counter; };
+    std::cout << mut() << " " << mut() << "\n"; // 1 2
+    std::cout << "counter: " << counter << "\n"; // 0 (原值不变)
+
+    // 泛型lambda (C++14: auto参数)
+    auto generic = [](auto a, auto b) { return a + b; };
+    std::cout << generic(1, 2) << "\n";              // 3
+    std::cout << generic(std::string("A"),
+                          std::string("B")) << "\n";  // "AB"
+}
+
+// std::function 和 std::bind
+void function_wrapper() {
+    // function: 类型擦除的函数包装器
+    std::function<int(int, int)> func;
+
+    func = [](int a, int b) { return a + b; };
+    std::cout << func(3, 4) << "\n";  // 7
+
+    func = std::multiplies<int>();
+    std::cout << func(3, 4) << "\n";  // 12
+
+    // bind: 绑定参数（通常用lambda替代）
+    using namespace std::placeholders;
+    auto bind_func = std::bind(std::plus<int>(), _1, 100);
+    std::cout << bind_func(5) << "\n";  // 105
+
+    // 等价lambda（更清晰）
+    auto lambda_func = [](int x) { return x + 100; };
+}
+
+
+================================================================================
+【14.2.7 chrono / random / regex 完整用法】
+================================================================================
+
+// ============================================================
+// 示例 14-14: <chrono> 时间库
+// ============================================================
+#include <chrono>
+#include <thread>
+#include <iostream>
+#include <iomanip>
+
+void chrono_operations() {
+    using namespace std::chrono;
+
+    // 三种时钟：
+    // system_clock: 系统时间（可调整，用于显示时间）
+    // steady_clock: 单调递增时钟（不可调整，用于计时）
+    // high_resolution_clock: 最高精度（通常是steady_clock的别名）
+
+    // 计时
+    auto start = steady_clock::now();
+    std::this_thread::sleep_for(milliseconds(100));
+    auto end = steady_clock::now();
+
+    auto elapsed = end - start;
+    std::cout << "Elapsed: "
+              << duration_cast<milliseconds>(elapsed).count() << " ms\n";
+    std::cout << "Elapsed: "
+              << duration_cast<microseconds>(elapsed).count() << " us\n";
+
+    // duration 单位
+    seconds sec(5);                        // 5秒
+    milliseconds ms = sec;                 // 5000ms (隐式转换)
+    // seconds s2 = ms;                    // 错误！可能有精度损失
+    seconds s2 = duration_cast<seconds>(ms);  // 显式截断
+
+    // duration 字面量 (C++14)
+    using namespace std::chrono_literals;
+    auto half_min = 30s;
+    auto nano = 500ns;
+    auto ms_val = 50ms;
+    auto min_val = 5min;   // C++14
+    auto hour_val = 1h;    // C++14
+
+    // system_clock: 获取当前时间
+    auto now = system_clock::now();
+    time_t now_t = system_clock::to_time_t(now);
+    std::cout << "Current time: " << std::ctime(&now_t);
+
+    // 时间运算
+    auto tomorrow = now + 24h;
+}
+
+// ============================================================
+// 示例 14-15: <random> 随机数库
+// ============================================================
+#include <random>
+#include <vector>
+
+void random_operations() {
+    // 旧的rand()不推荐：质量差、分布不均匀、线程不安全
+
+    // 三要素: 引擎 + 分布 + 种子
+    std::random_device rd;         // 真随机数（硬件熵源）
+    std::mt19937 gen(rd());        // 梅森旋转算法
+
+    // 均匀分布
+    std::uniform_int_distribution<int> uid(1, 6);
+    std::cout << "骰子: ";
+    for (int i = 0; i < 5; ++i) std::cout << uid(gen) << " ";
+    std::cout << "\n";
+
+    std::uniform_real_distribution<double> urd(0.0, 1.0);
+    std::cout << "随机小数: " << urd(gen) << "\n";
+
+    // 正态分布 (均值, 标准差)
+    std::normal_distribution<double> nd(5.0, 2.0);
+    std::cout << "正态分布: ";
+    for (int i = 0; i < 5; ++i) std::cout << nd(gen) << " ";
+    std::cout << "\n";
+
+    // 伯努利分布（抛硬币）
+    std::bernoulli_distribution bd(0.7);  // 70%概率true
+    int heads = 0;
+    for (int i = 0; i < 100; ++i)
+        if (bd(gen)) ++heads;
+    std::cout << "伯努利(0.7): " << heads << "/100 true\n";
+
+    // shuffle: 洗牌
+    std::vector<int> deck(52);
+    std::iota(deck.begin(), deck.end(), 1);
+    std::shuffle(deck.begin(), deck.end(), gen);
+}
+
+// ============================================================
+// 示例 14-16: <regex> 正则表达式库
+// ============================================================
+#include <regex>
+
+void regex_operations() {
+    std::string text = "Contact us at alice@example.com or "
+                       "bob@company.org for more info.";
+
+    // 定义正则表达式
+    std::regex email_pattern(
+        R"(([a-zA-Z0-9._%+-]+)@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,}))",
+        std::regex::icase);
+
+    // regex_match: 完全匹配
+    std::string exact = "alice@example.com";
+    std::cout << "regex_match: "
+              << std::regex_match(exact, email_pattern) << "\n";
+
+    // regex_search: 搜索匹配
+    std::smatch match;
+    if (std::regex_search(text, match, email_pattern)) {
+        std::cout << "Found email: " << match[0] << "\n";
+        std::cout << "  username: " << match[1] << "\n";
+        std::cout << "  domain:   " << match[2] << "\n";
+    }
+
+    // 查找所有匹配
+    auto words_begin = std::sregex_iterator(
+        text.begin(), text.end(), email_pattern);
+    auto words_end = std::sregex_iterator();
+    std::cout << "All emails:\n";
+    for (auto it = words_begin; it != words_end; ++it) {
+        std::cout << "  " << it->str() << "\n";
+    }
+
+    // regex_replace: 替换匹配
+    std::string censored = std::regex_replace(
+        text, email_pattern, "[EMAIL REDACTED]");
+    std::cout << "Censored: " << censored << "\n";
+
+    // 常用正则语法: \d数字 \w单词字符 \s空白 .任意
+    // *0或多 +1或多 ?0或1 {n}恰好n {n,m}n到m ()捕获 |或 []字符类
+}
+
+// ============================================================
+// 示例 14-17: <tuple> 元组
+// ============================================================
+#include <tuple>
+#include <string>
+
+void tuple_operations() {
+    // 构造
+    std::tuple<int, double, std::string> t1(42, 3.14, "hello");
+    auto t2 = std::make_tuple(1, 2.0, "world");
+    // C++17 类模板参数推导(CTAD)
+    std::tuple t3(5, 3.14, std::string("test"));
+
+    // 访问: get<index> 或 get<type>(C++14)
+    std::cout << "get<0>: " << std::get<0>(t1) << "\n";
+    std::cout << "get<1>: " << std::get<1>(t1) << "\n";
+    std::cout << "get<2>: " << std::get<2>(t1) << "\n";
+
+    std::get<0>(t1) = 100;
+
+    // 结构化绑定 (C++17)
+    auto [a, b, c] = t1;
+    std::cout << "a=" << a << ", b=" << b << ", c=" << c << "\n";
+
+    // tie: 绑定变量到tuple
+    int x; double y; std::string z;
+    std::tie(x, y, z) = t1;
+
+    // tie + ignore
+    int first_only;
+    std::tie(first_only, std::ignore, std::ignore) = t1;
+
+    // tuple_cat: 拼接
+    auto t4 = std::tuple_cat(t1, t2);
+
+    // 函数返回多值
+    auto divide = [](int a, int b) -> std::tuple<int, int> {
+        return {a / b, a % b};
+    };
+    auto [quotient, remainder] = divide(17, 5);
+    std::cout << "17/5 = " << quotient << " 余 " << remainder << "\n";
+}
+
+
+// ============================================================
+// 示例 14-18: <optional> (C++17)
+// ============================================================
+#include <optional>
+
+void optional_operations() {
+    // optional: 可能包含或不包含值
+    std::optional<int> opt1;                    // 空
+    std::optional<int> opt2 = 42;               // 包含42
+    auto opt3 = std::make_optional(100);        // 包含100
+
+    // 检查
+    if (opt2.has_value()) std::cout << "has value\n";
+    if (opt2) std::cout << "truthy\n";  // 隐式转bool
+
+    // 访问
+    int val1 = opt2.value();        // 无值时抛bad_optional_access
+    int val2 = *opt2;               // 不检查，无值时UB
+    int val3 = opt2.value_or(-1);   // 无值时返回默认值
+
+    // 重置
+    opt2.reset();
+    opt2 = std::nullopt;
+
+    // 典型场景：函数可能无返回值
+    auto find_user = [](int id) -> std::optional<std::string> {
+        if (id == 1) return "Alice";
+        return std::nullopt;
+    };
+    std::cout << "User: " << find_user(1).value_or("Not found") << "\n";
+}
+
+
+// ============================================================
+// 示例 14-19: <variant> (C++17)
+// ============================================================
+#include <variant>
+
+void variant_operations() {
+    // variant: 类型安全的union —— 可以存储多种类型中的一种
+    std::variant<int, double, std::string> var;
+
+    var = 42;                    // 存储int
+    var = 3.14;                  // 存储double
+    var = "Hello";               // 存储string
+
+    // 访问方式1: std::get (编译期确定类型)
+    std::cout << std::get<std::string>(var) << "\n";
+    std::cout << std::get<2>(var) << "\n";  // 按索引访问
+
+    // 访问方式2: std::get_if (返回指针，不抛异常)
+    if (auto* p = std::get_if<int>(&var)) {
+        std::cout << "int: " << *p << "\n";
+    } else if (auto* p = std::get_if<std::string>(&var)) {
+        std::cout << "string: " << *p << "\n";
+    }
+
+    // 访问方式3: std::visit (访问者模式)
+    auto visitor = [](auto&& arg) {
+        using T = std::decay_t<decltype(arg)>;
+        if constexpr (std::is_same_v<T, int>)
+            std::cout << "int: " << arg << "\n";
+        else if constexpr (std::is_same_v<T, double>)
+            std::cout << "double: " << arg << "\n";
+        else if constexpr (std::is_same_v<T, std::string>)
+            std::cout << "string: " << arg << "\n";
+    };
+    std::visit(visitor, var);
+
+    // holds_alternative / index()
+    std::cout << "holds int? " << std::holds_alternative<int>(var) << "\n";
+    std::cout << "index: " << var.index() << "\n";
+
+    // 典型场景：状态机
+    struct Idle {};
+    struct Running { int progress; };
+    struct Error { std::string message; };
+    std::variant<Idle, Running, Error> state = Running{50};
+
+    std::visit([](auto&& s) {
+        using T = std::decay_t<decltype(s)>;
+        if constexpr (std::is_same_v<T, Idle>)
+            std::cout << "空闲\n";
+        else if constexpr (std::is_same_v<T, Running>)
+            std::cout << "运行中: " << s.progress << "%\n";
+        else if constexpr (std::is_same_v<T, Error>)
+            std::cout << "错误: " << s.message << "\n";
+    }, state);
+}
+
+
+// ============================================================
+// 示例 14-20: <any> (C++17) 和 string_view / span
+// ============================================================
+#include <any>
+#include <string_view>
+
+void any_operations() {
+    // any: 类型安全的void* —— 可以存储任意类型
+    std::any a;
+
+    a = 42;
+    a = 3.14;
+    a = std::string("hello");
+    a = std::vector<int>{1, 2, 3};
+
+    // 检查
+    if (a.has_value()) std::cout << "has value\n";
+    std::cout << "type name: " << a.type().name() << "\n";
+
+    // 提取: std::any_cast
+    try {
+        auto& vec = std::any_cast<std::vector<int>&>(a);
+        for (int x : vec) std::cout << x << " ";
+        std::cout << "\n";
+    } catch (const std::bad_any_cast& e) {
+        std::cout << "类型不匹配\n";
+    }
+
+    // 指针版本（不抛异常）
+    if (auto* p = std::any_cast<std::vector<int>>(&a)) {
+        std::cout << "size: " << p->size() << "\n";
+    }
+
+    a.reset();          // 清空
+    a.emplace<std::string>("in place");
+}
+
+void string_view_operations() {
+    // string_view: 对字符串的非持有引用（C++17）
+    std::string str = "Hello, World!";
+    std::string_view sv1 = str;       // 不拷贝
+    std::string_view sv2 = "literal";
+
+    std::cout << "sv: " << sv1 << "\n";
+    std::cout << "len: " << sv1.length() << "\n";
+    std::cout << "substr(0,5): " << sv1.substr(0, 5) << "\n";
+
+    size_t pos = sv1.find("World");
+    std::cout << "'World' at: " << pos << "\n";
+
+    // 注意: string_view不拥有数据！原字符串销毁后view悬空
+    // 不要将string_view直接传给需要const char*的C函数
+
+    // span (C++20): 类似string_view但用于任意类型的连续内存视图
+    // std::span<int> sp(vector);
+    // for (int x : sp) ...
+}
+
+### 第三节: 实用代码案例
+
+================================================================================
+
+【案例1】学生成绩统计分析器 - 期末考试后
+================================================================================
+
+场景描述：某学校期末考试后，需要统计各科成绩。用vector存储成绩数据，
+map管理学生信息，algorithm分析排名。
+
+// ============================================================
+// 案例14-1: 学生成绩统计分析器
+// ============================================================
+#include <iostream>
+#include <vector>
+#include <map>
+#include <unordered_map>
+#include <set>
+#include <string>
+#include <algorithm>
+#include <numeric>
+#include <iomanip>
+#include <cmath>
+#include <optional>
+
+namespace grade_analyzer {
+
+struct Student {
+    std::string id;
+    std::string name;
+    std::string class_name;
+};
+
+struct GradeRecord {
+    std::string student_id;
+    std::string subject;
+    double score;
+};
+
+class GradeAnalyzer {
+private:
+    std::unordered_map<std::string, Student> students_;
+    std::vector<GradeRecord> records_;
+
+public:
+    void add_student(const std::string& id,
+                     const std::string& name,
+                     const std::string& class_name) {
+        students_[id] = {id, name, class_name};
+    }
+
+    void add_grade(const std::string& student_id,
+                   const std::string& subject, double score) {
+        if (students_.find(student_id) == students_.end()) {
+            throw std::runtime_error("学生 " + student_id + " 不存在");
+        }
+        records_.push_back({student_id, subject, score});
+    }
+
+    // 按学科分组获取成绩
+    std::map<std::string, std::vector<double>> group_by_subject() const {
+        std::map<std::string, std::vector<double>> groups;
+        for (const auto& r : records_) {
+            groups[r.subject].push_back(r.score);
+        }
+        return groups;
+    }
+
+    // 统计每科的平均分、最高分、最低分、中位数、标准差
+    struct SubjectStats {
+        std::string subject;
+        double average;
+        double highest;
+        double lowest;
+        double median;
+        double std_deviation;
+        int count;
+    };
+
+    std::vector<SubjectStats> analyze_subjects() const {
+        std::vector<SubjectStats> results;
+        auto groups = group_by_subject();
+
+        for (auto& [subject, scores] : groups) {
+            if (scores.empty()) continue;
+
+            std::sort(scores.begin(), scores.end());
+
+            SubjectStats stats;
+            stats.subject = subject;
+            stats.count = scores.size();
+
+            double sum = std::accumulate(scores.begin(), scores.end(), 0.0);
+            stats.average = sum / scores.size();
+
+            auto [min_it, max_it] = std::minmax_element(
+                scores.begin(), scores.end());
+            stats.lowest = *min_it;
+            stats.highest = *max_it;
+
+            if (scores.size() % 2 == 1) {
+                stats.median = scores[scores.size() / 2];
+            } else {
+                stats.median = (scores[scores.size() / 2 - 1] +
+                                scores[scores.size() / 2]) / 2.0;
+            }
+
+            double sq_sum = std::accumulate(scores.begin(), scores.end(),
+                0.0, [avg = stats.average](double acc, double s) {
+                    return acc + (s - avg) * (s - avg);
+                });
+            stats.std_deviation = std::sqrt(sq_sum / scores.size());
+
+            results.push_back(stats);
+        }
+
+        std::sort(results.begin(), results.end(),
+            [](const auto& a, const auto& b) {
+                return a.subject < b.subject;
+            });
+
+        return results;
+    }
+
+    // 学生排名（按总分）
+    struct StudentRank {
+        std::string id;
+        std::string name;
+        double total_score;
+        double average_score;
+        int rank;
+    };
+
+    std::vector<StudentRank> rank_students() const {
+        std::unordered_map<std::string, double> total_scores;
+        std::unordered_map<std::string, int> subject_count;
+
+        for (const auto& r : records_) {
+            total_scores[r.student_id] += r.score;
+            subject_count[r.student_id]++;
+        }
+
+        std::vector<StudentRank> rankings;
+        for (const auto& [id, total] : total_scores) {
+            StudentRank rank;
+            rank.id = id;
+            rank.name = students_.at(id).name;
+            rank.total_score = total;
+            rank.average_score = total / subject_count[id];
+            rankings.push_back(rank);
+        }
+
+        std::sort(rankings.begin(), rankings.end(),
+                  [](const StudentRank& a, const StudentRank& b) {
+                      if (a.total_score != b.total_score)
+                          return a.total_score > b.total_score;
+                      return a.name < b.name;
+                  });
+
+        for (size_t i = 0; i < rankings.size(); ++i) {
+            rankings[i].rank = static_cast<int>(i + 1);
+        }
+
+        return rankings;
+    }
+
+    // 查找最高分学生（optional C++17）
+    std::optional<StudentRank> find_top_student() {
+        auto rankings = rank_students();
+        if (rankings.empty()) return std::nullopt;
+        return rankings.front();
+    }
+
+    // 打印报告
+    void print_report() const {
+        std::cout << "\n========== 成绩分析报告 ==========\n";
+
+        std::cout << "\n--- 各学科统计 ---\n";
+        auto subject_stats = analyze_subjects();
+        std::cout << std::setw(12) << "学科"
+                  << std::setw(8) << "人数"
+                  << std::setw(8) << "平均"
+                  << std::setw(8) << "最高"
+                  << std::setw(8) << "最低"
+                  << std::setw(10) << "中位数"
+                  << std::setw(8) << "标准差" << "\n";
+        std::cout << std::string(62, '-') << "\n";
+
+        for (const auto& s : subject_stats) {
+            std::cout << std::setw(12) << s.subject
+                      << std::setw(8) << s.count
+                      << std::setw(8) << std::fixed
+                         << std::setprecision(1) << s.average
+                      << std::setw(8) << s.highest
+                      << std::setw(8) << s.lowest
+                      << std::setw(10) << s.median
+                      << std::setw(8) << s.std_deviation << "\n";
+        }
+
+        std::cout << "\n--- 学生排名 (前10) ---\n";
+        auto rankings = rank_students();
+        std::cout << std::setw(5) << "名次"
+                  << std::setw(10) << "学号"
+                  << std::setw(12) << "姓名"
+                  << std::setw(10) << "总分"
+                  << std::setw(8) << "平均" << "\n";
+        std::cout << std::string(45, '-') << "\n";
+
+        size_t count = std::min(size_t(10), rankings.size());
+        for (size_t i = 0; i < count; ++i) {
+            std::cout << std::setw(5) << rankings[i].rank
+                      << std::setw(10) << rankings[i].id
+                      << std::setw(12) << rankings[i].name
+                      << std::setw(10) << std::fixed
+                         << std::setprecision(1) << rankings[i].total_score
+                      << std::setw(8) << rankings[i].average_score << "\n";
+        }
+
+        std::cout << "===================================\n";
+    }
+};
+
+void run() {
+    std::cout << "\n========== 学生成绩统计分析器 ==========\n";
+
+    GradeAnalyzer analyzer;
+
+    analyzer.add_student("S001", "张三", "一班");
+    analyzer.add_student("S002", "李四", "一班");
+    analyzer.add_student("S003", "王五", "二班");
+    analyzer.add_student("S004", "赵六", "二班");
+    analyzer.add_student("S005", "孙七", "一班");
+
+    std::vector<std::tuple<std::string, std::string, double>> grades = {
+        {"S001", "语文", 85}, {"S001", "数学", 92}, {"S001", "英语", 78},
+        {"S002", "语文", 76}, {"S002", "数学", 88}, {"S002", "英语", 90},
+        {"S003", "语文", 92}, {"S003", "数学", 85}, {"S003", "英语", 95},
+        {"S004", "语文", 88}, {"S004", "数学", 72}, {"S004", "英语", 80},
+        {"S005", "语文", 90}, {"S005", "数学", 96}, {"S005", "英语", 85},
+    };
+
+    for (const auto& [id, subj, score] : grades) {
+        analyzer.add_grade(id, subj, score);
+    }
+
+    analyzer.print_report();
+
+    if (auto top = analyzer.find_top_student()) {
+        std::cout << "\n总分第一名: " << top->name
+                  << " (" << top->total_score << "分)\n";
+    }
+
+    std::cout << "===========================================\n";
+}
+
+} // namespace grade_analyzer
+
+
+【案例2】超市购物篮管理系统 - 收银系统
+================================================================================
+
+场景描述：超市收银系统。map存储商品价格，vector管理购物篮，
+deque管理排队队列，set统计热销商品，regex验证条码格式。
+
+// ============================================================
+// 案例14-2: 超市购物篮管理系统
+// ============================================================
+#include <iostream>
+#include <map>
+#include <vector>
+#include <deque>
+#include <set>
+#include <string>
+#include <regex>
+#include <algorithm>
+#include <numeric>
+#include <iomanip>
+#include <chrono>
+#include <unordered_map>
+
+namespace supermarket {
+
+struct Product {
+    std::string barcode;
+    std::string name;
+    double price;
+    std::string category;
+};
+
+struct BasketItem {
+    std::string barcode;
+    std::string name;
+    double price;
+    int quantity;
+};
+
+struct ReceiptItem : public BasketItem {
+    double subtotal;
+};
+
+struct Receipt {
+    std::string receipt_no;
+    std::chrono::system_clock::time_point timestamp;
+    std::vector<ReceiptItem> items;
+    double total;
+    double discount;
+    double final_amount;
+};
+
+class SupermarketSystem {
+private:
+    std::unordered_map<std::string, Product> catalog_;
+    std::map<std::string, int> sales_count_;
+    std::deque<int> checkout_queue_;
+    std::vector<Receipt> receipts_;
+    int next_receipt_no_ = 1000;
+
+    static bool validate_barcode(const std::string& barcode) {
+        static std::regex barcode_pattern(R"(^\d{13}$)");
+        return std::regex_match(barcode, barcode_pattern);
+    }
+
+public:
+    void add_product(const Product& product) {
+        if (!validate_barcode(product.barcode)) {
+            throw std::invalid_argument("无效条码: " + product.barcode);
+        }
+        catalog_[product.barcode] = product;
+    }
+
+    std::vector<BasketItem> create_basket(
+        const std::vector<std::pair<std::string, int>>& items) {
+        std::vector<BasketItem> basket;
+        for (const auto& [barcode, qty] : items) {
+            auto it = catalog_.find(barcode);
+            if (it == catalog_.end()) {
+                throw std::runtime_error("商品不存在: " + barcode);
+            }
+            basket.push_back({barcode, it->second.name,
+                              it->second.price, qty});
+        }
+        return basket;
+    }
+
+    Receipt checkout(const std::vector<BasketItem>& basket,
+                     double discount_rate = 0.0) {
+        Receipt receipt;
+        receipt.receipt_no = "RCP" + std::to_string(next_receipt_no_++);
+        receipt.timestamp = std::chrono::system_clock::now();
+
+        for (const auto& item : basket) {
+            ReceiptItem ri;
+            ri.barcode = item.barcode;
+            ri.name = item.name;
+            ri.price = item.price;
+            ri.quantity = item.quantity;
+            ri.subtotal = item.price * item.quantity;
+            receipt.items.push_back(ri);
+            sales_count_[item.barcode] += item.quantity;
+        }
+
+        receipt.total = std::accumulate(
+            receipt.items.begin(), receipt.items.end(), 0.0,
+            [](double sum, const ReceiptItem& item) {
+                return sum + item.subtotal;
+            });
+
+        receipt.discount = receipt.total * discount_rate;
+        receipt.final_amount = receipt.total - receipt.discount;
+        receipts_.push_back(receipt);
+
+        return receipt;
+    }
+
+    std::vector<std::pair<std::string, int>> get_hot_products(
+        int top_n = 10) const {
+        std::vector<std::pair<std::string, int>> sorted(
+            sales_count_.begin(), sales_count_.end());
+        std::sort(sorted.begin(), sorted.end(),
+            [](const auto& a, const auto& b) {
+                return a.second > b.second;
+            });
+        if (sorted.size() > static_cast<size_t>(top_n))
+            sorted.resize(top_n);
+        return sorted;
+    }
+
+    std::set<std::string> get_active_categories() const {
+        std::set<std::string> categories;
+        for (const auto& [barcode, count] : sales_count_) {
+            auto it = catalog_.find(barcode);
+            if (it != catalog_.end()) {
+                categories.insert(it->second.category);
+            }
+        }
+        return categories;
+    }
+
+    static void print_receipt(const Receipt& receipt) {
+        std::cout << "\n======= 购物小票 =======\n";
+        std::cout << "票号: " << receipt.receipt_no << "\n";
+        auto t = std::chrono::system_clock::to_time_t(receipt.timestamp);
+        std::cout << "时间: " << std::ctime(&t);
+
+        std::cout << std::setw(20) << std::left << "商品"
+                  << std::setw(8) << "单价"
+                  << std::setw(6) << "数量"
+                  << std::setw(10) << "小计" << "\n";
+        std::cout << std::string(44, '-') << "\n";
+
+        for (const auto& item : receipt.items) {
+            std::cout << std::setw(20) << item.name
+                      << std::setw(8) << std::fixed
+                         << std::setprecision(2) << item.price
+                      << std::setw(6) << item.quantity
+                      << std::setw(10) << item.subtotal << "\n";
+        }
+
+        std::cout << std::string(44, '-') << "\n";
+        std::cout << std::setw(34) << "合计:"
+                  << std::setw(10) << receipt.total << "\n";
+        if (receipt.discount > 0) {
+            std::cout << std::setw(34) << "优惠:"
+                      << std::setw(10) << receipt.discount << "\n";
+        }
+        std::cout << std::setw(34) << "实付:"
+                  << std::setw(10) << receipt.final_amount << "\n";
+        std::cout << "==========================\n";
+    }
+
+    void print_hot_products() const {
+        std::cout << "\n======= 热销商品排行榜 =======\n";
+        auto hot = get_hot_products(5);
+        for (size_t i = 0; i < hot.size(); ++i) {
+            auto it = catalog_.find(hot[i].first);
+            std::string name = (it != catalog_.end())
+                               ? it->second.name : hot[i].first;
+            std::cout << "  " << (i + 1) << ". " << name
+                      << " - 销量: " << hot[i].second << "\n";
+        }
+        std::cout << "================================\n";
+    }
+};
+
+void run() {
+    std::cout << "\n========== 超市购物篮管理系统 ==========\n";
+
+    try {
+        SupermarketSystem market;
+
+        market.add_product({"6901234567890", "蒙牛纯牛奶", 5.50, "乳制品"});
+        market.add_product({"6901234567891", "伊利酸奶", 3.80, "乳制品"});
+        market.add_product({"6901234567892", "农夫山泉", 2.00, "饮料"});
+        market.add_product({"6901234567893", "可口可乐", 3.00, "饮料"});
+        market.add_product({"6901234567894", "康师傅方便面", 4.50, "食品"});
+        market.add_product({"6901234567895", "金龙鱼食用油", 89.90, "粮油"});
+        market.add_product({"6901234567896", "海天酱油", 12.80, "调味品"});
+        market.add_product({"6901234567897", "旺旺雪饼", 15.90, "零食"});
+
+        auto basket1 = market.create_basket({
+            {"6901234567890", 2}, {"6901234567892", 3}, {"6901234567894", 1}});
+        auto receipt1 = market.checkout(basket1, 0.05);
+        SupermarketSystem::print_receipt(receipt1);
+
+        auto basket2 = market.create_basket({
+            {"6901234567891", 1}, {"6901234567893", 2},
+            {"6901234567895", 1}, {"6901234567897", 1}});
+        auto receipt2 = market.checkout(basket2);
+        SupermarketSystem::print_receipt(receipt2);
+
+        market.print_hot_products();
+
+        auto categories = market.get_active_categories();
+        std::cout << "\n活跃商品分类: ";
+        for (const auto& cat : categories) std::cout << cat << " ";
+        std::cout << "\n";
+
+    } catch (const std::exception& e) {
+        std::cerr << "错误: " << e.what() << "\n";
+    }
+
+    std::cout << "=========================================\n";
+}
+
+} // namespace supermarket
+
+
+【案例3】日程管理应用 - 个人日程App
+================================================================================
+
+场景描述：日程管理，支持按日期组织事件，管理优先级和提醒。
+使用multimap按日期排序，chrono处理时间，priority_queue管理优先级。
+
+// ============================================================
+// 案例14-3: 日程管理应用
+// ============================================================
+#include <iostream>
+#include <map>
+#include <vector>
+#include <queue>
+#include <tuple>
+#include <string>
+#include <chrono>
+#include <optional>
+#include <fstream>
+#include <sstream>
+#include <algorithm>
+
+namespace scheduler {
+
+using ScheduleEntry = std::tuple<
+    std::string,
+    std::string,
+    std::string,
+    std::optional<std::string>,
+    int
+>;
+
+class ScheduleManager {
+private:
+    std::multimap<std::string, ScheduleEntry> schedule_;
+
+    using TodoItem = std::pair<int, std::string>;
+    std::priority_queue<TodoItem, std::vector<TodoItem>,
+                        std::greater<TodoItem>> todo_queue_;
+
+    std::vector<std::string> completed_;
+
+public:
+    void add_event(const std::string& date,
+                   const std::string& time,
+                   const std::string& title,
+                   std::optional<std::string> location = std::nullopt,
+                   int priority = 3) {
+        ScheduleEntry entry = std::make_tuple(
+            date, time, title, location, priority);
+        schedule_.insert({date, entry});
+    }
+
+    void add_todo(int priority, const std::string& title) {
+        todo_queue_.push({priority, title});
+    }
+
+    std::vector<ScheduleEntry> get_day_events(
+        const std::string& date) const {
+        std::vector<ScheduleEntry> events;
+        auto range = schedule_.equal_range(date);
+        for (auto it = range.first; it != range.second; ++it) {
+            events.push_back(it->second);
+        }
+        std::sort(events.begin(), events.end(),
+            [](const ScheduleEntry& a, const ScheduleEntry& b) {
+                return std::get<1>(a) < std::get<1>(b);
+            });
+        return events;
+    }
+
+    std::optional<std::pair<int, std::string>> get_next_todo() {
+        if (todo_queue_.empty()) return std::nullopt;
+        auto todo = todo_queue_.top();
+        todo_queue_.pop();
+        return todo;
+    }
+
+    void mark_completed(const std::string& title) {
+        completed_.push_back(title);
+    }
+
+    void save_to_file(const std::string& filepath) const {
+        std::ofstream file(filepath);
+        if (!file.is_open()) {
+            throw std::runtime_error("无法打开文件: " + filepath);
+        }
+        for (const auto& [date, entry] : schedule_) {
+            file << date << ","
+                 << std::get<1>(entry) << ","
+                 << std::get<2>(entry) << ","
+                 << std::get<3>(entry).value_or("") << ","
+                 << std::get<4>(entry) << "\n";
+        }
+        file.close();
+    }
+
+    void print_summary() const {
+        std::cout << "\n======= 日程摘要 =======\n";
+        std::cout << "日程总数: " << schedule_.size() << "\n";
+        std::cout << "待办事项: " << todo_queue_.size() << "\n";
+        std::cout << "已完成: " << completed_.size() << "\n";
+
+        std::map<std::string, int> daily_count;
+        for (const auto& [date, _] : schedule_) daily_count[date]++;
+        std::cout << "\n每日日程:\n";
+        for (const auto& [date, count] : daily_count) {
+            std::cout << "  " << date << ": " << count << " 项\n";
+        }
+        std::cout << "========================\n";
+    }
+
+    void print_day(const std::string& date) const {
+        auto events = get_day_events(date);
+        std::cout << "\n======= " << date << " 日程 =======\n";
+        if (events.empty()) {
+            std::cout << "  今日无日程\n";
+        } else {
+            for (const auto& e : events) {
+                std::cout << "  " << std::get<1>(e) << " "
+                          << std::get<2>(e) << " ";
+                if (std::get<3>(e).has_value())
+                    std::cout << "@" << std::get<3>(e).value() << " ";
+                std::cout << "[优先级:" << std::get<4>(e) << "]\n";
+            }
+        }
+        std::cout << "==========================\n";
+    }
+};
+
+void run() {
+    std::cout << "\n========== 日程管理应用 ==========\n";
+
+    try {
+        ScheduleManager manager;
+
+        manager.add_event("2024-06-01", "09:00", "团队晨会",
+                          std::optional("会议室A"), 1);
+        manager.add_event("2024-06-01", "14:00", "项目评审",
+                          std::optional("会议室B"), 2);
+        manager.add_event("2024-06-01", "18:00", "团队聚餐", std::nullopt, 3);
+        manager.add_event("2024-06-02", "10:00", "客户演示",
+                          std::optional("客户办公室"), 1);
+        manager.add_event("2024-06-02", "15:30", "代码审查", std::nullopt, 2);
+
+        manager.add_todo(1, "提交项目报告");
+        manager.add_todo(2, "回复客户邮件");
+        manager.add_todo(3, "更新技术文档");
+        manager.add_todo(1, "修复紧急Bug");
+
+        manager.print_summary();
+        manager.print_day("2024-06-01");
+        manager.print_day("2024-06-02");
+
+        std::cout << "\n--- 处理待办 ---\n";
+        while (auto todo = manager.get_next_todo()) {
+            auto [priority, title] = *todo;
+            std::cout << "处理: " << title
+                      << " (优先级: " << priority << ")\n";
+            manager.mark_completed(title);
+        }
+
+        manager.save_to_file("schedule_backup.csv");
+        std::cout << "\n日程已保存到 schedule_backup.csv\n";
+
+    } catch (const std::exception& e) {
+        std::cerr << "错误: " << e.what() << "\n";
+    }
+
+    std::cout << "=====================================\n";
+}
+
+} // namespace scheduler
+
+
+【案例4】搜索引擎索引构建器 - 简易搜索引擎
+================================================================================
+
+场景描述：构建简易搜索索引，支持倒排索引、分词、多线程处理。
+
+// ============================================================
+// 案例14-4: 搜索引擎索引构建器
+// ============================================================
+#include <iostream>
+#include <string>
+#include <vector>
+#include <unordered_map>
+#include <map>
+#include <set>
+#include <algorithm>
+#include <sstream>
+#include <fstream>
+#include <thread>
+#include <mutex>
+#include <regex>
+#include <variant>
+#include <atomic>
+#include <chrono>
+#include <memory>
+
+namespace search_engine {
+
+using DocumentMeta = std::variant<
+    std::monostate, std::string, int, double>;
+
+struct Document {
+    std::string id;
+    std::string title;
+    std::string content;
+    std::unordered_map<std::string, DocumentMeta> metadata;
+};
+
+struct PostingEntry {
+    std::string doc_id;
+    int term_frequency;
+    std::vector<size_t> positions;
+};
+
+using InvertedIndex = std::unordered_map<
+    std::string, std::vector<PostingEntry>>;
+
+class SearchEngine {
+private:
+    std::vector<Document> documents_;
+    InvertedIndex inverted_index_;
+    mutable std::mutex index_mtx_;
+
+    std::vector<std::string> tokenize(const std::string& text) const {
+        std::vector<std::string> tokens;
+        std::regex word_pattern(R"([a-zA-Z0-9_]+)");
+        auto words_begin = std::sregex_iterator(
+            text.begin(), text.end(), word_pattern);
+        auto words_end = std::sregex_iterator();
+        for (auto it = words_begin; it != words_end; ++it) {
+            std::string word = it->str();
+            std::transform(word.begin(), word.end(), word.begin(),
+                           [](unsigned char c) { return std::tolower(c); });
+            tokens.push_back(word);
+        }
+        return tokens;
+    }
+
+    void index_document(const Document& doc) {
+        auto tokens = tokenize(doc.content);
+        std::unordered_map<std::string, PostingEntry> doc_index;
+        for (size_t i = 0; i < tokens.size(); ++i) {
+            auto& entry = doc_index[tokens[i]];
+            entry.doc_id = doc.id;
+            entry.term_frequency++;
+            entry.positions.push_back(i);
+        }
+        std::lock_guard<std::mutex> lock(index_mtx_);
+        for (auto& [term, entry] : doc_index) {
+            inverted_index_[term].push_back(std::move(entry));
+        }
+    }
+
+public:
+    void add_document(Document doc) {
+        documents_.push_back(doc);
+        index_document(documents_.back());
+    }
+
+    void add_documents(const std::vector<Document>& docs,
+                       int num_threads = 4) {
+        documents_.reserve(documents_.size() + docs.size());
+        std::vector<std::thread> threads;
+        std::queue<size_t> work_queue;
+        std::mutex queue_mtx;
+        std::atomic<size_t> completed{0};
+
+        for (size_t i = 0; i < docs.size(); ++i) work_queue.push(i);
+
+        auto worker = [&]() {
+            while (true) {
+                size_t idx;
+                {
+                    std::lock_guard<std::mutex> lock(queue_mtx);
+                    if (work_queue.empty()) return;
+                    idx = work_queue.front();
+                    work_queue.pop();
+                }
+                Document doc = docs[idx];
+                documents_.push_back(doc);
+                index_document(documents_.back());
+                completed.fetch_add(1);
+            }
+        };
+
+        for (int i = 0; i < num_threads; ++i)
+            threads.emplace_back(worker);
+        for (auto& t : threads) t.join();
+    }
+
+    struct SearchResult {
+        std::string doc_id;
+        std::string title;
+        int score;
+        std::vector<std::pair<std::string, int>> term_frequencies;
+    };
+
+    std::vector<SearchResult> search(const std::string& query,
+                                      int max_results = 10) const {
+        auto query_terms = tokenize(query);
+        if (query_terms.empty()) return {};
+
+        std::unordered_map<std::string, int> doc_scores;
+        for (const auto& term : query_terms) {
+            auto it = inverted_index_.find(term);
+            if (it == inverted_index_.end()) continue;
+            for (const auto& posting : it->second) {
+                doc_scores[posting.doc_id] += posting.term_frequency;
+            }
+        }
+
+        std::vector<SearchResult> results;
+        for (const auto& [doc_id, score] : doc_scores) {
+            SearchResult sr;
+            sr.doc_id = doc_id;
+            sr.score = score;
+            auto doc_it = std::find_if(documents_.begin(), documents_.end(),
+                [&doc_id](const Document& d) { return d.id == doc_id; });
+            if (doc_it != documents_.end()) sr.title = doc_it->title;
+            results.push_back(sr);
+        }
+
+        std::sort(results.begin(), results.end(),
+            [](const SearchResult& a, const SearchResult& b) {
+                return a.score > b.score;
+            });
+
+        if (results.size() > static_cast<size_t>(max_results))
+            results.resize(max_results);
+        return results;
+    }
+
+    size_t document_count() const { return documents_.size(); }
+
+    void print_stats() const {
+        std::cout << "\n========== 索引统计 ==========\n";
+        std::cout << "文档数: " << documents_.size() << "\n";
+        std::cout << "倒排索引条目数: " << inverted_index_.size() << "\n";
+
+        std::vector<std::pair<std::string, int>> term_counts;
+        for (const auto& [term, postings] : inverted_index_) {
+            int total_freq = 0;
+            for (const auto& p : postings) total_freq += p.term_frequency;
+            term_counts.push_back({term, total_freq});
+        }
+        std::sort(term_counts.begin(), term_counts.end(),
+            [](const auto& a, const auto& b) { return a.second > b.second; });
+
+        std::cout << "\n频率最高的词:\n";
+        size_t top_n = std::min(size_t(5), term_counts.size());
+        for (size_t i = 0; i < top_n; ++i) {
+            std::cout << "  " << (i + 1) << ". " << term_counts[i].first
+                      << " (" << term_counts[i].second << "次)\n";
+        }
+        std::cout << "===============================\n";
+    }
+};
+
+void run() {
+    std::cout << "\n========== 搜索引擎索引构建器 ==========\n";
+    auto start_time = std::chrono::steady_clock::now();
+
+    SearchEngine engine;
+
+    engine.add_document({
+        "doc1", "C++入门教程",
+        "C++ 是一种强大的编程语言。学习C++可以掌握面向对象编程和泛型编程。"
+        "C++标准库提供了丰富的容器和算法。",
+        {{"author", std::string("张三")}, {"rating", 5}}
+    });
+
+    engine.add_document({
+        "doc2", "Python数据分析",
+        "Python 是一种流行的脚本语言。使用Python可以进行数据分析和机器学习。"
+        "Python的pandas库和matplotlib库非常有用。",
+        {{"author", std::string("李四")}}
+    });
+
+    engine.add_document({
+        "doc3", "C++多线程编程",
+        "C++11引入了std::thread用于多线程编程。使用mutex可以保护共享数据。"
+        "条件变量和原子操作是C++并发编程的重要工具。",
+        {{"difficulty", 3}}
+    });
+
+    engine.add_document({
+        "doc4", "面向对象设计模式",
+        "面向对象编程是C++和Python的核心特性。通过继承和多态可以实现灵活的设计。"
+        "设计模式如单例模式和工厂模式在编程中很常见。",
+        {{"author", std::string("赵六")}}
+    });
+
+    engine.add_document({
+        "doc5", "数据结构与算法",
+        "数据结构如数组、链表、树和图是算法的基础。C++标准库提供了vector和list。"
+        "理解和应用算法对于高效的编程至关重要。",
+        {{"pages", 350}}
+    });
+
+    engine.print_stats();
+
+    std::cout << "\n========== 搜索结果 ==========\n";
+
+    for (auto query : {"C++ 编程", "多线程 mutex", "Python 数据分析"}) {
+        auto results = engine.search(query);
+        std::cout << "\n搜索: \"" << query << "\" ("
+                  << results.size() << " 条结果)\n";
+        for (const auto& r : results) {
+            std::cout << "  [" << r.doc_id << "] " << r.title
+                      << " (分数: " << r.score << ")\n";
+        }
+    }
+
+    auto end_time = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<
+        std::chrono::milliseconds>(end_time - start_time);
+    std::cout << "\n总耗时: " << elapsed.count() << " ms\n";
+    std::cout << "====================================\n";
+}
+
+} // namespace search_engine
+
+
+【案例5】游戏引擎资源管理系统 - 3A游戏资源管线
+================================================================================
+
+场景描述：3A游戏管理海量资源（纹理/模型/音频）。实现资源管理系统，
+支持多种资源类型、自动引用计数（shared_ptr）、优先级加载、
+多线程后台加载、工厂模式（第6章）、异常安全（第9章）。
+
+// ============================================================
+// 案例14-5: 游戏引擎资源管理系统
+// ============================================================
+#include <iostream>
+#include <string>
+#include <vector>
+#include <unordered_map>
+#include <queue>
+#include <memory>
+#include <variant>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <atomic>
+#include <chrono>
+#include <fstream>
+#include <functional>
+#include <stdexcept>
+
+namespace game_engine {
+
+enum class ResourceType { TEXTURE, MODEL, AUDIO, SHADER, SCRIPT, CONFIG };
+enum class ResourceState { UNLOADED, LOADING, LOADED, FAILED };
+
+// 资源基类（第5/6章：继承多态）
+class IResource {
+protected:
+    std::string path_, name_;
+    ResourceType type_;
+    ResourceState state_ = ResourceState::UNLOADED;
+    int priority_ = 0;
+    size_t size_bytes_ = 0;
+
+public:
+    IResource(const std::string& path, const std::string& name,
+              ResourceType type)
+        : path_(path), name_(name), type_(type) {}
+    virtual ~IResource() = default;
+    virtual bool load() = 0;
+    virtual void unload() = 0;
+
+    const std::string& get_path() const { return path_; }
+    const std::string& get_name() const { return name_; }
+    ResourceType get_type() const { return type_; }
+    ResourceState get_state() const { return state_; }
+    int get_priority() const { return priority_; }
+    size_t get_size() const { return size_bytes_; }
+    void set_priority(int p) { priority_ = p; }
+    void set_state(ResourceState s) { state_ = s; }
+};
+
+// 纹理资源
+class TextureResource : public IResource {
+    int width_ = 0, height_ = 0, channels_ = 0;
+    std::vector<unsigned char> pixel_data_;
+public:
+    TextureResource(const std::string& p, const std::string& n)
+        : IResource(p, n, ResourceType::TEXTURE) {}
+    bool load() override {
+        state_ = ResourceState::LOADING;
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        width_ = 1024; height_ = 1024; channels_ = 4;
+        size_bytes_ = width_ * height_ * channels_;
+        pixel_data_.resize(size_bytes_, 255);
+        state_ = ResourceState::LOADED;
+        return true;
+    }
+    void unload() override {
+        pixel_data_.clear(); pixel_data_.shrink_to_fit();
+        state_ = ResourceState::UNLOADED;
+    }
+};
+
+// 模型资源
+class ModelResource : public IResource {
+    int vertex_count_ = 0, triangle_count_ = 0;
+public:
+    ModelResource(const std::string& p, const std::string& n)
+        : IResource(p, n, ResourceType::MODEL) {}
+    bool load() override {
+        state_ = ResourceState::LOADING;
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        vertex_count_ = 50000; triangle_count_ = 100000;
+        size_bytes_ = vertex_count_ * 32;
+        state_ = ResourceState::LOADED;
+        return true;
+    }
+    void unload() override {
+        vertex_count_ = 0; triangle_count_ = 0;
+        state_ = ResourceState::UNLOADED;
+    }
+};
+
+// 音频资源
+class AudioResource : public IResource {
+    double duration_ = 0;
+    std::vector<float> samples_;
+public:
+    AudioResource(const std::string& p, const std::string& n)
+        : IResource(p, n, ResourceType::AUDIO) {}
+    bool load() override {
+        state_ = ResourceState::LOADING;
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        duration_ = 3.5;
+        size_bytes_ = static_cast<size_t>(duration_ * 44100 * sizeof(float));
+        samples_.resize(static_cast<size_t>(duration_ * 44100), 0.0f);
+        state_ = ResourceState::LOADED;
+        return true;
+    }
+    void unload() override {
+        samples_.clear(); state_ = ResourceState::UNLOADED;
+    }
+};
+
+// 资源工厂（第5/6章：工厂模式）
+class ResourceFactory {
+public:
+    static std::unique_ptr<IResource> create(
+        const std::string& path, const std::string& name, ResourceType type) {
+        switch (type) {
+            case ResourceType::TEXTURE:
+                return std::make_unique<TextureResource>(path, name);
+            case ResourceType::MODEL:
+                return std::make_unique<ModelResource>(path, name);
+            case ResourceType::AUDIO:
+                return std::make_unique<AudioResource>(path, name);
+            default:
+                throw std::runtime_error("Unsupported resource type");
+        }
+    }
+};
+
+using ResourceHandle = std::shared_ptr<IResource>;
+
+struct ResourcePriorityCompare {
+    bool operator()(const ResourceHandle& a, const ResourceHandle& b) const {
+        return a->get_priority() < b->get_priority();
+    }
+};
+
+// 资源管理器
+class ResourceManager {
+private:
+    std::unordered_map<std::string, ResourceHandle> resources_;
+    mutable std::mutex resources_mtx_;
+
+    std::priority_queue<ResourceHandle, std::vector<ResourceHandle>,
+                        ResourcePriorityCompare> load_queue_;
+
+    std::thread load_thread_;
+    std::atomic<bool> running_{true};
+    std::atomic<size_t> total_loaded_{0};
+    std::atomic<size_t> total_bytes_{0};
+    std::mutex load_mtx_;
+    std::condition_variable load_cv_;
+
+    void load_worker() {
+        while (running_.load(std::memory_order_relaxed)) {
+            ResourceHandle resource;
+            {
+                std::unique_lock<std::mutex> lock(load_mtx_);
+                load_cv_.wait(lock, [this]() {
+                    return !running_.load() || !load_queue_.empty();
+                });
+                if (!running_.load()) return;
+                if (!load_queue_.empty()) {
+                    resource = load_queue_.top();
+                    load_queue_.pop();
+                }
+            }
+
+            if (resource && resource->get_state() ==
+                            ResourceState::UNLOADED) {
+                try {
+                    if (resource->load()) {
+                        total_loaded_.fetch_add(1);
+                        total_bytes_.fetch_add(resource->get_size());
+                        std::cout << "  [加载完成] " << resource->get_name()
+                                  << " (" << resource->get_size() << " bytes)\n";
+                    }
+                } catch (const std::exception& e) {
+                    std::cerr << "  [加载失败] " << resource->get_name()
+                              << ": " << e.what() << "\n";
+                    resource->set_state(ResourceState::FAILED);
+                }
+            }
+        }
+    }
+
+public:
+    ResourceManager() {
+        load_thread_ = std::thread(&ResourceManager::load_worker, this);
+    }
+
+    ~ResourceManager() {
+        running_.store(false);
+        load_cv_.notify_all();
+        if (load_thread_.joinable()) load_thread_.join();
+    }
+
+    ResourceManager(const ResourceManager&) = delete;
+    ResourceManager& operator=(const ResourceManager&) = delete;
+
+    ResourceHandle get_resource(const std::string& path,
+                                 const std::string& name,
+                                 ResourceType type, int priority = 0) {
+        std::lock_guard<std::mutex> lock(resources_mtx_);
+        auto it = resources_.find(path);
+        if (it != resources_.end()) return it->second;
+
+        auto handle = ResourceHandle(
+            ResourceFactory::create(path, name, type));
+        handle->set_priority(priority);
+        resources_[path] = handle;
+
+        {
+            std::lock_guard<std::mutex> load_lock(load_mtx_);
+            load_queue_.push(handle);
+        }
+        load_cv_.notify_one();
+        return handle;
+    }
+
+    void preload_resources(
+        const std::vector<std::tuple<std::string, std::string,
+                                      ResourceType, int>>& asset_list) {
+        for (const auto& [path, name, type, priority] : asset_list) {
+            get_resource(path, name, type, priority);
+        }
+    }
+
+    void print_stats() const {
+        std::lock_guard<std::mutex> lock(resources_mtx_);
+        std::cout << "\n========== 资源管理统计 ==========\n";
+        std::cout << "资源总数: " << resources_.size() << "\n";
+        std::cout << "已加载: " << total_loaded_.load() << "\n";
+        std::cout << "总占用: " << total_bytes_.load()
+                  << " bytes (" << (total_bytes_.load() / (1024.0 * 1024.0))
+                  << " MB)\n";
+        std::cout << "待加载队列: " << load_queue_.size() << "\n";
+
+        std::map<ResourceType, int> type_count;
+        for (const auto& [_, res] : resources_) type_count[res->get_type()]++;
+
+        std::cout << "\n按类型分布:\n";
+        for (const auto& [type, count] : type_count) {
+            std::string type_str;
+            switch (type) {
+                case ResourceType::TEXTURE: type_str = "纹理"; break;
+                case ResourceType::MODEL:   type_str = "模型"; break;
+                case ResourceType::AUDIO:   type_str = "音频"; break;
+                case ResourceType::SHADER:  type_str = "着色器"; break;
+                case ResourceType::SCRIPT:  type_str = "脚本"; break;
+                case ResourceType::CONFIG:  type_str = "配置"; break;
+            }
+            std::cout << "  " << type_str << ": " << count << "\n";
+        }
+        std::cout << "===================================\n";
+    }
+};
+
+void run() {
+    std::cout << "\n========== 游戏引擎资源管理系统 ==========\n\n";
+
+    {
+        ResourceManager rm;
+        std::cout << "开始预加载资源...\n\n";
+
+        std::vector<std::tuple<std::string, std::string,
+                                ResourceType, int>> assets = {
+            {"assets/textures/hero.png", "HeroTexture", ResourceType::TEXTURE, 10},
+            {"assets/textures/terrain.png", "TerrainTexture", ResourceType::TEXTURE, 5},
+            {"assets/models/hero.gltf", "HeroModel", ResourceType::MODEL, 8},
+            {"assets/models/enemy.gltf", "EnemyModel", ResourceType::MODEL, 3},
+            {"assets/audio/bgm.mp3", "BGM", ResourceType::AUDIO, 6},
+            {"assets/audio/sfx_jump.mp3", "JumpSFX", ResourceType::AUDIO, 9},
+            {"assets/textures/ui.png", "UITexture", ResourceType::TEXTURE, 4},
+        };
+
+        rm.preload_resources(assets);
+
+        // 等待加载完成
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+
+        rm.print_stats();
+    }
+
+    std::cout << "\n资源管理器已释放（shared_ptr引用计数归零）\n";
+    std::cout << "============================================\n";
+}
+
+} // namespace game_engine
+
+
+### 第四节: 课后习题
+================================================================================
+
+【习题】设计一个"物流包裹追踪系统"
+
+请根据以下规格实现一个完整的物流包裹追踪系统：
+
+要求：
+1. Package类（第4章）
+   - 属性：运单号、发件人、收件人、状态、各状态时间戳
+   - 状态枚举：已揽收、运输中、到达中转站、派送中、已签收
+   - 方法：更新状态并自动记录时间戳
+
+2. 快速查找（第14章：unordered_map）
+   - 用 std::unordered_map<std::string, Package> 按运单号查找
+   - 支持按发件人/收件人姓名查找（遍历 + find_if）
+
+3. 待派送管理（第14章：priority_queue）
+   - 用 priority_queue 管理待派送的包裹（按紧急程度排序）
+   - 紧急程度规则：优先级 + 等待时间
+
+4. 历史记录（第14章：multimap）
+   - 用 std::multimap 按时间戳排序所有包裹的状态变更历史
+   - 支持查询某时间段的包裹状态变更
+
+5. 时间记录（第14章：chrono）
+   - 用 std::chrono 记录每个状态变更的精确时间
+   - 计算包裹从揽收到签收的总耗时
+   - 支持按时间范围查询包裹
+
+6. 排序统计（第14章：algorithm + Lambda）
+   - 按派送时间排序
+   - 按优先级排序
+   - 用Lambda自定义排序规则
+
+7. 可选信息（第14章：optional）
+   - 用 std::optional<std::string> 表示可选的签收人信息
+   - 签收前为 nullopt，签收后为签收人姓名
+
+8. 数据持久化（第10章：文件I/O）
+   - 将所有包裹数据保存到JSON格式文件
+   - 启动时从文件加载历史数据
+   - 异常处理文件读写错误
+
+9. 错误处理（第9章：异常处理）
+   - 查询不存在的运单号抛出自定义异常
+   - 无效的状态转换抛出异常
+
+10. 扩展功能（加分项）
+    - 多线程（第12章）处理批量包裹状态更新
+    - 命名空间（第1章）封装 logistics
+    - 智能指针（第3章）管理动态分配的包裹列表
+    - 继承多态（第5/6章）不同包裹类型（普通/冷链/国际）
+
+// ============================================================
+// 物流包裹追踪系统 —— 骨架代码
+// ============================================================
+#include <iostream>
+#include <string>
+#include <vector>
+#include <unordered_map>
+#include <map>
+#include <queue>
+#include <optional>
+#include <chrono>
+#include <algorithm>
+#include <fstream>
+#include <stdexcept>
+#include <memory>
+#include <sstream>
+#include <iomanip>
+
+namespace logistics {
+
+// 包裹状态枚举
+enum class PackageStatus {
+    PICKED_UP,       // 已揽收
+    IN_TRANSIT,      // 运输中
+    AT_HUB,          // 到达中转站
+    OUT_FOR_DELIVERY,// 派送中
+    DELIVERED        // 已签收
+};
+
+// 状态到字符串
+std::string status_to_string(PackageStatus s) {
+    switch (s) {
+        case PackageStatus::PICKED_UP:       return "已揽收";
+        case PackageStatus::IN_TRANSIT:      return "运输中";
+        case PackageStatus::AT_HUB:          return "到达中转站";
+        case PackageStatus::OUT_FOR_DELIVERY: return "派送中";
+        case PackageStatus::DELIVERED:        return "已签收";
+        default:                              return "未知";
+    }
+}
+
+// 状态记录
+struct StatusRecord {
+    PackageStatus status;
+    std::chrono::system_clock::time_point timestamp;
+    std::string location;
+};
+
+// 包裹类（第4章）
+class Package {
+private:
+    std::string tracking_number_;
+    std::string sender_name_;
+    std::string sender_address_;
+    std::string receiver_name_;
+    std::string receiver_address_;
+    std::string receiver_phone_;
+    PackageStatus current_status_;
+    std::vector<StatusRecord> status_history_;
+    int priority_;  // 1=最高, 5=最低
+    std::optional<std::string> signed_by_;
+
+public:
+    Package(const std::string& tracking, const std::string& sender,
+            const std::string& receiver, int priority = 3)
+        : tracking_number_(tracking),
+          sender_name_(sender),
+          receiver_name_(receiver),
+          current_status_(PackageStatus::PICKED_UP),
+          priority_(priority) {
+        StatusRecord first;
+        first.status = PackageStatus::PICKED_UP;
+        first.timestamp = std::chrono::system_clock::now();
+        first.location = "发货地";
+        status_history_.push_back(first);
+    }
+
+    void update_status(PackageStatus new_status,
+                       const std::string& location = "",
+                       std::optional<std::string> signer = std::nullopt) {
+        StatusRecord record;
+        record.status = new_status;
+        record.timestamp = std::chrono::system_clock::now();
+        record.location = location;
+        status_history_.push_back(record);
+        current_status_ = new_status;
+
+        if (new_status == PackageStatus::DELIVERED && signer.has_value()) {
+            signed_by_ = signer;
+        }
+    }
+
+    std::string get_tracking() const { return tracking_number_; }
+    std::string get_sender() const { return sender_name_; }
+    std::string get_receiver() const { return receiver_name_; }
+    PackageStatus get_status() const { return current_status_; }
+    int get_priority() const { return priority_; }
+    std::optional<std::string> get_signer() const { return signed_by_; }
+
+    const std::vector<StatusRecord>& get_history() const {
+        return status_history_;
+    }
+
+    // 获取运送总耗时
+    std::chrono::seconds get_total_duration() const {
+        if (status_history_.size() < 2) return std::chrono::seconds(0);
+        auto start = status_history_.front().timestamp;
+        auto end = status_history_.back().timestamp;
+        return std::chrono::duration_cast<std::chrono::seconds>(end - start);
+    }
+
+    // 快递信息摘要
+    std::string to_string() const {
+        std::ostringstream oss;
+        oss << "运单号: " << tracking_number_
+            << "\n  发件人: " << sender_name_
+            << "\n  收件人: " << receiver_name_
+            << "\n  状态: " << status_to_string(current_status_)
+            << "\n  优先级: " << priority_
+            << "\n  追踪记录: " << status_history_.size() << " 条";
+        if (signed_by_.has_value()) {
+            oss << "\n  签收人: " << signed_by_.value();
+        }
+        return oss.str();
+    }
+};
+
+// 包裹追踪系统（第14章：综合使用多种容器）
+class PackageTracker {
+private:
+    // 主存储：按运单号快速查找
+    std::unordered_map<std::string, std::shared_ptr<Package>> packages_;
+
+    // 按时间戳的历史记录（multimap支持同时间多个事件）
+    std::multimap<std::chrono::system_clock::time_point,
+                  std::shared_ptr<Package>> timeline_;
+
+    // 待派送队列（priority_queue + 自定义比较）
+    struct DeliveryCompare {
+        bool operator()(const std::shared_ptr<Package>& a,
+                        const std::shared_ptr<Package>& b) const {
+            return a->get_priority() > b->get_priority();
+        }
+    };
+    std::priority_queue<std::shared_ptr<Package>,
+                        std::vector<std::shared_ptr<Package>>,
+                        DeliveryCompare> delivery_queue_;
+
+public:
+    // 添加包裹
+    void add_package(std::shared_ptr<Package> pkg) {
+        if (packages_.find(pkg->get_tracking()) != packages_.end()) {
+            throw std::runtime_error("重复的运单号: " + pkg->get_tracking());
+        }
+        packages_[pkg->get_tracking()] = pkg;
+    }
+
+    // 按运单号查找
+    std::shared_ptr<Package> find(const std::string& tracking) const {
+        auto it = packages_.find(tracking);
+        if (it == packages_.end()) {
+            throw std::runtime_error("运单号不存在: " + tracking);
+        }
+        return it->second;
+    }
+
+    // 按收件人姓名查找
+    std::vector<std::shared_ptr<Package>> find_by_receiver(
+        const std::string& name) const {
+        std::vector<std::shared_ptr<Package>> result;
+        for (const auto& [_, pkg] : packages_) {
+            if (pkg->get_receiver() == name) {
+                result.push_back(pkg);
+            }
+        }
+        return result;
+    }
+
+    // 加入待派送队列
+    void enqueue_delivery(const std::string& tracking) {
+        auto pkg = find(tracking);
+        delivery_queue_.push(pkg);
+    }
+
+    // 获取下一个待派送包裹
+    std::optional<std::shared_ptr<Package>> get_next_delivery() {
+        if (delivery_queue_.empty()) return std::nullopt;
+        auto pkg = delivery_queue_.top();
+        delivery_queue_.pop();
+        return pkg;
+    }
+
+    // 按优先级排序所有包裹
+    std::vector<std::shared_ptr<Package>> sort_by_priority() const {
+        std::vector<std::shared_ptr<Package>> result;
+        for (const auto& [_, pkg] : packages_) result.push_back(pkg);
+
+        std::sort(result.begin(), result.end(),
+            [](const auto& a, const auto& b) {
+                return a->get_priority() < b->get_priority();
+            });
+        return result;
+    }
+
+    // 获取所有包裹
+    size_t total_packages() const { return packages_.size(); }
+    size_t pending_deliveries() const { return delivery_queue_.size(); }
+
+    // 打印摘要
+    void print_summary() const {
+        std::cout << "\n========== 物流包裹追踪系统 ==========\n";
+        std::cout << "包裹总数: " << total_packages() << "\n";
+        std::cout << "待派送: " << pending_deliveries() << "\n";
+
+        for (const auto& [_, pkg] : packages_) {
+            std::cout << "\n" << pkg->to_string() << "\n";
+        }
+        std::cout << "=========================================\n";
+    }
+
+    // 保存到文件（第10章：文件I/O）
+    void save_to_file(const std::string& filepath) const {
+        std::ofstream file(filepath);
+        if (!file.is_open()) {
+            throw std::runtime_error("无法打开文件: " + filepath);
+        }
+        for (const auto& [tracking, pkg] : packages_) {
+            file << tracking << "|"
+                 << pkg->get_sender() << "|"
+                 << pkg->get_receiver() << "|"
+                 << static_cast<int>(pkg->get_status()) << "|"
+                 << pkg->get_priority() << "\n";
+        }
+        file.close();
+    }
+};
+
+} // namespace logistics
+
+// 编译: g++ -std=c++17 logistics.cpp -o logistics -lpthread
+
+================================================================================
+                        第十四章 完
+================================================================================

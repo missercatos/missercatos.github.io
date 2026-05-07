@@ -1,0 +1,487 @@
+============================================================
+模块一：代理与隐蔽通信
+============================================================
+
+【学习目标】
+1. 掌握proxychains的配置与使用，通过代理链隐藏真实IP
+2. 理解Tor网络的原理，搭建Tor代理实现匿名通信
+3. 掌握privoxy的HTTP到SOCKS转换技术
+4. 能够搭建多层代理链，实现隐蔽的红队操作
+
+【工具清单】
+- proxychains  (代理链工具，强制任何程序通过代理连接)
+- tor          (洋葱路由网络，提供匿名通信)
+- privoxy      (HTTP代理，可将HTTP流量转为SOCKS)
+- curl         (用于验证代理是否生效)
+- nmap         (通过网络代理进行端口扫描)
+- firefox      (通过代理链访问Web资源)
+
+============================================================
+第一章：Proxychains——代理链的核心武器
+============================================================
+
+1.1 Proxychains概述
+------------------------------------------------------------
+proxychains是Linux下的代理链工具，可以强制任何TCP程序通过指定的
+代理服务器连接目标。它通过LD_PRELOAD机制劫持网络相关的libc函数
+（如connect()），将程序的网络流量重定向到代理链中。
+
+核心优势：
+- 不需要修改程序源码
+- 支持SOCKS4/SOCKS5/HTTP代理
+- 支持代理链（多级代理串联）
+- 支持DNS代理，防止DNS泄露
+
+1.2 安装proxychains
+------------------------------------------------------------
+在ArchStrike上安装：
+  sudo pacman -S proxychains
+
+验证安装：
+  which proxychains
+  proxychains -h
+
+1.3 配置文件详解：/etc/proxychains.conf
+------------------------------------------------------------
+proxychains的主配置文件位于 /etc/proxychains.conf。
+
+关键配置项详解：
+
+(1) 代理链模式选择——dynamic_chain vs strict_chain
+
+  # 动态链模式——推荐使用
+  dynamic_chain
+  # 解释：按照代理列表顺序依次尝试，如果某个代理不可用则跳过，
+  # 继续尝试下一个代理。至少需要一个可用代理即可工作。
+
+  # 严格链模式
+  # strict_chain
+  # 解释：必须严格按照代理列表的顺序使用所有代理。
+  # 如果其中任何一个代理不可用，整个链都会失败。
+
+  # 随机链模式
+  # random_chain
+  # 解释：从代理列表中随机选择代理组成链，增加不可预测性。
+  # 配合chain_len设置链的长度。
+
+对于红队渗透测试，推荐使用dynamic_chain，因为它具有更好的
+容错性。如果某个代理节点失效，不会导致整个操作失败。
+
+(2) 代理列表配置
+
+  [ProxyList]
+  # 格式：type  host  port  [user  password]
+  
+  # 添加SOCKS4代理（Tor默认端口）
+  socks4  127.0.0.1  9050
+  
+  # 添加SOCKS5代理
+  socks5  192.168.1.100  1080
+  
+  # 添加HTTP代理
+  http    10.0.0.1      8080  user  pass
+
+  常用代理类型：
+  - socks4：仅支持TCP，无认证
+  - socks5：支持TCP/UDP，支持认证，支持DNS
+  - http：HTTP代理，部分支持CONNECT隧道
+
+(3) DNS代理——proxy_dns（防止DNS泄露）
+
+  # 开启DNS代理
+  proxy_dns
+  # 解释：DNS查询也会通过代理发送，防止本地DNS泄露。
+  # 如果不开启，程序直接向本地DNS服务器查询域名，
+  # 攻击目标可能通过DNS日志发现你的真实IP。
+
+  警告：proxy_dns在SOCKS4代理下可能工作不正常，
+  因为SOCKS4不支持远程DNS解析。建议使用SOCKS5代理
+  或者在Tor+proxychains场景下使用。
+
+(4) 其他重要配置
+
+  # 安静模式（不输出代理链调试信息）
+  quiet_mode
+  
+  # TCP读取超时（毫秒）
+  tcp_read_time_out 15000
+  
+  # TCP连接超时（毫秒）
+  tcp_connect_time_out 8000
+
+1.4 proxychains基础使用
+------------------------------------------------------------
+语法：proxychains <程序> [参数]
+
+(1) 通过代理执行Nmap扫描
+  proxychains nmap -sT -Pn 10.0.0.10
+  
+  参数说明：
+  - -sT：TCP全连接扫描（proxychains不支持SYN扫描）
+  - -Pn：跳过主机发现（代理环境下ping可能不可靠）
+  - 注意：不能使用-sS（SYN半开扫描），因为需要原始套接字
+
+(2) 通过代理使用Firefox浏览器
+  proxychains firefox
+  
+  注意：Firefox本身可以配置代理，但使用proxychains可以
+  确保所有Firefox流量（包括插件更新、DNS查询等）都走代理，
+  避免意外泄露真实IP。
+
+  更安全的方式是配合privoxy使用（见第三章），或者使用
+  Tor Browser，它是预配置好代理的Firefox定制版。
+
+(3) 通过代理进行SSH连接
+  proxychains ssh user@10.0.0.10
+  
+  这会通过代理链连接SSH，适用于：
+  - 连接内网目标中的SSH服务
+  - 通过跳板机连接更深层的网络
+  - 隐藏SSH客户端的真实IP地址
+
+(4) 通过代理运行sqlmap进行SQL注入
+  proxychains sqlmap -u "http://internal.target.com/vuln.php?id=1" --dbs
+  
+  重要说明：
+  - 目标URL必须是可通过代理访问的
+  - 如果目标是内网地址，需要确保代理服务器能路由到内网
+  - 代理会增加延迟，sqlmap的扫描速度会显著下降
+  - 可以配合--delay参数降低请求速率
+
+(5) 通过代理进行curl请求验证
+  proxychains curl -s https://check.torproject.org
+  
+  用途：
+  - 验证代理是否正常工作
+  - 检查出口IP是否为Tor节点IP
+  - 调试代理配置是否正确
+
+1.5 proxychains高级技巧
+------------------------------------------------------------
+(1) 多层代理链示例配置
+
+  [ProxyList]
+  socks5  192.168.1.100  1080   # 第一跳：本地SOCKS代理
+  http    10.20.30.40    3128   # 第二跳：内网HTTP代理
+  socks4  172.16.0.1     9050   # 第三跳：目标网络Tor节点
+  
+  流量路径：本机 -> SOCKS5(1080) -> HTTP(3128) -> SOCKS4(9050) -> 目标
+
+(2) 绕过某些程序的反代理检测
+  某些程序会检测LD_PRELOAD并拒绝运行。可以使用proxychains的
+  安静模式减少特征，或者使用iptables方式强制路由。
+
+(3) 配合tsocks/redsocks
+  当proxychains对某些程序不兼容时，可以考虑使用iptables +
+  redsocks的方式进行透明代理。
+
+============================================================
+第二章：Tor网络——洋葱路由匿名通信
+============================================================
+
+2.1 Tor网络概述
+------------------------------------------------------------
+Tor（The Onion Router）是一种基于洋葱路由的匿名通信网络。
+流量经过三层中继节点加密传输，每层解密后才知道下一跳地址，
+使得任何单个节点都无法同时知道通信的来源和目的地。
+
+关键概念：
+- Entry/Guard Node（入口节点）：知道客户端IP，不知道目的地
+- Middle Node（中间节点）：只知道前驱和后继
+- Exit Node（出口节点）：知道目的地，不知道客户端IP
+
+2.2 安装Tor
+------------------------------------------------------------
+在ArchStrike上安装：
+  sudo pacman -S tor
+
+安装后的主要文件：
+- /usr/bin/tor            Tor主程序
+- /etc/tor/torrc          Tor配置文件
+- /var/lib/tor/           Tor数据目录
+- /var/log/tor/           Tor日志目录
+
+2.3 启动和管理Tor服务
+------------------------------------------------------------
+(1) 启动Tor服务
+  sudo systemctl start tor
+  
+(2) 设置开机自启
+  sudo systemctl enable tor
+  
+(3) 查看运行状态
+  sudo systemctl status tor
+  
+(4) 查看Tor日志
+  sudo journalctl -u tor -f
+  
+(5) 重启Tor服务（换出口节点）
+  sudo systemctl restart tor
+
+2.4 验证Tor代理是否生效
+------------------------------------------------------------
+(1) 使用proxychains验证
+  proxychains curl -s https://check.torproject.org
+  
+  如果配置正确，输出中会包含"Congratulations"字样，
+  表示当前出口IP是Tor节点。
+
+(2) 查看当前出口IP
+  proxychains curl -s https://api.ipify.org
+  # 记录这个IP地址
+  
+  curl -s https://api.ipify.org
+  # 对比直连的IP地址，验证是否通过Tor
+
+2.5 Tor隐藏服务（Hidden Service）
+------------------------------------------------------------
+Tor隐藏服务允许在Tor网络内部提供TCP服务，服务端的真实
+IP地址对外界不可见。这对红队C2基础设施非常有用。
+
+(1) 配置隐藏服务
+
+编辑 /etc/tor/torrc，添加：
+  HiddenServiceDir /var/lib/tor/hidden_service/
+  HiddenServicePort 80 127.0.0.1:80
+  HiddenServicePort 22 127.0.0.1:22
+
+解释：
+- HiddenServiceDir：隐藏服务的密钥和数据目录
+- HiddenServicePort：将Tor网络端口映射到本地服务
+  格式：HiddenServicePort <虚拟端口> <本地地址:本地端口>
+
+(2) 查看.onion地址
+  sudo cat /var/lib/tor/hidden_service/hostname
+  # 输出类似：abcdef1234567890.onion
+
+这个.onion地址就是你的隐藏服务地址，他人通过Tor网络
+可以访问，但无法得知你的真实IP。
+
+(3) 安全加固建议
+  - 隐藏服务的Web服务器应去除所有版本信息
+  - 关闭不必要的HTTP头（Server、X-Powered-By等）
+  - 不要在同一服务器上同时运行公开服务和隐藏服务
+  - 隐藏服务使用独立的用户和文件权限
+
+2.6 Tor代理链技巧
+------------------------------------------------------------
+(1) Tor + SSH隧道组合
+  首先建立SSH动态端口转发：
+    ssh -D 1080 user@vps
+  
+  然后在proxychains中配置多级代理：
+    [ProxyList]
+    socks5  127.0.0.1  1080    # SSH隧道
+    socks4  127.0.0.1  9050    # Tor
+
+(2) Tor出口节点控制
+  编辑 /etc/tor/torrc：
+    # 只使用特定国家的出口节点
+    ExitNodes {us},{gb},{de}
+    
+    # 排除某些国家
+    ExcludeExitNodes {cn},{ru}
+    
+    # 严格节点（只使用特定国家的入口和出口）
+    StrictNodes 1
+
+============================================================
+第三章：Privoxy——HTTP到SOCKS桥接
+============================================================
+
+3.1 为什么需要Privoxy
+------------------------------------------------------------
+Tor提供的是SOCKS5代理（端口9050），但某些应用程序
+只支持HTTP代理或者不能直接使用SOCKS代理。Privoxy将
+HTTP代理请求转换为SOCKS请求，起到桥接作用。
+
+典型场景：
+- Firefox配置HTTP代理连接到Privoxy
+- Privoxy将请求转发到Tor的SOCKS代理
+- Tor通过洋葱网络完成请求
+
+3.2 安装和配置Privoxy
+------------------------------------------------------------
+(1) 安装
+  sudo pacman -S privoxy
+
+(2) 配置转发到Tor
+
+编辑 /etc/privoxy/config，在文件末尾添加：
+  forward-socks5t   /               127.0.0.1:9050 .
+
+解释：
+- forward-socks5t：使用SOCKS5t（t表示支持Tor DNS解析）
+- /：匹配所有URL路径
+- 127.0.0.1:9050：Tor的SOCKS代理地址
+- 最后的点(.)：表示这是转发的终点
+
+(3) 启动Privoxy
+  sudo systemctl start privoxy
+  sudo systemctl enable privoxy
+
+  默认监听地址：127.0.0.1:8118
+
+3.3 结合Firefox使用
+------------------------------------------------------------
+(1) 打开Firefox浏览器
+(2) 进入设置 -> 网络设置 -> 代理设置
+(3) 选择"手动配置代理"
+(4) HTTP代理：127.0.0.1，端口：8118
+(5) 勾选"也将此代理用于HTTPS"
+(6) SOCKS代理：127.0.0.1，端口：9050（SOCKS5）
+(7) 勾选"使用SOCKS代理时通过代理发送DNS查询"
+
+通过以上配置，Firefox的所有HTTP/HTTPS流量都会经过
+Privoxy -> Tor链路，实现匿名浏览。
+
+3.4 验证Privoxy工作正常
+------------------------------------------------------------
+  # 直接通过privoxy代理访问
+  export http_proxy=http://127.0.0.1:8118
+  export https_proxy=http://127.0.0.1:8118
+  curl -s https://check.torproject.org
+
+  如果返回"Congratulations"，说明Privoxy -> Tor链路正常工作。
+
+3.5 Privoxy高级配置
+------------------------------------------------------------
+(1) 过滤广告和追踪器
+  /etc/privoxy/user.action 中可以添加过滤规则：
+    { +block }
+    .doubleclick.net
+    .google-analytics.com
+
+(2) 修改User-Agent
+    { +hide-user-agent{RedTeam Browser} }
+    /
+
+(3) 自定义转发规则
+    # 特定域名不通过Tor
+    forward  .internal.local  .
+    # 其余通过Tor
+    forward-socks5t  /  127.0.0.1:9050 .
+
+============================================================
+第四章：综合实践——建立隐蔽通信链路
+============================================================
+
+实践目标：
+搭建一个完整的代理链，实现通过Tor网络进行隐蔽的渗透测试操作。
+
+步骤详解：
+
+Step 1: 启动Tor服务
+  命令：sudo systemctl start tor
+  验证：sudo systemctl status tor
+  确认：查看tor日志确认连接成功
+  命令：sudo journalctl -u tor | tail -20
+  预期输出：包含"Tor has successfully opened a circuit"
+           或"Guessed our IP address as..."字样
+
+Step 2: 配置proxychains使用Tor SOCKS代理
+  编辑：sudo vim /etc/proxychains.conf
+  确保以下行未被注释：
+  
+    dynamic_chain
+    proxy_dns
+    tcp_read_time_out 15000
+    tcp_connect_time_out 8000
+    
+  代理列表最后一行添加：
+    socks4  127.0.0.1  9050
+  
+  保存退出。
+
+Step 3: 验证代理链
+  命令：proxychains curl -s https://api.ipify.org
+  对比直接查询：
+  命令：curl -s https://api.ipify.org
+  两个IP应该不同，说明代理生效。
+
+Step 4: 通过代理进行Nmap扫描
+  命令：proxychains nmap -sT -Pn -F 10.0.0.10
+  
+  注意：
+  - 必须使用-sT（全连接扫描）
+  - 必须使用-Pn（跳过主机发现）
+  - -F 表示快速扫描（仅100个常用端口）
+  - 扫描速度会很慢，因为所有数据包都经过Tor
+
+Step 5: 搭建Privoxy桥接（可选，用于浏览器）
+  命令：sudo pacman -S privoxy  （如果未安装）
+  编辑：sudo vim /etc/privoxy/config
+  添加：forward-socks5t / 127.0.0.1:9050 .
+  命令：sudo systemctl start privoxy
+
+Step 6: 配置Firefox使用代理
+  打开：firefox
+  进入：首选项 -> 网络设置 -> 手动代理配置
+  设置：HTTP代理 127.0.0.1:8118
+  勾选：也将此代理用于HTTPS
+  验证：在Firefox中访问 https://check.torproject.org
+  确认页面显示"Congratulations"。
+
+Step 7: 通过proxychains进行深度扫描
+  命令：proxychains sqlmap -u "http://target.com/page.php?id=1" --dbs --batch
+  命令：proxychains nikto -h http://target.com
+  命令：proxychains dirb http://target.com
+
+============================================================
+第五章：安全注意事项与最佳实践
+============================================================
+
+5.1 操作安全（OPSEC）
+------------------------------------------------------------
+(1) 在渗透测试前，务必确认proxychains配置正确
+(2) 使用proxy_dns防止DNS泄露
+(3) 定期更换Tor出口节点：sudo systemctl restart tor
+(4) 不要在同一服务器上同时进行代理操作和直连操作
+(5) 清理本地日志和历史记录
+
+5.2 已知绕过风险
+------------------------------------------------------------
+(1) UDP流量：proxychains默认不代理UDP流量
+    某些程序使用UDP可能导致真实IP泄露
+(2) ICMP流量：ping/traceroute等可能泄露真实IP
+(3) WebRTC：浏览器可能通过WebRTC泄露真实IP
+    解决方案：在Firefox中禁用WebRTC
+    about:config -> media.peerconnection.enabled -> false
+(4) Flash/Java插件：可能绕过代理设置
+
+5.3 性能优化
+------------------------------------------------------------
+(1) 选择网络延迟较低的Tor出口节点
+(2) 使用dynamic_chain而非strict_chain
+(3) 使用SOCKS5替代SOCKS4（更好的DNS支持）
+(4) 适当增加超时时间：tcp_read_time_out 60000
+
+5.4 故障排查
+------------------------------------------------------------
+问题：proxychains提示"denied"或无法连接
+排查步骤：
+  1. 确认代理服务器正在运行：netstat -tlnp | grep 9050
+  2. 确认proxychains配置正确：cat /etc/proxychains.conf | grep -v "^#"
+  3. 使用curl直接测试代理：curl --socks4 127.0.0.1:9050 https://check.torproject.org
+  4. 检查防火墙规则是否阻止了代理端口
+  5. 尝试使用verbose模式：proxychains -v curl https://httpbin.org/ip
+
+问题：DNS解析失败
+排查步骤：
+  1. 确认proxy_dns选项已启用
+  2. 检查是否为SOCKS4（SOCKS4不支持远程DNS），建议切换为SOCKS5
+  3. 尝试手动指定DNS服务器
+
+============================================================
+总结
+============================================================
+
+本教程涵盖了从基础代理配置到高级隐蔽通信的完整知识体系：
+- proxychains是红队代理操作的核心工具
+- Tor网络提供了匿名通信的基础设施
+- privoxy弥补了HTTP代理到SOCKS代理的转换缺口
+- 通过组合这些工具可以构建多层代理链
+- 实际操作中务必注意OPSEC，防止身份泄露
+
+掌握这些技术后，你可以在渗透测试中有效隐藏真实IP，
+并通过多层代理访问深层的目标网络。

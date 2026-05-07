@@ -1,0 +1,486 @@
+================================================================================
+模块01: 基础命令与Linux安全操作
+================================================================================
+
+【学习目标】
+1. 掌握Linux命令行基础操作，熟练使用常用命令
+2. 理解并运用Linux文件权限管理机制
+3. 掌握用户/组管理和sudo配置
+4. 学会进程管理和日志分析
+5. 配置iptables/nftables基础防火墙规则
+6. 搭建并加固SSH服务器
+
+【所需工具】(archstrike-base已预装)
+- coreutils (ls, cp, mv, rm, chmod, chown, find, etc.)
+- procps-ng (ps, top, kill)
+- net-tools / iproute2 (netstat, ss)
+- grep, findutils
+- openssh (sshd, ssh, ssh-keygen)
+- iptables / nftables
+- sudo
+- systemd (journalctl)
+- passwd, useradd, groupadd (shadow-utils)
+
+================================================================================
+第一部分: Linux命令行基础
+================================================================================
+
+1.1 文件和目录操作
+--------------------------------------------------
+
+ls      - 列出目录内容
+  ls -la          # 显示所有文件(含隐藏)及详细信息
+  ls -lh          # 人类可读的文件大小格式
+  ls -lt          # 按修改时间排序
+  ls -R           # 递归列出子目录
+
+cd      - 切换目录
+  cd /var/log     # 切换到/var/log
+  cd ..           # 返回上级目录
+  cd ~            # 返回用户家目录
+  cd -            # 返回上一次所在目录
+
+cp      - 复制文件/目录
+  cp file1 file2              # 复制文件
+  cp -r /src/dir /dst/dir     # 递归复制目录
+  cp -p file1 file2           # 保留权限/时间戳
+
+mv      - 移动/重命名文件
+  mv oldname newname          # 重命名
+  mv file /target/dir/        # 移动到目标目录
+
+rm      - 删除文件/目录
+  rm file                     # 删除文件
+  rm -rf /target/dir          # 递归强制删除 (谨慎使用!)
+
+mkdir / rmdir - 创建/删除目录
+  mkdir -p /a/b/c             # 递归创建目录结构
+  rmdir emptydir              # 只能删除空目录
+
+find    - 查找文件
+  find / -name "*.conf"                    # 按名称查找
+  find /var/log -mtime -7                  # 最近7天修改的文件
+  find / -type f -size +100M               # 大于100MB的文件
+  find / -user root -perm -4000            # 查找root的SUID文件
+  find / -type f -exec grep -l "search" {} \;  # 查找含特定内容的文件
+
+grep    - 文本搜索
+  grep "error" /var/log/syslog             # 搜索日志中的error
+  grep -r "password" /etc/                 # 递归搜索目录
+  grep -i "warning" /var/log/*.log         # 忽略大小写
+  grep -v "debug" /var/log/app.log         # 排除匹配行
+  grep -E "error|fail" /var/log/syslog     # 正则匹配(error或fail)
+
+ps      - 查看进程
+  ps aux                  # 显示所有进程
+  ps aux | grep nginx     # 查找特定进程
+  ps -ef --forest         # 显示进程树
+
+top     - 实时进程监控
+  top                     # 启动top
+  (在top界面中) k 键      # 输入PID终止进程
+  (在top界面中) u 键      # 按用户过滤
+  (在top界面中) M 键      # 按内存使用排序
+
+netstat - 网络连接查看 (net-tools, 已逐步被ss取代)
+  netstat -tulnp          # 查看监听端口
+  netstat -anp            # 查看所有连接
+  netstat -rn             # 查看路由表
+
+ss      - 网络连接查看 (iproute2, netstat的现代替代)
+  ss -tulnp               # 查看监听端口
+  ss -antp                # 查看所有TCP连接
+  ss -s                   # 连接统计摘要
+
+================================================================================
+第二部分: 文件权限管理
+================================================================================
+
+2.1 基本权限 (rwx)
+--------------------------------------------------
+
+权限表示:  r (读=4)  w (写=2)  x (执行=1)
+三类对象:  Owner(所有者)  Group(组)  Other(其他人)
+
+chmod   - 修改文件权限
+  chmod 755 script.sh     # rwxr-xr-x (所有者全权限, 组和其他人读+执行)
+  chmod 644 file.txt      # rw-r--r-- (典型的文件权限)
+  chmod u+x script.sh     # 给所有者添加执行权限
+  chmod g-w file.txt      # 移除组的写权限
+  chmod o= file.txt       # 清空其他人的所有权限
+
+chown   - 修改文件所有者
+  chown user:group file   # 同时修改所有者和组
+  chown -R user:group /dir/  # 递归修改目录下所有文件
+
+2.2 特殊权限位 (SUID, SGID, Sticky Bit)
+--------------------------------------------------
+
+SUID (Set User ID) - 4000
+  文件以文件所有者的身份执行（而非当前用户）
+  chmod 4755 /usr/bin/passwd   # passwd命令使用SUID修改/etc/shadow
+  查找SUID文件: find / -perm -4000 -type f 2>/dev/null
+  安全注意: SUID文件是常见提权目标, 需定期审计
+
+SGID (Set Group ID) - 2000
+  文件: 以文件所属组的身份执行
+  目录: 目录中新建文件继承目录的组
+  chmod 2755 /shared/dir       # 设置SGID目录
+
+Sticky Bit - 1000
+  目录中文件只能被所有者删除 (如/tmp)
+  chmod 1777 /tmp              # 设置Sticky Bit
+  ls -ld /tmp  # 显示: drwxrwxrwt
+
+================================================================================
+第三部分: 用户和组管理
+================================================================================
+
+3.1 用户管理
+--------------------------------------------------
+
+useradd - 创建用户
+  useradd -m -s /bin/bash username          # 创建用户并建家目录
+  useradd -m -G wheel,sudo username         # 创建用户并加入附加组
+  useradd -r -s /usr/sbin/nologin svcacc    # 创建系统账户(无登录)
+
+passwd  - 修改密码
+  passwd username            # 设置/修改用户密码
+  passwd -l username         # 锁定用户
+  passwd -u username         # 解锁用户
+  passwd -e username         # 强制用户下次登录修改密码
+
+usermod - 修改用户属性
+  usermod -aG docker username     # 添加用户到附加组(-a追加, 不加会覆盖)
+  usermod -s /bin/zsh username    # 修改用户默认Shell
+  usermod -L username             # 锁定用户
+  usermod -U username             # 解锁用户
+
+userdel - 删除用户
+  userdel -r username         # 删除用户及家目录
+
+3.2 组管理
+--------------------------------------------------
+
+groupadd - 创建组
+  groupadd developers
+
+groupmod - 修改组
+  groupmod -n newname oldname    # 重命名组
+
+groupdel - 删除组
+  groupdel groupname
+
+查看用户/组信息:
+  id username           # 查看用户UID, GID, 所属组
+  groups username       # 查看用户所属组
+  cat /etc/passwd       # 用户信息
+  cat /etc/shadow       # 密码hash (仅root可读)
+  cat /etc/group        # 组信息
+
+3.3 sudo配置
+--------------------------------------------------
+
+visudo  - 安全编辑/etc/sudoers (防止语法错误导致sudo失效)
+
+基本配置 (/etc/sudoers):
+  username ALL=(ALL:ALL) ALL           # 授予用户全部sudo权限
+  %groupname ALL=(ALL:ALL) ALL         # 授予组全部sudo权限
+  username ALL=(ALL) NOPASSWD: ALL     # sudo无需密码
+
+限制特定命令:
+  username ALL=(ALL) /usr/bin/systemctl restart nginx, /usr/bin/journalctl
+
+/etc/sudoers.d/ 目录: 更推荐在此目录创建单独文件配置sudo
+  echo "username ALL=(ALL:ALL) ALL" | sudo tee /etc/sudoers.d/username
+
+================================================================================
+第四部分: 进程管理
+================================================================================
+
+4.1 进程查看与监控
+--------------------------------------------------
+
+ps aux                              # BSD风格, 所有进程详细
+ps -ef                              # System V风格
+ps auxf                             # 显示进程树
+ps -eo pid,ppid,user,cmd,%mem,%cpu  # 自定义输出格式
+
+top                                 # 实时进程监控
+  c键: 显示完整命令行
+  P键: 按CPU排序
+  M键: 按内存排序
+  k键: 输入PID发送信号
+  q键: 退出
+
+htop  (如果安装了archstrike-common)
+  htop                    # 更友好的top替代, 彩色显示, 鼠标支持
+
+4.2 进程控制
+--------------------------------------------------
+
+kill    - 发送信号给进程
+  kill PID                # 发送SIGTERM(15), 优雅终止
+  kill -9 PID             # 发送SIGKILL(9), 强制终止
+  kill -HUP PID           # 发送SIGHUP(1), 重新加载配置
+  kill -STOP PID          # 暂停进程
+  kill -CONT PID          # 恢复暂停的进程
+
+pkill   - 按名称终止进程
+  pkill -f "python script.py"    # 按完整命令行匹配
+  pkill -9 nginx                 # 强制终止所有nginx进程
+  pkill -u username              # 终止某用户的所有进程
+
+nice / renice - 调整进程优先级
+  nice -n 10 command             # 以低优先级启动进程(-20最高, 19最低)
+  renice -n -5 -p PID            # 调整运行中进程的优先级
+
+4.3 后台进程与任务管理
+--------------------------------------------------
+  command &               # 后台运行
+  Ctrl+Z                  # 暂停当前前台进程
+  jobs                    # 查看后台任务
+  fg %1                   # 将任务1带回前台
+  bg %1                   # 让任务1在后台继续运行
+  nohup command &         # 忽略SIGHUP, 登出后继续运行
+  disown -h %1            # 从作业列表中移除, 关闭终端后继续运行
+
+================================================================================
+第五部分: 日志查看
+================================================================================
+
+5.1 传统日志文件 (/var/log/)
+--------------------------------------------------
+
+/var/log/syslog 或 /var/log/messages  - 系统主日志
+/var/log/auth.log 或 /var/log/secure  - 认证相关日志(登录, sudo等)
+/var/log/kern.log                      - 内核日志
+/var/log/dpkg.log 或 /var/log/pacman.log - 包管理器日志
+/var/log/faillog                       - 登录失败记录
+/var/log/lastlog                       - 最后登录记录
+/var/log/wtmp /var/log/btmp            - 登录/失败登录二进制日志
+
+查看方法:
+  tail -f /var/log/auth.log            # 实时跟踪认证日志
+  tail -n 100 /var/log/syslog          # 查看最后100行
+  grep "Failed password" /var/log/auth.log  # 查看SSH暴力破解尝试
+  grep "Accepted" /var/log/auth.log         # 查看成功登录
+
+5.2 journalctl (systemd日志)
+--------------------------------------------------
+
+journalctl                          # 查看所有日志(分页)
+journalctl -n 50                    # 最后50条
+journalctl -f                       # 实时跟踪(类似tail -f)
+journalctl -u sshd                  # 查看特定服务日志
+journalctl -u nginx --since today   # 今日日志
+journalctl -u sshd --since "2024-01-01" --until "2024-01-02"
+journalctl -p err                   # 只看错误级别
+journalctl -p emerg..err            # 紧急到错误级别
+journalctl --since "10 minutes ago"
+journalctl -k                       # 仅内核消息
+
+================================================================================
+第六部分: 防火墙基础
+================================================================================
+
+6.1 iptables基础 (传统防火墙)
+--------------------------------------------------
+
+基本概念:
+  - 表(table): filter(默认), nat, mangle, raw
+  - 链(chain): INPUT, OUTPUT, FORWARD
+  - 规则(rule): 匹配条件和动作(target)
+
+查看规则:
+  iptables -L -n -v                  # 列出所有规则(数字格式, 详细)
+  iptables -L -n -v --line-numbers   # 带行号
+
+常用规则示例:
+  # 允许SSH
+  iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+  # 允许HTTP/HTTPS
+  iptables -A INPUT -p tcp -m multiport --dports 80,443 -j ACCEPT
+  # 允许已建立连接
+  iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+  # 允许loopback
+  iptables -A INPUT -i lo -j ACCEPT
+  # 默认策略: DROP
+  iptables -P INPUT DROP
+  iptables -P FORWARD DROP
+  iptables -P OUTPUT ACCEPT
+  # 保存规则 (Arch Linux)
+  iptables-save > /etc/iptables/iptables.rules
+
+删除规则:
+  iptables -D INPUT 3               # 删除INPUT链第3条规则
+  iptables -F                       # 清空所有规则(刷新)
+
+6.2 nftables基础 (现代替代iptables)
+--------------------------------------------------
+
+基本概念:
+  - 表(table): 包含链的容器 (内置: ip, ip6, inet, arp, bridge)
+  - 链(chain): 规则集合 (内置: input, output, forward)
+  - 规则(rule): 匹配条件和动作
+
+基本配置示例 (/etc/nftables.conf):
+  table inet filter {
+    chain input {
+      type filter hook input priority 0; policy drop;
+      iif lo accept
+      ct state established,related accept
+      tcp dport 22 accept
+      tcp dport {80, 443} accept
+    }
+  }
+
+常用命令:
+  nft list ruleset              # 查看所有规则
+  nft add rule inet filter input tcp dport 22 accept
+  nft delete rule inet filter input handle 5
+  nft flush ruleset             # 清空所有规则
+  systemctl enable nftables     # 开机启动
+
+================================================================================
+第七部分: SSH安全配置
+================================================================================
+
+7.1 SSH服务器安装与基础配置
+--------------------------------------------------
+
+安装: pacman -S openssh (ArchStrike默认已安装)
+
+配置文件: /etc/ssh/sshd_config
+
+关键安全配置参数:
+  Port 2222                        # 更改默认端口(减少自动扫描)
+  PermitRootLogin no               # 禁止root直接SSH登录
+  PasswordAuthentication no        # 禁用密码登录, 仅用密钥
+  PubkeyAuthentication yes         # 启用公钥认证
+  AuthorizedKeysFile .ssh/authorized_keys
+  PermitEmptyPasswords no          # 禁止空密码
+  MaxAuthTries 3                   # 最大认证尝试次数
+  ClientAliveInterval 300          # 客户端保活间隔(秒)
+  ClientAliveCountMax 2            # 保活最大次数
+  AllowUsers user1 user2           # 白名单用户
+  AllowGroups sshusers             # 白名单组
+  Protocol 2                       # 仅使用SSH协议版本2
+  X11Forwarding no                 # 关闭X11转发(不需要时)
+  MaxStartups 10:30:60             # 限制并发未认证连接
+
+更改配置后重启: systemctl restart sshd
+
+7.2 SSH密钥管理
+--------------------------------------------------
+
+生成SSH密钥对:
+  ssh-keygen -t ed25519 -C "your_email@example.com"    # 推荐Ed25519
+  ssh-keygen -t rsa -b 4096 -C "your_email@example.com" # 或RSA 4096
+
+配置免密登录:
+  ssh-copy-id user@remote_host        # 将公钥复制到远程服务器
+  # 或手动复制:
+  cat ~/.ssh/id_ed25519.pub | ssh user@remote_host "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
+
+客户端配置 (~/.ssh/config):
+  Host myserver
+    HostName 192.168.1.100
+    Port 2222
+    User myuser
+    IdentityFile ~/.ssh/id_ed25519
+    ServerAliveInterval 60
+
+7.3 fail2ban 防暴力破解
+--------------------------------------------------
+
+安装: pacman -S fail2ban
+
+配置 /etc/fail2ban/jail.local:
+  [sshd]
+  enabled = true
+  port = ssh
+  logpath = %(sshd_log)s
+  maxretry = 3
+  bantime = 3600
+  findtime = 600
+
+启动: systemctl enable --now fail2ban
+查看封禁: fail2ban-client status sshd
+
+================================================================================
+第八部分: 实践练习 - 搭建安全的SSH服务器
+================================================================================
+
+【路线指引 - 搭建安全的SSH服务器】
+
+Step 1: 确认SSH服务已安装
+  在终端输入: systemctl status sshd
+  如果未安装: sudo pacman -S openssh
+
+Step 2: 备份原始配置文件
+  sudo cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak
+
+Step 3: 编辑SSH配置 (使用vim/nano)
+  sudo nano /etc/ssh/sshd_config
+
+Step 4: 修改以下参数:
+  - 将 #Port 22 改为 Port 2222
+  - 将 #PermitRootLogin prohibit-password 改为 PermitRootLogin no
+  - 将 #PasswordAuthentication yes 改为 PasswordAuthentication no
+  - 添加一行: AllowUsers your_username
+  - 添加一行: MaxAuthTries 3
+  - 添加一行: Protocol 2
+
+Step 5: 生成自己的SSH密钥对
+  ssh-keygen -t ed25519 -C "training@redteam"
+
+Step 6: 将公钥添加到授权密钥
+  cat ~/.ssh/id_ed25519.pub >> ~/.ssh/authorized_keys
+  chmod 700 ~/.ssh
+  chmod 600 ~/.ssh/authorized_keys
+
+Step 7: 验证配置文件语法
+  sudo sshd -t
+  (如无输出, 表示配置正确)
+
+Step 8: 重启SSH服务
+  sudo systemctl restart sshd
+
+Step 9: 在新的终端窗口测试新端口连接
+  ssh -p 2222 your_username@localhost
+  确认能使用密钥登录
+
+Step 10: 配置防火墙只允许新端口
+  sudo iptables -A INPUT -p tcp --dport 2222 -j ACCEPT
+  sudo iptables -A INPUT -p tcp --dport 22 -j DROP
+
+Step 11: 安装和配置fail2ban
+  sudo pacman -S fail2ban
+  sudo cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
+  sudo nano /etc/fail2ban/jail.local
+  在[sshd]段中设置:
+    enabled = true
+    port = 2222
+    maxretry = 3
+  sudo systemctl enable --now fail2ban
+
+Step 12: 测试fail2ban
+  从另一台机器或终端故意多次错误登录:
+  ssh -p 2222 fakeuser@localhost (重复3次)
+  查看封禁: sudo fail2ban-client status sshd
+
+Step 13: 验证整体安全性
+  - 确认22端口已关闭: ss -tulnp | grep 22
+  - 确认2222端口在监听: ss -tulnp | grep 2222
+  - 确认fail2ban在运行: systemctl status fail2ban
+
+【注意事项与提示】
+- 在修改SSH配置前务必备份, 并保持一个已登录的会话以防配置错误锁定自己
+- 使用 sshd -t 测试配置语法后再重启服务
+- 非标准端口(2222)可以有效减少自动化扫描攻击
+- Ed25519密钥比RSA更快更安全, 优先使用
+- 在修改防火墙规则前, 先确保已配置规则允许当前SSH会话继续
+- 定期检查 /var/log/auth.log 中的认证失败记录
+
+================================================================================

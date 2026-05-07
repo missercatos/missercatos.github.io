@@ -1,0 +1,535 @@
+================================================================================
+第28周：无线攻击进阶 (无线安全期)
+================================================================================
+
+【本周围绕的核心渗透案例阶段】
+引用红队队员完整学习手册中的案例：
+无线攻击进阶——在上周掌握WEP/WPA2基础破解后，本周深入学习
+更高级的无线攻击技术。包括无需客户端的PMKID攻击、针对WPS
+PIN机制的攻击、以及通过搭建Rogue AP进行社会工程学WiFi钓鱼。
+这些技术可以绕过传统WPA破解对客户端的依赖。
+
+【本周学习目标】
+1. 理解PMKID攻击原理，掌握无需Deauth/客户端即可捕获WPA材料的方法
+2. 理解WPS协议机制、PIN认证漏洞和离线攻击方法
+3. 熟练掌握reaver/bully/pixiewps的WPS攻击工具使用
+4. 理解Rogue AP和Evil Twin攻击原理
+5. 掌握wifiphisher钓鱼WiFi的搭建和攻击流程
+6. 完成无线安全综合实战，建立无线渗透测试的完整方法论
+
+【本周知识清单】
+- PMKID攻击原理：
+  - PMKID = HMAC-SHA1-128(PMK, "PMK Name" || AP_MAC || Client_MAC)
+  - PMKID存在于AP发送的EAPOL帧中(RSN IE字段)
+  - 无需客户端关联/重连即可获取
+  - 无需Deauth攻击，避免惊动IDS/WIPS
+  - 利用hcxdumptool捕获PMKID → hcxpcaptool转换 → hashcat破解
+- WPS协议机制：
+  - WPS (Wi-Fi Protected Setup) 简化WiFi配置
+  - 认证方法: PIN (8位数字) 和 PBC (Push Button)
+  - PIN结构: 8位数字 = 7位(E-S1至E-S7) + 1位校验和
+  - 实际密钥空间: 10^4 + 10^3 = 11,000 种组合（非10^8）
+  - WPS PIN认证分两半验证：先验证前半部分4位，再验证后半3位
+- WPS攻击方法：
+  - 在线暴力破解: 逐个尝试PIN（reaver, bully）
+  - 离线Pixie Dust攻击: 利用WPS加密实现缺陷直接计算PIN
+  - 锁定状态: WPS多次失败后进入锁定期(WPS Lock)
+- Rogue AP攻击：
+  - Evil Twin: 创建一个与合法AP相同的SSID
+  - 利用客户端自动连接已知SSID的行为
+  - 结合KARMA攻击: 响应所有Probe Request
+  - 获取WPA握手包/明文凭据
+- wifiphisher攻击流程：
+  - 克隆目标WiFi → Deauth合法AP → 用户连接到Rogue AP
+  - Captive Portal显示虚假固件更新/认证页面
+  - 诱骗输入WiFi密码或其他凭证
+
+【本周工具清单】
+- hcxdumptool / hcxtools — PMKID攻击工具链
+- reaver / wash — WPS暴力破解工具
+- bully — WPS攻击替代工具（更现代的reaver替代）
+- pixiewps — WPS Pixie Dust离线PIN计算
+- hostapd / hostapd-wpe — 企业WiFi Rogue AP搭建
+- dnsmasq — DHCP/DNS服务（配合Rogue AP）
+- wifiphisher — 自动化WiFi钓鱼框架
+- airgeddon — 一体化无线攻击框架
+- create_ap — 快速搭建Rogue AP的脚本工具
+- netdiscover / arp-scan — 局域网客户端发现
+- ettercap / bettercap — 中间人攻击
+
+================================================================================
+周一：PMKID攻击 (无客户端WPA2破解)
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：PMKID攻击原理与优势
+    - PMKID概念的引入：
+      - PMKID (Pairwise Master Key Identifier) 是WPA3中引入的技术
+      - 后向兼容WPA2 (许多WPA2的AP也支持PMKID)
+      - 目的: 快速漫游(Fast Roaming/802.11r)支持
+    - PMKID的格式和生成方式：
+      - PMKID = HMAC-SHA1-128(PMK, "PMK Name" || AP_MAC || Client_MAC)
+      - 包含在AP的EAPOL帧的RSN IE(Robust Security Network Information Element)中
+      - 攻击者无需先连接，AP会主动发送包含PMKID的帧
+    - PMKID vs 握手包攻击对比：
+      | 特性 | PMKID攻击 | 传统握手包攻击 |
+      | 需要客户端 | 不需要 | 需要（或Deauth） |
+      | 需要Deauth | 不需要 | 通常需要 |
+      | 检测风险 | 极低(被动) | 较高(Deauth易被检测) |
+      | 成功率 | 取决于AP是否支持PMKID | 取决于是否有客户端连接 |
+      | 破解方法 | 获取PMKID → hashcat | 获取4步握手 → aircrack/hashcat |
+    - PMKID捕获工具：hcxdumptool（新一代替代hcxdumptool）
+    - 从捕获到破解的完整数据流
+  参考文件：/home/a/成长为一个红队/archstrike-wireless教学/04-WPA-WPA2破解.txt (PMKID部分)
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：PMKID攻击完整实战
+  参考文件：/home/a/成长为一个红队/archstrike-wireless教学/04-WPA-WPA2破解.txt (PMKID部分)
+
+  操作步骤：
+    Step 1: 安装PMKID工具链
+      sudo apt install hcxtools hcxdumptool
+      which hcxdumptool → 确认安装成功
+      hcxdumptool --help → 查看参数
+    Step 2: 使用hcxdumptool捕获PMKID
+      sudo airmon-ng check kill  (停止干扰进程)
+      sudo hcxdumptool -i wlan0mon -o pmkid_capture.pcapng --enable_status=1
+      参数:
+        -i: 监听接口
+        -o: 输出文件名
+        --enable_status: 显示状态信息
+      观察输出中是否出现PMKID条目
+      等待5-10分钟收集多个AP的PMKID
+      Ctrl+C停止
+    Step 3: 从pcapng中提取PMKID哈希
+      hcxpcapngtool -o pmkid_hashes.hc22000 -E wordlist pmkid_capture.pcapng
+      参数:
+        -o: 输出hashcat格式文件
+        -E: 生成可能的ESSID字典（用于规则攻击）
+      查看输出: cat pmkid_hashes.hc22000
+      每行包含: WPA*01*PMKID*AP_MAC*Client_MAC*ESSID*...
+    Step 4: 使用hashcat破解PMKID
+      hashcat -m 22000 -a 3 pmkid_hashes.hc22000 "?d?d?d?d?d?d?d?d" (8位数字掩码)
+      或字典攻击: hashcat -m 22000 -a 0 pmkid_hashes.hc22000 /usr/share/wordlists/rockyou.txt
+      参数:
+        -m 22000: WPA-PBKDF2-PMKID+EAPOL模式(hashcat mode 22000)
+        -a 0: 字典攻击
+        -a 3: 掩码攻击(暴力破解指定模式)
+      成功标志: hashcat输出匹配行 "Cracked"
+    Step 5: 使用aircrack-ng破解（备选）
+      aircrack-ng -w /usr/share/wordlists/rockyou.txt pmkid_hashes.hc22000
+      对比与hashcat的速度差异
+    Step 6: 对比测试
+      对同一目标WiFi分别尝试:
+        - 传统握手包攻击(先Deauth, 再捕获)
+        - PMKID攻击(无需Deauth)
+      记录两种方法在以下方面的表现:
+        - 捕获成功率
+        - 捕获所需时间
+        - 破解速度和难度
+        - 是否触发任何IDS/WIPS告警(如果环境中有)
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：掌握PMKID攻击，理解其相比传统握手包攻击的优势
+  - 成功捕获PMKID数量：____________________
+  - 破解结果：____________________
+  - 明日计划：学习WPS协议机制和PIN暴力破解
+
+================================================================================
+周二：WPS攻击 (reaver, bully, pixiewps)
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：WPS协议漏洞与攻击方法
+    - WPS (Wi-Fi Protected Setup) 详解：
+      - 设计目的: 简化设备连接WiFi(按按钮/输8位PIN)
+      - 认证流程: EAP-WSC协议
+      - M1→M2→M3→M4→M5→M6→M7→M8 (8条消息交换)
+    - WPS PIN的致命弱点：
+      - 8位PIN分为两部分：前半4位(10000种) + 后半3位(1000种) + 第8位校验和
+      - 总搜索空间: 10000 + 1000 = 11,000 (而非直觉的10^8)
+      - 更关键: AP分别验证两半，验证前半失败时不验证后半
+      - 暴力破解只需平均5,500次尝试 = 约4-8小时
+    - WPS锁机制：
+      - 连续失败3次后进入锁定(通常在60秒后自动解锁)
+      - 或永久锁定(需要重启AP才能解锁)
+      - reaver默认策略: 每次尝试后等待sleep时间
+    - Pixie Dust攻击概述：
+      - 利用WPS交换中的Diffie-Hellman密钥交换缺陷
+      - 针对Broadcom/Realtek等芯片的非随机数生成缺陷
+      - 可在1秒内直接计算PIN(无需暴力破解)
+      - 工具: pixiewps
+    - WPS攻击工具对比：
+      - reaver: 最经典，参数丰富，支持多种应对锁定策略
+      - bully: 更现代的替代品，更稳定
+      - wash: WPS网络扫描工具(reaver套件)
+  参考文件：/home/a/成长为一个红队/archstrike-wireless教学/05-WPS攻击.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：WPS扫描和暴力破解
+  参考文件：/home/a/成长为一个红队/archstrike-wireless教学/05-WPS攻击.txt
+
+  操作步骤：
+    Step 1: 使用wash扫描启用了WPS的AP
+      sudo airmon-ng start wlan0
+      sudo wash -i wlan0mon
+      输出解释:
+        BSSID: AP的MAC
+        Ch: 信道
+        dBm: 信号强度
+        WPS Version: WPS版本(1.0/2.0)
+        Lck: 锁定状态(N=未锁, Y=已锁)
+        ESSID: WiFi名称
+      记录所有WPS启用的AP
+    Step 2: 使用reaver进行WPS PIN暴力破解
+      对选定的WPS目标:
+        sudo reaver -i wlan0mon -b <BSSID> -c <channel> -vv -K 1
+      参数:
+        -i: 监听接口
+        -b: 目标BSSID
+        -c: 信道
+        -vv: 详细输出
+        -K 1: 尝试Pixie Dust攻击
+      常用额外参数:
+        -d 30: 30秒延迟(避免触发锁定)
+        -r 3:5: 每3次尝试后等待5秒
+        -t 10: 超时10秒
+        -L: 忽略锁定状态
+      观察输出: 每次尝试的PIN和AP响应
+    Step 3: 使用bully进行替代攻击
+      如果reaver不稳定，尝试bully:
+        sudo bully wlan0mon -b <BSSID> -c <channel> -v 3
+      参数:
+        -v 3: 详细程度级别3(最详细)
+        -d: 自动Deauth后重新关联(有时需要)
+        -p 12345670: 指定已知PIN片段
+      对比reaver和bully的稳定性和速度
+    Step 4: 使用Pixie Dust攻击尝试瞬间破解
+      sudo pixiewps -e <pke> -r <pk_r> -s <e_hash1> -z <e_hash2> -a <authkey> -n <e_nonce>
+      参数从reaver输出中获取(WPS交换参数)
+      成功标志: "WPS pin: XXXX XXXX"(8位PIN)
+      或使用reaver内置: sudo reaver -i wlan0mon -b <BSSID> -c <channel> -K 1
+    Step 5: 使用破解的PIN获取WiFi密码
+      方法1: 使用reaver继续跟AP交换获取密码(reaver会自动做)
+        成功输出: "WPA PSK: '<密码>'"
+      方法2: 使用bully: sudo bully wlan0mon -b <BSSID> -p <PIN>
+        输出WPA密码
+      方法3: 使用网络管理器输入PIN连接后查看保存的密码
+    Step 6: 记录WPS攻击结果
+      记录: AP型号(制造商的WPS安全性差异很大)
+      WPS Version: 1.0(通常支持Pixie Dust) vs 2.0(通常更安全)
+      破解用时: 记录从开始到获取PIN的时间
+      WPS锁定行为: 是否容易触发锁定，锁定时长
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：掌握WPS PIN破解和Pixie Dust攻击
+  - 发现的WPS网络数量：____________________
+  - 成功破解的PIN：____________________
+  - 明日计划：学习Rogue AP与Evil Twin攻击
+
+================================================================================
+周三：Rogue AP与Evil Twin
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：Rogue AP和Evil Twin攻击原理
+    - Rogue AP定义：未经授权的基础设施（伪造的无线访问点）
+    - Evil Twin攻击：创建与合法AP完全相同SSID的伪装AP
+    - 客户端漫游机制：
+      - 客户端默认自动连接已知SSID（保存过的WiFi）
+      - 通过Probe Request广播寻找已知SSID
+      - 如果Rogue AP信号更强，客户端可能优先连接
+    - KARMA攻击增强：
+      - 传统: 只匹配特定SSID的Probe Request
+      - KARMA: 响应所有Probe Request（无论SSID是什么）
+      - 客户端会尝试连接到"已知"网络 → 实际连接到了攻击者的Rogue AP
+    - Rogue AP搭建的技术要求：
+      - 无线网卡支持Master模式(AP模式)
+      - hostapd: 管理AP功能（Beacon广播、关联、认证）
+      - dnsmasq: 提供DHCP和DNS服务
+      - iptables: NAT转发流量到互联网接口
+    - 攻击场景分类：
+      - 场景A: 捕获WPA握手包（用户连接时自动触发握手）
+      - 场景B: 中间人攻击（连接后记录/修改所有流量）
+      - 场景C: Captive Portal钓鱼（强制显示伪造的登录页面）
+      - 场景D: 凭据收集（通过透明代理提取明文密码）
+    - Rogue AP的法律边界强调
+  参考文件：/home/a/成长为一个红队/archstrike-wireless教学/06-企业无线攻击与Rogue AP.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：搭建Rogue AP和Evil Twin
+  参考文件：/home/a/成长为一个红队/archstrike-wireless教学/06-企业无线攻击与Rogue AP.txt
+
+  操作步骤：
+    Step 1: 准备Rogue AP环境
+      sudo apt install hostapd dnsmasq
+      sudo systemctl stop dnsmasq
+      确认无线网卡支持AP模式: iw list | grep -A 5 "Supported interface modes" | grep AP
+    Step 2: 配置dnsmasq（DHCP/DNS服务）
+      创建配置文件: /tmp/dnsmasq.conf
+        interface=wlan0
+        dhcp-range=10.0.0.2,10.0.0.100,255.255.255.0,12h
+        dhcp-option=3,10.0.0.1 (默认网关)
+        dhcp-option=6,10.0.0.1 (DNS服务器)
+        server=8.8.8.8 (上游DNS)
+        log-queries
+        log-dhcp
+      配置网络接口:
+        sudo ifconfig wlan0 up 10.0.0.1 netmask 255.255.255.0
+        sudo sysctl net.ipv4.ip_forward=1
+        sudo iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+    Step 3: 配置hostapd（AP功能）
+      创建配置文件: /tmp/hostapd.conf
+        interface=wlan0
+        driver=nl80211
+        ssid=FreeWiFi (测试用SSID)
+        hw_mode=g
+        channel=6
+        macaddr_acl=0
+        auth_algs=1
+        ignore_broadcast_ssid=0
+        wpa=0 (开放式网络，无密码)
+      启动Rogue AP: sudo hostapd /tmp/hostapd.conf
+      启动DHCP: sudo dnsmasq -C /tmp/dnsmasq.conf -d
+    Step 4: 验证Rogue AP是否工作
+      使用手机或其他设备搜索WiFi: "FreeWiFi" 应可见
+      连接到 "FreeWiFi"
+      查看dnsmasq日志: 应出现DHCP分配记录
+      连接设备应能上网(通过NAT转发)
+    Step 5: 创建Evil Twin（克隆真实WiFi）
+      选择一个现有WiFi的SSID作为克隆目标:
+        修改hostapd.conf中的ssid为目标SSID
+        可选: 伪造相同的MAC地址(BSSID)增加真实性
+      或使用fluxion/airgeddon等自动化工具的Evil Twin模块
+      sudo apt install airgeddon
+      (airgeddon提供自动化Evil Twin向导)
+    Step 6: 中间人攻击测试
+      在Rogue AP上启动流量捕获:
+        sudo tcpdump -i wlan0 -w evil_twin_traffic.pcap
+      ettercap文本模式:
+        sudo ettercap -T -q -i wlan0 -M arp:remote
+      分析捕获的流量: wireshark evil_twin_traffic.pcap
+      验证: 是否能看到连接设备的HTTP等明文请求
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：掌握Rogue AP搭建和Evil Twin攻击原理
+  - Rogue AP SSID：____________________
+  - 连接的客户端数量：____________________
+  - 明日计划：学习wifiphisher钓鱼WiFi攻击
+
+================================================================================
+周四：wifiphisher钓鱼WiFi
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：wifiphisher自动化钓鱼框架
+    - wifiphisher概览：
+      - Python编写的自动化WiFi钓鱼框架
+      - 自动化完成: Deauth → Evil Twin → Captive Portal → 凭据收集
+      - 内置多种钓鱼场景模板
+    - wifiphisher攻击流程：
+      步骤1: 扫描周围WiFi，选择目标
+      步骤2: Jam合法AP(持续Deauth使其不可用)
+      步骤3: 创建同名Evil Twin AP
+      步骤4: 客户端自动连接到Evil Twin
+      步骤5: 用户任意访问网页 → 显示Captive Portal
+      步骤6: 收集用户输入的凭据
+    - 内置钓鱼场景(Phishing Scenarios):
+      - Firmware Upgrade: 模拟路由器固件升级页面
+      - OAuth Login: 模拟社交账号登录(Google, Facebook)
+      - Browser Connection Reset: 模拟浏览器设置重置
+      - Network Manager Connect: 模拟网络管理器认证
+      - Plugin Update: 模拟浏览器插件更新
+    - 高级配置：
+      - 自定义Captive Portal HTML模板
+      - 自定义WiFi SSID
+      - 选择性Jam(只对特定MAC发送Deauth)
+      - 日志和凭据输出管理
+    - wifiphisher的检测和防御方法
+  参考文件：/home/a/成长为一个红队/archstrike-wireless教学/06-企业无线攻击与Rogue AP.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：wifiphisher完整攻击流程
+  参考文件：/home/a/成长为一个红队/archstrike-wireless教学/06-企业无线攻击与Rogue AP.txt
+
+  操作步骤：
+    Step 1: 安装wifiphisher
+      sudo apt install python3-pip hostapd dnsmasq
+      git clone https://github.com/wifiphisher/wifiphisher.git /opt/wifiphisher
+      cd /opt/wifiphisher
+      sudo python3 setup.py install
+      或通过包管理器: sudo apt install wifiphisher
+      验证: wifiphisher --help
+    Step 2: 启动wifiphisher基础模式
+      sudo airmon-ng start wlan0
+      sudo wifiphisher -i wlan0mon
+      (如果使用标准模式而非监听模式，直接 wifiphisher)
+      等待工具扫描周围WiFi
+    Step 3: 选择目标WiFi
+      从列表中选择一个目标WiFi网络
+      注意: 仅供授权测试使用
+      工具将自动配置Evil Twin
+    Step 4: 选择钓鱼场景
+      从内置场景中选择，例如:
+        1 - "Firmware Upgrade" (固件升级页面)
+        2 - "Network Manager" (网络管理器)
+      选择一个你认为目标用户最可能相信的场景
+    Step 5: 观察攻击效果
+      wifiphisher将显示:
+        - 正在Jam的客户端MAC
+        - 连接到Evil Twin的客户端
+        - HTTP请求日志(用户访问的URL)
+        - 收集到的凭据(username/password)
+      验证: 当测试客户端连接到伪造WiFi并输入信息
+      查看wifiphisher输出，确认凭据被记录
+    Step 6: 自定义钓鱼页面(进阶)
+      进入wifiphisher模板目录:
+        ls /usr/share/wifiphisher/phishing-pages/
+      复制并修改一个模板:
+        cp -r /usr/share/wifiphisher/phishing-pages/firmware-upgrade /tmp/my_phish
+        修改 /tmp/my_phish/index.html 中的页面内容
+        修改 /tmp/my_phish/config.ini 配置
+      使用自定义模板: sudo wifiphisher -i wlan0mon --phishing-pages /tmp/my_phish
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：掌握wifiphisher自动化钓鱼WiFi攻击
+  - 使用的钓鱼场景：____________________
+  - 收集到的凭据：____________________
+  - 明日计划：无线安全综合实战
+
+================================================================================
+周五：无线安全综合实战
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：无线渗透测试综合方法论
+    - 完整无线渗透测试流程：
+      阶段1: 侦察(Reconnaissance)
+        - 扫描周边WiFi(airodump-ng/kismet)
+        - 识别加密类型、信号强度、客户端活动
+        - 标记高价值目标
+      阶段2: 漏洞识别(Vulnerability Analysis)
+        - WEP: 直接使用WEP破解方法
+        - WPA2-PSK: 准备握手包捕获或PMKID捕获
+        - WPS: 检查WPS状态(wash)
+        - WPA2-Enterprise: 检查是否有RADIUS配置漏洞
+      阶段3: 攻击执行(Exploitation)
+        - WEP → airodump + aireplay + aircrack
+        - WPA2-PSK → Deauth + 握手包捕获 + 离线破解
+        - WPS → reaver/bully + pixiewps
+        - PMKID → hcxdumptool + hashcat
+      阶段4: 后渗透(Post-Exploitation)
+        - 连接到破解的WiFi后做内网扫描
+        - 与第23-24周的内容衔接
+      阶段5: 报告(Reporting)
+        - 记录所有发现的无线安全问题
+    - 工具链选择决策树：
+      - 目标有客户端用WPA2-PSK → 传统握手包或PMKID
+      - 目标启用WPS且版本较旧 → WPS暴力破解/Pixie Dust优先
+      - 目标WPA2-Enterprise → Rogue AP/Evil Twin
+      - 目标完全无客户端且不支持PMKID → 等待客户端出现
+  参考文件：/home/a/成长为一个红队/archstrike-wireless教学/07-无线安全综合实战.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：无线渗透测试完整实战
+  参考文件：/home/a/成长为一个红队/archstrike-wireless教学/07-无线安全综合实战.txt
+
+  操作步骤：
+    Step 1: 全频段无线侦察
+      sudo airmon-ng start wlan0
+      sudo airodump-ng wlan0mon --band abg
+      5分钟快速扫描所有2.4GHz和5GHz的WiFi
+      制作目标清单: BSSID | CH | ENC | ESSID | 客户端数 | WPS?
+    Step 2: 逐个目标分析攻击路径
+      对每个目标:
+        若是WEP → 标记为练习靶标(实际环境极少)
+        若是WPA2-PSK + 有客户端 → 优先传统握手包+PMKID双管齐下
+        若是WPA2-PSK + 无客户端 → 尝试PMKID攻击
+        若wash显示WPS→ 尝试WPS攻击
+        若是Open → 标记为安全风险
+    Step 3: 对选定的目标执行两种攻击
+      目标1: WPA2-PSK有客户端
+        传统方法: airodump锁定 → Deauth → 握手包捕获 → aircrack-ng
+        新方法: hcxdumptool捕获PMKID → hcxpcapngtool转换 → hashcat
+        对比结果
+      目标2: WPS启用（如存在）
+        wash扫描 → reaver/bully攻击 → 获取PIN和密码
+    Step 4: 连接成功后的内网扫描
+      使用破解的WiFi密码连接网络
+      内网扫描: nmap -sV 所在子网/24
+      识别网络中的关键设备和开放服务
+    Step 5: 内网渗透（衔接第24周技能）
+      对发现的内网服务进行渗透测试
+      使用之前学到的漏洞利用和提权技能
+    Step 6: 整理无线安全综合报告
+      记录:
+        - 扫描发现的无线网络总数
+        - 每个加密类型的分布
+        - 成功破解的网络和所用方法
+        - 破解用时统计
+        - 内网发现的设备和风险
+        - 修复建议(对每个发现的安全问题)
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：完成无线渗透测试的完整流程
+  - 扫描到的网络总数：____________________
+  - 成功破解的网络：____________________
+  - 内网发现：____________________
+
+================================================================================
+周六：复习日 (2h 复习 + 1h HTB/THM)
+================================================================================
+
+📚 复习内容（2小时）
+  1. 整理无线渗透测试工具链速查表
+  2. 对比本周4种攻击方法的适用场景和优缺点
+  3. 绘制无线攻击决策树
+  4. 回顾WPS PIN认证漏洞的数学原理
+  5. 整理wifiphisher自定义模板的开发方法
+  6. 如果硬件允许，重新演练完整的无线渗透流程
+
+💻 THM练习（1小时）
+  - 登录TryHackMe平台
+  - 搜索并完成无线安全相关的附加房间
+  - 或复习前几周的常规渗透技能（避免技能生疏）
+
+📝 复习笔记
+  - 本周最有效的技术：____________________
+  - 需要加强的部分：____________________
+  - 下周预习计划：取证与恶意软件分析（磁盘取证、内存取证）
+
+================================================================================
+周日：休息日
+================================================================================
+
+【本周资源清单】
+理论知识文件：
+  /home/a/成长为一个红队/archstrike-wireless教学/04-WPA-WPA2破解.txt (PMKID部分)
+  /home/a/成长为一个红队/archstrike-wireless教学/05-WPS攻击.txt
+  /home/a/成长为一个红队/archstrike-wireless教学/06-企业无线攻击与Rogue AP.txt
+  /home/a/成长为一个红队/archstrike-wireless教学/07-无线安全综合实战.txt
+
+实践教程文件：
+  /home/a/成长为一个红队/archstrike-wireless教学/04-WPA-WPA2破解.txt
+  /home/a/成长为一个红队/archstrike-wireless教学/05-WPS攻击.txt
+  /home/a/成长为一个红队/archstrike-wireless教学/06-企业无线攻击与Rogue AP.txt
+  /home/a/成长为一个红队/archstrike-wireless教学/07-无线安全综合实战.txt
+
+在线练习：
+  TryHackMe: WiFi相关房间
+  自建实验环境: 使用旧路由器搭建WEP/WPA/WPS测试环境
+
+工具下载：
+  hcxdumptool / hcxtools: sudo apt install hcxtools hcxdumptool
+  reaver: sudo apt install reaver
+  bully: sudo apt install bully
+  pixiewps: sudo apt install pixiewps
+  wifiphisher: https://github.com/wifiphisher/wifiphisher
+  hostapd: sudo apt install hostapd
+  dnsmasq: sudo apt install dnsmasq
+  airgeddon: https://github.com/v1s1t0r1sh3r3/airgeddon
+  hashcat: sudo apt install hashcat
+
+【本周完成检查】
+[ ] 周一 [ ] 周二 [ ] 周三 [ ] 周四 [ ] 周五
+[ ] 周六复习 [ ] 笔记 [ ] 体能

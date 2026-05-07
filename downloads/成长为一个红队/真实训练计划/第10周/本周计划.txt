@@ -1,0 +1,841 @@
+================================================================================
+第10周：Web侦察与扫描 (Web入门期)
+================================================================================
+
+【本周围绕的核心渗透案例阶段】
+阶段三：漏洞分析与利用 (Vulnerability Analysis & Exploitation) —— Web信息收集与漏洞扫描
+在掌握HTTP基础和Burp Suite后，本周进入Web专项信息收集和漏洞扫描阶段。
+whatweb识别目标CMS和技术栈 → wpscan深度扫描WordPress站点 → dirb/gobuster
+目录爆破发现隐藏路径 → nikto全面漏洞扫描 → wafw00f检测WAF防护。
+完整学习手册经典案例的操作9就是这些工具的实战应用：先通过whatweb了解技术栈，
+再用nikto扫描漏洞，最后dirb爆破发现隐藏的管理页面和备份文件。
+引用：红队队员完整学习手册 → 三、经典渗透案例 → 阶段三: 漏洞分析与利用
+"操作9: Web应用扫描 → whatweb http://example-corp.com →
+ nikto -h http://example-corp.com → dirb http://example-corp.com"
+
+【本周学习目标】
+1. 熟练使用whatweb识别目标Web技术栈
+2. 掌握wpscan对WordPress站点的深度扫描
+3. 精通dirb和gobuster目录/文件爆破
+4. 掌握joomscan对Joomla站点的侦察
+5. 熟练使用nikto进行Web漏洞自动化扫描
+6. 掌握wafw00f检测Web应用防火墙(WAF)
+7. 初步了解OWASP ZAP自动化扫描器
+
+【本周知识清单】
+• whatweb的工作原理：匹配2000+个插件的特征(响应头/HTML meta/Cookie/URL模式)
+• 常见CMS识别：WordPress(wp-content/wp-includes)、Joomla(com_content/joomla)、Drupal(/sites//modules)
+• wpscan的检测范围：WordPress版本、插件列表、主题、用户枚举、已知漏洞(CVE)
+• dirb/gobuster的字典爆破原理：对目标URL逐一尝试字典中的路径，根据HTTP状态码判断是否存在
+• 常见HTTP状态码在目录爆破中的判断：200(存在)、301/302(重定向，可能存在)、403(禁止但存在)、404(不存在)
+• gobuster支持的爆破模式：dir(目录)/dns(子域名)/vhost(虚拟主机)/fuzz(模糊测试)
+• joomscan对Joomla站点的深度分析：核心版本、组件/模块/插件列表、配置文件检查
+• nikto的综合扫描：6500+危险文件和CGI检查、服务器配置错误检测、过时组件识别
+• WAF检测原理：发送包含恶意payload的请求，分析响应中的WAF指纹特征
+• 常见WAF产品特征：CloudFront(AWS)、Cloudflare、ModSecurity、F5 BIG-IP、FortiWeb
+• OWASP ZAP的自动爬虫+主动扫描+被动扫描工作流
+
+【本周工具清单】
+• whatweb (Web技术栈识别)
+• wpscan (WordPress安全扫描器)
+• dirb (Web目录爆破)
+• gobuster (高速目录/DNS/vhost爆破)
+• joomscan (Joomla扫描器)
+• cms-explorer (综合CMS识别)
+• nikto (Web服务器漏洞扫描器)
+• wafw00f (WAF检测)
+• OWASP ZAP (自动化Web扫描器)
+• Metasploitable2的Web应用 (DVWA/mutillidae/phpMyAdmin/TWiki)
+
+================================================================================
+周一：whatweb + wpscan
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：信息收集在Web渗透中的金字塔层次——底层(域名/IP/端口)→中层(技术栈/
+  CMS/框架)→高层(插件/主题/版本号/漏洞)。whatweb是Web技术栈识别的瑞士军刀，
+  内置2000+个插件通过多层特征匹配来识别应用：响应头(Server/X-Powered-By)、
+  HTML Meta数据、Cookie名称(PHPSESSID→PHP, wp-settings→WordPress)、
+  URL路径模式(/wp-content/→WordPress)、特定JavaScript文件等。
+  wpscan专门针对WordPress(全球43%的网站使用)进行深度扫描，功能包括：
+  WordPress核心版本检测(并匹配CVE漏洞库)、已安装插件/主题列表及已知漏洞、
+  用户名枚举(通过?author=1或REST API)、暴力破解(登录密码测试)。
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/02-Web信息收集与侦察.txt（阅读第一、二部分: 信息收集方法论、whatweb和wpscan）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：使用whatweb识别不同网站的技术栈，使用wpscan扫描WordPress站点。
+  对Metasploitable2的Web应用进行whatweb识别。
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/02-Web信息收集与侦察.txt
+
+  操作步骤：
+    Step 1: whatweb基础使用
+      sudo pacman -S whatweb 2>/dev/null || echo "跳过安装"
+      mkdir -p ~/training/week10/whatweb_results
+
+      # 基本识别
+      whatweb http://httpbin.org 2>/dev/null | tee ~/training/week10/whatweb_results/httpbin.txt
+
+      # 详细模式(-v)
+      whatweb -v http://httpbin.org 2>/dev/null | tee ~/training/week10/whatweb_results/httpbin_verbose.txt
+
+      # 激进模式(-a 3, 最高强度)
+      whatweb -a 3 http://httpbin.org 2>/dev/null | tee ~/training/week10/whatweb_results/httpbin_aggressive.txt
+
+    Step 2: whatweb对阵型目标识别对比
+      # 识别多个不同网站的技术栈
+      whatweb http://httpbin.org https://github.com https://wordpress.org \
+        2>/dev/null | tee ~/training/week10/whatweb_results/multi_target.txt
+
+      # 识别Metasploitable2的Web应用
+      whatweb http://192.168.56.102 2>/dev/null | tee ~/training/week10/whatweb_results/metasploitable2.txt
+
+      whatweb http://192.168.56.102/dvwa 2>/dev/null | tee ~/training/week10/whatweb_results/dvwa.txt
+
+      whatweb http://192.168.56.102/mutillidae 2>/dev/null | tee ~/training/week10/whatweb_results/mutillidae.txt
+
+      whatweb http://192.168.56.102/phpMyAdmin 2>/dev/null | tee ~/training/week10/whatweb_results/phpmyadmin.txt
+
+      whatweb http://192.168.56.102/twiki 2>/dev/null | tee ~/training/week10/whatweb_results/twiki.txt
+
+    Step 3: whatweb识别结果分析
+      cat > ~/training/week10/whatweb_results/analysis.txt << 'EOF'
+      WhatWeb 识别结果解读
+      =========================================
+      返回格式: http://target [插件1][插件2][插件3]
+      
+      常见插件含义:
+        Apache[2.2.8]       → Web服务器Apache版本2.2.8
+        PHP[5.2.4]           → PHP版本5.2.4
+        WordPress[6.0]       → WordPress CMS版本6.0
+        JQuery[1.7.2]        → jQuery JS库版本
+        Cookies[PHPSESSID]  → 使用了PHP Session
+        X-Powered-By[PHP/5] → PHP版本信息(响应头泄露)
+        Meta-Generator[...] → CMS版本(HTML Meta泄露)
+
+      红队关注重点:
+        1. 老旧的版本号 → searchsploit搜CVE
+        2. CMS类型 → 选择对应的扫描器(wpscan/joomscan)
+        3. 框架版本 → 匹配已知漏洞
+        4. 响应头泄露 → 信息泄露的源头
+      EOF
+      cat ~/training/week10/whatweb_results/analysis.txt
+
+    Step 4: wpscan安装和配置
+      sudo pacman -S wpscan 2>/dev/null || echo "跳过安装"
+      # 或: gem install wpscan
+      wpscan --version 2>/dev/null
+
+      # 更新wpscan漏洞数据库
+      wpscan --update 2>/dev/null || echo "数据库更新(可选)"
+
+    Step 5: wpscan扫描实战
+      # 选择一个WordPress目标练习(如下面的示例，或本地DVWA)
+      # 注意：务必确保你有授权测试这些目标！
+      
+      # 对公开WordPress测试站点进行扫描（如果有的话）
+      # wpscan --url https://wordpress.org/news --enumerate p 2>/dev/null | head -50
+
+      # wpscan核心扫描选项:
+      cat > ~/training/week10/wpscan_commands.txt << 'EOF'
+      === wpscan 常用命令 ===
+
+      基础扫描:
+        wpscan --url http://target.com
+
+      枚举插件(--enumerate p):
+        wpscan --url http://target.com -e p
+
+      枚举主题(--enumerate t):
+        wpscan --url http://target.com -e t
+
+      枚举用户(--enumerate u):
+        wpscan --url http://target.com -e u
+
+      枚举所有(--enumerate ap, at, u):
+        wpscan --url http://target.com -e ap,at,u
+
+      漏洞检测(需要API Token):
+        wpscan --url http://target.com --api-token YOUR_TOKEN
+
+      暴力破解:
+        wpscan --url http://target.com --passwords rockyou.txt --usernames admin
+
+      不检查SSL证书:
+        wpscan --url https://target.com --disable-tls-checks
+      EOF
+      cat ~/training/week10/wpscan_commands.txt
+
+    Step 6: 对Metasploitable2的Web应用做whatweb完整扫描总结
+      cat > ~/training/week10/whatweb_results/metasploitable2_web_summary.txt << 'EOF'
+      Metasploitable2 Web应用技术栈总结
+      =========================================
+      http://192.168.56.102/
+        → Apache 2.2.8 (2008年版本, 大量已知漏洞)
+        → PHP 5.2.4
+        → Ubuntu Linux
+
+      /dvwa/ (Damn Vulnerable Web Application)
+        → 故意包含多种Web漏洞的PHP应用
+        → 漏洞: SQL注入, XSS, CSRF, 命令注入, 文件包含等
+
+      /mutillidae/ (NOWASP Mutillidae)
+        → OWASP Top 10漏洞演示平台
+        → 漏洞: 包含10大类Web漏洞
+
+      /phpMyAdmin/
+        → MySQL数据库管理工具
+        → 可能默认密码 root:root 或 root:(空)
+
+      /twiki/
+        → TWiki企业Wiki系统
+        → 可能存在配置和访问控制问题
+
+      /tikiwiki/ 或 /tiki/
+        → TikiWiki CMS
+      =========================================
+      EOF
+      cat ~/training/week10/whatweb_results/metasploitable2_web_summary.txt
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：掌握了whatweb Web技术栈识别和wpscan WordPress扫描，完成了Metasploitable2的Web面识别
+  - 遇到问题：(记录whatweb误报、wpscan需要API Token等)
+  - 明日计划：学习dirb和gobuster目录爆破
+
+================================================================================
+周二：dirb + gobuster目录爆破
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：目录爆破(又名目录暴力破解/文件爆破)是通过字典逐一尝试目标服务器
+  上可能存在的路径(如/admin/, /backup/, /config.php等)，根据HTTP状态码
+  判断路径是否存在。这是发现隐藏的管理页面、备份文件、配置文件、开发接口的
+  核心方法。dirb是经典的目录爆破工具，支持自定义字典、递归扫描、认证爆破、
+  代理模式等。gobuster是Go语言编写的高速目录爆破器，速度远快于dirb，
+  支持四种模式：dir(目录/文件爆破)、dns(子域名爆破)、vhost(虚拟主机爆破)、
+  fuzz(自定义格式模糊测试)。HTTP状态码判断逻辑：200=路径存在/内容可访问、
+  301/302=存在但被重定向(可能跳转到登录页)、403=路径存在但禁止访问(值得记录)、
+  404=不存在。常见发现：/admin/管理后台、/.git/代码仓库泄露、/.env环境变量、
+  /backup/备份文件、/phpinfo.php服务器信息、/robots.txt限制路径。
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/02-Web信息收集与侦察.txt（阅读第三部分: dirb、gobuster和综合侦察）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：使用dirb和gobuster对Metasploitable2的Web应用进行目录爆破。
+  对比两个工具的速度和结果差异。
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/02-Web信息收集与侦察.txt
+
+  操作步骤：
+    Step 1: 安装dirb和gobuster
+      sudo pacman -S dirb gobuster 2>/dev/null || echo "跳过安装"
+
+      # 查看可用字典
+      ls /usr/share/dirb/wordlists/ 2>/dev/null || echo "未找到dirb字典"
+      ls /usr/share/wordlists/dirb/ 2>/dev/null || echo "未找到wordlists"
+      ls /usr/share/seclists/Discovery/Web-Content/ 2>/dev/null | head -10
+
+      mkdir -p ~/training/week10/dirb_results
+
+    Step 2: dirb基础目录爆破
+      TARGET="http://192.168.56.102"
+      
+      # 使用默认字典爆破
+      dirb $TARGET 2>/dev/null | tee ~/training/week10/dirb_results/dirb_default.txt
+
+      # 使用大字典
+      dirb $TARGET /usr/share/wordlists/dirb/big.txt 2>/dev/null | \
+        tee ~/training/week10/dirb_results/dirb_big.txt
+
+      # 递归扫描（发现目录后继续深入爆破子目录）
+      dirb $TARGET -r 2>/dev/null | tee ~/training/week10/dirb_results/dirb_recursive.txt
+
+      # 爆破特定扩展名
+      dirb $TARGET -X .php,.txt,.bak,.old 2>/dev/null | \
+        tee ~/training/week10/dirb_results/dirb_extensions.txt
+
+    Step 3: gobuster高速目录爆破
+      mkdir -p ~/training/week10/gobuster_results
+
+      # 基本dir模式（50线程，高速）
+      gobuster dir -u $TARGET \
+        -w /usr/share/wordlists/dirb/common.txt \
+        -t 50 2>/dev/null | tee ~/training/week10/gobuster_results/common.txt
+
+      # 指定扩展名
+      gobuster dir -u $TARGET \
+        -w /usr/share/wordlists/dirb/common.txt \
+        -x php,txt,html,bak -t 50 2>/dev/null | \
+        tee ~/training/week10/gobuster_results/extensions.txt
+
+      # 大字典+过滤特定状态码
+      gobuster dir -u $TARGET \
+        -w /usr/share/wordlists/dirb/big.txt \
+        -t 100 --timeout 5s \
+        -s "200,301,302,403" 2>/dev/null | \
+        tee ~/training/week10/gobuster_results/big_filtered.txt
+
+    Step 4: gobuster其他模式
+      # DNS模式: 子域名爆破
+      gobuster dns -d example.com \
+        -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-2000.txt \
+        -t 50 2>/dev/null | tee ~/training/week10/gobuster_results/dns_mode.txt
+
+      # vhost模式: 虚拟主机爆破
+      gobuster vhost -u http://192.168.56.102 \
+        -w /usr/share/wordlists/dirb/common.txt \
+        -t 50 2>/dev/null | tee ~/training/week10/gobuster_results/vhost_mode.txt
+
+    Step 5: dirb vs gobuster对比
+      echo "=== dirb vs gobuster 速度对比 ===" > ~/training/week10/dirb_vs_gobuster.txt
+      echo "目标: $TARGET" >> ~/training/week10/dirb_vs_gobuster.txt
+      echo "字典: common.txt" >> ~/training/week10/dirb_vs_gobuster.txt
+      echo "" >> ~/training/week10/dirb_vs_gobuster.txt
+
+      echo -n "dirb:    " >> ~/training/week10/dirb_vs_gobuster.txt
+      /usr/bin/time -f "%e秒" dirb $TARGET /usr/share/wordlists/dirb/common.txt \
+        -o /tmp/dirb_speed.txt 2>&1 | tail -1 >> ~/training/week10/dirb_vs_gobuster.txt
+
+      echo -n "gobuster: " >> ~/training/week10/dirb_vs_gobuster.txt
+      /usr/bin/time -f "%e秒 -t 50" gobuster dir -u $TARGET \
+        -w /usr/share/wordlists/dirb/common.txt -t 50 2>&1 | tail -1 >> ~/training/week10/dirb_vs_gobuster.txt
+
+      cat ~/training/week10/dirb_vs_gobuster.txt
+
+    Step 6: 目录爆破结果分析
+      cat > ~/training/week10/dirb_results/findings.txt << 'EOF'
+      Metasploitable2 目录爆破关键发现:
+      =========================================
+      /dvwa/        → Damn Vulnerable Web App (有意的漏洞平台)
+      /mutillidae/  → OWASP漏洞示例平台
+      /phpMyAdmin/  → MySQL管理工具（检查默认密码!）
+      /twiki/       → TWiki Wiki系统
+      /tikiwiki/    → TikiWiki CMS
+      /test/        → 测试目录（可能含敏感文件）
+      /cgi-bin/     → CGI脚本目录
+      /icons/       → Apache图标目录
+      /doc/         → 文档目录
+      /manual/      → Apache手册
+      /dav/         → WebDAV
+
+      红队攻击思路:
+        /phpMyAdmin/ → 默认密码 root:root → 写入webshell
+        /dvwa/ → SQL注入/XSS/文件包含/命令注入学习
+        /mutillidae/ → OWASP Top 10实战练习
+        /twiki/ → 可能RCE漏洞(CVE-2014-7236)
+      EOF
+      cat ~/training/week10/dirb_results/findings.txt
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：掌握了dirb和gobuster目录爆破技术，理解了字典选择和HTTP状态码判断的重要性
+  - 遇到问题：(记录gobuster速率过高被限流、大字典扫描时间过长等)
+  - 明日计划：学习joomscan + cms-explorer
+
+================================================================================
+周三：joomscan + cms-explorer
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：CMS(内容管理系统)扫描是Web侦察的重要分支。流行的CMS包括
+  WordPress(43%市场份额)、Joomla(3%)、Drupal(1.5%)，它们都有独特的目录结构、
+  文件命名约定和版本检测方法。joomscan专门针对Joomla CMS进行深度扫描：
+  检测Joomla核心版本、列出已安装的组件/模块/插件、检测配置文件(/configuration.php)、
+  检测管理员登录页面、搜索已知安全漏洞数据库。cms-explorer是综合CMS识别工具，
+  可以自动判断目标使用哪种CMS，并调用相应的扫描策略。CMS版本识别方法：
+  /README.txt、/CHANGELOG.txt(版本号)、/administrator/manifests/files/joomla.xml、
+  HTML meta generator标签、特定文件的MD5哈希匹配、JavaScript/CSS文件版本参数。
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/02-Web信息收集与侦察.txt（阅读joomscan和cms-explorer部分）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：安装并使用joomscan，学习CMS版本识别方法。
+  了解cms-explorer的综合CMS识别能力。
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/02-Web信息收集与侦察.txt
+
+  操作步骤：
+    Step 1: 安装joomscan
+      sudo pacman -S joomscan 2>/dev/null || echo "跳过安装"
+      # 或手动安装: git clone https://github.com/OWASP/joomscan.git
+      joomscan --version 2>/dev/null
+
+      mkdir -p ~/training/week10/cms_results
+
+    Step 2: joomscan扫描
+      # 如有Joomla目标，执行完整扫描
+      # joomscan -u http://joomla-target.com 2>/dev/null | tee ~/training/week10/cms_results/joomscan_output.txt
+
+      # joomscan枚举组件
+      # joomscan -u http://target.com -ec 2>/dev/null
+
+      cat > ~/training/week10/cms_results/joomscan_guide.txt << 'EOF'
+      === joomscan 完整命令参考 ===
+
+      基础扫描:
+        joomscan -u http://target.com
+
+      枚举组件(-ec):
+        joomscan -u http://target.com -ec
+
+      详细模式:
+        joomscan -u http://target.com -v
+
+      输出到文件:
+        joomscan -u http://target.com -o report.txt
+
+      Joomla常见攻击面:
+        1. /administrator/ → 后台管理登录页
+        2. /components/ → 第三方组件(可能有漏洞)
+        3. /plugins/ → 插件目录
+        4. /modules/ → 模块目录
+        5. /templates/ → 主题目录
+        6. configuration.php → 配置文件(敏感!)
+        7. /README.txt → 版本信息泄露
+        8. /CHANGELOG.txt → 更新历史
+
+      Joomla版本识别方法:
+        1. HTML: <meta name="generator" content="Joomla! 3.9"/>
+        2. /administrator/manifests/files/joomla.xml
+        3. /language/en-GB/en-GB.xml
+        4. JavaScript: /media/system/js/core.js?ver=3.9
+        5. /README.txt 文件内容
+      EOF
+
+    Step 3: CMS版本指纹识别方法（通用）
+      cat > ~/training/week10/cms_results/cms_fingerprinting.txt << 'EOF'
+      === 通用CMS版本指纹识别方法 ===
+
+      WordPress识别:
+        - HTML: <meta name="generator" content="WordPress 6.3"/>
+        - 路径: /wp-content/, /wp-includes/, /wp-admin/
+        - 文件: /readme.html (显示版本号!)
+        - API: /wp-json/wp/v2/users (泄露用户名)
+        - JS/CSS: /wp-includes/css/dashicons.min.css?ver=6.3
+
+      Joomla识别:
+        - HTML: <meta name="generator" content="Joomla! 4.0"/>
+        - 路径: /components/, /modules/, /plugins/, /templates/
+        - 文件: /administrator/manifests/files/joomla.xml
+        - README: /README.txt (Joomla! 3.9.21)
+
+      Drupal识别:
+        - HTML: <meta name="Generator" content="Drupal 9"/>
+        - 路径: /sites/, /modules/, /themes/
+        - 文件: /CHANGELOG.txt (Drupal 9.5.1)
+        - 头: X-Drupal-Cache, X-Drupal-Dynamic-Cache
+        - JS: /core/misc/drupal.js?v=9.5.1
+
+      Magento识别:
+        - 路径: /skin/, /app/, /mage/
+        - Cookie: frontend= (默认Cookie名称)
+        - 文件: /magento_version
+        - 路径: /downloader/ (Magento下载器)
+
+      Shopify识别:
+        - 头: X-Shopify-Stage
+        - CDN: cdn.shopify.com 资源
+        - HTML: <!-- Shopify -->
+
+      手动识别步骤:
+        1. F12查看Network中加载的资源URL特征
+        2. 查看页面源代码中的meta标签
+        3. 尝试访问常见CMS文件路径
+        4. 检查HTTP响应头中的服务器信息
+        5. 使用whatweb自动化识别
+      EOF
+      cat ~/training/week10/cms_results/cms_fingerprinting.txt
+
+    Step 4: cms-explorer了解
+      sudo pacman -S cms-explorer 2>/dev/null || echo "跳过安装(部分仓库可能不可用)"
+
+      # cms-explorer基本用法（如果已安装）
+      # cms-explorer -u http://target.com
+
+      cat > ~/training/week10/cms_results/cms_explorer_guide.txt << 'EOF'
+      === cms-explorer 综合CMS识别 ===
+      
+      cms-explorer可以自动识别和扫描多种CMS:
+        - WordPress (通过wp-content等特征)
+        - Joomla (通过components等特征)
+        - Drupal (通过sites/modules特征)
+        - Magento (通过skin/app特征)
+        - 以及更多...
+
+      替代方案:
+        如果cms-explorer不可用，可以使用:
+        - whatweb (功能更全的Web技术识别)
+        - CMSmap (多CMS自动扫描器)
+        - droopescan (Drupal/Joomla/SilverStripe扫描)
+        - 手动分析HTML/CSS/JS路径特征
+      EOF
+
+    Step 5: 对Metasploitable2的CMS分析
+      # Metasploitable2的Web应用主要不是标准CMS
+      # 但可以练习通用的CMS识别思路
+      curl -s http://192.168.56.102/dvwa/ | grep -i "generator\|version\|powered" 2>/dev/null
+      curl -s http://192.168.56.102/mutillidae/ | grep -i "generator\|version\|powered" 2>/dev/null
+      curl -s http://192.168.56.102/twiki/ | grep -i "generator\|version\|powered" 2>/dev/null
+
+      # 列出所有Web应用路径（基于gobuster和dirb发现结果）
+      cat ~/training/week10/cms_results/metasploitable2_cms.txt << 'EOF'
+      Metasploitable2 Web应用CMS分析:
+      =========================================
+      /dvwa/         → DVWA (自定义PHP应用, 非标准CMS)
+                       技术栈: PHP + MySQL
+                       版本: 1.0.x (通过README或favicon判断)
+      
+      /mutillidae/   → NOWASP Mutillidae (自定义PHP应用)
+                       技术栈: PHP + MySQL
+                       版本: 通过页面底部或HTML注释判断
+
+      /twiki/        → TWiki (企业Wiki, Perl)
+                       版本: 可通过/TWiki/TWikiCfg页面查看
+                       已知漏洞: CVE-2014-7236 (命令注入)
+
+      /phpMyAdmin/   → phpMyAdmin (MySQL管理工具)
+                       版本: 在登录页面或/README查看
+                       认证: 尝试 root:root 或 root:(空)
+      =========================================
+      EOF
+      cat ~/training/week10/cms_results/metasploitable2_cms.txt
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：掌握了joomscan和CMS版本指纹识别的通用方法，理解了各CMS的特征识别方法
+  - 遇到问题：(记录CMS版本识别困难、工具不可用等)
+  - 明日计划：学习nikto漏洞扫描
+
+================================================================================
+周四：nikto漏洞扫描
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：nikto是最经典的Web服务器漏洞扫描器，已被广泛使用超过20年。
+  nikto的工作原理：向目标Web服务器发送大量精心构造的HTTP请求，
+  测试6500+种危险文件/CGI程序、1250+个过时服务器版本特征、
+  270+个服务器配置问题。nikto的检测类别：服务器配置错误
+  （如目录列表开启、TRACE方法启用、不安全HTTP头）、
+  过时组件检测（Apache/IIS/Nginx老版本 → 对应的CVE匹配）、
+  危险文件和CGI存在检测（如/test.cgi、/phpinfo.php等）、
+  常见Web应用框架漏洞检测（WebDAV配置、FrontPage扩展等）。
+  nikto的输出解读：OSVDB编号(Open Source Vulnerability Database)、
+  详细的问题描述、可能的利用方法。
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/03-Web漏洞扫描与检测.txt（阅读nikto部分: 第1-3章）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：使用nikto对Metasploitable2进行全面的Web漏洞扫描，
+  理解nikto的输出结果，学会判断误报和真实漏洞。
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/03-Web漏洞扫描与检测.txt
+
+  操作步骤：
+    Step 1: 安装nikto
+      sudo pacman -S nikto 2>/dev/null || echo "跳过安装"
+      nikto -Version 2>/dev/null
+
+      mkdir -p ~/training/week10/nikto_results
+
+    Step 2: nikto基本扫描
+      TARGET="192.168.56.102"
+      
+      # 基本扫描
+      nikto -h http://$TARGET 2>/dev/null | tee ~/training/week10/nikto_results/basic_scan.txt
+
+      # 扫描特定端口
+      nikto -h http://$TARGET -p 80 2>/dev/null | tee ~/training/week10/nikto_results/port_80.txt
+      nikto -h http://$TARGET -p 8180 2>/dev/null | tee ~/training/week10/nikto_results/port_8180.txt
+
+    Step 3: nikto高级扫描选项
+      # SSL扫描(-ssl)
+      nikto -h https://$TARGET -ssl 2>/dev/null | tee ~/training/week10/nikto_results/ssl.txt
+
+      # 指定扫描格式(-Format)
+      nikto -h http://$TARGET -Format html -o ~/training/week10/nikto_results/report.html 2>/dev/null
+
+      # 调整扫描速度(-Tuning)
+      # 1=Interesting File, 2=Misconfiguration, 3=Information Disclosure, x=Reverse Tuning
+      nikto -h http://$TARGET -Tuning 123 2>/dev/null | tee ~/training/week10/nikto_results/tuning.txt
+
+    Step 4: nikto扫描具体路径
+      # 扫描DVWA应用
+      nikto -h http://$TARGET/dvwa/ 2>/dev/null | tee ~/training/week10/nikto_results/dvwa.txt
+
+      # 扫描phpMyAdmin
+      nikto -h http://$TARGET/phpMyAdmin/ 2>/dev/null | tee ~/training/week10/nikto_results/phpmyadmin.txt
+
+      # 扫描mutillidae
+      nikto -h http://$TARGET/mutillidae/ 2>/dev/null | tee ~/training/week10/nikto_results/mutillidae.txt
+
+    Step 5: nikto结果分析和解读
+      cat > ~/training/week10/nikto_results/analysis.txt << 'EOF'
+      Nikto扫描结果解读指南
+      =========================================
+
+      Nikto输出格式:
+        + OSVDB-XXXXX: 问题描述
+          ↑编号         ↑详细说明
+
+      常见问题类型:
+        1. 服务器信息泄露:
+           + Server: Apache/2.2.8 (Ubuntu)
+           → 解决方案: 隐藏Server响应头
+           → 红队利用: 版本号→searchsploit查找CVE
+
+        2. 危险HTTP方法:
+           + OSVDB-877: HTTP TRACE method is active
+           → 风险: XST(跨站追踪)攻击
+           → 利用: TRACE方法可能泄露HttpOnly Cookie
+
+        3. 目录列表:
+           + OSVDB-3268: /icons/ 目录可列表
+           → 风险: 文件结构泄露
+           → 利用: 浏览可能存在的敏感文件
+
+        4. 过时组件:
+           + OSVDB-XXXXX: Apache/2.2.8 已过时
+           → 风险: 未打补丁的已知漏洞
+           → 利用: searchsploit Apache 2.2.8
+
+        5. 默认安装文件:
+           + /phpinfo.php → PHP信息泄露
+           → 风险: 服务器配置完全暴露
+           → 利用: 路径/模块/版本信息收集
+
+        6. 不安全配置:
+           + Missing X-Frame-Options header
+           → 风险: 点击劫持(Clickjacking)攻击
+           + Missing X-Content-Type-Options header
+           → 风险: MIME类型嗅探攻击
+      EOF
+      cat ~/training/week10/nikto_results/analysis.txt
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：掌握了nikto Web漏洞扫描器的使用和结果解读，理解了常见服务器配置问题
+  - 遇到问题：(记录nikto产生大量误报、扫描速度慢等)
+  - 明日计划：学习wafw00f和OWASP ZAP入门
+
+================================================================================
+周五：wafw00f + OWASP ZAP入门
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：WAF(Web Application Firewall)是Web应用的第一道防线，在传统IDS/IPS
+  之上专门针对HTTP流量进行深度检测和过滤。WAF可以阻止SQL注入、XSS、CSRF等
+  攻击。在渗透测试中，必须先确定WAF是否存在及其类型，才能设计绕过策略。
+  wafw00f的工作原理：发送多个包含常见攻击载荷(如<script>alert(1)</script>、
+  ' OR 1=1 --)的HTTP请求，分析响应的差异来识别WAF的指纹。它可以检测140+
+  种WAF产品：CloudFront(AWS)、Cloudflare、ModSecurity、F5 BIG-IP ASM、
+  FortiWeb、Imperva等。OWASP ZAP(zed attack proxy)是一个开源的自动化Web
+  安全扫描器，功能类似商业版的Burp Suite Pro。ZAP核心能力：自动爬虫(发现
+  所有页面)、主动扫描(发送攻击载荷测试漏洞)、被动扫描(分析流量发现漏洞)。
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/03-Web漏洞扫描与检测.txt（阅读wafw00f和ZAP部分: 第4-6章）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：使用wafw00f检测目标是否部署WAF。
+  安装并初步使用OWASP ZAP。
+  参考文件：/home/a/成长为一个红队/archstrike-web教学/03-Web漏洞扫描与检测.txt
+
+  操作步骤：
+    Step 1: 安装并使用wafw00f
+      sudo pacman -S wafw00f 2>/dev/null || pip install wafw00f --user
+      mkdir -p ~/training/week10/waf_results
+
+      # 检测各种网站是否使用WAF
+      wafw00f http://httpbin.org 2>/dev/null | tee ~/training/week10/waf_results/httpbin.txt
+
+      # 检测使用Cloudflare的网站
+      wafw00f https://www.cloudflare.com 2>/dev/null | tee ~/training/week10/waf_results/cloudflare.txt
+
+      # 检测Metasploitable2（应该没有WAF）
+      wafw00f http://192.168.56.102 2>/dev/null | tee ~/training/week10/waf_results/metasploitable2.txt
+
+      # 检测DVWA应用
+      wafw00f http://192.168.56.102/dvwa 2>/dev/null | tee ~/training/week10/waf_results/dvwa.txt
+
+    Step 2: wafw00f结果分析
+      cat > ~/training/week10/waf_results/waf_analysis.txt << 'EOF'
+      WAF检测结果解读
+      =========================================
+      
+      可能的结果:
+        [+] The site is behind Cloudflare
+            → 发现WAF，攻击需要绕过Cloudflare
+            → 常见绕过: 直接连接源服务器IP(通过DNS历史查询)
+
+        [+] No WAF detected by wafw00f
+            → 未检测到WAF
+            → 注意: 可能仍有自研WAF或自定义规则
+
+        [-] WAF is behind the target
+            → 可能有WAF但无法确认类型
+
+      常见WAF绕过思路:
+        1. HTTP参数污染: ?id=1&id=2 (某些WAF取第一个, 应用取最后一个)
+        2. 大小写绕过: SeLeCt (某些WAF不区分, 但SQL区分)
+        3. 编码绕过: URL编码/%u编码/HTML实体编码
+        4. 分块传输: Transfer-Encoding: chunked (拆分payload)
+        5. HTTP方法替换: GET → POST → PUT (某些WAF只防护GET)
+        6. 注释绕过: SEL/**/ECT, /*!50000SELECT*/
+        7. 数据库特性绕过: MySQL的 /*!...*/ 版本注释
+      EOF
+      cat ~/training/week10/waf_results/waf_analysis.txt
+
+    Step 3: OWASP ZAP安装和基础配置
+      sudo pacman -S zaproxy 2>/dev/null || echo "请从zaproxy.org下载ZAP"
+      # 或: yay -S zaproxy
+      
+      cat > ~/training/week10/zap_setup.txt << 'EOF'
+      OWASP ZAP 安装和基础配置指南
+      =========================================
+
+      1. 安装ZAP:
+         Arch: sudo pacman -S zaproxy
+         官网: https://www.zaproxy.org/download/
+         Linux: 下载Linux安装包
+
+      2. 启动ZAP: zaproxy &
+
+      3. 首次配置:
+         - 选择 "No, I do not want to persist this session"
+         - ZAP代理默认端口: localhost:8080
+         (如果Burp已占用8080, 在Tools→Options→Local Proxies修改)
+
+      4. 配置Firefox代理:
+         - 代理: 127.0.0.1:8080 (或ZAP使用的端口)
+         - 安装ZAP CA证书: Tools→Options→Dynamic SSL Certificates→Save
+         - 在Firefox中导入此证书
+
+      5. ZAP界面主要组件:
+         - Sites (左侧): 发现的所有URL树
+         - Quick Start (右上): 快速扫描入口
+         - Alerts (底部): 发现的漏洞列表
+         - Request/Response (右侧): 请求和响应查看器
+      EOF
+      cat ~/training/week10/zap_setup.txt
+
+    Step 4: ZAP快速扫描
+      cat > ~/training/week10/zap_quick_scan.txt << 'EOF'
+      OWASP ZAP 快速扫描步骤:
+      =========================================
+      
+      方法1: 自动化扫描
+        1. 在Quick Start页面
+        2. 输入目标URL: http://192.168.56.102/dvwa
+        3. 点击 "Attack" → ZAP自动爬虫+扫描
+        4. 等待扫描完成
+        5. 查看 Alerts 标签页的漏洞发现
+
+      方法2: 手动探索模式
+        1. 点击 "Manual Explore"
+        2. 输入URL → 点击 "Launch Browser"
+        3. 在ZAP内置浏览器中手动浏览目标网站
+        4. ZAP被动扫描会自动分析所有流量
+        5. 右键站点 → Attack → Active Scan 进行主动扫描
+
+      方法3: 代理模式(类似Burp)
+        1. ZAP代理运行在 localhost:8080
+        2. 配置Firefox使用此代理
+        3. 在Firefox中正常浏览目标网站
+        4. 在ZAP中查看Sites树→右键→Active Scan
+
+      ZAP发现的常见漏洞:
+        - SQL Injection
+        - Cross Site Scripting (XSS)
+        - Path Traversal
+        - Server Side Include
+        - Cross Site Request Forgery (CSRF)
+        - Information Leakage
+        - Session ID in URL rewrite
+        - Incomplete or No Cache-control Header
+      EOF
+      cat ~/training/week10/zap_quick_scan.txt
+
+    Step 5: 本周工具链整合总结
+      cat > ~/training/week10/tool_chain_summary.txt << 'EOF'
+      Web信息收集与扫描 工具链总结
+      =========================================
+
+      侦察流程 (信息收集 → 漏洞扫描):
+      
+      第1步: whatweb
+          → 识别技术栈(CMS/框架/服务器版本)
+      
+      第2步: CMS专用扫描
+          → wpscan (WordPress)
+          → joomscan (Joomla)
+          → cms-explorer (通用)
+      
+      第3步: 目录爆破
+          → gobuster dir (高速)
+          → dirb (稳定, 递归支持好)
+          → 目标: 发现管理后台/备份文件/隐藏路径
+      
+      第4步: WAF检测
+          → wafw00f (检测WAF类型)
+          → 决定是否需要设计绕过策略
+      
+      第5步: 漏洞扫描
+          → nikto (Web服务器配置+已知漏洞)
+          → OWASP ZAP (自动化Web漏洞扫描)
+      
+      第6步: 人工验证
+          → Burp Suite Repeater (手动验证扫描发现)
+          → curl (自动化PoC测试)
+          → Firefox开发者工具 (辅助分析)
+      =========================================
+      EOF
+      cat ~/training/week10/tool_chain_summary.txt
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：掌握了wafw00f WAF检测和OWASP ZAP自动化扫描，形成了完整的Web侦察到漏洞扫描工具链
+  - 遇到问题：(记录ZAP安装问题、扫描速度慢、WAF检测误判等)
+  - 明日计划：周六复习日，全面回顾Web侦察与扫描技术
+
+================================================================================
+周六：复习日
+================================================================================
+  上午 (2小时)：回顾本周所有Web侦察和扫描知识点
+    - 对Metasploitable2重做完整Web侦察流程(whatweb→dirb→nikto)
+    - 用gobuster的新字典尝试对DVWA进行更深入的目录爆破
+    - 用nikto的不同-Tuning选项对比扫描结果差异
+    - 制作Web侦察工具对应CMS的速查表
+
+  下午 (1小时)：在HackTheBox/TryHackMe上做相关挑战
+    - TryHackMe Room: Walking An Application (Web侦察)
+    - TryHackMe Room: Content Discovery (目录爆破)
+    - TryHackMe Room: OWASP ZAP (自动化扫描入门)
+    - HackTheBox Starting Point: Appointment (SQL注入)
+
+  晚间：整理本周笔记
+    - 制作Web侦察与扫描工具链图谱
+    - 整理whatweb/nikto/dirb/gobuster常用命令速查表
+    - 归档第9-10周Web入门阶段总结
+    - 准备进入第四阶段：漏洞利用(Web攻击)
+
+================================================================================
+周日：休息日
+================================================================================
+  体能训练 | 自由活动 | 补充睡眠
+
+================================================================================
+【本周资源清单】
+================================================================================
+理论知识文件：
+  • /home/a/成长为一个红队/archstrike-web教学/02-Web信息收集与侦察.txt（全部）
+  • /home/a/成长为一个红队/archstrike-web教学/03-Web漏洞扫描与检测.txt（全部）
+  • /home/a/成长为一个红队/网安基础知识/02-Web技术基础.txt（复习）
+
+实践教程文件：
+  • /home/a/成长为一个红队/archstrike-web教学/02-Web信息收集与侦察.txt
+  • /home/a/成长为一个红队/archstrike-web教学/03-Web漏洞扫描与检测.txt
+  • /home/a/成长为一个红队/archstrike-web教学/01-Web基础与HTTP协议.txt（复习）
+
+在线练习：
+  • TryHackMe Room: Walking An Application
+  • TryHackMe Room: Content Discovery
+  • TryHackMe Room: OWASP ZAP
+  • HackTheBox Starting Point: Appointment (SQL注入)
+  • Metasploitable2的Web应用 (DVWA/mutillidae/phpMyAdmin)
+
+【本周完成检查】
+[ ] 周一任务完成
+[ ] 周二任务完成
+[ ] 周三任务完成
+[ ] 周四任务完成
+[ ] 周五任务完成
+[ ] 周六复习完成
+[ ] 本周笔记整理完成
+[ ] 体能训练完成

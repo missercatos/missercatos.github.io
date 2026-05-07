@@ -1,0 +1,807 @@
+================================================================================
+第3周：编程基础 (基础打造期)
+================================================================================
+
+【本周围绕的核心渗透案例阶段】
+阶段一：信息侦察 (Reconnaissance) —— 自动化与脚本能力
+红队队员不可能手动执行所有的侦察操作。Bash脚本用于自动化Linux命令序列
+（如批量ping扫描、自动化目录创建），Python用于编写端口扫描器、Web请求脚本、
+以及后续的漏洞利用PoC编写。在完整学习手册的经典案例中，阶段一的大量操作
+（如批量DNS查询、子域名结果去重合并）都依赖脚本自动化处理。
+引用：红队队员完整学习手册 → 三、经典渗透案例 → 阶段一: 信息侦察
+"操作2: 子域名发现 → amass/subfinder批量结果合并处理 → 需要脚本能力"
+编程能力是红队从"工具使用者"升级为"工具创造者"的关键门槛。
+
+【本周学习目标】
+1. 掌握Bash脚本基础语法（变量、条件判断、循环、函数）
+2. 能编写实用的Bash自动化脚本
+3. 掌握Python基础语法（变量、数据类型、控制流、函数）
+4. 掌握Python socket网络编程
+5. 掌握Python requests库进行HTTP请求
+6. 综合编程练习：编写端口扫描器和HTTP爆破器
+
+【本周知识清单】
+• Bash脚本：变量定义和使用、引号区别（单引号/双引号/反引号）
+• Bash脚本：if条件判断（-f/-d/-z/-n/-eq等测试操作符）
+• Bash脚本：for/while循环结构、case分支
+• Bash脚本：函数定义和调用、参数传递（$1, $2, $@）
+• Python：数字/字符串/列表/字典/元组数据类型
+• Python：if/for/while控制流、try/except异常处理
+• Python：open()文件读写、os/subprocess系统操作
+• Python：socket模块（创建TCP/UDP连接、发送和接收数据）
+• Python：requests库（GET/POST请求、headers/cookies处理）
+• Python：re模块正则表达式
+• 端口扫描器的实现原理（SYN扫描、connect扫描、全连接扫描）
+• HTTP暴力破解器的实现逻辑（字典循环、状态码判断）
+
+【本周工具清单】
+• bash (脚本解释器)
+• python3 + pip
+• python-requests (HTTP请求库)
+• python-socket (网络编程库)
+• nano/vim (文本编辑器)
+• chmod +x (赋予脚本执行权限)
+
+================================================================================
+周一：Bash脚本基础
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：Bash脚本的基本结构（#!/bin/bash shebang行）。变量定义和引用
+  （var=value, $var, ${var}），命令替换（$(command)）。条件判断结构：
+  if-then-else-fi语句，test命令的各种选项（-f文件存在, -d目录存在, -z字符串为空）。
+  循环结构：for i in列表、while条件循环、until循环。理解Bash脚本在红队自动化
+  中的价值——批量ping扫描、自动化Nmap调用、日志分析过滤。
+  参考文件：/home/a/成长为一个红队/网安基础知识/05-编程基础.txt（阅读第一部分: Bash脚本基础 第1-7章）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：编写多个Bash脚本，从最简单的Hello World逐步过渡到实用的自动化脚本。
+  包括：批量文件处理脚本、系统信息收集脚本、批量ping扫描脚本。
+  参考文件：/home/a/成长为一个红队/网安基础知识/05-编程基础.txt（第一部分习题）
+
+  操作步骤：
+    Step 1: 创建第一个Bash脚本
+      mkdir -p ~/training/week3/bash_scripts
+      cat > ~/training/week3/bash_scripts/hello.sh << 'EOF'
+      #!/bin/bash
+      echo "Hello, Red Team!"
+      echo "当前用户: $(whoami)"
+      echo "当前目录: $(pwd)"
+      echo "当前时间: $(date)"
+      EOF
+      chmod +x ~/training/week3/bash_scripts/hello.sh
+      ~/training/week3/bash_scripts/hello.sh
+
+    Step 2: 变量和条件判断脚本
+      cat > ~/training/week3/bash_scripts/check_target.sh << 'EOF'
+      #!/bin/bash
+      target=$1
+      if [ -z "$target" ]; then
+          echo "用法: $0 <目标IP或域名>"
+          exit 1
+      fi
+      echo "正在检查目标: $target"
+      ping -c 1 -W 2 $target > /dev/null 2>&1
+      if [ $? -eq 0 ]; then
+          echo "[+] $target 在线"
+      else
+          echo "[-] $target 离线或不可达"
+      fi
+      EOF
+      chmod +x ~/training/week3/bash_scripts/check_target.sh
+      ~/training/week3/bash_scripts/check_target.sh 8.8.8.8
+      ~/training/week3/bash_scripts/check_target.sh 192.168.56.102
+
+    Step 3: for循环批量扫描脚本
+      cat > ~/training/week3/bash_scripts/scan_subnet.sh << 'EOF'
+      #!/bin/bash
+      subnet=$1
+      if [ -z "$subnet" ]; then
+          echo "用法: $0 <子网前缀>  (例如: 192.168.56)"
+          exit 1
+      fi
+      echo "[*] 正在扫描子网: ${subnet}.0/24"
+      for ip in $(seq 1 254); do
+          ping -c 1 -W 1 ${subnet}.${ip} > /dev/null 2>&1 &
+      done
+      wait
+      echo "[*] 扫描完成, 使用下面的命令查看存活主机:"
+      echo "    arp -a | grep ${subnet}"
+      EOF
+      chmod +x ~/training/week3/bash_scripts/scan_subnet.sh
+
+    Step 4: 函数和日志分析脚本
+      cat > ~/training/week3/bash_scripts/port_check.sh << 'EOF'
+      #!/bin/bash
+      check_port() {
+          local host=$1
+          local port=$2
+          timeout 1 bash -c "echo >/dev/tcp/$host/$port" 2>/dev/null
+          if [ $? -eq 0 ]; then
+              echo "[+] $host:$port - 开放"
+          fi
+      }
+      echo "[*] 正在扫描常用端口..."
+      for port in 21 22 23 25 80 443 3306 8080; do
+          check_port $1 $port
+      done
+      EOF
+      chmod +x ~/training/week3/bash_scripts/port_check.sh
+
+    Step 5: while循环和case分支脚本
+      cat > ~/training/week3/bash_scripts/recon_menu.sh << 'EOF'
+      #!/bin/bash
+      while true; do
+          echo "========== 侦查菜单 =========="
+          echo "1) 扫描子网存活主机"
+          echo "2) 检查目标端口"
+          echo "3) DNS查询"
+          echo "4) 退出"
+          read -p "请选择操作 [1-4]: " choice
+          case $choice in
+              1) read -p "输入子网前缀(如192.168.56): " subnet
+                 bash scan_subnet.sh $subnet ;;
+              2) read -p "输入目标IP: " target
+                 bash port_check.sh $target ;;
+              3) read -p "输入域名: " domain
+                 dig $domain +short ;;
+              4) echo "再见! 红队队员。"; exit 0 ;;
+              *) echo "无效选择, 请输入1-4" ;;
+          esac
+      done
+      EOF
+      chmod +x ~/training/week3/bash_scripts/recon_menu.sh
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：掌握了Bash脚本的变量、条件判断、循环和函数，编写了5个实用脚本
+  - 遇到问题：(记录脚本语法错误、权限问题、变量引用错误等)
+  - 明日计划：学习Python基础语法
+
+================================================================================
+周二：Python基础语法
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：Python3数据类型详解——str(字符串), int(整数), float(浮点数), 
+  list(列表), dict(字典), tuple(元组), set(集合)的使用场景和转换方法。
+  控制流：if-elif-else条件判断、for/while循环、break/continue跳转。
+  函数定义(def)、参数类型（位置参数/关键字参数/默认参数）、返回值。
+  文件操作：open()打开模式(r/w/a)、with语句自动关闭、read()/readlines()。
+  异常处理：try-except-finally捕获错误并优雅处理。
+  参考文件：/home/a/成长为一个红队/网安基础知识/05-编程基础.txt（阅读第二部分: Python安全编程基础 第8-10章）
+  参考文件：/home/a/成长为一个红队/补充-Python黑客脚本基础.txt（阅读第一部分: Python基础速成）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：在Python交互环境和脚本文件中练习数据类型、控制流、文件操作。
+  编写一个简单的密码字典生成器和一个IP地址解析器。
+  参考文件：/home/a/成长为一个红队/补充-Python黑客脚本基础.txt
+
+  操作步骤：
+    Step 1: Python交互环境基础练习
+      python3 << 'EOF'
+      # 变量和数据类型
+      target_ip = "192.168.56.102"
+      target_ports = [21, 22, 23, 25, 80, 443, 3306]
+      scan_results = {"host": target_ip, "open_ports": [], "timestamp": "2024"}
+
+      # 列表操作
+      target_ports.append(8080)
+      target_ports.sort()
+      print(f"扫描目标: {target_ip}")
+      print(f"待扫描端口: {target_ports}")
+      print(f"端口数量: {len(target_ports)}")
+
+      # 字典操作
+      scan_results["open_ports"] = [21, 22, 80, 3306]
+      for port in scan_results["open_ports"]:
+          print(f"  [+] 端口 {port} 开放")
+      EOF
+
+    Step 2: 条件判断和循环练习
+      python3 << 'EOF'
+      # 模拟端口扫描结果处理
+      scan_data = {
+          "192.168.56.102": [21, 22, 23, 80, 3306],
+          "192.168.56.103": [22, 80, 443],
+          "192.168.56.104": [],
+      }
+
+      dangerous_ports = {21: "FTP(可能匿名登录)", 23: "Telnet(明文)",
+                         445: "SMB(永恒之蓝)", 3306: "MySQL(弱口令)"}
+
+      for host, ports in scan_data.items():
+          print(f"\n[*] 分析主机: {host}")
+          if not ports:
+              print(f"    [-] 无开放端口, 可能不在线或防火墙过滤")
+              continue
+          for port in ports:
+              risk = dangerous_ports.get(port, "常规服务")
+              print(f"    端口 {port}: {risk}")
+      EOF
+
+    Step 3: 函数和文件操作练习
+      cat > ~/training/week3/python_scripts/file_parser.py << 'PYEOF'
+      #!/usr/bin/env python3
+      """简单的Nmap输出解析器"""
+      import sys
+
+      def parse_nmap_output(filepath):
+          """解析Nmap扫描结果文件"""
+          open_ports = []
+          try:
+              with open(filepath, 'r') as f:
+                  for line in f:
+                      if '/tcp' in line and 'open' in line:
+                          parts = line.strip().split()
+                          port = parts[0].split('/')[0]
+                          service = parts[2] if len(parts) > 2 else "unknown"
+                          open_ports.append((port, service))
+          except FileNotFoundError:
+              print(f"[-] 文件未找到: {filepath}")
+              sys.exit(1)
+          return open_ports
+
+      def main():
+          if len(sys.argv) < 2:
+              print(f"用法: {sys.argv[0]} <nmap_scan_file>")
+              sys.exit(1)
+
+          results = parse_nmap_output(sys.argv[1])
+          print(f"[+] 发现 {len(results)} 个开放端口:")
+          for port, service in results:
+              print(f"    端口 {port}/tcp - {service}")
+
+      if __name__ == '__main__':
+          main()
+      PYEOF
+      chmod +x ~/training/week3/python_scripts/file_parser.py
+
+    Step 4: 密码字典生成器
+      cat > ~/training/week3/python_scripts/dict_gen.py << 'PYEOF'
+      #!/usr/bin/env python3
+      """简单密码字典生成器"""
+      import itertools
+
+      base_words = ["admin", "root", "test", "user", "password"]
+      suffixes = ["", "123", "1234", "12345", "!", "@", "#", "2024"]
+
+      print("[*] 正在生成密码字典...")
+      passwords = []
+      for word in base_words:
+          passwords.append(word)                    # admin
+          passwords.append(word.upper())            # ADMIN
+          passwords.append(word.capitalize())       # Admin
+          for suffix in suffixes:
+              passwords.append(word + suffix)       # admin123
+
+      passwords = list(set(passwords))              # 去重
+      passwords.sort()
+
+      with open('/tmp/password_dict.txt', 'w') as f:
+          for pwd in passwords:
+              f.write(pwd + '\n')
+
+      print(f"[+] 已生成 {len(passwords)} 个密码, 保存至 /tmp/password_dict.txt")
+      PYEOF
+      python3 ~/training/week3/python_scripts/dict_gen.py
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：掌握了Python基础数据类型和控制流，能编写简单的文件解析器和字典生成器
+  - 遇到问题：(记录Python缩进错误、变量类型错误等)
+  - 明日计划：学习Python socket网络编程
+
+================================================================================
+周三：Python网络编程 (socket)
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：Python socket模块——TCP和UDP编程的核心接口。socket()创建套接字、
+  connect()连接服务器、send()/recv()发送接收数据、bind()/listen()绑定和监听、
+  accept()接受连接。理解阻塞模式和非阻塞模式的区别。了解gethostbyname()域名
+  解析、gethostbyaddr()反向DNS。理解多线程/异步在端口扫描中的加速作用
+  （线程池、异步IO）。从红队视角：socket编程是编写端口扫描器、反弹Shell、
+  C2通信的基础。
+  参考文件：/home/a/成长为一个红队/网安基础知识/05-编程基础.txt（阅读第二部分第11章: 网络编程）
+  参考文件：/home/a/成长为一个红队/补充-Python黑客脚本基础.txt（阅读前半部分: socket编程）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：编写TCP客户端和服务器、UDP通信程序、简易TCP端口扫描器。
+  参考文件：/home/a/成长为一个红队/补充-Python黑客脚本基础.txt
+
+  操作步骤：
+    Step 1: 编写TCP客户端（连接并读取Banner）
+      cat > ~/training/week3/python_scripts/tcp_banner.py << 'PYEOF'
+      #!/usr/bin/env python3
+      """TCP Banner抓取器"""
+      import socket
+
+      def grab_banner(ip, port, timeout=3):
+          try:
+              sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+              sock.settimeout(timeout)
+              sock.connect((ip, port))
+              sock.send(b"HEAD / HTTP/1.0\r\n\r\n")
+              banner = sock.recv(1024)
+              sock.close()
+              return banner.decode('utf-8', errors='ignore').strip()
+          except socket.timeout:
+              return "[超时]"
+          except ConnectionRefusedError:
+              return "[连接被拒绝]"
+          except Exception as e:
+              return f"[错误: {e}]"
+
+      # 测试：抓取Metasploitable2的多个服务Banner
+      targets = [(80, "HTTP"), (22, "SSH"), (21, "FTP"), (25, "SMTP")]
+      ip = "192.168.56.102"
+      for port, service in targets:
+          banner = grab_banner(ip, port)
+          print(f"  {service}({port}): {banner[:80]}...")
+      PYEOF
+      python3 ~/training/week3/python_scripts/tcp_banner.py
+
+    Step 2: 编写TCP监听服务器（模拟反弹Shell监听）
+      cat > ~/training/week3/python_scripts/tcp_listener.py << 'PYEOF'
+      #!/usr/bin/env python3
+      """TCP监听器 - 模拟反弹Shell接收端"""
+      import socket
+
+      HOST = '0.0.0.0'
+      PORT = 4444
+
+      server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+      server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+      server.bind((HOST, PORT))
+      server.listen(1)
+      print(f"[*] 监听 {HOST}:{PORT} ...")
+      print("[*] 按 Ctrl+C 停止")
+
+      try:
+          client, addr = server.accept()
+          print(f"[+] 收到连接: {addr[0]}:{addr[1]}")
+          while True:
+              data = client.recv(4096)
+              if not data:
+                  break
+              print(data.decode('utf-8', errors='ignore'), end='')
+      except KeyboardInterrupt:
+          print("\n[*] 监听器已停止")
+      finally:
+          server.close()
+      PYEOF
+
+    Step 3: 编写简易TCP端口扫描器（单线程版）
+      cat > ~/training/week3/python_scripts/port_scanner_simple.py << 'PYEOF'
+      #!/usr/bin/env python3
+      """简易TCP端口扫描器 - 单线程版"""
+      import socket
+      import sys
+
+      def scan_port(ip, port, timeout=1):
+          try:
+              sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+              sock.settimeout(timeout)
+              result = sock.connect_ex((ip, port))
+              sock.close()
+              return result == 0
+          except:
+              return False
+
+      if len(sys.argv) < 2:
+          print(f"用法: {sys.argv[0]} <目标IP> [起始端口] [结束端口]")
+          sys.exit(1)
+
+      target = sys.argv[1]
+      start_port = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+      end_port = int(sys.argv[3]) if len(sys.argv) > 3 else 1024
+
+      print(f"[*] 正在扫描 {target} (端口 {start_port}-{end_port})...")
+      open_ports = []
+      for port in range(start_port, end_port + 1):
+          if scan_port(target, port):
+              open_ports.append(port)
+              print(f"[+] 端口 {port} 开放")
+          if port % 100 == 0:
+              print(f"    进度: {port}/{end_port}")
+
+      print(f"\n[*] 扫描完成! 发现 {len(open_ports)} 个开放端口")
+      print(f"    开放端口列表: {open_ports}")
+      PYEOF
+
+    Step 4: 改进版：多线程端口扫描器
+      cat > ~/training/week3/python_scripts/port_scanner_threaded.py << 'PYEOF'
+      #!/usr/bin/env python3
+      """多线程端口扫描器"""
+      import socket
+      import threading
+      import sys
+      from queue import Queue
+
+      open_ports = []
+      lock = threading.Lock()
+
+      def scan_port(ip, port, timeout=0.5):
+          try:
+              sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+              sock.settimeout(timeout)
+              if sock.connect_ex((ip, port)) == 0:
+                  with lock:
+                      open_ports.append(port)
+              sock.close()
+          except:
+              pass
+
+      def worker(ip, q):
+          while not q.empty():
+              port = q.get()
+              scan_port(ip, port)
+              q.task_done()
+
+      target = sys.argv[1] if len(sys.argv) > 1 else "127.0.0.1"
+      q = Queue()
+      for port in range(1, 1025):
+          q.put(port)
+
+      print(f"[*] 多线程扫描 {target} (1-1024)...")
+      threads = []
+      for _ in range(50):                        # 50个线程
+          t = threading.Thread(target=worker, args=(target, q))
+          t.daemon = True
+          t.start()
+          threads.append(t)
+
+      q.join()
+      print(f"[+] 发现 {len(open_ports)} 个开放端口: {sorted(open_ports)}")
+      PYEOF
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：掌握了Python socket编程，能编写端口扫描器，理解了多线程加速的原理
+  - 遇到问题：(记录socket连接超时、多线程数据竞争、权限不足等)
+  - 明日计划：学习Python HTTP请求与数据处理
+
+================================================================================
+周四：Python HTTP与数据处理
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：Python requests库——比urllib更简洁的HTTP客户端库。requests.get()
+  发送GET请求、requests.post()发送POST请求、requests.Session()保持会话。
+  HTTP状态码处理（200成功/301跳转/403禁止/404未找到/500服务器错误）。
+  JSON/XML数据解析（json.loads()/xml.etree.ElementTree）。
+  正则表达式re模块——findall()/search()/sub()提取和替换文本模式。
+  从红队视角：requests库用于编写Web漏洞验证脚本、暴力破解器、自动化测试工具。
+  参考文件：/home/a/成长为一个红队/补充-Python黑客脚本基础.txt（阅读后半部分: HTTP请求与数据处理）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：使用requests库进行GET/POST请求，解析JSON响应，编写HTTP爆破器。
+  参考文件：/home/a/成长为一个红队/补充-Python黑客脚本基础.txt
+
+  操作步骤：
+    Step 1: HTTP基本请求练习
+      python3 << 'EOF'
+      import requests
+      import json
+
+      # GET请求
+      r = requests.get('http://httpbin.org/get', params={'page': 1, 'limit': 10})
+      print(f"状态码: {r.status_code}")
+      print(f"响应头: {dict(r.headers)}")
+      print(f"URL: {r.url}")
+
+      # POST请求
+      data = {'username': 'admin', 'password': 'test123'}
+      r = requests.post('http://httpbin.org/post', data=data)
+      print(f"\nPOST响应JSON: {r.json()}")
+
+      # JSON解析
+      r = requests.get('https://api.github.com')
+      github_data = r.json()
+      print(f"\nGitHub API功能: {list(github_data.keys())}")
+      EOF
+
+    Step 2: Session会话保持和Cookie处理
+      python3 << 'EOF'
+      import requests
+
+      session = requests.Session()
+      session.headers.update({
+          'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) RedTeam/1.0',
+          'Accept': 'text/html,application/xhtml+xml'
+      })
+
+      # 发送请求（自动管理Cookie）
+      r = session.get('http://httpbin.org/cookies/set?session=abc123')
+      print(f"Set-Cookie响应: {r.json()}")
+
+      r = session.get('http://httpbin.org/cookies')
+      print(f"当前Cookie: {r.json()}")
+      EOF
+
+    Step 3: 编写HTTP目录爆破器
+      cat > ~/training/week3/python_scripts/dir_bruteforce.py << 'PYEOF'
+      #!/usr/bin/env python3
+      """HTTP目录爆破器"""
+      import requests
+      import sys
+
+      def dir_bruteforce(base_url, wordlist_file, timeout=3):
+          found_dirs = []
+          with open(wordlist_file, 'r') as f:
+              words = [line.strip() for line in f if line.strip()]
+
+          print(f"[*] 开始爆破 {base_url} ({len(words)} 条路径)")
+          for word in words:
+              url = f"{base_url.rstrip('/')}/{word}"
+              try:
+                  r = requests.get(url, timeout=timeout, allow_redirects=False)
+                  if r.status_code in [200, 301, 302, 403]:
+                      found_dirs.append((url, r.status_code, len(r.content)))
+                      print(f"[{r.status_code}] {url} ({len(r.content)} bytes)")
+              except requests.RequestException:
+                  pass
+          return found_dirs
+
+      if len(sys.argv) < 3:
+          print(f"用法: {sys.argv[0]} <目标URL> <字典文件>")
+          print(f"示例: {sys.argv[0]} http://192.168.56.102 /usr/share/wordlists/dirb/common.txt")
+          sys.exit(1)
+
+      results = dir_bruteforce(sys.argv[1], sys.argv[2])
+      print(f"\n[+] 共发现 {len(results)} 个可用路径")
+      PYEOF
+
+    Step 4: 编写模拟登录检测器
+      cat > ~/training/week3/python_scripts/login_checker.py << 'PYEOF'
+      #!/usr/bin/env python3
+      """模拟登录验证器 - 检测登录页面特征"""
+      import requests
+      import re
+
+      def detect_login_page(url):
+          try:
+              r = requests.get(url, timeout=5)
+              content = r.text.lower()
+              indicators = {
+                  'login': content.count('login'),
+                  'password': content.count('password'),
+                  'username': content.count('username'),
+                  'form': content.count('<form'),
+                  'input_password': len(re.findall(r'type=["\']password["\']', content)),
+              }
+              score = sum(indicators.values())
+              return score > 3, indicators, r.status_code
+          except:
+              return False, {}, 0
+
+      test_urls = [
+          'http://192.168.56.102/dvwa/login.php',
+          'http://192.168.56.102/phpMyAdmin/',
+      ]
+      for url in test_urls:
+          is_login, indicators, status = detect_login_page(url)
+          if is_login:
+              print(f"[+] {url} - 检测到登录页面 (状态码: {status})")
+              print(f"    特征: login={indicators.get('login',0)} "
+                    f"password={indicators.get('password',0)}")
+      PYEOF
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：掌握了Python requests库的HTTP操作，能编写目录爆破器和登录检测器
+  - 遇到问题：(记录HTTP请求超时、SSL证书错误、编码问题等)
+  - 明日计划：综合编程练习——编写完整的端口扫描器和HTTP爆破器
+
+================================================================================
+周五：综合编程练习
+================================================================================
+
+📚 第1小时 | 理论学习 (19:00 - 20:00)
+  学习内容：回顾本周所有编程知识。将Bash脚本和Python编程能力整合为一个完整的
+  自动化侦查工具链。理解模块化编程思想——将功能拆分为独立脚本，通过主脚本调用。
+  代码规范：命名规范、注释、错误处理、输出格式化。了解如何将脚本打包为
+  命令行工具（argparse库解析命令行参数）。从红队视角：一个完整的自动化扫描
+  脚本可以节省数小时的手动操作时间。
+  参考文件：/home/a/成长为一个红队/网安基础知识/05-编程基础.txt（复习全部）
+  参考文件：/home/a/成长为一个红队/补充-Python黑客脚本基础.txt（全部）
+
+💻 第2小时 | 动手实践 (20:00 - 21:00)
+  练习内容：编写两个完整的实战工具——端口扫描器和HTTP表单爆破器。
+  将本周学的Bash脚本和Python脚本整合为一个自动侦察工具集。
+  参考文件：/home/a/成长为一个红队/补充-Python黑客脚本基础.txt
+
+  操作步骤：
+    Step 1: 编写完整的端口扫描器（带服务识别）
+      cat > ~/training/week3/python_scripts/full_scanner.py << 'PYEOF'
+      #!/usr/bin/env python3
+      """完整端口扫描器 - 带Banner抓取和服务识别"""
+      import socket
+      import threading
+      import argparse
+      from queue import Queue
+
+      COMMON_PORTS = {
+          21: 'FTP', 22: 'SSH', 23: 'Telnet', 25: 'SMTP',
+          53: 'DNS', 80: 'HTTP', 110: 'POP3', 111: 'RPC',
+          139: 'NetBIOS', 143: 'IMAP', 443: 'HTTPS', 445: 'SMB',
+          993: 'IMAPS', 995: 'POP3S', 3306: 'MySQL', 3389: 'RDP',
+          5432: 'PostgreSQL', 5900: 'VNC', 8080: 'HTTP-Proxy'
+      }
+
+      results = []
+      lock = threading.Lock()
+
+      def scan_port(ip, port, timeout=1):
+          try:
+              sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+              sock.settimeout(timeout)
+              if sock.connect_ex((ip, port)) == 0:
+                  service = COMMON_PORTS.get(port, 'unknown')
+                  banner = ''
+                  try:
+                      sock.send(b'HEAD / HTTP/1.0\r\n\r\n')
+                      banner = sock.recv(256).decode(errors='ignore')[:80]
+                  except:
+                      pass
+                  sock.close()
+                  with lock:
+                      results.append((port, service, banner))
+          except:
+              pass
+
+      def worker(ip, q):
+          while not q.empty():
+              scan_port(ip, q.get())
+              q.task_done()
+
+      def main():
+          parser = argparse.ArgumentParser(description='端口扫描器')
+          parser.add_argument('target', help='目标IP地址')
+          parser.add_argument('-p', '--ports', default='1-1024', help='端口范围')
+          parser.add_argument('-t', '--threads', type=int, default=50, help='线程数')
+          args = parser.parse_args()
+
+          start, end = map(int, args.ports.split('-'))
+          q = Queue()
+          for port in range(start, end + 1):
+              q.put(port)
+
+          print(f"[*] 扫描 {args.target} ({start}-{end}) 使用 {args.threads} 线程")
+          threads = []
+          for _ in range(args.threads):
+              t = threading.Thread(target=worker, args=(args.target, q))
+              t.daemon = True; t.start(); threads.append(t)
+
+          q.join()
+          results.sort()
+          print(f"\n[+] 发现 {len(results)} 个开放端口:")
+          print(f"{'端口':<8} {'服务':<15} {'Banner'}")
+          print('-' * 60)
+          for port, service, banner in results:
+              print(f"{port:<8} {service:<15} {banner[:40]}")
+
+      if __name__ == '__main__':
+          main()
+      PYEOF
+
+    Step 2: 编写HTTP表单爆破器
+      cat > ~/training/week3/python_scripts/http_bruteforcer.py << 'PYEOF'
+      #!/usr/bin/env python3
+      """HTTP POST表单爆破器"""
+      import requests
+      import argparse
+
+      def brute_force(url, username, user_field, pass_field, wordlist,
+                      success_indicator=None, fail_indicator=None):
+          with open(wordlist, 'r', errors='ignore') as f:
+              passwords = [line.strip() for line in f if line.strip()]
+
+          print(f"[*] 爆破 {url} - 用户: {username} ({len(passwords)} 个密码)")
+          session = requests.Session()
+          for i, password in enumerate(passwords):
+              try:
+                  data = {user_field: username, pass_field: password}
+                  r = session.post(url, data=data, timeout=5)
+                  if fail_indicator and fail_indicator not in r.text:
+                      print(f"[+] 找到密码: {password} (状态码: {r.status_code})")
+                      return password
+                  if success_indicator and success_indicator in r.text:
+                      print(f"[+] 找到密码: {password}")
+                      return password
+                  if i % 100 == 0:
+                      print(f"    进度: {i}/{len(passwords)}  (当前: {password})")
+              except:
+                  pass
+          print("[-] 未找到有效密码")
+          return None
+
+      if __name__ == '__main__':
+          parser = argparse.ArgumentParser(description='HTTP表单爆破器')
+          parser.add_argument('-u', '--url', required=True, help='登录URL')
+          parser.add_argument('-U', '--username', required=True, help='用户名')
+          parser.add_argument('-f', '--user-field', default='username', help='用户名字段名')
+          parser.add_argument('-p', '--pass-field', default='password', help='密码字段名')
+          parser.add_argument('-w', '--wordlist', required=True, help='密码字典文件')
+          parser.add_argument('-s', '--success', help='成功响应中的特征字符串')
+          parser.add_argument('-F', '--fail', help='失败响应中的特征字符串')
+          args = parser.parse_args()
+          brute_force(args.url, args.username, args.user_field, args.pass_field,
+                      args.wordlist, args.success, args.fail)
+      PYEOF
+
+    Step 3: 整合Bash主控脚本
+      cat > ~/training/week3/auto_recon.sh << 'EOF'
+      #!/bin/bash
+      echo "========================================="
+      echo "  自动侦察工具集 v1.0"
+      echo "========================================="
+      target=${1:-"192.168.56.102"}
+      echo "[*] 目标: $target"
+      echo "[1/3] 快速Ping扫描..."
+      bash ~/training/week3/bash_scripts/check_target.sh $target
+      echo "[2/3] 端口扫描 (Python)..."
+      python3 ~/training/week3/python_scripts/full_scanner.py $target -p 1-1000
+      echo "[3/3] DNS查询..."
+      host $target 2>/dev/null
+      echo "[*] 侦察完成!"
+      EOF
+      chmod +x ~/training/week3/auto_recon.sh
+
+    Step 4: 对Metasploitable2测试所有脚本
+      echo "=== 综合编程测试 ===" > ~/training/week3/test_results.txt
+      echo "测试目标: 192.168.56.102" >> ~/training/week3/test_results.txt
+      echo "---" >> ~/training/week3/test_results.txt
+      python3 ~/training/week3/python_scripts/full_scanner.py 192.168.56.102 -p 1-100 >> ~/training/week3/test_results.txt 2>&1
+      cat ~/training/week3/test_results.txt
+
+📝 第3小时 | 复盘总结 (21:00 - 22:00)
+  - 今日收获：成功编写了完整的端口扫描器和HTTP爆破器，具备自动化侦察能力
+  - 遇到问题：(记录脚本整合时的路径问题、命令行参数解析错误等)
+  - 明日计划：周六复习日，回顾本周所有编程知识
+
+================================================================================
+周六：复习日
+================================================================================
+  上午 (2小时)：回顾本周所有编程知识点
+    - 重写Bash扫描菜单脚本（不用看教程）
+    - 重写Python端口扫描器（不用看教程）
+    - 编写10个Bash单行命令练习
+    - 手写Python requests库的GET/POST请求模板
+
+  下午 (1小时)：在HackTheBox/TryHackMe上做相关挑战
+    - TryHackMe Room: Bash Scripting
+    - TryHackMe Room: Python Basics
+    - TryHackMe Room: Python for Pentesters
+
+  晚间：整理本周笔记
+    - 制作Bash vs Python功能对比表
+    - 整理Python安全编程常用代码片段库
+    - 将本周所有脚本归档并添加注释
+
+================================================================================
+周日：休息日
+================================================================================
+  体能训练 | 自由活动 | 补充睡眠
+
+================================================================================
+【本周资源清单】
+================================================================================
+理论知识文件：
+  • /home/a/成长为一个红队/网安基础知识/05-编程基础.txt（全部，重点Bash和Python部分）
+
+实践教程文件：
+  • /home/a/成长为一个红队/补充-Python黑客脚本基础.txt（全部）
+
+在线练习：
+  • TryHackMe Room: Bash Scripting
+  • TryHackMe Room: Python Basics
+  • TryHackMe Room: Python for Pentesters
+  • Metasploitable2虚拟机 (脚本测试目标)
+
+【本周完成检查】
+[ ] 周一任务完成
+[ ] 周二任务完成
+[ ] 周三任务完成
+[ ] 周四任务完成
+[ ] 周五任务完成
+[ ] 周六复习完成
+[ ] 本周笔记整理完成
+[ ] 体能训练完成

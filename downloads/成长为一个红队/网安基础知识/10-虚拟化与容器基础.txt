@@ -1,0 +1,790 @@
+================================================================================
+                      虚拟化与容器基础
+            网安基础知识系列 · 红队入门必读
+================================================================================
+
+【目录】
+  一、虚拟化概述
+  二、虚拟化类型
+  三、VirtualBox详解
+  四、VMware基础
+  五、Docker核心概念
+  六、Docker命令实战
+  七、Docker网络
+  八、docker-compose
+  九、Docker安全
+  十、实验环境拓扑设计
+  十一、常见靶场Docker化部署
+  十二、红队视角总结
+
+================================================================================
+一、虚拟化概述
+================================================================================
+
+虚拟化(Virtualization)是红队搭建实验环境的核心技术。
+
+为什么红队需要虚拟化？
+  1. 搭建安全隔离的实验环境(攻击/防御实验)
+  2. 快速部署和还原靶场(快照功能)
+  3. 多操作系统并行运行(Kali Linux + 多个Windows靶机)
+  4. 搭建复杂的网络拓扑进行攻防演练
+  5. Docker快速启动特定的服务靶场
+  6. 工具隔离(防止恶意工具影响宿主机)
+
+关键概念：
+  宿主机(Host):       运行虚拟化软件的物理机器
+  客户机(Guest):      虚拟机中运行的操作系统
+  Hypervisor:         管理层，负责虚拟资源的调度
+  快照(Snapshot):     虚拟机某一时刻的完整状态保存
+  克隆(Clone):        创建虚拟机的完整副本
+
+================================================================================
+二、虚拟化类型
+================================================================================
+
+【Type 1 Hypervisor (裸机型 Bare-metal)】
+
+  直接运行在物理硬件上的操作系统级Hypervisor
+  性能更好，用于企业/数据中心
+
+  代表产品:
+    - VMware ESXi (最流行的企业虚拟化平台)
+    - Microsoft Hyper-V Server
+    - KVM (Linux内核自带，Kernel-based Virtual Machine)
+    - XenServer (Citrix)
+    - Proxmox VE (基于KVM+ LXC的开源方案)
+
+  架构简图:
+    硬件(Hardware)
+      |
+     Type 1 Hypervisor (ESXi, Hyper-V, KVM)
+      |
+    +----+----+----+
+    VM  VM  VM  VM
+
+  红队:
+    - ESXi是企业数据中心的核心，了解ESXi有助于攻击虚拟化环境
+    - KVM是Linux云基础设施的核心(AWS/Google Cloud)
+    - 开发环境的快速搭建
+
+【Type 2 Hypervisor (托管型 Hosted)】
+
+  运行在宿主操作系统之上
+  性能略低于Type 1，适合个人学习和开发
+
+  代表产品:
+    - VirtualBox (Oracle, 免费开源)
+    - VMware Workstation/Fusion (商用)
+    - Parallels Desktop (Mac)
+    - QEMU (常与KVM配合使用)
+
+  架构简图:
+    硬件(Hardware)
+      |
+    宿主操作系统 (Windows/Linux/Mac)
+      |
+    Type 2 Hypervisor (VirtualBox, VMware Workstation)
+      |
+    +----+----+
+    VM  VM  VM
+
+  红队推荐:
+    - VirtualBox: 免费开源，功能完善，红队实验首选
+    - VMware Workstation: 更稳定，但需付费
+
+================================================================================
+三、VirtualBox详解
+================================================================================
+
+VirtualBox是红队最常用的Type 2 Hypervisor(跨平台,免费)。
+
+【VirtualBox核心功能】
+
+  虚拟机创建:
+    - OS类型选择: Windows/Linux/Mac/Other
+    - 内存分配: 建议不超过宿主机50%
+    - 虚拟硬盘: VDI(本机), VMDK(VMware兼容), VHD(Hyper-V兼容)
+    - CPU: 启用VT-x/AMD-扩展
+
+  Guest Additions:
+    安装在客户机中提升使用体验:
+    - 共享剪贴板
+    - 拖放文件
+    - 无缝鼠标
+    - 共享文件夹
+    - 更好的视频性能
+
+【VirtualBox网络模式详解 (红队必学!)】
+
+  1. NAT (Network Address Translation)
+     虚拟机通过宿主机NAT上网
+     虚拟机可以访问外部网络，但外部无法主动访问虚拟机
+     虚拟机之间不能互相通信(每台VM独立的NAT)
+
+     适用场景:
+       - 日常上网(下载工具/更新系统)
+       - 受保护的VM(不想暴露给外部)
+     IP获取: DHCP (默认 10.0.2.0/24)
+
+  2. NAT Network (NAT网络)
+     类似NAT但多个VM共享同一个NAT网络
+     虚拟机之间可以互相通信
+     外部网络可以看到宿主机但看不到VM
+
+     适用场景:
+       - 多VM需要互相通信但不需要外部访问
+       - 搭建内网实验(VM间横向移动)
+     IP获取: DHCP (默认 10.0.2.0/24)
+
+  3. Bridged (桥接)
+     虚拟机像真实物理机器一样直接连到物理网络
+     虚拟机和宿主机在同一网络段中
+     外部网络可以直接访问虚拟机
+
+     适用场景:
+       - VM作为网络服务主机(Web服务器)
+       - 需要让VM接入真实局域网
+       - 从物理网络的其他机器访问VM
+     IP获取: 从物理网络DHCP获取(如192.168.1.0/24)
+
+  4. Host-Only (仅主机网络)
+     只在宿主机和VM之间创建隔离的私有网络
+     VM只能与宿主机通信，不能访问外部网络
+     多个VM可在Host-Only网络中互相通信
+
+     适用场景:
+       - 宿主机和VM之间的隔离实验
+       - 不需要互联网的纯内部实验
+     IP获取: DHCP (默认 192.168.56.0/24)
+     VirtualBox自动安装Host-Only接口(vboxnet0)
+
+  5. Internal Network (内部网络)
+     完全隔离的网络，只有VM之间能通信
+     宿主机也无法直接通信(除非额外设置)
+
+     适用场景:
+       - 多VM组成的完全隔离的实验室网络
+       - 不需要宿主机干预的复杂内部网络
+     IP获取: 需手动配置静态IP
+
+  6. 混合模式
+     一台VM可以添加多个网卡，不同网卡使用不同网络模式
+     实现复杂的网络拓扑
+
+     红队常见配置:
+       Kali:   NAT(上网) + Host-Only(内网访问)
+       靶机1:  Host-Only(内网) 或 Internal Network
+       靶机2:  Host-Only(内网) 或 Internal Network
+
+     这种配置下:
+       Kali可以访问互联网(NAT)且可以访问内网靶机(Host-Only)
+       靶机只能在内部网络，无法访问互联网
+       物理网络中的其他机器不能接触内网实验
+
+【VirtualBox快照管理】
+
+  快照(Snapshot):
+    保存虚拟机的完整状态(磁盘、内存、配置)
+
+  操作:
+    创建快照: 机器 -> 快照 -> 生成快照
+    恢复快照: 机器 -> 快照 -> 恢复快照
+    删除快照: 机器 -> 快照 -> 删除快照
+
+  红队应用:
+    1. 实验前拍快照
+    2. 实验如果出错/破坏系统 -> 恢复快照
+    3. 在特定攻击阶段拍快照 -> 可以回到这个阶段
+    4. 多个实验分支(不同快照对应不同实验)
+
+  最佳实践:
+    - 新装VM后立即拍"干净安装"快照
+    - 加入域后拍"已加入域"快照
+    - 关键实验前拍快照
+    - 给快照起有意义的名字
+
+【VirtualBox共享文件夹】
+
+  在宿主机和VM之间共享文件
+
+  配置: 机器 -> 设置 -> 共享文件夹 -> 添加
+    共享文件夹路径: /home/user/shared
+    挂载点: Z: 或 /mnt/shared
+    自动挂载: 勾选
+    只读: 根据需求
+
+  红队:
+    - 免登录传输文件到VM
+    - 共享工具目录(宿主机下载工具, VM直接使用)
+    - 日志输出到共享文件夹(VM内操作,宿主机查看)
+
+================================================================================
+四、VMware基础
+================================================================================
+
+VMware提供Type 1(ESXi)和Type 2(Workstation)产品。
+
+【VMware Workstation/Fusion特性 (Type 2)】
+
+  与VirtualBox的对比:
+    优点:
+      - 性能稍好
+      - 3D图形支持更强
+      - USB直通更稳定
+      - 克隆和快照管理更灵活
+
+    缺点:
+      - 付费(但有Player免费版, 功能受限)
+      - 闭源
+
+  网络模式(与VirtualBox对应):
+    NAT:         同VBox NAT
+    Bridged:     同VBox Bridged
+    Host-Only:   同VBox Host-Only
+
+  VMware特色:
+    - LAN Segment: 类似VirtualBox的Internal Network
+    - Virtual Network Editor: 细粒度网络配置
+
+【VMware ESXi (Type 1)】
+
+  ESXi是企业数据中心的标准虚拟化平台。
+
+  核心组件:
+    vCenter Server: 集中管理界面(管理多个ESXi宿主机)
+    ESXi Host: 实际运行VM的物理机器
+    Datastore: 存储(本地硬盘/SAN/NAS)
+
+  ESXi Shell (命令行):
+    可登录ESXi主机直接操作
+    vim-cmd命令管理VM
+
+  红队ESXi相关:
+    - 获取ESXi权限 = 获取所有VM的控制
+    - ESXi密码破解
+    - VM快照窃取
+    - 从VM逃逸到ESXi Host
+    - vCenter LDAP集成攻击
+
+================================================================================
+五、Docker核心概念
+================================================================================
+
+Docker是容器化平台，比传统虚拟机更轻量级，用于快速部署应用。
+
+【Docker与传统虚拟机区别】
+
+  +--应用程序--+    +--应用程序--+
+  |  依赖库    |    |  依赖库    |
+  +--容器运行时--+    +--应用程序--+
+  |   Docker   |    |  操作系统  |
+  +--操作系统---+    +--Hypervisor--+
+  | 硬件(CPU/内存/IO)  |  硬件  |
+                        (传统VM)
+
+  容器: 共享宿主机内核，只隔离应用和依赖
+  VM:   每个VM有完整操作系统
+
+  Docker优势:
+    启动速度: 秒级(vs VM的分级)
+    资源消耗: MB级别(vs VM的GB级别)
+    镜像体积: 几MB到几百MB(vs VM几GB)
+    迁移性: 镜像即交付
+
+  Docker劣势:
+    隔离性: 弱于VM(共享内核)
+    安全性: 容器逃逸风险 > VM逃逸风险
+    内核限制: 必须与宿主机同内核(Windows容器需特殊处理)
+
+【Docker核心概念】
+
+  Image (镜像):
+    轻量级、可执行的软件包
+    包含运行应用的一切:代码、运行时、库、环境变量、配置
+    镜像只读，分层存储
+
+    关键镜像:
+      alpine:latest    - 最小Linux(仅5MB), 红队首选
+      ubuntu:latest    - Ubuntu基础系统
+      nginx:latest     - 官方Nginx
+      mysql:5.7        - MySQL数据库
+      python:3-slim    - 轻量Python环境
+
+  Container (容器):
+    镜像的运行实例
+    可写层 + 镜像只读层 = 容器
+    容器停止后，可写层的修改会丢失(除非提交成新镜像或绑定了存储卷)
+
+  Dockerfile:
+    构建镜像的脚本文件
+    每条指令创建一个层
+
+    示例Dockerfile:
+      FROM python:3-slim
+      WORKDIR /app
+      COPY requirements.txt .
+      RUN pip install -r requirements.txt
+      COPY . .
+      EXPOSE 5000
+      CMD ["python", "app.py"]
+
+  常用Dockerfile指令:
+    FROM:     基于哪个镜像
+    WORKDIR:  设置工作目录
+    COPY:     从宿主机复制文件
+    ADD:      复制+自动解压tar
+    RUN:      构建时执行命令
+    EXPOSE:   声明容器要监听的端口
+    CMD:      容器启动时的默认命令
+    ENTRYPOINT: 容器启动时的入口命令
+    ENV:      设置环境变量
+    USER:     切换用户
+    VOLUME:   声明卷挂载点
+
+  Registry (镜像仓库):
+    存储和分发Docker镜像
+    Docker Hub: 默认公共仓库
+    私有Registry: Harbor, Azure Container Registry, AWS ECR
+
+  Volume (卷):
+    持久化容器数据(独立于容器生命周期)
+    容器删除后数据仍保留
+
+  Network (网络):
+    Docker网络驱动管理容器间的通信
+    详细见第七节
+
+================================================================================
+六、Docker命令实战
+================================================================================
+
+【镜像管理命令】
+  docker pull nginx:latest               # 下载镜像
+  docker pull alpine:latest              # 下载Alpine(红队常用)
+  docker images                          # 列出本地镜像
+  docker rmi image_id                    # 删除镜像
+  docker save -o nginx.tar nginx:latest  # 导出镜像
+  docker load -i nginx.tar               # 导入镜像
+  docker history nginx:latest            # 查看镜像构建历史(分层)
+  docker inspect nginx:latest            # 查看镜像详情
+
+【容器操作命令】
+  docker run -d --name web nginx:latest           # 启动容器(后台)
+  docker run -it --name test alpine /bin/sh       # 交互式启动
+  docker run -d -p 8080:80 --name web nginx       # 端口映射
+  docker run -d -v /host/path:/container/path nginx  # 挂载卷
+  docker run -e MYSQL_ROOT_PASSWORD=pass mysql:5.7  # 环境变量
+  docker run --rm -it alpine /bin/sh              # 退出后自动删除(临时容器)
+
+  docker ps                                  # 查看运行中的容器
+  docker ps -a                               # 查看所有容器(包括停止的)
+  docker stop container_id                   # 停止容器
+  docker start container_id                  # 启动已停止的容器
+  docker restart container_id                # 重启容器
+  docker rm container_id                     # 删除容器
+  docker rm -f container_id                  # 强制删除(运行中的)
+
+  docker exec -it container_id /bin/sh       # 进入运行中的容器
+  docker exec container_id ls /              # 在容器中执行命令
+  docker attach container_id                 # 附加到容器的标准输入/输出
+
+  docker logs container_id                   # 查看容器日志
+  docker logs -f container_id                # 实时日志(tail -f)
+  docker inspect container_id                # 查看容器详细信息
+  docker port container_id                   # 查看端口映射
+  docker stats                               # 容器资源使用
+
+  docker cp file.txt container_id:/tmp/      # 复制文件到容器
+  docker cp container_id:/tmp/file.txt ./    # 从容器复制文件
+
+【容器构建命令】
+  docker build -t myimage:latest .           # 从Dockerfile构建
+  docker build -f Dockerfile.prod -t myapp . # 指定Dockerfile
+  docker build --no-cache -t myimage .      # 不使用缓存构建
+  docker commit container_id newimage:tag   # 从容器创建镜像
+  docker tag image_id user/image:tag        # 为镜像打标签
+
+【容器清理命令】
+  docker system prune -a                     # 清理所有未使用的资源
+  docker container prune                     # 清理停止的容器
+  docker image prune -a                      # 清理未使用的镜像
+  docker volume prune                        # 清理未使用的卷
+
+================================================================================
+七、Docker网络
+================================================================================
+
+【Docker网络驱动】
+
+  1. bridge (默认)
+     默认的Docker网络，容器连接到docker0虚拟桥接口
+     每个容器有独立IP
+     通过端口映射(-p)暴露服务
+     NAT访问外部网络
+
+     查看: docker network ls
+       bridge (默认) - 172.17.0.0/16
+       host          - 与宿主机共享网络栈
+       none          - 无网络
+       自定义        - 用户创建的bridge网络
+
+  2. host
+     容器直接使用宿主机网络栈
+     容器端口和宿主机端口完全相同
+     无隔离、性能最优
+
+  3. none
+     容器无网络功能
+     完全隔离
+
+  4. overlay
+     跨Docker主机通信(用于Docker Swarm群集)
+     多个Docker宿主机的容器可以互相通信
+
+  5. macvlan/ipvlan
+     为每个容器分配独立的MAC/IP地址
+     容器在物理网络上显示为独立设备
+
+【Docker网络命令】
+  docker network ls                       # 列出所有网络
+  docker network create mynet             # 创建桥接网络
+  docker network create --subnet=10.10.0.0/24 mynet  # 指定子网
+  docker network inspect mynet            # 查看网络详情
+  docker network connect mynet container  # 将容器连接到网络
+  docker network disconnect mynet container  # 断开容器网络连接
+  docker network rm mynet                 # 删除网络
+
+  运行容器时指定网络:
+    docker run -d --network mynet --name web nginx
+    docker run -d --network host nginx    # 使用host网络
+
+【端口映射详解】
+  -p 8080:80         宿主机8080 -> 容器80
+  -p 192.168.1.5:8080:80  指定宿主机IP
+  -p 8080:80/udp     指定UDP协议
+  -p 8080:80/tcp     指定TCP协议
+  -p 8080-8090:80    指定宿主机端口范围
+
+【多容器网络实战】
+
+  创建Web应用+数据库的场景:
+    # 创建专门网络
+    docker network create webnet
+
+    # 启动MySQL
+    docker run -d --network webnet --name db \
+      -e MYSQL_ROOT_PASSWORD=secret mysql:5.7
+
+    # 启动Web应用
+    docker run -d --network webnet --name web \
+      -p 80:80 \
+      -e DB_HOST=db \
+      my-web-app
+
+    说明: 在同一网络内的容器可以通过容器名互相通信
+          Web容器中可以直接用 db:3306 连接MySQL
+
+================================================================================
+八、docker-compose
+================================================================================
+
+docker-compose用于定义和管理多容器应用。
+
+【docker-compose.yml 示例文件】
+
+  version: '3.8'
+  services:
+    web:
+      build: .
+      ports:
+        - "80:5000"
+      environment:
+        - FLASK_ENV=production
+        - DATABASE_URL=mysql://user:pass@db/mydb
+      depends_on:
+        - db
+      volumes:
+        - ./app:/app
+      networks:
+        - appnet
+
+    db:
+      image: mysql:5.7
+      environment:
+        - MYSQL_ROOT_PASSWORD=secret
+        - MYSQL_DATABASE=mydb
+      volumes:
+        - dbdata:/var/lib/mysql
+      networks:
+        - appnet
+
+  volumes:
+    dbdata:
+
+  networks:
+    appnet:
+      driver: bridge
+
+【docker-compose 命令】
+  docker-compose up -d                    # 启动所有服务(后台)
+  docker-compose down                    # 停止并删除所有服务
+  docker-compose down -v                 # 同时删除卷
+  docker-compose ps                      # 查看服务状态
+  docker-compose logs -f web             # 查看特定服务日志
+  docker-compose exec web bash           # 进入web服务容器
+  docker-compose restart                 # 重启所有服务
+  docker-compose build --no-cache        # 重新构建
+  docker-compose up -d --scale web=3     # 扩展web服务到3个实例
+
+================================================================================
+九、Docker安全
+================================================================================
+
+【Docker安全最佳实践】
+
+  1. 使用非root用户运行容器
+     Dockerfile: USER 1000
+     或 docker run --user 1000
+
+  2. 不挂载Docker socket (/var/run/docker.sock)
+     挂载了docker.sock = 容器有完整的Docker控制权 = 至少宿主权限
+     docker run -v /var/run/docker.sock:/var/run/docker.sock ...  # 危险!
+
+  3. 限制容器能力
+     docker run --cap-drop=ALL --cap-add=NET_BIND_SERVICE ...
+     去掉不需要的Linux Capabilities
+
+  4. 只读根文件系统
+     docker run --read-only ...
+     需要写操作的目录通过tmpfs或volume挂载
+
+  5. 限制资源
+     docker run --memory="256m" --cpus="0.5" ...
+     防止单个容器耗尽宿主机资源
+
+  6. Docker Content Trust (镜像签名)
+     export DOCKER_CONTENT_TRUST=1
+     启用后只拉取带签名的镜像
+
+  7. 使用安全的基础镜像
+     扫描已知漏洞(Trivy, Clair, Snyk)
+     使用最小化镜像(Alpine而非Ubuntu)
+
+【Docker容器逃逸技术 (红队高级)】
+
+  容器逃逸意为从容器内部突破到宿主机环境。
+
+  常见逃逸方法:
+    1. 特权容器 (--privileged)
+       docker run --privileged ...
+       拥有完整的设备访问权限 -> 挂载宿主机磁盘
+
+    2. 挂载docker.sock
+       构建新容器挂载宿主机根文件系统 -> 访问宿主机文件
+
+    3. 宿主机磁盘挂载
+       挂载宿主机/到容器
+
+    4. Linux内核漏洞
+       容器共享宿主机内核 -> 内核漏洞影响所有容器
+
+    5. /proc/self/cwd 或 /proc/1/root
+       在某些配置下可逃逸到宿主机文件系统
+
+    6. Cgroup逃逸
+       通过cgroup notifications机制实现容器逃逸
+
+  红队实验:
+    不要在生产环境尝试!
+    只在自己的实验室中研究逃逸技术
+
+================================================================================
+十、实验环境拓扑设计
+================================================================================
+
+【基础红队实验拓扑】
+
+  +--------------------------------------+
+  |  宿主机 (物理机器)                    |
+  |                                      |
+  |  +--------------------------------+  |
+  |  | Kali Linux VM                  |  |
+  |  | NIC1: NAT (上网)                |  |
+  |  | NIC2: Host-Only 192.168.56.100 |  |
+  |  +--------------------------------+  |
+  |                                      |
+  |  +--------------------------------+  |
+  |  | Windows Server 2019 (DC)       |  |
+  |  | NIC1: Host-Only 192.168.56.10  |  |
+  |  | 域: testlab.local               |  |
+  |  +--------------------------------+  |
+  |                                      |
+  |  +--------------------------------+  |
+  |  | Windows 10 (客户端)            |  |
+  |  | NIC1: Host-Only 192.168.56.20  |  |
+  |  | 已加入域 testlab.local          |  |
+  |  +--------------------------------+  |
+  |                                      |
+  |  +--------------------------------+  |
+  |  | Ubuntu Server (内部服务)        |  |
+  |  | NIC1: Host-Only 192.168.56.30  |  |
+  |  | Web+MySQL+SSH服务               |  |
+  |  +--------------------------------+  |
+  |                                      |
+  |  Docker: 靶场环境(容器化)            |
+  |  +--------------------------------+  |
+  |  | DVWA, Vulhub, WebGoat...       |  |
+  |  +--------------------------------+  |
+  +--------------------------------------+
+
+  网络规划:
+    互联网: 192.168.1.0/24 (NAT到宿主机)
+    实验内网: 192.168.56.0/24 (Host-Only)
+    仅Kali可以接触互联网(NAT), 靶机在网络隔离中
+
+【进阶拓扑 (多层次内网实验)】
+
+  +---------------------------------------+
+  |  Kali (攻击者)                         |
+  |  NIC1: Host-Only 10.0.0.100           |
+  +--------+-------------------------------+
+           |
+  +--------+-------------------------------+
+  |  DMZ网段 10.0.0.0/24                    |
+  |  +-----------+  +-------------------+  |
+  |  | Web Server|  | FTP Server        |  |
+  |  | NIC1: DMZ |  | NIC1: DMZ         |  |
+  |  | NIC2: 内网|  | NIC2: 内网         |  |
+  |  +-----------+  +-------------------+  |
+  +--------+-------------------------------+
+           |
+  +--------+-------------------------------+
+  |  内网段 172.16.0.0/24                  |
+  |  +-----------+  +-------------------+  |
+  |  | DC Server |  | File Server       |  |
+  |  +-----------+  +-------------------+  |
+  |  +-----------+  +-------------------+  |
+  |  | DB Server |  | HR Workstation    |  |
+  |  +-----------+  +-------------------+  |
+  +---------------------------------------+
+
+  VirtualBox中实现:
+    DMZ=Host-Only网卡1(10.0.0.0/24)
+    内网=Host-Only网卡2(172.16.0.0/24)
+    Web Server双网卡(联系DMZ和内网)
+    攻击者从DMZ攻入 -> 横向到内网段
+
+================================================================================
+十一、常见靶场Docker化部署
+================================================================================
+
+【DVWA (Damn Vulnerable Web Application)】
+  经典PHP漏洞练习环境
+
+  docker run -d -p 80:80 vulnerables/web-dvwa
+  # 访问 http://localhost/setup.php 创建数据库
+  # 默认凭证: admin/password
+
+  包含练习:
+    SQL注入, XSS(反射/存储/DOM), CSRF, 命令注入, 文件包含, 文件上传
+    暴力破解, 弱会话ID, 不安全的验证码
+
+【Vulhub (预构建漏洞环境集合)】
+  git clone https://github.com/vulhub/vulhub.git
+  cd vulhub/tomcat/CVE-2017-12615/
+  docker-compose up -d
+  # 自动搭建漏洞版本的Tomcat
+
+  优势:
+    每个漏洞都有独立的docker-compose.yml
+    一键启动包含漏洞的环境
+    覆盖大量知名CVE
+
+【WebGoat (OWASP培训Web应用)】
+  docker run -d -p 8080:8080 -p 9090:9090 webgoat/goatandwolf
+  # WebGoat: http://localhost:8080/WebGoat
+  # WebWolf: http://localhost:9090/WebWolf
+
+  系统化的Web安全课程(约50+课程)
+  从基础到高级的完整学习路径
+
+【Juice Shop (OWASP现代Web应用)】
+  docker run -d -p 3000:3000 bkimminich/juice-shop
+  # 访问 http://localhost:3000
+
+  特性:
+    Node.js + Angular SPA应用
+    现代Web安全挑战
+    评分板系统
+
+【PortSwigger Web Security Academy】
+  在线提供的完整Web安全训练平台
+  (不需要Docker，浏览器直接使用)
+  由Burp Suite的作者PortSwigger提供
+  覆盖所有OWASP Top 10及更多
+
+【Metasploitable (故意有漏洞的Linux)】
+  VirtualBox镜像(非Docker)
+  Rapid7官方提供的目标练习虚拟机
+  包含数十种服务漏洞
+
+  docker run -d -p 80:80 tleemcjr/metasploitable2 (Docker化版本)
+
+【其他实用靶场】
+  - Vampi (OWASP) - 易受攻击的REST API
+  - NodeGoat (OWASP) - Node.js安全训练
+  - WebSploit Labs - 多种漏洞环境
+  - Pentester Lab - 付费但高质量
+  - Hack The Box - 在线渗透测试平台
+
+================================================================================
+十二、红队视角总结
+================================================================================
+
+虚拟化和容器技能在红队中的关键应用:
+
+  1. 实验环境搭建 (90%的需求)
+     - 快速部署渗透环境
+     - 安全隔离的实验网络
+     - 快照方便恢复和重新进行实验
+
+  2. 漏洞复现
+     - Docker一键启动漏洞环境(Vulhub)
+     - 便于理解漏洞机制
+
+  3. 工具环境
+     - Kali Linux在虚拟机中
+     - 保持宿主机干净安全
+
+  4. 模拟目标环境
+     - 搭建域环境(Windows Server + Windows客户端)
+     - 多层网络拓扑(学习横向移动)
+     - 安装防御工具(学习检测绕过)
+
+  5. C2和Payload开发
+     - Docker中开发和测试C2基础设
+     - 隔离环境测试恶意代码
+
+  6. 横向移动训练
+     - 多VM网络是学习内网渗透的好方式
+
+  7. 理解目标环境
+     - 许多企业实际使用Docker/ESXi等虚拟化
+     - 了解这些技术的内部原理有助于攻击思路
+
+红队推荐实验环境配置:
+  - 宿主机: Linux/Windows + 至少16GB RAM + 100GB可用空间
+  - VirtualBox: Kali Linux (4GB RAM) + 2-3台靶机
+  - Docker: 运行时环境+靶场
+  - 如果需要域实验: Windows Server VM (4GB) + Windows 10 VM (2GB)
+  - 总共RAM需求: ~12-16GB
+
+学习路径建议:
+  1. 第一周: 安装VirtualBox/Kali, 熟悉基本VM操作, 快照功能
+  2. 第二周: 学习Docker, 启动DVWA/WebGoat开始练习
+  3. 第三周: 搭建Windows域环境, 练习AD攻击
+  4. 第四周: 构建多层网络拓扑, 练习横向移动
+
+================================================================================
+                        文档结束
+================================================================================

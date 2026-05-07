@@ -1,0 +1,766 @@
+================================================================================
+模块 02：Web信息收集与侦察
+================================================================================
+模块标题：知己知彼 — Web目标信息收集与侦察技术
+学习目标：
+  1. 掌握使用whatweb识别目标CMS和Web技术栈
+  2. 熟练使用wpscan对WordPress站点进行深度扫描
+  3. 掌握joomscan对Joomla站点的侦察技术
+  4. 熟练使用dirb和gobuster进行目录/文件爆破
+  5. 掌握cms-explorer等综合侦察工具
+  6. 理解信息收集在渗透测试中的关键地位
+工具分类：侦察工具 / 信息收集
+推荐工具：whatweb, wpscan, joomscan, dirb, gobuster, cms-explorer
+优先级：★★★★★ (渗透第一步，决定后续攻击方向)
+================================================================================
+
+============================================================
+第一部分：信息收集方法论
+============================================================
+
+【渗透测试中信息收集的价值】
+
+信息收集 (Reconnaissance) 渗透测试的第一个也是最重要的阶段。
+一次成功的渗透往往80%的时间在信息收集，20%的时间在利用。
+
+信息收集的金字塔：
+                    ┌─────┐
+                    │漏洞利用│  ← 基于收集到的信息
+                   ┌┴─────┴┐
+                   │漏洞扫描│  ← 使用扫描器发现漏洞
+                  ┌┴───────┴┐
+                  │指纹识别  │  ← 识别CMS/框架/服务器版本
+                 ┌┴─────────┴┐
+                 │目录枚举    │  ← 发现隐藏目录和文件
+                ┌┴───────────┴┐
+                │被动信息收集  │  ← 搜索引擎/WHOIS/DNS
+               └──────────────┘
+
+信息收集维度：
+  1. 域名信息：子域名、IP地址、CDN/WAF
+  2. 技术指纹：Web服务器、CMS、框架、语言
+  3. 目录结构：隐藏目录、备份文件、配置文件
+  4. 公开信息：GitHub泄露、搜索引擎缓存、历史记录
+  5. 凭证泄露：公开的账号密码、API密钥
+  6. 人员信息：邮箱、社交账号 (用于社会工程学)
+
+【信息收集注意事项】
+
+⚠️  安全提醒：
+  1. 仅在授权范围内进行信息收集
+  2. 注意请求频率，避免造成DoS
+  3. 某些目录爆破可能触发WAF封禁
+  4. 使用VPN/代理隐藏真实IP
+  5. 记录所有收集到的信息便于后续分析
+
+============================================================
+第二部分：whatweb — CMS指纹识别
+============================================================
+
+【2.1 工具介绍】
+
+whatweb是Web技术栈识别工具，能识别：
+  - 内容管理系统 (CMS): WordPress, Joomla, Drupal, etc.
+  - Web服务器: Apache, Nginx, IIS, etc.
+  - 编程语言: PHP, ASP.NET, Python, Ruby, etc.
+  - JavaScript库: jQuery, React, Angular, etc.
+  - 分析工具: Google Analytics, etc.
+  - CDN/缓存: Cloudflare, Varnish, etc.
+
+whatweb拥有超过1800个插件用于指纹识别。
+
+【2.2 基本使用】
+
+命令格式: whatweb [选项] <URL>
+
+# 基本扫描
+whatweb http://testphp.vulnweb.com
+
+# 输出示例解析：
+# http://testphp.vulnweb.com [200 OK] Country[UNITED STATES][US]
+# HTTPServer[nginx/1.19.0], IP[44.228.249.136], 
+# Powered-By[PHP/5.6.40-38+ubuntu20.04.1+deb.sury.org+1],
+# Script[text/javascript], Title[Home of Acunetix Art],
+# UncommonHeaders[x-powered-by], X-Powered-By[PHP/5.6.40]
+
+【2.3 侵略性级别 (-a 参数)】
+
+侵略性级别从1到4，数字越大越深入：
+
+-a 1 (Passive): 被动模式，仅分析默认响应
+  whatweb -a 1 http://example.com
+
+-a 2 (Polite): 礼貌模式，发送一个额外请求
+  whatweb -a 2 http://example.com
+
+-a 3 (Aggressive): 侵略性模式，请求更多资源，超时更短
+  whatweb -a 3 http://example.com
+  → 推荐用于大多数渗透测试场景
+
+-a 4 (Heavy): 重模式，尝试所有插件，发出大量请求
+  whatweb -a 4 http://example.com
+  → 注意：可能触发WAF/IDS告警
+
+【2.4 实战命令详解】
+
+# 详细输出模式 (-v)
+whatweb -v http://testphp.vulnweb.com
+→ 显示每个插件匹配的详细信息
+
+# 扫描多个目标
+whatweb http://target1.com http://target2.com http://target3.com
+
+# 从文件读取目标列表
+whatweb -i targets.txt
+
+# 指定输出格式
+whatweb --log-json=result.json http://testphp.vulnweb.com
+whatweb --log-xml=result.xml http://testphp.vulnweb.com
+whatweb --log-brief=brief.txt http://testphp.vulnweb.com
+whatweb --log-verbose=verbose.txt http://testphp.vulnweb.com
+
+# 指定自定义User-Agent
+whatweb --user-agent="Mozilla/5.0" http://example.com
+
+# 使用HTTP代理 (配合Burp分析)
+whatweb --proxy http://127.0.0.1:8080 http://example.com
+
+# 指定cookie
+whatweb --cookie="PHPSESSID=abc123" http://example.com
+
+# 限制URL重定向
+whatweb --max-redirects=3 http://example.com
+
+# 列出所有插件
+whatweb --list-plugins
+
+# 搜索特定插件
+whatweb --list-plugins | grep -i wordpress
+whatweb --list-plugins | grep -i joomla
+
+【2.5 whatweb输出解读】
+
+HTTP Headers:
+  HTTPServer[nginx/1.19.0]  → Web服务器类型和版本
+  X-Powered-By[PHP/7.4.3]   → 后端语言和版本
+  Cookies[PHPSESSID]         → 使用的会话机制
+
+HTML Meta:
+  MetaGenerator[WordPress 5.8] → CMS类型和版本
+  MetaAuthor[admin]            → 可能的用户名
+
+JavaScript:
+  Script[jquery]               → 使用的JS库
+  Script[modernizr]            → 前端框架
+
+Plugins识别:
+  WordPress → 检测wp-content, wp-admin等特征
+  Joomla    → 检测com_content, Joomla特征URL
+  Drupal    → 检测sites/default, Drupal特征
+
+============================================================
+第三部分：wpscan — WordPress深度扫描
+============================================================
+
+【3.1 WordPress扫描重要性】
+
+WordPress占据了全球约43%的网站，是渗透测试中最常见的CMS。
+wpscan是Kali/ArchStrike自带的WordPress专用安全扫描器。
+
+【3.2 基本命令】
+
+# 基本扫描
+wpscan --url http://example.com
+
+# 输出示例：
+# [!] The WordPress theme in use is called "twentytwentyone"
+# [!] The version of WordPress is 5.8.1
+# [!] WordPress 5.8.1 identified (Vulnerable, upgrade to 5.8.2)
+
+【3.3 枚举用户 (--enumerate u)】
+
+wpscan --url http://example.com --enumerate u
+
+输出示例：
+  [i] User(s) Identified:
+  [+] admin      | 管理员账户
+  [+] editor     | 编辑者
+  [+] john       | 普通用户
+
+枚举用户的价值：
+  - 用户列表可用于暴力破解
+  - JSON API端点: /wp-json/wp/v2/users 也可能泄露用户
+  - 作者归档: /?author=1 重定向到用户页面
+
+【3.4 枚举插件 (--enumerate p)】
+
+wpscan --url http://example.com --enumerate p
+
+输出示例：
+  [+] contact-form-7
+  |  Location: http://example.com/wp-content/plugins/contact-form-7/
+  |  Version: 5.4.2 (100% confidence)
+  |
+  [+] akismet
+  |  Location: http://example.com/wp-content/plugins/akismet/
+  |  The version could not be determined
+
+已知漏洞的插件将被标记，可直接在Exploit-DB或WPScan Vulnerability 
+Database查找利用代码。
+
+【3.5 枚举主题 (--enumerate t)】
+
+wpscan --url http://example.com --enumerate t
+
+主题也可能包含漏洞，特别是自定义开发的低质量主题。
+注意：某些主题的版本号无法被动识别，需要访问readme.txt或style.css。
+
+【3.6 枚举漏洞 (--enumerate vp)】
+
+wpscan --url http://example.com --enumerate vp
+
+输出示例：
+  [+] contact-form-7
+  |  Identified: CVE-2020-35489
+  |  Fixed in: 5.3.3
+  |  References:
+  |   - https://wpscan.com/vulnerability/xxxxx
+  |   - https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2020-35489
+
+【3.7 暴力破解 (--passwords, --usernames)】
+
+wpscan --url http://example.com \
+       --usernames admin \
+       --passwords /usr/share/wordlists/rockyou.txt
+
+⚠️  警告：暴力破解可能触发账户锁定。使用前确认目标策略。
+
+【3.8 完整扫描组合命令】
+
+# 一次性枚举所有信息
+wpscan --url http://example.com \
+       --enumerate u,p,t,vp \
+       --api-token YOUR_WPSCAN_API_TOKEN \
+       --output wpscan_result.txt
+
+# API Token获取: https://wpscan.com/ 免费注册
+# Token提供实时的漏洞数据库查询
+
+# 随机User-Agent (避免被检测)
+wpscan --url http://example.com --random-user-agent
+
+# 启用stealthy模式 (降低扫描速度，减少检测风险)
+wpscan --url http://example.com --stealthy
+
+# 使用代理
+wpscan --url http://example.com --proxy http://127.0.0.1:8080
+
+# 忽略SSL证书验证
+wpscan --url https://example.com --disable-tls-checks
+
+【3.9 wpscan高级用法】
+
+# 仅扫描不使用WordPress的网站 (检测WordPress)
+wpscan --url http://example.com --detection-mode aggressive
+
+# 指定WordPress路径
+wpscan --url http://example.com --wp-content-dir custom-wp-content
+
+# 枚举数据库备份文件
+wpscan --url http://example.com --enumerate dbe
+
+# 枚举Timthumb文件 (TimThumb曾有严重RCE漏洞)
+wpscan --url http://example.com --enumerate tt
+
+# 枚举配置备份
+wpscan --url http://example.com --enumerate cb
+
+============================================================
+第四部分：joomscan — Joomla扫描
+============================================================
+
+【4.1 Joomla简介】
+
+Joomla是仅次于WordPress的第二大CMS。joomscan是Perl编写的专用扫描器。
+
+【4.2 基本命令】
+
+# 基本扫描
+joomscan --url http://example.com
+
+输出示例：
+  [+] Target: http://example.com
+  [+] Server: Apache/2.4.41
+  [+] Joomla Version: 3.9.24
+  [!] 3.9.24 is vulnerable! Upgrade to latest.
+
+【4.3 常用选项】
+
+# 详细输出
+joomscan --url http://example.com -v
+
+# 输出报告
+joomscan --url http://example.com --report report.html
+
+# 扫描组件漏洞
+joomscan --url http://example.com --enumerate-components
+
+# 使用代理
+joomscan --url http://example.com --proxy http://127.0.0.1:8080
+
+# 指定User-Agent
+joomscan --url http://example.com --user-agent "Mozilla/5.0"
+
+【4.4 joomscan能发现什么】
+
+  - Joomla核心版本及已知CVE漏洞
+  - 安装的组件/模块/插件及其漏洞
+  - 目录列表泄露
+  - 配置文件备份 (.bak, .old, .txt)
+  - 管理后台路径
+  - 数据库备份文件
+  - 敏感信息泄露 (README, CHANGELOG)
+  - 注册功能是否开启
+  - 默认凭据测试
+
+============================================================
+第五部分：dirb — 目录爆破
+============================================================
+
+【5.1 目录扫描原理】
+
+Web目录扫描是通过向目标发送大量路径请求，根据HTTP响应状态码
+(200, 301, 403, etc.) 判断目录或文件是否存在的过程。
+
+常见发现：
+  - /admin/           → 管理后台
+  - /backup/          → 备份目录
+  - /.git/            → Git仓库泄露
+  - /phpinfo.php      → PHP信息页
+  - /robots.txt       → 爬虫协议 (可能暴露敏感路径)
+  - /sitemap.xml      → 站点地图
+  - /wp-config.php.bak → WordPress配置文件备份
+  - /web.config       → IIS配置
+  - /.env             → Laravel环境配置
+
+【5.2 dirb基本命令】
+
+命令格式: dirb <URL> [字典路径] [选项]
+
+# 基本扫描 (使用默认字典)
+dirb http://testphp.vulnweb.com
+
+# 指定字典
+dirb http://testphp.vulnweb.com /usr/share/dirb/wordlists/common.txt
+
+# 常见字典路径：
+# /usr/share/dirb/wordlists/common.txt       ← 通用字典 (推荐)
+# /usr/share/dirb/wordlists/big.txt          ← 大型字典
+# /usr/share/dirb/wordlists/vulns/           ← 漏洞目录字典
+# /usr/share/wordlists/dirb/common.txt       ← ArchStrike路径
+
+【5.3 dirb常用选项】
+
+# 指定文件扩展名
+dirb http://example.com /usr/share/dirb/wordlists/common.txt -X .php,.bak,.old,.txt,.zip
+
+# 自定义HTTP头
+dirb http://example.com -H "Cookie: PHPSESSID=abc123"
+dirb http://example.com -H "Authorization: Bearer token123"
+
+# 使用代理
+dirb http://example.com -p http://127.0.0.1:8080
+
+# 忽略某些状态码
+dirb http://example.com -N 404,403
+
+# 递归扫描
+dirb http://example.com -r
+
+# 不扫描时静默模式
+dirb http://example.com /usr/share/dirb/wordlists/common.txt -S
+
+# 指定User-Agent
+dirb http://example.com -a "Mozilla/5.0 (Custom Scanner)"
+
+# 设置cookie
+dirb http://example.com -c "PHPSESSID=abc123; security=low"
+
+# 添加自定义前缀/后缀到字典条目
+dirb http://example.com -M .php,.bak
+
+# 多线程 (加速扫描，但不要太高避免触发WAF)
+dirb http://example.com -t 30
+
+# 忽略大小写
+dirb http://example.com -i
+
+# 显示不存在的目录 (调试用)
+dirb http://example.com -w
+
+【5.4 dirb输出解读】
+
+典型输出：
+  ---- Scanning URL: http://testphp.vulnweb.com/ ----
+  + http://testphp.vulnweb.com/admin (CODE:302|SIZE:0)
+  + http://testphp.vulnweb.com/cgi-bin/ (CODE:403|SIZE:209)
+  + http://testphp.vulnweb.com/css (CODE:301|SIZE:0)
+  + http://testphp.vulnweb.com/images (CODE:301|SIZE:0)
+  + http://testphp.vulnweb.com/index.php (CODE:200|SIZE:4821)
+  + http://testphp.vulnweb.com/robots.txt (CODE:200|SIZE:27)
+  ==> DIRECTORY: http://testphp.vulnweb.com/script/
+  ==> DIRECTORY: http://testphp.vulnweb.com/upload/
+
+状态码含义：
+  CODE:200 → 存在且可访问
+  CODE:301 → 存在但重定向 (跟随可能到登录页)
+  CODE:302 → 临时重定向
+  CODE:403 → 存在但禁止访问 (可能需认证)
+  CODE:401 → 需要认证
+  CODE:500 → 服务器错误 (可能存在漏洞)
+
+【5.5 自定义dirb字典技巧】
+
+创建针对性字典文件:
+  1. 根据CMS特征 (WordPress: wp-admin, wp-content, wp-includes)
+  2. 根据框架特征 (Laravel: .env, storage, vendor)
+  3. 根据应用逻辑 (API: /api/v1/users, /graphql)
+  4. 常见备份后缀: .bak, .old, .orig, .save, .swp, ~, .git
+
+============================================================
+第六部分：gobuster — 高速目录爆破
+============================================================
+
+【6.1 gobuster vs dirb】
+
+gobuster是用Go语言编写的高性能目录扫描器，速度远快于dirb。
+在需要快速扫描大量目标时优先使用gobuster。
+
+【6.2 基本命令】
+
+# 目录爆破模式 (dir)
+gobuster dir -u http://example.com -w /usr/share/wordlists/dirb/common.txt
+
+# DNS子域名爆破模式 (dns)
+gobuster dns -d example.com -w /usr/share/wordlists/subdomains.txt
+
+# VHOST虚拟主机爆破
+gobuster vhost -u http://example.com -w /usr/share/wordlists/vhosts.txt
+
+【6.3 gobuster dir 命令详解】
+
+# 基本目录爆破
+gobuster dir -u http://testphp.vulnweb.com \
+             -w /usr/share/wordlists/dirb/common.txt
+
+# 指定扩展名
+gobuster dir -u http://example.com \
+             -w /usr/share/wordlists/dirb/common.txt \
+             -x php,txt,bak,old,zip
+
+# 指定状态码 (只有匹配的状态码才显示)
+gobuster dir -u http://example.com \
+             -w /usr/share/wordlists/dirb/common.txt \
+             -s "200,204,301,302,307,401,403"
+
+# 排除状态码
+gobuster dir -u http://example.com \
+             -w /usr/share/wordlists/dirb/common.txt \
+             -b "404,400"
+
+# 多线程 (默认10，可提高到50-100)
+gobuster dir -u http://example.com \
+             -w /usr/share/wordlists/dirb/common.txt \
+             -t 50
+
+# 使用代理
+gobuster dir -u http://example.com \
+             -w /usr/share/wordlists/dirb/common.txt \
+             -p http://127.0.0.1:8080
+
+# 携带Cookie
+gobuster dir -u http://example.com \
+             -w /usr/share/wordlists/dirb/common.txt \
+             -c "PHPSESSID=abc123; security=low"
+
+# 自定义User-Agent
+gobuster dir -u http://example.com \
+             -w /usr/share/wordlists/dirb/common.txt \
+             -a "Mozilla/5.0 (Custom)"
+
+# 跟随重定向
+gobuster dir -u http://example.com \
+             -w /usr/share/wordlists/dirb/common.txt \
+             --follow-redirect
+
+# 限制请求速度 (避免触发WAF, 单位ms)
+gobuster dir -u http://example.com \
+             -w /usr/share/wordlists/dirb/common.txt \
+             --delay 500ms
+
+# 输出到文件
+gobuster dir -u http://example.com \
+             -w /usr/share/wordlists/dirb/common.txt \
+             -o gobuster_result.txt
+
+【6.4 gobuster高级技巧】
+
+# 使用-k跳过SSL证书验证
+gobuster dir -k -u https://self-signed.example.com \
+             -w /usr/share/wordlists/dirb/common.txt
+
+# 添加前缀/后缀
+gobuster dir -u http://example.com \
+             -w /usr/share/wordlists/dirb/common.txt \
+             --add-slash
+
+# 使用-f强制添加/到URL末尾
+gobuster dir -u http://example.com \
+             -w /usr/share/wordlists/dirb/common.txt \
+             -f
+
+# 打印完整URL (非简洁输出)
+gobuster dir -u http://example.com \
+             -w /usr/share/wordlists/dirb/common.txt \
+             -v
+
+# 使用自定义头
+gobuster dir -u http://example.com \
+             -w /usr/share/wordlists/dirb/common.txt \
+             -H "X-Forwarded-For: 127.0.0.1" \
+             -H "Authorization: Basic YWRtaW46cGFzcw=="
+
+【6.5 gobuster dns 子域名枚举】
+
+gobuster dns -d example.com \
+             -w /usr/share/wordlists/subdomains-top1million-5000.txt \
+             -t 100
+
+============================================================
+第七部分：cms-explorer 使用
+============================================================
+
+cms-explorer是快速识别CMS类型和版本的专用工具。
+
+# 基本扫描
+cms-explorer http://example.com
+
+# cms-explorer支持的CMS:
+  - WordPress   - Drupal
+  - Joomla      - Magento
+  - PrestaShop  - vBulletin
+  - phpBB       - MediaWiki
+  - 以及其他数十种CMS
+
+# 与whatweb配合使用:
+  whatweb http://example.com    → 初步识别
+  cms-explorer http://example.com → 精确确认
+
+============================================================
+第八部分：综合信息收集流程实战
+============================================================
+
+【目标: testphp.vulnweb.com 完整侦察】
+
+Step 1: 打开Firefox手动浏览目标网站
+  访问: http://testphp.vulnweb.com
+  浏览所有可见页面: Home, Categories, Artists, Cart, Guestbook
+  观察: URL结构、表单、参数传递方式、技术特征
+  记录: 所有观察到的功能点 (搜索、留言、购物车、登录等)
+  检查: 页面源代码 (Ctrl+U), 查看JS和CSS引用
+  检查: robots.txt → http://testphp.vulnweb.com/robots.txt
+  检查: sitemap.xml → http://testphp.vulnweb.com/sitemap.xml
+
+Step 2: 终端执行whatweb指纹识别
+  命令: whatweb -a 3 -v http://testphp.vulnweb.com
+  记录: Web服务器类型、PHP版本、框架信息
+  思维: 
+    - nginx服务器 → 注意nginx特有的漏洞
+    - PHP网站 → 关注PHP相关漏洞
+    - 无CMS特征 → 可能是自定义开发
+    - 有留言板功能 → XSS测试点
+    - 有搜索功能 → SQL注入测试点
+
+Step 3: 终端执行dirb目录爆破
+  命令: dirb http://testphp.vulnweb.com /usr/share/dirb/wordlists/common.txt
+  关注发现:
+    + /admin (CODE:302) → 管理后台！需要进一步分析
+    + /cgi-bin/ (CODE:403) → 可能存在CGI脚本
+    + /script/ → 可能包含JS代码
+    + /upload/ → 文件上传目录！
+  
+Step 4: 终端执行gobuster补充爆破
+  命令: gobuster dir -u http://testphp.vulnweb.com \
+        -w /usr/share/wordlists/dirb/big.txt \
+        -x php,txt,bak,old,zip,sql -t 50
+  对比dirb和gobuster的结果差异
+
+Step 5: 用whatweb验证特定CMS检测
+  虽然testphp.vulnweb.com不是标准CMS，但如果目标有CMS特征：
+  对WordPress网站:
+    whatweb --list-plugins | grep -i wordpress
+    wpscan --url http://target.com --enumerate u,p,vp
+  对Joomla网站:
+    joomscan --url http://target.com
+    whatweb --list-plugins | grep -i joomla
+
+Step 6: 使用curl进行手工路径探测
+  # 检查常见配置文件
+  curl -I http://testphp.vulnweb.com/.git/config
+  curl -I http://testphp.vulnweb.com/.env
+  curl -I http://testphp.vulnweb.com/config.php.bak
+  curl -I http://testphp.vulnweb.com/phpinfo.php
+  curl -I http://testphp.vulnweb.com/adminer.php
+  curl -I http://testphp.vulnweb.com/phpMyAdmin/
+
+Step 7: F12开发者工具补充收集
+  Firefox → F12 → Network标签 → 刷新页面
+  观察: 所有加载的资源 (第三方库、API调用、内部JS)
+  Storage标签 → 查看Cookie的设置
+  Console标签 → 输入 document.cookie 查看可读Cookie
+
+Step 8: 整理信息收集报告
+  创建文件: recon_testphp_vulnweb.txt
+  
+  记录内容：
+  ====================
+  目标: http://testphp.vulnweb.com
+  IP: (通过whatweb获取)
+  
+  Web服务器: nginx/1.19.0
+  后端语言: PHP/5.6.40
+  技术栈: 无标准CMS, 自定义PHP应用
+  
+  发现的功能点:
+  - 搜索功能 (/search.php?test=query)
+  - 留言板 (/guestbook.php)
+  - 登录功能 (/login.php)
+  - AJAX接口 (/AJAX/)
+  - 文件上传 (/upload/)
+  - 管理后台 (/admin/ - 302重定向)
+  
+  发现的目录:
+  - /admin/ (302)
+  - /cgi-bin/ (403)
+  - /css/ (301)
+  - /images/ (301)
+  - /script/ (301)
+  - /upload/ (301)
+  攻击面分析:
+  - 搜索功能 → SQL注入测试点
+  - 留言板 → XSS测试点
+  - 登录页面 → 暴力破解测试点
+  - 上传目录 → 文件上传测试点
+  - AJAX接口 → CSRF测试点
+  ====================
+
+============================================================
+第九部分：字典管理与自定义
+============================================================
+
+【默认字典位置 (ArchStrike)】
+
+  /usr/share/dirb/wordlists/
+  ├── common.txt          ← 通用目录字典
+  ├── big.txt             ← 大型字典
+  ├── small.txt           ← 小型快速字典
+  └── vulns/              ← 漏洞相关字典
+      ├── apache.txt
+      ├── iis.txt
+      ├── tomcat.txt
+      └── ...
+
+  /usr/share/wordlists/
+  ├── dirb/
+  ├── dirbuster/
+  ├── wfuzz/
+  └── rockyou.txt         ← 密码字典
+
+【创建自定义字典文件】
+
+  # 创建针对特定CMS的字典
+  cat > /home/a/my_wordpress_dict.txt << 'EOF'
+  wp-admin
+  wp-content
+  wp-includes
+  wp-login.php
+  wp-config.php
+  xmlrpc.php
+  wp-json
+  wp-cron.php
+  readme.html
+  license.txt
+  EOF
+
+  # 创建备份文件后缀字典
+  cat > /home/a/my_backup_dict.txt << 'EOF'
+  config.php.bak
+  config.php.old
+  config.php.orig
+  config.php.save
+  config.php.swp
+  config.php~
+  config.php.txt
+  .env.bak
+  .env.old
+  web.config.bak
+  .htaccess.bak
+  EOF
+
+============================================================
+第十部分：注意事项与最佳实践
+============================================================
+
+⚠️  安全与法律提醒:
+  1. 永远只在获得书面授权后进行扫描
+  2. 测试环境：testphp.vulnweb.com (Acunetix官方靶场)
+  3. 生产环境扫描前务必确认授权范围
+  4. 快速并发扫描可能造成无意中的DoS
+  5. 扫描流量可能被IDS/IPS记录
+  6. 使用VPN或代理隐藏测试来源IP
+  7. 记录所有操作日志以便回溯
+
+📋  信息收集检查清单:
+  □ 手动浏览网站 (正常用户视角)
+  □ 查看页面源代码
+  □ 查看robots.txt / sitemap.xml
+  □ whatweb指纹识别
+  □ CMS专用扫描 (wpscan/joomscan if applicable)
+  □ dirb目录爆破
+  □ gobuster目录爆破
+  □ 特殊文件探测 (.git, .env, backups)
+  □ Firefox开发者工具分析
+  □ WHOIS/DNS信息收集
+  □ 搜索结果分析 (site:target.com)
+  □ 技术栈版本漏洞数据库查询
+  □ 整理信息收集报告
+
+🔧 常见问题：
+  Q: dirb返回大量403错误？
+  A: 403表示目录存在但无法访问，需要认证。关注这些目录。
+
+  Q: gobuster被WAF封禁？
+  A: 降低线程数 (-t 5)，添加延迟 (--delay 1000ms)，更换User-Agent。
+
+  Q: whatweb未能识别CMS？
+  A: 使用 -a 4 提高侵略性，或尝试专门工具如cmsmap。
+
+  Q: 如何选择字典？
+  A: 先用common.txt快速扫描，再根据目标特征选择定向字典。
+
+================================================================================
+模块小结
+================================================================================
+
+完成本模块后你应该能够：
+  ✓ 使用whatweb进行Web技术栈指纹识别
+  ✓ 使用wpscan对WordPress站点进行全面侦察
+  ✓ 使用joomscan扫描Joomla站点
+  ✓ 使用dirb进行目录爆破
+  ✓ 使用gobuster进行高速目录和子域名爆破
+  ✓ 完成完整的信息收集流程
+  ✓ 编写信息收集报告，识别攻击面
+
+下一步：基于收集的信息，使用漏洞扫描器发现具体漏洞。
+
+下一模块预告：03-Web漏洞扫描与检测 — 使用nikto, arachni, skipfish, zaproxy等

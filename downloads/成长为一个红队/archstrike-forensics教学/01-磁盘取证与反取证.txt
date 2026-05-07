@@ -1,0 +1,618 @@
+================================================================================
+模块：磁盘取证与反取证技术
+工具组：archstrike-forensics (sleuthkit, autopsy, etc.)
+目标读者：红队成员
+================================================================================
+
+【学习目标】
+1. 理解磁盘取证调查员的工作流程，从红队角度预判痕迹发现路径
+2. 掌握 Sleuth Kit (TSK) 命令行工具链进行镜像分析
+3. 掌握 Autopsy 图形化取证平台的使用方法
+4. 学习反取证技巧：安全删除、时间戳伪造、日志清理
+5. 能够创建磁盘镜像并用 Autopsy 进行自我审查，验证清除效果
+
+【工具清单】
+- sleuthkit (TSK):      命令行数字取证工具集
+- autopsy:             基于 Web 的图形化取证前端
+- dc3dd:               增强版 dd，带哈希验证
+- guymager:            高速磁盘镜像获取工具
+- ddrescue:            损坏介质数据恢复
+- foremost:            文件雕刻/数据恢复
+
+================================================================================
+第一部分：取证流程理解（红队视角）
+================================================================================
+
+作为红队成员，理解取证调查的完整流程至关重要。知道防御方如何调查，才能知道
+自己的痕迹会以什么方式被发现。以下是标准的数字取证调查流程：
+
+  阶段1: 证据固定
+    - 使用写保护器保护原始介质
+    - 使用 dd/dc3dd/guymager 创建比特级镜像
+    - 计算并记录哈希值 (MD5/SHA256) 确保完整性
+
+  阶段2: 镜像分析
+    - 解析分区表 (MBR/GPT)
+    - 枚举文件系统结构
+    - 提取文件分配表 (FAT MFT/inode表)
+    - 识别已删除文件条目
+
+  阶段3: 文件系统遍历
+    - 浏览目录树结构
+    - 查看文件元数据 (MACB时间戳)
+    - 列出所有文件（包括已删除/孤儿文件）
+
+  阶段4: 时间线重建
+    - 按时间顺序排列所有文件活动
+    - 关联事件找出攻击序列
+    - 识别异常活动时间段
+
+  阶段5: 数据恢复
+    - 从未分配空间恢复文件
+    - 文件雕刻 (file carving) 查找已知文件头
+    - 从交换文件/分页文件重建数据
+
+  阶段6: 报告生成
+    - 记录所有发现
+    - 生成取证报告
+    - 呈堂证据链
+
+红队关键认知：
+  - MFT/inode 中的删除标记只是一个位，文件数据通常仍在磁盘上
+  - 时间戳 (MACB) 会精确记录你的每一个文件操作
+  - USN Journal (Windows) 和 ext4 journal (Linux) 记录文件系统变更
+  - 即使 rm 删除的文件，数据仍然存在，直到被覆盖
+  - /tmp 和 /var/tmp 是调查员重点关注的目录
+  - Shell 历史文件 (.bash_history, .zsh_history) 是主要证据来源
+  - 浏览器的缓存、历史记录、下载记录都会被详细检查
+
+================================================================================
+第二部分：Sleuth Kit (TSK) 命令行工具
+================================================================================
+
+Sleuth Kit 是一套命令行取证工具，也是 Autopsy 的底层引擎。安装方式：
+
+  sudo pacman -S sleuthkit          # ArchStrike 仓库
+  # 或从源码编译: https://github.com/sleuthkit/sleuthkit
+
+主要工具及用途：
+  mmls     - 显示分区布局（分区表解析）
+  fsstat   - 显示文件系统统计信息和结构
+  fls      - 列出文件和目录条目（包括已删除文件）
+  icat     - 提取文件内容（通过inode/MFT条目号）
+  ffind    - 根据inode号查找文件名
+  istat    - 显示inode详细信息（包括时间戳）
+  blkcat   - 提取指定扇区/块内容
+  blkls    - 列出所有数据块（包括未分配空间）
+  jcat     - 从文件系统日志中提取内容
+  mactime  - 从 fls 输出生成时间线
+  sorter   - 按文件类型对文件进行分类排序
+  sigfind  - 在镜像中搜索二进制签名/魔数
+
+--- 2.1 mmls — 查看分区布局 ---
+
+  $ mmls evidence.dd
+
+  输出示例：
+  DOS Partition Table
+  Offset Sector: 0
+  Units are in 512-byte sectors
+
+        Slot    Start        End          Length       Description
+  000:  Meta    0000000000   0000000000   0000000001   Primary Table (#0)
+  001:  -----   0000000000   0000002047   0000002048   Unallocated
+  002:  000:00  0000002048   0020971519   0020969472   NTFS / exFAT (0x07)
+  003:  000:01  0020971520   0041943039   0020971520   Linux (0x83)
+
+  关键信息:
+  - Slot 002: 起始于扇区 2048 的 NTFS 分区 ← 这就是 -o 参数的值
+  - Slot 003: 起始于扇区 20971520 的 Linux 分区
+  - 每个扇区 512 字节，所以 -o 2048 表示偏移 2048×512 = 1MB
+
+--- 2.2 fsstat — 文件系统详细信息 ---
+
+  $ fsstat -o 2048 evidence.dd
+
+  输出内容（以 NTFS 为例）：
+  FILE SYSTEM INFORMATION
+  --------------------------------------------
+  File System Type: NTFS
+  Volume Serial Number: 1234567890ABCDEF
+  OEM Name: NTFS
+  Volume Name: Windows
+  Version: 3.1
+
+  METADATA INFORMATION
+  --------------------------------------------
+  First Cluster of MFT: 786432
+  Size of MFT Entry: 1024 bytes
+  Size of Index Entry: 4096 bytes
+
+  CONTENT INFORMATION
+  --------------------------------------------
+  Sector Size: 512
+  Cluster Size: 4096
+  Total Sectors: 20969472
+  Total Clusters: 2621184
+  Free Clusters: 1823456
+
+  红队关注点:
+  - Cluster Size: 簇大小决定文件最小占用空间
+  - Free Clusters: 可用空间 → 可以用来存放payload
+  - MFT Entry Size: NTFS 的 MFT 条目为1024字节时，小文件(<900B)会直接
+    存储在MFT条目中(MFT resident)，不占用额外簇，删除后难以恢复
+
+--- 2.3 fls — 列出文件和目录 ---
+
+  递归列出分区中的所有文件（包括已删除文件）：
+
+  $ fls -r -o 2048 evidence.dd
+
+  递归列出并显示未分配空间中的条目：
+
+  $ fls -r -o 2048 -a evidence.dd
+
+  仅列出已删除文件（关键命令）：
+
+  $ fls -r -o 2048 -d evidence.dd
+
+  列出指定目录：
+
+  $ fls -o 2048 evidence.dd 5                # 根目录
+  $ fls -o 2048 evidence.dd 5/Users          # Users目录
+  $ fls -o 2048 evidence.dd 5/Windows/System32
+
+  输出格式解读：
+  r/r 4-128-1:  secret_plan.txt
+  r/r *5-129-3: deleted_passwords.txt (deleted)
+  d/d 10-130-1: hidden_folder
+  r/r 10-130-2: ~$normal.docx (orphan)
+
+  解读：
+  - r/r = 常规文件；d/d = 目录；r/r * = 已删除文件
+  - 4-128-1 = inode号-MFT条目号-属性ID
+  - (deleted) = 文件已被标记为删除但数据可能仍存在
+  - (orphan) = 文件仍存在但没有父目录引用
+
+  时间线生成：
+  $ fls -r -o 2048 -m / evidence.dd > bodyfile.txt
+  $ mactime -b bodyfile.txt -d -z UTC > timeline.csv
+
+--- 2.4 icat — 提取文件内容 ---
+
+  提取已知inode的文件内容：
+
+  $ icat -o 2048 evidence.dd 128-3 > extracted_file.txt
+
+  提取已删除文件的内容（如果能找到数据）：
+
+  $ icat -o 2048 evidence.dd 129-3 > recovered_deleted.txt
+
+  提取文件的特定属性流（NTFS的备用数据流）：
+
+  $ icat -o 2048 evidence.dd 128-3-$DATA > main_stream
+  $ icat -o 2048 evidence.dd 128-3-$Bad   > bad_cluster_list
+
+  批量提取recovered所有可读文件：
+  $ mkdir recovered_files
+  $ fls -r -o 2048 -d evidence.dd | while read line; do
+      inode=$(echo "$line" | awk '{print $2}' | cut -d: -f1)
+      name=$(echo "$line" | awk '{print $3}')
+      icat -o 2048 evidence.dd "$inode" > "recovered_files/$name" 2>/dev/null
+    done
+
+--- 2.5 istat — inode/元数据详细信息 ---
+
+  $ istat -o 2048 evidence.dd 128
+
+  输出包含：
+  - MACB时间戳（修改/访问/创建/MFT变更时间）
+  - 文件大小与实际占用空间
+  - 数据存储方式（常驻/非常驻）
+  - 权限和所有者信息
+  - NTFS特定属性（$STANDARD_INFORMATION, $FILE_NAME等）
+
+  时间戳对比技巧：
+  NTFS文件有多个时间戳集：
+  - $STANDARD_INFORMATION: 可以被用户空间修改（容易被伪造）
+  - $FILE_NAME: 只有内核可以修改（难以伪造，调查员会对比两者差异）
+
+  → 红队启示：只修改 $STANDARD_INFORMATION 是不够的，$FILE_NAME 时间戳
+    也会暴露你的活动。真正的反取证需要考虑这个细节。
+
+--- 2.6 blkls/blkcat — 低级数据块操作 ---
+
+  列出未分配空间（关键命令，用于查找被覆盖前的残留数据）：
+
+  $ blkls -o 2048 evidence.dd > unallocated.bin
+
+  提取指定簇范围的数据：
+
+  $ blkcat -o 2048 evidence.dd 1000 50   # 从簇1000开始，读取50个簇
+
+  在未分配空间中搜索字符串：
+
+  $ blkls -o 2048 evidence.dd | strings | grep -i "password"
+
+================================================================================
+第三部分：Autopsy 图形化取证平台
+================================================================================
+
+Autopsy 是 TSK 的 Web 图形前端，极大简化了取证分析操作。对红队成员来说，
+使用 Autopsy 可以直观地看到防御方将如何看待你的操作痕迹。
+
+--- 3.1 安装与启动 ---
+
+  sudo pacman -S autopsy             # ArchStrike 仓库安装
+
+  管理员模式启动（推荐）：
+  sudo autopsy
+
+  普通用户模式（如果permissions允许）：
+  autopsy
+
+  启动后终端会显示：
+  ============================================================
+   Autopsy Forensic Browser
+   Evidence Locker: /var/lib/autopsy
+   Start Time: Wed May 06 15:30:00 CST 2026
+   Remote Host: localhost
+   Local Port: 9999
+
+   Open a web browser and go to http://localhost:9999/autopsy
+  ============================================================
+
+--- 3.2 Step-by-Step 创建案例 ---
+
+  Step 1: 打开终端，输入 sudo autopsy 并回车
+  Step 2: 打开 Firefox 浏览器，访问 http://localhost:9999/autopsy
+  Step 3: 在 Web 界面中点击 "New Case" 按钮
+  Step 4: 在弹出的表单中输入：
+           Case Name: RedTeam_SelfAudit_2026
+           Description: 红队行动自我审查案例
+           Investigator Names: redteam_operator
+  Step 5: 点击 "New Case" 确认创建
+  Step 6: 在案例页面中点击 "Add Host" 添加主机
+  Step 7: 输入主机信息：
+           Host Name: Target_Machine_01
+           Description: 实验靶机
+  Step 8: 点击 "Add Host" 确认
+  Step 9: 在主机页面中点击 "Add Image File"
+  Step 10: 选择镜像文件路径，输入挂载点（如 C:/ 或 /）
+  Step 11: 点击 "Add" 确认添加镜像
+  Step 12: 等待 Autopsy 初始化（会进行文件系统解析和哈希计算）
+
+--- 3.3 浏览与分析功能 ---
+
+  文件浏览 (File Analysis):
+    - 点击 "File Analysis" 标签
+    - 左侧显示目录树，右侧显示文件列表
+    - 已删除文件以红色标记显示
+    - 点击任意文件可以查看元数据和内容
+    - 支持十六进制查看模式
+
+  查看已删除文件:
+    - 在 File Analysis 页面，勾选 "Show Deleted Files"
+    - 所有已删除但可恢复的文件将以红色字体显示
+    - 点击文件可以预览内容（如果数据仍然存在）
+    - MFT resident 的小文件通常可以完整恢复
+
+  时间线分析 (Timeline):
+    - 点击 "View Timeline" 按钮
+    - 可以选择按日/周/月查看
+    - 以图形方式展示所有文件活动
+    - 异常活动时间段会被突出显示
+    - 可以筛选特定时间范围进行深入分析
+
+  关键词搜索:
+    - 点击 "Keyword Search" 标签
+    - 输入搜索词（如 "password", "secret", "C2"）
+    - Autopsy 会在全镜像中搜索（包括未分配空间）
+    - 搜索结果会显示在匹配的文件列表
+
+  文件类型过滤:
+    - 在 File Analysis 页面点击 "File Type" 筛选
+    - 可以按文档、图片、视频、音频、可执行文件等分类查看
+    - 常用过滤: 只看 .exe/.dll/.sys（查找植入的可执行文件）
+    - 只看 .doc/.pdf/.txt（查找窃取的文档）
+
+  报告生成:
+    - 点击 "Generate Report" 按钮
+    - 选择报告类型（HTML/PDF/Excel）
+    - 选择要包含的内容（文件列表/时间线/搜索结果）
+    - 点击生成并下载报告
+
+--- 3.4 红队自我审查实战 ---
+
+  使用场景：在渗透测试结束后，用 Autopsy 分析自己的"犯罪现场"。
+
+  Step 1: 在攻击前创建磁盘快照/镜像
+    sudo dc3dd if=/dev/sda of=/evidence/before_attack.dd hash=sha256 log=before.log
+
+  Step 2: 执行完整的红队行动
+
+  Step 3: 在攻击后创建磁盘快照/镜像
+    sudo dc3dd if=/dev/sda of=/evidence/after_attack.dd hash=sha256 log=after.log
+
+  Step 4: 使用 Autopsy 加载 after_attack.dd 镜像
+    - 创建案例，添加镜像文件
+    - 检查已删除文件列表 → 是否能恢复你的工具和脚本？
+    - 检查时间线 → 哪些文件操作在攻击时间段内发生？
+    - 搜索你的工具名称、C2域名、IP地址 → 哪些文件残留了这些信息？
+
+  Step 5: 对比分析
+    - 将 before_attack.dd 作为基线
+    - 识别所有攻击期间新增/修改/删除的文件
+    - 检查日志文件（syslog, auth.log, wtmp, bash_history）
+    - 验证痕迹清除是否彻底
+
+================================================================================
+第四部分：反取证技巧（红队核心技能）
+================================================================================
+
+理解取证的工作原理后，你可以针对性地实施反取证措施。
+
+--- 4.1 文件系统级痕迹理解 ---
+
+  Windows (NTFS):
+  - 删除文件 = MFT 条目标记为未使用
+  - 文件数据在簇中保持完整，直到被覆盖
+  - USN Journal ($UsnJrnl:$J) 记录所有文件变更
+  - $LogFile 记录 NTFS 元数据事务
+  - $MFTMirr 是 MFT 的部分镜像
+  - 影子卷 (Volume Shadow Copy) 保存文件历史版本
+
+  Linux (ext4):
+  - 删除文件 = inode 的链接计数归零，块位图标记为空闲
+  - 文件数据在数据块中保持完整
+  - ext4 journal 记录元数据变更（ordered模式还记录数据）
+  - inode 中的时间戳：atime, mtime, ctime, crtime
+  - 注意：ctime 无法由用户修改（内核更新），因此无法伪造
+
+--- 4.2 安全删除 — shred 命令 ---
+
+  基本用法：
+  shred -z -n 7 /path/to/sensitive_file
+
+  参数解读：
+  -n 7    : 覆盖写入7次（高斯曼标准，现代磁盘3次足够）
+  -z      : 最后一次用0填充（隐藏覆盖痕迹）
+  -u      : 覆盖后删除文件
+  -v      : 显示详细进度
+
+  删除整个目录：
+  find /tmp/redteam_work/ -type f -exec shred -z -n 3 -u {} \;
+  rm -rf /tmp/redteam_work/
+
+  注意事项：
+  - SSD 上的安全删除不可靠！SSD 磨损均衡算法可能导致数据被写入新位置
+  - 日志文件系统（ext4/NTFS）可能保留了数据副本
+  - 对SSD建议：使用全盘加密 + ATA Secure Erase
+  - 对于 HDD，SMR 叠瓦式硬盘也有类似的数据残留问题
+
+--- 4.3 时间戳修改 — touch 命令 ---
+
+  修改单个文件的访问和修改时间：
+  touch -a -m -t 202401010000.00 /path/to/file
+  # -a: 修改访问时间 (atime)
+  # -m: 修改修改时间 (mtime)
+  # -t 202401010000.00: 设置为 2024年1月1日 00:00:00
+
+  批量伪造时间戳（将大量文件统一设为特定时间）：
+  find /var/log/ -type f -exec touch -a -m -t 202401010000.00 {} \;
+
+  复制参考文件的时间戳：
+  touch -r /bin/ls /path/to/malicious_file
+
+  Windows 下的等价操作（使用 PowerShell）：
+  $(Get-Item malicious.exe).CreationTime = "2024-01-01 00:00:00"
+  $(Get-Item malicious.exe).LastWriteTime = "2024-01-01 00:00:00"
+  $(Get-Item malicious.exe).LastAccessTime = "2024-01-01 00:00:00"
+
+  高级反取证技巧 — timestomp:
+  - 调查员会对比 $STANDARD_INFORMATION 和 $FILE_NAME 的时间戳
+  - 如果两者不一致，则文件时间戳被伪造 ← 这是检测指标
+  - 专业做法是同时修改两种时间戳（需要直接操作 MFT）
+  - 工具：SetMace (github.com/...)、IndxParse+Timetomp
+
+--- 4.4 日志清理 — 针对性清除 ---
+
+  Linux 日志清理：
+  # 清除shell历史
+  export HISTFILE=/dev/null
+  unset HISTFILE
+  history -c
+  shred -z -n 3 -u ~/.bash_history
+  shred -z -n 3 -u ~/.zsh_history
+
+  # 清除系统日志（需要root）
+  shred -z -n 3 -u /var/log/auth.log
+  shred -z -n 3 -u /var/log/syslog
+  shred -z -n 3 -u /var/log/wtmp
+  shred -z -n 3 -u /var/log/btmp
+  shred -z -n 3 -u /var/log/lastlog
+
+  # 注意：直接删除日志文件反而会引起调查员注意
+  # 更好的做法是选择性编辑，只删除与你相关的条目
+
+  Windows 日志清理：
+  # 使用 wevtutil 清除事件日志
+  wevtutil cl Security
+  wevtutil cl System
+  wevtutil cl Application
+
+  # 更隐蔽的做法（PowerShell）:
+  # 选择性清除特定EventID的事件（而非清除全部）
+
+--- 4.5 文件残留位置清单 ---
+
+  红队工具运行后常见残留位置：
+
+  Windows:
+  - %TEMP%\*                          临时文件目录
+  - %APPDATA%\Microsoft\Windows\Recent\*  最近访问文件
+  - C:\Windows\Prefetch\*.pf          应用程序预加载文件
+  - C:\Windows\AppCompat\Programs\Amcache.hve  程序执行历史
+  - HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\UserAssist  用户活动
+  - C:\Windows\System32\winevt\Logs\  事件日志
+  - $MFT 中的文件名记录
+  - USN Journal 中的文件变更记录
+
+  Linux:
+  - ~/.bash_history                   Shell命令历史
+  - ~/.viminfo                        Vim编辑历史
+  - ~/.lesshst                        Less查看历史
+  - /var/log/auth.log                 认证日志
+  - /var/log/wtmp                     登录记录
+  - /var/log/btmp                     失败登录记录
+  - /var/log/syslog                   系统日志
+  - /proc/* (进程信息，内存中可以重建)
+  - ~/.ssh/known_hosts                已连接的SSH主机
+
+  红队应对策略：
+    1. 使用内存驻留工具（文件不落盘）
+    2. 使用 RAM-only tmpfs（/dev/shm, /run/shm）
+    3. 及时清理临时文件和日志
+    4. 使用时间戳伪造掩盖操作时间
+    5. 优先使用系统自带工具（LOLBAS/LOLBins）
+    6. 避免修改系统关键文件（否则触发完整性监控）
+
+================================================================================
+第五部分：实践演练
+================================================================================
+
+任务目标：创建一个小型磁盘镜像，在里面创建/删除文件，然后用 Autopsy 分析，
+理解取证调查员能看到什么。
+
+--- 5.1 创建测试磁盘镜像 ---
+
+  Step 1: 创建一个 100MB 的空文件作为磁盘镜像
+    dd if=/dev/zero of=test_disk.dd bs=1M count=100
+
+  Step 2: 在镜像上创建分区表并格式化
+    # 创建MBR分区表
+    printf "o\nn\np\n1\n\n\nw\n" | fdisk test_disk.dd
+
+  Step 3: 挂载为loop设备
+    sudo losetup -f test_disk.dd
+    sudo losetup -a                        # 查看设备名（假设为 /dev/loop0）
+
+  Step 4: 格式化为ext4
+    sudo mkfs.ext4 /dev/loop0
+
+  Step 5: 挂载到临时目录
+    sudo mkdir -p /mnt/forensic_test
+    sudo mount /dev/loop0 /mnt/forensic_test
+
+--- 5.2 在镜像中模拟红队活动 ---
+
+  Step 6: 创建一些"敏感"文件
+    sudo bash -c 'echo "C2 Server: 192.168.1.100:4444" > /mnt/forensic_test/redteam_notes.txt'
+    sudo bash -c 'echo "Password: SuperSecret123" > /mnt/forensic_test/credentials.txt'
+    sudo bash -c 'echo "Target Scope: 10.0.0.0/8" > /mnt/forensic_test/scope.txt'
+    sudo bash -c 'cp /bin/ls /mnt/forensic_test/trojan_ls'
+
+  Step 7: 正常"使用"一段时间
+    sudo touch /mnt/forensic_test/redteam_notes.txt
+    sudo bash -c 'echo "New targets added" >> /mnt/forensic_test/scope.txt'
+
+  Step 8: 尝试"清除痕迹" — 删除文件
+    sudo rm /mnt/forensic_test/redteam_notes.txt
+    sudo rm /mnt/forensic_test/credentials.txt
+
+  Step 9: 用 shred "安全删除"一个文件
+    sudo shred -z -n 3 -u /mnt/forensic_test/scope.txt
+
+  Step 10: 保持另一个文件不删除作为对照
+    # trojan_ls 保持不动
+
+  Step 11: 卸载镜像
+    sudo umount /mnt/forensic_test
+    sudo losetup -d /dev/loop0
+
+--- 5.3 用 TSK 命令行分析镜像 ---
+
+  Step 12: 查看分区表
+    mmls test_disk.dd
+    # 记录分区的起始偏移（通常是2048）
+
+  Step 13: 查看文件系统信息
+    fsstat -o 2048 test_disk.dd
+
+  Step 14: 列出所有文件（包括已删除）
+    fls -r -o 2048 -a test_disk.dd
+    # 观察：
+    # - redteam_notes.txt 和 credentials.txt 是否出现？
+    # - 它们是否标记为 (deleted)？
+    # - scope.txt 被 shred 后还能看到吗？（可能仍有inode条目但内容已覆盖）
+
+  Step 15: 尝试恢复已删除的内容
+    # 首先找出已删除文件的inode号
+    fls -r -o 2048 -d test_disk.dd
+    # 假设 output 中 redteam_notes.txt 的 inode 是 12-3
+    icat -o 2048 test_disk.dd 12 > recovered_notes.txt
+    cat recovered_notes.txt
+    # 检查内容是否成功恢复
+
+  Step 16: 时间线分析
+    fls -r -o 2048 -m / test_disk.dd > bodyfile.txt
+    mactime -b bodyfile.txt -d > timeline.csv
+    cat timeline.csv
+    # 观察所有文件的时间戳 → 可以看到你操作的时间点
+
+--- 5.4 用 Autopsy 分析镜像 ---
+
+  Step 17: 启动 Autopsy
+    sudo autopsy
+
+  Step 18: 浏览器访问 http://localhost:9999/autopsy
+
+  Step 19: 创建新案例 "RedTeam_Forensic_Practice"
+
+  Step 20: 添加主机和镜像文件
+    - Host Name: test_victim
+    - 镜像路径: /path/to/test_disk.dd
+    - 挂载点: /
+    - 导入方法: Symlink
+
+  Step 21: 浏览 File Analysis 页面
+    - 查看所有文件列表
+    - 重点观察已删除文件（红色标记）
+    - 点击已删除文件 → 查看能否预览内容
+
+  Step 22: 检查文件元数据
+    - 点击 trojan_ls
+    - 查看 MACB 时间戳
+    - 记录下创建时间、修改时间、访问时间
+
+  Step 23: 关键词搜索
+    - 搜索 "C2"
+    - 搜索 "password"
+    - 搜索 "192.168"
+    - 查看 Autopsy 从哪些位置找到了这些字符串
+
+  Step 24: 生成报告
+    - 点击 Generate Report
+    - 选择包含文件列表和时间线
+    - 保存HTML报告
+
+  Step 25: 总结观察结果
+    - 使用 rm 删除的文件 → Autopsy 可以完整恢复内容
+    - 使用 shred 覆盖的文件 → 内容通常不可恢复，但文件名记录仍存在
+    - 未删除的文件 → 所有元数据和内容都可见
+    - 时间线清楚地显示了你的操作顺序
+
+================================================================================
+关键总结
+================================================================================
+
+1. 文件删除 ≠ 数据销毁。只是一个标记位的翻转。
+2. 取证工具可以轻松恢复已删除文件，除非被覆盖。
+3. 时间戳取证是检测红队活动的重要手段。
+4. SSD 上的安全删除不可靠，推荐全盘加密。
+5. 日志文件中有大量直接和间接的活动记录。
+6. 使用 Autopsy 定期自我审查，验证痕迹清除效果。
+7. 反取证的核心不是"删除所有痕迹"，而是"不留下异常的痕迹"。
+8. 理想的清除策略 = 内存驻留 + LOLBAS + 最小文件依赖 + 时间戳一致性。
+
+================================================================================

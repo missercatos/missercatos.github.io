@@ -1,0 +1,616 @@
+============================================================
+模块一：模糊测试入门与AFL实战
+============================================================
+
+【学习目标】
+1. 深入理解模糊测试的基本原理和分类
+2. 掌握AFL（American Fuzzy Lop）的安装、配置和使用
+3. 能够使用AFL对二进制程序进行覆盖率引导的模糊测试
+4. 学会分析Crash结果并定位漏洞
+
+【工具清单】
+- afl-gcc      (AFL的GCC包装器，用于程序插桩编译)
+- afl-clang    (AFL的Clang包装器，编译速度更快)
+- afl-fuzz     (AFL的主要模糊测试引擎)
+- afl-tmin     (AFL的测试用例最小化工具)
+- afl-analyze  (AFL的测试用例分析工具)
+- afl-plot     (AFL的结果可视化工具)
+- gdb          (GNU调试器，分析crash)
+- valgrind     (内存错误检测工具)
+
+============================================================
+第一章：模糊测试理论基础
+============================================================
+
+1.1 什么是模糊测试（Fuzzing）
+------------------------------------------------------------
+模糊测试是一种自动化软件测试技术，通过向程序输入大量随机、
+无效或非预期的数据，并监控异常行为来发现漏洞。
+
+核心工作流程：
+1. 生成/选择测试输入
+2. 将输入喂给目标程序
+3. 监控程序是否崩溃/异常
+4. 记录导致异常的输入
+5. 循环往复，持续探索新的代码路径
+
+1.2 模糊测试的分类
+------------------------------------------------------------
+(1) 按输入生成方式分类
+
+  突变式Fuzzing（Mutation-based）：
+  - 基于已有的合法输入进行随机修改（变异）
+  - 优点：简单、无需了解程序格式
+  - 缺点：可能无法生成复杂的结构化输入
+  - 代表工具：AFL, zzuf, radamsa
+
+  生成式Fuzzing（Generation-based）：
+  - 根据格式规范从头生成测试输入
+  - 优点：可以生成完全符合格式的输入
+  - 缺点：需要编写详细的格式规范，工作量较大
+  - 代表工具：peach, Sulley, boofuzz
+
+(2) 按测试目标感知程度分类
+
+  黑盒Fuzzing（Black-box）：
+  - 不了解程序内部结构
+  - 仅基于输入/输出反馈
+  - 适合快速测试和第三方程序
+
+  白盒Fuzzing（White-box）：
+  - 有源代码，可以编译时插桩
+  - 收集覆盖率信息，指导Fuzzing
+  - 效率最高，需要访问源码
+
+  灰盒Fuzzing（Grey-box）：
+  - 结合静态分析和动态插桩
+  - 典型的AFL就是灰盒Fuzzer
+  - 平衡了效率和通用性
+
+1.3 覆盖率引导的Fuzzing（Coverage-guided Fuzzing）
+------------------------------------------------------------
+覆盖率引导是现代Fuzzing的核心技术。基本原理是：
+
+1. 在程序编译时插入探针（Instrumentation）
+2. 运行程序时记录哪些代码块被执行
+3. AFL维护一个"全局位图"记录已覆盖的代码路径
+4. 如果某个输入触发了新的代码路径，将其加入"优秀种子"队列
+5. 后续的变异操作优先基于"优秀种子"进行
+
+覆盖率指标：
+- 块覆盖（Block Coverage）：基本块是否被执行
+- 边覆盖（Edge Coverage）：两个基本块之间的跳转是否发生
+- AFL使用边覆盖，比块覆盖更精细
+
+AFL的独特性——不仅记录是否触发了新边，还记录每条边
+的命中次数（hit count），将命中次数近似分为8个桶（1,2,3,
+4-7,8-15,16-31,32-127,128+）。根据命中次数变化判断是否
+发现了新的执行模式。
+
+1.4 突变策略详解
+------------------------------------------------------------
+AFL使用以下策略进行种子变异：
+
+(1) 确定性变异（Deterministic）：
+  - bitflip：逐位翻转（1/1, 2/1, 4/1, 8/8等）
+  - arithmetic：整数加减法（+/- 1到35）
+  - interest：替换为特殊值（0, -1, INT_MAX等）
+  - dictionary：用户提供的字典/魔术字节
+
+(2) 随机变异（Random/Havoc）：
+  - 随机位翻转和字节翻转
+  - 随机设置有趣的整数
+  - 随机字节的加减运算
+  - 随机块复制、删除、插入
+  - 组合多个变异操作
+
+(3) 拼接变异（Splicing）：
+  - 从两个不同种子中各取一部分拼接
+  - 类似于遗传算法中的交叉操作
+
+============================================================
+第二章：AFL安装与环境配置
+============================================================
+
+2.1 安装AFL
+------------------------------------------------------------
+在ArchStrike上安装AFL：
+  sudo pacman -S afl
+
+验证安装：
+  afl-fuzz --help
+  afl-gcc --version
+  which afl-fuzz
+
+2.2 AFL核心组件
+------------------------------------------------------------
+/usr/bin/afl-gcc        - GCC包装器，自动添加插桩
+/usr/bin/afl-g++        - G++包装器，用于C++代码
+/usr/bin/afl-clang      - Clang包装器（更快，推荐）
+/usr/bin/afl-clang++    - Clang++包装器
+/usr/bin/afl-clang-fast - 使用LLVM Pass进行编译时插桩（性能最佳）
+/usr/bin/afl-fuzz       - 模糊测试主引擎
+/usr/bin/afl-tmin       - 测试用例最小化工具
+/usr/bin/afl-analyze    - 测试用例分析工具
+/usr/bin/afl-plot       - 生成可视化HTML报告
+/usr/bin/afl-cmin       - 语料库最小化工具
+/usr/bin/afl-showmap    - 显示单一输入的覆盖信息
+
+2.3 系统环境优化
+------------------------------------------------------------
+(1) 设置核心转储（Core Dump）
+  sudo sh -c 'echo core > /proc/sys/kernel/core_pattern'
+  
+  说明：AFL通过监控signal来判断程序崩溃。如果系统将
+  core dump发送给其他程序（如systemd-coredump），AFL
+  可能无法正确捕获crash。将core_pattern设为"core"即可。
+
+(2) 调整CPU频率调度
+  sudo sh -c 'cd /sys/devices/system/cpu && echo performance | tee cpu*/cpufreq/scaling_governor'
+  
+  说明：将CPU调度器设为performance模式，避免省电策略
+  导致Fuzzing性能波动。不影响AFL功能但可提升速度。
+
+(3) 禁用ASLR（可选，便于复现crash）
+  sudo sh -c 'echo 0 > /proc/sys/kernel/randomize_va_space'
+  
+  警告：这会降低系统安全性，建议仅在测试环境中使用。
+
+============================================================
+第三章：AFL实战——完整模糊测试流程
+============================================================
+
+3.1 编译目标程序（AFL插桩）
+------------------------------------------------------------
+
+方法一：使用afl-gcc（传统方式）
+  # 对于使用autoconf的项目
+  CC=afl-gcc CXX=afl-g++ ./configure --prefix=/tmp/test
+  make -j4
+  sudo make install
+  
+  # 对于使用CMake的项目
+  CC=afl-gcc CXX=afl-g++ cmake ..
+  make -j4
+  
+  # 对于简单的Makefile
+  CC=afl-gcc make
+
+方法二：使用afl-clang-fast（推荐，更快）
+  CC=afl-clang-fast CXX=afl-clang-fast++ ./configure
+  make -j4
+
+方法三：使用afl-gcc-fast（LLVM模式，最快）
+  # 需要先安装llvm
+  CC=afl-gcc-fast ./configure
+  make -j4
+
+方法四：直接编译单个源文件
+  afl-gcc -g -o vulnerable_program vulnerable_program.c
+
+3.2 准备测试输入（种子语料）
+------------------------------------------------------------
+
+(1) 创建测试用例目录
+  mkdir testcases
+
+(2) 准备初始种子
+  最少需要一个合法的输入文件作为种子：
+  
+  # 对于图片解析器
+  cp sample.jpg testcases/
+  
+  # 对于文档解析器
+  cp sample.pdf testcases/
+  
+  # 对于二进制协议
+  echo -ne '\x00\x01\x02\x03' > testcases/input.bin
+  
+  # 对于文本解析器
+  echo "AAAA" > testcases/input.txt
+  
+  # 对于命令行参数型程序
+  echo "AAAA" > testcases/input
+
+(3) 语料库最佳实践
+  - 种子数量：5-50个小型种子文件即可
+  - 种子大小：建议<1KB（AFL会自动调整）
+  - 种子多样性：覆盖不同的代码路径
+  - 避免重复：使用afl-cmin去重
+    afl-cmin -i original_corpus -o minimized_corpus -- ./program @@
+
+3.3 运行AFL模糊测试
+------------------------------------------------------------
+
+基本命令格式：
+  afl-fuzz -i <输入目录> -o <输出目录> -- <目标程序> [参数]
+
+(1) 最基本的使用（文件输入型程序）
+  afl-fuzz -i testcases/ -o findings/ -- ./target_program @@
+  
+  参数说明：
+  - -i testcases/：输入种子目录
+  - -o findings/：输出目录（存放结果）
+  - --：分隔符，之后是目标程序和参数
+  - @@：占位符，AFL会将其替换为测试用例的文件路径
+  - 如果程序从stdin读取输入，可以省略@@
+
+(2) 针对网络服务程序
+  某些程序不是从文件读取输入，而是作为网络服务运行。
+  可以使用AFL的持久模式（Persistent Mode）：
+  
+  需要修改源码，添加AFL循环（将main的主要逻辑放在循环中）：
+    #include <unistd.h>
+    __AFL_FUZZ_INIT();
+    
+    int main() {
+      #ifdef __AFL_HAVE_MANUAL_CONTROL
+        __AFL_INIT();
+      #endif
+      
+      unsigned char *buf = __AFL_FUZZ_TESTCASE_BUF;
+      while (__AFL_LOOP(10000)) {
+        int len = __AFL_FUZZ_TESTCASE_LEN;
+        // 在这里处理buf和len
+        process_input(buf, len);
+      }
+      return 0;
+    }
+  
+  这种方法避免了每次fork的进程创建开销，速度可提升10-100倍。
+
+(3) 完整命令示例（带所有常用参数）
+  afl-fuzz \
+    -i testcases/ \
+    -o findings/ \
+    -t 1000 \        # 超时时间（毫秒），默认1000
+    -m 200 \         # 内存限制（MB），默认50
+    -Q \             # QEMU模式（无源码时使用）
+    -x dictionary/ \ # 字典文件
+    -M master \      # 主实例名称（并行模式）
+    -- ./target_program @@
+
+3.4 AFL运行界面解读
+------------------------------------------------------------
+启动afl-fuzz后会看到字符界面（TUI），各项指标含义：
+
+┌─ Process timing ────────────────────────────┐
+│  run time : 0 days, 1 hrs, 23 min, 15 sec   │ ← 总运行时间
+│  last new path : 0 days, 0 hrs, 2 min, 8 sec│ ← 距上次发现新路径的时间
+│  last uniq crash : none seen yet            │ ← 距上次唯一crash的时间
+│  last uniq hang : 0 days, 0 hrs, 45 min     │ ← 距上次超时的时间
+├─ Overall results ───────────────────────────┤
+│  cycles done : 125                          │ ← 完成的变异周期数
+│  total paths : 340                          │ ← 发现的总路径数
+│  uniq crashes : 12                          │ ← 唯一crash数量★
+│  uniq hangs : 3                             │ ← 唯一超时数量
+├─ Cycle progress ────────────────────────────┤
+│  now processing : 42 (12.35%)               │ ← 当前处理进度
+│  paths timed out : 0                        │ ← 路径超时
+├─ Map coverage ──────────────────────────────┤
+│  map density : 0.35% / 0.58%                │ ← 全局/本地位图密度
+│  count coverage : 3.14 bits/tuple           │ ← 命中计数覆盖
+├─ Stage progress ────────────────────────────┤
+│  now trying : havoc                         │ ← 当前变异阶段
+│  stage execs : 3405/16384 (20.78%)          │ ← 当前阶段进度
+│  total execs : 1.25M                        │ ← 总执行次数
+│  exec speed : 523.4/sec                     │ ← 执行速度★
+
+关键监控指标：
+- "uniq crashes"：最重要的指标，发现crash立即关注
+- "last new path"：如果长时间无新路径，可能需要换种子
+- "exec speed"：速度越快，发现问题的概率越大
+- "map density"：太高说明测试用例过大；太低说明探索不充分
+
+3.5 分析Crash结果
+------------------------------------------------------------
+(1) 查看Crash文件
+  所有导致crash的测试用例保存在：
+    findings/<实例名>/crashes/
+  
+  目录结构：
+    findings/
+    └── default/
+        ├── fuzzer_stats       # Fuzzing统计
+        ├── plot_data          # 绘图数据
+        ├── crashes/           # 崩溃输入★
+        │   ├── id:000000,sig:11,src:000042,op:havoc,rep:2
+        │   ├── id:000001,sig:06,src:000128,op:flip1,rep:4
+        │   └── README.txt
+        ├── hangs/             # 挂起输入
+        └── queue/             # 优质种子
+
+  文件名含义：
+  - id:000000：崩溃编号
+  - sig:11：信号编号（11=SIGSEGV, 6=SIGABRT）
+  - src:000042：来源种子编号
+  - op:havoc：触发崩溃的变异操作
+
+(2) 使用GDB分析Crash
+  方法1：直接运行
+    gdb --args ./target_program findings/default/crashes/id:000000,...
+    (gdb) run
+    (gdb) bt         # 查看调用栈
+    (gdb) info registers  # 查看寄存器状态
+    (gdb) x/20x $rsp      # 查看栈内容
+    (gdb) info frame       # 查看栈帧信息
+
+  方法2：使用core dump
+    # 先设置：ulimit -c unlimited
+    ./target_program crash_file
+    gdb ./target_program core
+    (gdb) bt full   # 查看完整调用栈
+    (gdb) list      # 查看崩溃位置的源代码
+
+  关键GDB命令速查：
+    bt full         - 显示完整调用栈及局部变量
+    info registers  - 显示所有寄存器
+    x/s $rax        - 以字符串形式显示rax指向的内容
+    x/10gx $rsp     - 显示栈顶的10个8字节值
+    info frame      - 显示当前栈帧详情
+    disassemble     - 反汇编当前函数
+    p expression    - 打印表达式值
+
+(3) 确定漏洞类型
+  常见信号和对应的漏洞类型：
+  - SIGSEGV(11)：段错误 → 缓冲区溢出/UAF/空指针
+  - SIGABRT(6) ：断言失败 → 逻辑错误
+  - SIGFPE(8)  ：算术异常 → 除零/整数溢出
+  - SIGILL(4)  ：非法指令 → 代码损坏/ROP跳转到无效地址
+  - SIGBUS(7)  ：总线错误 → 未对齐访问/内存映射问题
+
+(4) 使用AddressSanitizer（ASan）增强检测
+  重新编译目标程序时加入ASan：
+    AFL_USE_ASAN=1 CC=afl-clang-fast ./configure
+    AFL_USE_ASAN=1 make
+    
+  注意：ASan会增加约2倍的内存开销和减慢执行速度，
+  但它能检测更多的内存错误（如堆缓冲区溢出、UAF等）。
+
+3.6 测试用例处理工具
+------------------------------------------------------------
+(1) afl-tmin：最小化测试用例
+  将导致crash的输入缩减到最小：
+    afl-tmin -i crash_file -o minimized_crash -- ./target_program @@
+  
+  示例：
+    afl-tmin -i findings/default/crashes/id:000000,sig:11,... \
+             -o minimal_crash \
+             -- ./readelf -a @@
+
+(2) afl-analyze：分析输入的结构
+    afl-analyze -i input_file -- ./target_program @@
+  
+  输出会标注输入中哪些字节对执行路径有影响，有助于
+  理解程序如何解析输入。
+
+(3) afl-cmin：语料库最小化
+  从大量种子中选出最小的代表性集合：
+    afl-cmin -i large_corpus -o small_corpus -- ./target_program @@
+
+(4) afl-showmap：显示单个输入覆盖了哪些边
+    afl-showmap -o /dev/null -- ./target_program < input_file
+    afl-showmap -o trace_output -C -- ./target_program @@
+
+============================================================
+第四章：AFL高级进阶
+============================================================
+
+4.1 并行模糊测试
+------------------------------------------------------------
+同时运行多个AFL实例可以加速测试：
+
+  # 主实例（执行确定性变异）
+  afl-fuzz -i testcases/ -o sync_dir/ -M master -- ./target_program @@
+  
+  # 从实例1（执行随机变异）
+  afl-fuzz -i testcases/ -o sync_dir/ -S slave1 -- ./target_program @@
+  
+  # 从实例2（使用不同的种子）
+  afl-fuzz -i testcases2/ -o sync_dir/ -S slave2 -- ./target_program @@
+  
+  # 从实例3（使用QEMU模式测试无源码程序）
+  afl-fuzz -Q -i testcases/ -o sync_dir/ -S qemu_slave -- ./binary_binary
+
+  说明：
+  - -M master：标记为主实例，执行确定性变异
+  - -S slave：标记为从实例，执行随机变异
+  - 所有实例共享同一个-o目录
+  - 建议实例数 = CPU核心数 - 1
+
+4.2 QEMU模式（无源码模糊测试）
+------------------------------------------------------------
+对于没有源代码的闭源程序，使用QEMU模式：
+  afl-fuzz -Q -i testcases/ -o findings/ -- ./closed_source_binary @@
+
+注意：
+- QEMU模式比源码插桩慢2-5倍
+- 不需要任何编译步骤
+- 可以直接fuzz任何ELF二进制文件
+- 内存限制可能不准确
+
+4.3 字典（Dictionary）使用
+------------------------------------------------------------
+字典可以提高AFL的效率，特别是对于有特定格式要求的程序。
+
+创建字典文件（tokens.dict）：
+  # 常见文件格式的魔术字节
+  header_elf="\x7f\x45\x4c\x46"
+  header_png="\x89PNG"
+  header_jpg="\xff\xd8\xff"
+  
+  # 常见整数
+  int_0="0"
+  int_neg_1="-1"
+  int_max="2147483647"
+  
+  # 字符串
+  true="true"
+  false="false"
+  null="null"
+
+使用字典：
+  afl-fuzz -x tokens.dict -i testcases/ -o findings/ -- ./target @@
+
+============================================================
+第五章：综合实践——对开源程序进行Fuzzing
+============================================================
+
+实践目标：
+使用AFL对一个开源程序进行完整的模糊测试，发现并分析崩溃。
+
+选择目标：XPDF（PDF阅读器，历史上有很多漏洞）
+替代方案：libpng、libtiff、libjpeg等图片库
+
+步骤详解：
+
+Step 1: 创建测试环境
+  命令：mkdir ~/fuzzing-lab && cd ~/fuzzing-lab
+  命令：mkdir testcases findings
+
+Step 2: 准备种子文件
+  下载一个合法的PDF文件作为种子：
+  命令：cp /usr/share/doc/*.pdf testcases/ 2>/dev/null
+  或创建最小PDF：
+  命令：echo '%PDF-1.0' > testcases/sample.pdf
+  
+  确认种子存在：
+  命令：ls -la testcases/
+
+Step 3: 下载并编译目标程序
+  以libjpeg为例（更容易演示）：
+  命令：wget http://www.ijg.org/files/jpegsrc.v9e.tar.gz
+  命令：tar xzf jpegsrc.v9e.tar.gz
+  命令：cd jpeg-9e
+  
+  使用AFL插桩编译：
+  命令：CC=afl-gcc CXX=afl-g++ ./configure --prefix=/tmp/jpeg-test
+  命令：make -j4
+  命令：sudo make install
+  
+  准备测试使用的JPEG图片：
+  命令：cd ~/fuzzing-lab
+  命令：convert -size 32x32 xc:white testcases/test.jpg
+  （如果没有ImageMagick，可以用现有的图片文件）
+
+Step 4: 启动AFL模糊测试
+  命令：
+    afl-fuzz -i testcases/ -o findings/ \
+      -t 2000 \
+      -m 100 \
+      -- /tmp/jpeg-test/bin/djpeg @@
+  
+  观察AFL界面：
+  - 关注 "uniq crashes" 是否出现
+  - 关注 "total paths" 增长情况
+  - 关注 "exec speed" 执行速度
+  - 关注 "last new path" 最近新路径发现时间
+
+Step 5: 等待并观察结果
+  Fuzzing可能需要数小时甚至数天。期间：
+  - 如果发现crash，记下crash编号
+  - 如果长时间无新路径，尝试更换/增加种子
+  - 可使用Ctrl+C暂停，下次运行时继续
+
+  后台运行：
+  命令：nohup afl-fuzz -i testcases/ -o findings/ \
+          -t 2000 -m 100 -- /tmp/jpeg-test/bin/djpeg @@ \
+          > afl.log 2>&1 &
+
+Step 6: 分析Crash文件
+  命令：ls findings/default/crashes/
+  
+  选择一个crash文件进行分析：
+  命令：cp findings/default/crashes/id:000000,* crash_sample
+  
+  使用GDB重现崩溃：
+  命令：gdb --args /tmp/jpeg-test/bin/djpeg crash_sample
+  (gdb) run
+  (gdb) bt full
+  (gdb) info registers
+  (gdb) x/30i $rip    # 查看崩溃地址附近的指令
+  
+  记录关键信息：
+  - 崩溃位置（函数名和偏移）
+  - 寄存器状态
+  - 调用栈路径
+  - 崩溃类型（溢出/UAF/空指针等）
+
+Step 7: 最小化测试用例
+  命令：afl-tmin -i crash_sample -o minimal_crash -- \
+          /tmp/jpeg-test/bin/djpeg @@
+  
+  对比大小：
+  命令：ls -la crash_sample minimal_crash
+  
+  确认最小化后仍然触发崩溃：
+  命令：/tmp/jpeg-test/bin/djpeg minimal_crash
+
+Step 8: 使用ASan重新编译以获取详细错误信息
+  命令：cd ~/fuzzing-lab/jpeg-9e
+  命令：make clean
+  命令：AFL_USE_ASAN=1 CC=afl-clang-fast ./configure
+  命令：AFL_USE_ASAN=1 make -j4
+  
+  重新运行crash文件：
+  命令：./djpeg ~/fuzzing-lab/minimal_crash
+  ASan会输出精确的内存错误信息，包括：
+  - 错误类型（heap-buffer-overflow等）
+  - 读写地址和大小
+  - 分配和释放位置
+  - 完整调用栈
+
+============================================================
+第六章：AFL常见问题与解决方案
+============================================================
+
+6.1 编译问题
+------------------------------------------------------------
+问题：afl-gcc报错找不到头文件
+解决：确保安装了目标程序的编译依赖
+      sudo pacman -S base-devel
+
+问题：./configure检测到非GCC编译器
+解决：强制指定编译器
+      CC=afl-gcc CXX=afl-g++ ./configure --cc=afl-gcc
+
+6.2 运行问题
+------------------------------------------------------------
+问题："Program is not instrumented"
+解决：确保使用了afl-gcc或afl-clang编译，而非普通gcc
+
+问题：执行速度很慢（<10 execs/sec）
+原因：可能是目标程序做了大量初始化工作
+解决：使用AFL的持久模式或Deferred Initialization
+      在源码中适当位置添加 __AFL_INIT()
+
+问题：AFL界面显示红色警告
+解决：检查具体警告信息，常见的是内存限制或超时设置
+      调整-m和-t参数
+
+6.3 效率问题
+------------------------------------------------------------
+问题：长时间没有新路径
+解决：
+  - 更换或增加更多样化的种子
+  - 使用字典文件指导变异
+  - 添加更多的初始测试用例
+  - 考虑更换目标程序或版本
+
+============================================================
+总结
+============================================================
+
+AFL是模糊测试领域的标杆工具，掌握它意味着能够：
+- 自动化发现软件漏洞
+- 对闭源和开源软件进行安全审计
+- 理解覆盖率引导的Fuzzing原理
+
+关键要点：
+1. 合理准备种子语料库是成功的一半
+2. 并行Fuzzing可大幅加速测试
+3. ASan+UBSan配合AFL如虎添翼
+4. 分析crash时需要扎实的逆向调试能力
+5. 持久模式和对目标程序的定制化改造能极大提升效率
+
+通过本章学习，你已掌握从理论到实践的完整AFL模糊测试技能。
