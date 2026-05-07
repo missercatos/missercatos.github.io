@@ -191,6 +191,18 @@ body{
 .page-nav button:disabled{opacity:0.3;cursor:default}
 .page-nav .pn-info{color:var(--text-dim);font-size:0.85rem}
 
+/* ===== 回到主页按钮 ===== */
+.home-btn{
+    position:fixed; top:14px; left:16px; z-index:200;
+    display:flex; align-items:center; justify-content:center;
+    width:36px; height:36px; border-radius:50%;
+    background:var(--surface); border:1px solid var(--border);
+    color:var(--accent); text-decoration:none;
+    transition:all 0.2s; backdrop-filter:blur(10px);
+}
+.home-btn:hover{background:var(--accent);color:var(--bg);border-color:var(--accent)}
+.home-btn span{font-size:1rem}
+
 /* ===== 音乐控制 ===== */
 .music-bar{
     position:fixed; top:14px; right:16px; z-index:200;
@@ -218,12 +230,14 @@ body{
 @media(max-width:900px){
     .sidebar{transform:translateX(-100%);transition:transform 0.3s;width:280px}
     .sidebar.open{transform:translateX(0)}
-    .sidebar-toggle{display:flex}
+    .sidebar-toggle{display:flex;left:56px}
     .main-wrap{margin-left:0;padding:50px 18px 40px}
     .music-bar{top:10px;right:10px;padding:5px 10px;gap:2px}
     .music-bar button{width:28px;height:28px;font-size:0.8rem}
     .music-bar .np{max-width:60px;font-size:0.7rem}
     .page-header h1{font-size:1.5rem}
+    .home-btn{top:10px;left:8px;width:32px;height:32px}
+    .home-btn span{font-size:0.85rem}
 }
 @media(max-width:480px){
     .main-wrap{padding:46px 12px 30px}
@@ -268,6 +282,9 @@ body{
         <button id="nextBtn">下一页 ▶</button>
     </nav>
 </div>
+
+<!-- 回到主页 -->
+<a href="index.html" class="home-btn" title="回到主页"><span>⌂</span></a>
 
 <!-- 音乐 -->
 <div class="music-bar">

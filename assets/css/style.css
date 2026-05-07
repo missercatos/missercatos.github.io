@@ -900,6 +900,28 @@ body:not(.preload) .top-left-actions {
     background: rgba(0, 0, 0, 0.6);
 }
 
+.mini-home-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    background: rgba(0, 0, 0, 0.5);
+    color: rgba(224, 224, 255, 0.4);
+    border: 1px solid rgba(0, 255, 157, 0.15);
+    border-radius: 50%;
+    text-decoration: none;
+    font-size: 0.7rem;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(4px);
+}
+
+.mini-home-btn:hover {
+    color: var(--acid-primary);
+    border-color: rgba(0, 255, 157, 0.4);
+    background: rgba(0, 0, 0, 0.6);
+}
+
 /* 点赞功能样式（旧版保留，用于其他页面引用） */
 .like-container {
     display: flex;
