@@ -1,0 +1,1471 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Arch Linux 深入使用指南 - Misser-catos</title>
+<link rel="icon" href="assets/img/avatar.png">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+:root {
+    --arch-blue: #1793d1; --arch-blue-dark: #0c5e8a;
+    --arch-blue-light: #7ec8e3; --arch-bg: #f0f8ff;
+    --arch-white: #ffffff; --arch-text: #1a2a3a;
+    --arch-text-light: #4a5a6a; --arch-border: #b8d4e8;
+    --arch-shadow: 0 4px 20px rgba(23,147,209,0.15);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+    font-family:'Segoe UI','Microsoft YaHei','PingFang SC','Helvetica Neue',sans-serif;
+    background:var(--arch-bg);color:var(--arch-text);
+    min-height:100vh;overflow-x:hidden;position:relative;
+}
+#bgCanvas{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none}
+.arch-main{position:relative;z-index:1;max-width:900px;margin:0 auto;padding:0 1.5rem 3rem}
+
+.arch-header{text-align:center;padding:2.5rem 0 1rem}
+.arch-title{font-size:3.2rem;font-weight:900;color:var(--arch-blue-dark);letter-spacing:4px;margin-bottom:0.8rem;text-shadow:0 2px 8px rgba(23,147,209,0.2)}
+.arch-subtitle{font-size:1.1rem;color:var(--arch-blue);font-weight:600;margin-bottom:1rem}
+.arch-header-links{display:flex;justify-content:center;gap:1.5rem;flex-wrap:wrap}
+.arch-header-links a{
+    display:inline-flex;align-items:center;gap:0.4rem;text-decoration:none;
+    color:var(--arch-blue);font-size:0.95rem;font-weight:600;
+    padding:0.5rem 1.2rem;border:2px solid var(--arch-blue);
+    border-radius:25px;transition:all 0.3s ease;background:var(--arch-white);
+}
+.arch-header-links a:hover{background:var(--arch-blue);color:var(--arch-white);box-shadow:var(--arch-shadow)}
+
+/* 段内导航 */
+.section-nav{
+    display:flex;flex-wrap:wrap;justify-content:center;gap:0.5rem;
+    padding:1rem 0 0.5rem;margin-bottom:1.5rem;
+    border-bottom:2px solid var(--arch-border);
+}
+.section-nav a{
+    display:inline-block;padding:0.35rem 0.9rem;font-size:0.82rem;
+    color:var(--arch-blue-dark);text-decoration:none;
+    background:var(--arch-white);border:1px solid var(--arch-border);
+    border-radius:16px;transition:all 0.25s ease;white-space:nowrap;
+}
+.section-nav a:hover{background:var(--arch-blue);color:#fff;border-color:var(--arch-blue)}
+.section-nav .nav-divider{width:1px;background:var(--arch-border);margin:0 2px}
+
+.arch-music-control{position:fixed;top:20px;right:20px;z-index:1000}
+#archPlayPauseBtn{
+    width:44px;height:44px;border-radius:50%;border:2px solid var(--arch-blue);
+    background:var(--arch-white);color:var(--arch-blue);font-size:1.2rem;
+    cursor:pointer;transition:all 0.3s ease;display:flex;
+    align-items:center;justify-content:center;
+    box-shadow:0 2px 12px rgba(23,147,209,0.2);
+}
+#archPlayPauseBtn:hover{background:var(--arch-blue);color:#fff;transform:scale(1.08)}
+#archPlayPauseBtn.playing{background:var(--arch-blue);color:#fff}
+
+.arch-whiteboard-overlay{
+    position:fixed;top:0;left:0;width:100%;height:100%;z-index:2000;
+    background:rgba(0,0,0,0.45);display:flex;align-items:center;
+    justify-content:center;cursor:pointer;transition:opacity 0.4s ease;
+}
+.arch-whiteboard-overlay.dismissed{opacity:0;pointer-events:none}
+.arch-whiteboard{
+    background:var(--arch-white);border:3px solid var(--arch-blue);
+    border-radius:16px;padding:2rem 2.5rem;max-width:560px;width:90%;
+    box-shadow:0 10px 40px rgba(23,147,209,0.3);text-align:center;
+    cursor:default;position:relative;
+}
+.arch-whiteboard::before{
+    content:'✦ Arch Linux 深入使用指南 ✦';display:block;
+    font-size:1.3rem;font-weight:700;color:var(--arch-blue-dark);
+    margin-bottom:1rem;letter-spacing:2px;
+}
+.arch-whiteboard-content{color:var(--arch-text-light);font-size:1rem;line-height:1.8}
+.arch-whiteboard-hint{margin-top:1.5rem;font-size:0.85rem;color:var(--arch-blue-light);font-style:italic}
+
+.tutorial-steps{display:flex;flex-direction:column;gap:2.5rem;padding-top:1.5rem}
+
+.step-card{
+    background:var(--arch-white);border:1px solid var(--arch-border);
+    border-radius:14px;padding:2rem;box-shadow:var(--arch-shadow);
+    transition:all 0.3s ease;position:relative;
+}
+.step-card:hover{border-color:var(--arch-blue);box-shadow:0 6px 28px rgba(23,147,209,0.2);transform:translateY(-2px)}
+.step-number{
+    position:absolute;top:-16px;left:24px;
+    background:linear-gradient(135deg,var(--arch-blue),var(--arch-blue-dark));
+    color:#fff;font-weight:900;font-size:1.1rem;
+    padding:4px 18px;border-radius:20px;letter-spacing:1px;
+}
+
+.step-text{margin-top:0.8rem;margin-bottom:1.2rem;color:var(--arch-text);font-size:1.05rem;line-height:1.8}
+.step-text code{
+    background:rgba(23,147,209,0.08);padding:0.15rem 0.45rem;
+    border-radius:4px;font-family:'Courier New',monospace;
+    color:var(--arch-blue-dark);font-size:0.95em;
+}
+.step-text strong{color:var(--arch-blue-dark)}
+.step-text ul,.step-text ol{margin-top:0.3rem;padding-left:1.2rem;line-height:1.8}
+.step-text li{margin-bottom:0.3rem}
+
+.step-pre{
+    background:rgba(23,147,209,0.06);padding:0.8rem 1rem;
+    border-radius:8px;margin:0.5rem 0;font-family:'Courier New',monospace;
+    font-size:0.9rem;line-height:1.6;overflow-x:auto;white-space:pre-wrap;
+    border-left:3px solid var(--arch-blue);
+}
+
+.step-tip{
+    margin-top:0.8rem;padding:0.8rem 1rem;
+    background:rgba(243,156,18,0.08);border-left:3px solid #f39c12;
+    border-radius:0 6px 6px 0;font-size:0.9rem;color:#8a6d14;
+}
+.step-tip i{color:#f39c12;margin-right:0.4rem}
+.step-note{
+    margin-top:0.8rem;padding:0.8rem 1rem;
+    background:rgba(23,147,209,0.06);border-left:3px solid var(--arch-blue);
+    border-radius:0 6px 6px 0;font-size:0.9rem;color:var(--arch-blue-dark);
+}
+
+.arch-footer{text-align:center;padding:3rem 0 1.5rem;color:var(--arch-text-light);font-size:0.85rem;opacity:0.7}
+
+.btn-jump{
+    display:inline-block;margin-top:1rem;padding:0.7rem 2rem;
+    background:linear-gradient(135deg,var(--arch-blue),var(--arch-blue-dark));
+    color:#fff;border-radius:25px;text-decoration:none;
+    font-weight:700;font-size:1rem;transition:all 0.3s ease;
+    box-shadow:var(--arch-shadow);
+}
+.btn-jump:hover{transform:translateY(-2px);box-shadow:0 6px 28px rgba(23,147,209,0.3)}
+
+.nav-jump-card{text-align:center;background:linear-gradient(135deg,rgba(23,147,209,0.06),rgba(126,200,227,0.12));border:2px dashed var(--arch-blue)!important}
+
+/* 分区标签 */
+.section-badge{
+    display:inline-block;padding:2px 10px;border-radius:10px;
+    font-size:0.7rem;font-weight:700;letter-spacing:1px;
+    margin-right:6px;vertical-align:middle;
+}
+.badge-tiling{background:#e8f5e9;color:#2e7d32}
+.badge-graphical{background:#e3f2fd;color:#1565c0}
+.badge-system{background:#fff3e0;color:#e65100}
+
+@media(max-width:768px){
+    .arch-title{font-size:2.2rem}
+    .step-card{padding:1.5rem 1.2rem}
+    .arch-header-links{gap:0.8rem}
+    .arch-header-links a{font-size:0.85rem;padding:0.4rem 1rem}
+    .section-nav a{font-size:0.73rem;padding:0.3rem 0.6rem}
+    .section-nav{gap:0.3rem}
+}
+</style>
+</head>
+<body>
+
+<canvas id="bgCanvas"></canvas>
+
+<div class="arch-music-control">
+    <button id="archPlayPauseBtn" title="播放/暂停">▶</button>
+</div>
+
+<div id="whiteboardOverlay" class="arch-whiteboard-overlay">
+    <div class="arch-whiteboard">
+        <div class="arch-whiteboard-content">
+            欢迎来到 Arch Linux 深入使用指南！<br>
+            这里将带你深入了解 Linux 底层机制、平铺窗口管理器配置、KDE Plasma 深度定制等高级主题。<br>
+            无论你是想提升效率还是打造个性化桌面，这里都有你需要的知识。
+        </div>
+        <div class="arch-whiteboard-hint">点击任意位置关闭</div>
+    </div>
+</div>
+
+<main class="arch-main">
+    <header class="arch-header">
+        <h1 class="arch-title">Arch深入使用</h1>
+        <p class="arch-subtitle">文件系统 · 脚本 · 平铺窗口 · KDE 深度定制</p>
+        <div class="arch-header-links">
+            <a href="index.html"><i class="fas fa-home"></i> 回到主页</a>
+            <a href="archlinux_use.html"><i class="fas fa-arrow-left"></i> 返回使用指南</a>
+        </div>
+    </header>
+
+    <!-- 段内快速跳转 -->
+    <nav class="section-nav">
+        <a href="#sys-fs">文件系统</a>
+        <a href="#sys-cmd">基础指令</a>
+        <a href="#sys-tar">tar压缩</a>
+        <a href="#sys-dm">显示管理器</a>
+        <a href="#sys-script">脚本编写</a>
+        <a href="#sys-bash">Bash语法</a>
+        <a href="#sys-vim">Vim配置</a>
+        <a href="#sys-net">网络配置</a>
+        <a href="#sys-mirror">源与密钥</a>
+        <a href="#sys-update">系统更新</a>
+        <a href="#sys-btrfs">btrfs快照</a>
+        <span class="nav-divider"></span>
+        <a href="#tiling-top" style="background:#e8f5e9;border-color:#66bb6a">▣ 平铺区</a>
+        <span class="nav-divider"></span>
+        <a href="#kde-top" style="background:#e3f2fd;border-color:#42a5f5">◈ KDE区</a>
+    </nav>
+
+    <section class="tutorial-steps">
+
+<!-- ==================== 一、文件系统结构 ==================== -->
+<article class="step-card" id="sys-fs">
+    <span class="step-number"><span class="section-badge badge-system">系统</span> Linux 文件系统结构</span>
+    <div class="step-text">
+        Linux 遵循 <strong>FHS（Filesystem Hierarchy Standard）</strong>文件系统层次结构标准。理解每个目录的用途是深入使用 Linux 的第一步。
+    </div>
+    <div class="step-text">
+        <strong>根目录 / 下的关键目录：</strong>
+        <ul>
+            <li><code>/bin</code> — 基础用户命令二进制文件（如 ls, cp, mv）</li>
+            <li><code>/boot</code> — 启动加载器文件（内核 vmlinuz、initramfs、grub 配置）</li>
+            <li><code>/dev</code> — 设备文件（sda, tty, null, zero 等）</li>
+            <li><code>/etc</code> — 系统级配置文件（所有软件的配置几乎都在此）</li>
+            <li><code>/home</code> — 用户主目录（每个用户的个人文件和配置）</li>
+            <li><code>/lib</code> — 系统库文件和内核模块</li>
+            <li><code>/mnt</code> &amp; <code>/media</code> — 临时挂载点</li>
+            <li><code>/opt</code> — 第三方附加软件包</li>
+            <li><code>/proc</code> — 虚拟文件系统（进程和内核信息，如 /proc/cpuinfo）</li>
+            <li><code>/root</code> — root 用户的主目录</li>
+            <li><code>/run</code> — 运行时变量数据（tmpfs，重启后清空）</li>
+            <li><code>/sbin</code> — 系统管理命令（需要 root 权限）</li>
+            <li><code>/sys</code> — 内核和设备信息虚拟文件系统</li>
+            <li><code>/tmp</code> — 临时文件（重启后可能清空）</li>
+            <li><code>/usr</code> — 用户程序和数据（Unix System Resources）<br>
+                &emsp;<code>/usr/bin</code> — 用户命令<br>
+                &emsp;<code>/usr/lib</code> — 库文件<br>
+                &emsp;<code>/usr/share</code> — 架构无关的共享数据<br>
+                &emsp;<code>/usr/local</code> — 本地编译安装的软件</li>
+            <li><code>/var</code> — 可变数据（日志、缓存、数据库等）</li>
+        </ul>
+    </div>
+    <div class="step-tip"><i class="fas fa-lightbulb"></i> 使用 <code>man hier</code> 可以查看 Linux 文件系统层次结构的完整手册。</div>
+</article>
+
+<!-- ==================== 二、基础指令与指令查询 ==================== -->
+<article class="step-card" id="sys-cmd">
+    <span class="step-number"><span class="section-badge badge-system">系统</span> 基础指令与指令查询</span>
+    <div class="step-text">
+        <strong>日常高频命令：</strong>
+        <ul>
+            <li><code>ls -la</code> — 列出目录详细信息（含隐藏文件）</li>
+            <li><code>cd /path</code> — 切换目录；<code>cd -</code> 返回上一个目录</li>
+            <li><code>pwd</code> — 显示当前工作目录</li>
+            <li><code>cp -r 源 目标</code> — 复制文件或目录</li>
+            <li><code>mv 源 目标</code> — 移动/重命名</li>
+            <li><code>rm -rf 路径</code> — 强制递归删除（谨慎使用）</li>
+            <li><code>mkdir -p 路径</code> — 创建多级目录</li>
+            <li><code>cat / less / head / tail</code> — 查看文件内容</li>
+            <li><code>grep -r "关键词" 目录</code> — 递归搜索文本</li>
+            <li><code>find /path -name "*.txt"</code> — 按名称查找文件</li>
+            <li><code>chmod 755 file</code> — 修改文件权限</li>
+            <li><code>chown user:group file</code> — 修改文件所有者</li>
+            <li><code>ps aux | grep 进程名</code> — 查看进程</li>
+            <li><code>kill -9 PID</code> — 强制终止进程</li>
+            <li><code>systemctl status/start/stop/enable 服务</code> — 管理系统服务</li>
+        </ul>
+    </div>
+    <div class="step-text">
+        <strong>命令查询方法：</strong>
+        <ul>
+            <li><code>man 命令</code> — 查看完整手册（按 q 退出）</li>
+            <li><code>命令 --help</code> 或 <code>命令 -h</code> — 查看简要帮助</li>
+            <li><code>tldr 命令</code> — 命令速查（需安装 tldr：<code>sudo pacman -S tldr</code>）</li>
+            <li><code>info 命令</code> — GNU Info 格式文档</li>
+            <li><code>whatis 命令</code> — 一行描述命令用途</li>
+            <li><code>which 命令</code> — 查看命令的完整路径</li>
+        </ul>
+    </div>
+</article>
+
+<!-- ==================== 三、tar 压缩解压 ==================== -->
+<article class="step-card" id="sys-tar">
+    <span class="step-number"><span class="section-badge badge-system">系统</span> tar 压缩与解压</span>
+    <div class="step-text">
+        <strong>tar</strong> 是 Linux 最常用的归档工具，通常搭配 gzip / bzip2 / xz 等压缩算法使用。
+    </div>
+    <div class="step-text">
+        <strong>常用操作速查：</strong>
+        <ul>
+            <li><strong>创建 tar 包：</strong><code>tar -cvf archive.tar /path/to/dir</code></li>
+            <li><strong>解压 tar 包：</strong><code>tar -xvf archive.tar</code></li>
+            <li><strong>创建 tar.gz：</strong><code>tar -czvf archive.tar.gz /path</code></li>
+            <li><strong>解压 tar.gz：</strong><code>tar -xzvf archive.tar.gz</code></li>
+            <li><strong>创建 tar.bz2：</strong><code>tar -cjvf archive.tar.bz2 /path</code></li>
+            <li><strong>解压 tar.bz2：</strong><code>tar -xjvf archive.tar.bz2</code></li>
+            <li><strong>创建 tar.xz：</strong><code>tar -cJvf archive.tar.xz /path</code></li>
+            <li><strong>解压 tar.xz：</strong><code>tar -xJvf archive.tar.xz</code></li>
+            <li><strong>查看压缩包内容：</strong><code>tar -tvf archive.tar.gz</code></li>
+            <li><strong>解压到指定目录：</strong><code>tar -xzvf archive.tar.gz -C /target/dir</code></li>
+        </ul>
+    </div>
+    <div class="step-text">
+        <strong>参数含义：</strong>
+        <ul>
+            <li><code>-c</code> create 创建 | <code>-x</code> extract 解压 | <code>-t</code> list 查看</li>
+            <li><code>-v</code> verbose 显示过程 | <code>-f</code> file 指定文件名</li>
+            <li><code>-z</code> gzip | <code>-j</code> bzip2 | <code>-J</code> xz</li>
+            <li><code>-C</code> 指定目标目录</li>
+        </ul>
+    </div>
+    <div class="step-tip"><i class="fas fa-lightbulb"></i> 压缩率比较：xz &gt; bzip2 &gt; gzip；压缩速度：gzip &gt; bzip2 &gt; xz。日常使用 <code>tar.gz</code> 最为通用。</div>
+</article>
+
+<!-- ==================== 四、显示管理器 SDDM ==================== -->
+<article class="step-card" id="sys-dm">
+    <span class="step-number"><span class="section-badge badge-system">系统</span> 显示管理器 — SDDM 配置</span>
+    <div class="step-text">
+        <strong>SDDM（Simple Desktop Display Manager）</strong>是 KDE Plasma 的默认显示管理器，也是最推荐的显示管理器。它负责图形登录界面和用户会话管理。
+    </div>
+    <div class="step-text">
+        <strong>安装 SDDM：</strong><br>
+        <code>sudo pacman -S sddm sddm-kcm</code>（sddm-kcm 提供 KDE 设置界面的 SDDM 配置面板）<br>
+        <code>sudo systemctl enable sddm</code>（设置开机启动）
+    </div>
+    <div class="step-text">
+        <strong>SDDM 配置文件位置：</strong><br>
+        主配置：<code>/etc/sddm.conf</code> 或 <code>/etc/sddm.conf.d/</code><br>
+        主题目录：<code>/usr/share/sddm/themes/</code>
+    </div>
+    <div class="step-text">
+        <strong>更换 SDDM 主题：</strong>
+        <ul>
+            <li>从 AUR 安装主题：<code>yay -S sddm-sugar-candy-git</code>（推荐的美观主题）</li>
+            <li>编辑 <code>/etc/sddm.conf.d/theme.conf</code>，设置 <code>[Theme] Current=主题名</code></li>
+            <li>在 KDE 系统设置 → 启动和关机 → 登录屏幕(SDDM) 中直接预览和应用主题</li>
+        </ul>
+    </div>
+</article>
+
+<!-- ==================== 五、脚本编写 ==================== -->
+<article class="step-card" id="sys-script">
+    <span class="step-number"><span class="section-badge badge-system">系统</span> 脚本编写 — /usr/bin/ 与 ~/.local/bin/</span>
+    <div class="step-text">
+        Linux 系统中，可执行脚本可以放置在多个位置。放置位置决定了脚本的作用范围和调用方式。
+    </div>
+    <div class="step-text">
+        <strong>脚本放置位置对比：</strong>
+        <ul>
+            <li><code>/usr/bin/</code> — 系统级可执行文件，所有用户可用，需要 root 权限写入</li>
+            <li><code>/usr/local/bin/</code> — 本地编译/手动安装的程序，优先级高于 /usr/bin</li>
+            <li><code>~/.local/bin/</code> — 用户级可执行文件，仅当前用户可用（推荐自用脚本放这里）</li>
+            <li><code>~/bin/</code> — 传统用户脚本目录（需确保在 PATH 中）</li>
+        </ul>
+    </div>
+    <div class="step-text">
+        <strong>在 ~/.local/bin/ 中创建脚本的步骤：</strong>
+<pre class="step-pre"># 1. 确保目录存在并在 PATH 中
+mkdir -p ~/.local/bin
+
+# 2. 在 ~/.bashrc 或 ~/.zshrc 中添加（通常已默认包含）：
+export PATH="$HOME/.local/bin:$PATH"
+
+# 3. 创建脚本文件
+nano ~/.local/bin/myscript
+
+# 4. 脚本内容示例：
+#!/bin/bash
+echo "Hello, $USER! Today is $(date)"
+
+# 5. 赋予执行权限
+chmod +x ~/.local/bin/myscript
+
+# 6. 现在可以在任何位置直接执行
+myscript</pre>
+    </div>
+    <div class="step-text">
+        <strong>在 /usr/bin/ 中创建系统级脚本：</strong>
+<pre class="step-pre">sudo nano /usr/bin/mysystem-script
+sudo chmod +x /usr/bin/mysystem-script</pre>
+    </div>
+</article>
+
+<!-- ==================== 六、Bash 脚本语法 ==================== -->
+<article class="step-card" id="sys-bash">
+    <span class="step-number"><span class="section-badge badge-system">系统</span> Bash 脚本语法结构</span>
+    <div class="step-text">
+        Bash 脚本以 <code>#!/bin/bash</code>（shebang）开头，以下是核心语法要素。
+    </div>
+    <div class="step-text">
+        <strong>变量定义与使用：</strong>
+<pre class="step-pre">#!/bin/bash
+name="Arch Linux"
+echo "Welcome to $name"
+echo "Path: ${HOME}"          # 花括号明确变量边界
+readonly PI=3.14159           # 只读变量</pre>
+    </div>
+    <div class="step-text">
+        <strong>条件判断：</strong>
+<pre class="step-pre">if [ "$1" == "hello" ]; then
+    echo "参数是 hello"
+elif [ -f "/etc/passwd" ]; then
+    echo "/etc/passwd 存在"
+else
+    echo "其他情况"
+fi
+
+# 常用测试条件：
+[ -f file ]  # 是否为普通文件
+[ -d dir  ]  # 是否为目录
+[ -z str  ]  # 字符串是否为空
+[ -n str  ]  # 字符串是否非空
+[ a -eq b ]  # 数值相等</pre>
+    </div>
+    <div class="step-text">
+        <strong>循环：</strong>
+<pre class="step-pre"># for 循环
+for i in {1..5}; do echo "Number: $i"; done
+
+# while 循环
+count=0
+while [ $count -lt 5 ]; do
+    echo "Count: $count"
+    count=$((count + 1))
+done</pre>
+    </div>
+    <div class="step-text">
+        <strong>函数：</strong>
+<pre class="step-pre">greet() {
+    local name="$1"            # local 限制作用域
+    echo "你好, $name!"
+}
+greet "世界"</pre>
+    </div>
+    <div class="step-tip"><i class="fas fa-lightbulb"></i> 使用 <code>shellcheck</code> 工具检查脚本语法错误：<code>sudo pacman -S shellcheck</code></div>
+</article>
+
+<!-- ==================== Vim 配置方法 ==================== -->
+<article class="step-card" id="sys-vim">
+    <span class="step-number"><span class="section-badge badge-system">系统</span> Vim — 使用方法与配置详解</span>
+    <div class="step-text">
+        <strong>Vim</strong> 是 Linux 下最强大的文本编辑器之一，几乎预装在每台 Linux 机器上。掌握 Vim 可以在任何服务器环境中高效编辑文件。
+    </div>
+    <div class="step-text">
+        <strong>基础使用方法：</strong>
+        <ul>
+            <li><code>vim 文件名</code> — 打开文件（文件不存在则新建）</li>
+            <li><code>vim +行号 文件名</code> — 打开并跳转到指定行（如 <code>vim +42 file.txt</code>）</li>
+            <li><code>vim -R 文件名</code> 或 <code>view 文件名</code> — 只读模式打开</li>
+        </ul>
+    </div>
+    <div class="step-text">
+        <strong>Vim 的四种模式（核心概念）：</strong>
+        <ul>
+            <li><strong>普通模式（Normal）</strong>：默认模式，用于导航和执行命令。按 <code>Esc</code> 从任何模式返回。<br>
+                移动：<code>h j k l</code>（左 下 上 右）、<code>w</code> 下个词、<code>b</code> 上个词、<code>gg</code> 文件首、<code>G</code> 文件尾<br>
+                删除：<code>x</code> 删字符、<code>dd</code> 删整行、<code>dw</code> 删词<br>
+                复制粘贴：<code>yy</code> 复制行、<code>p</code> 粘贴、<code>u</code> 撤销、<code>Ctrl+r</code> 重做</li>
+            <li><strong>插入模式（Insert）</strong>：正常输入文本。<code>i</code> 进入（光标前）、<code>a</code>（光标后）、<code>o</code>（下一行）、<code>O</code>（上一行）</li>
+            <li><strong>可视模式（Visual）</strong>：选择文本块。<code>v</code> 字符选、<code>V</code> 行选、<code>Ctrl+v</code> 块选</li>
+            <li><strong>命令模式（Command）</strong>：<code>:</code> 进入，执行保存/退出/搜索等。<code>:w</code> 保存、<code>:q</code> 退出、<code>:wq</code> 保存退出、<code>:%s/旧/新/g</code> 全局替换</li>
+        </ul>
+    </div>
+    <div class="step-text">
+        <strong>配置文件：</strong><code>~/.vimrc</code>（用户级）或 <code>/etc/vimrc</code>（系统级）<br>
+        Vim 使用 Vimscript 语法编写配置。推荐安装 <strong>Neovim</strong>（<code>sudo pacman -S neovim</code>）使用 <code>~/.config/nvim/init.vim</code>（向后兼容 Vimscript）或 <code>init.lua</code>（Lua 语法）。
+    </div>
+    <div class="step-text">
+        <strong>~/.vimrc 配置语法详解：</strong>
+<pre class="step-pre">" ===== 基础设置 =====
+set number              " 显示行号
+set relativenumber      " 相对行号（方便 j/k 跳转时知道距离）
+set tabstop=4           " Tab 显示为 4 个空格宽度
+set shiftwidth=4        " 自动缩进 4 个空格
+set expandtab           " 将 Tab 转换为空格
+set autoindent          " 自动缩进
+set smartindent         " 智能缩进（根据语法自动调整）
+set cursorline          " 高亮当前行
+set showmatch           " 高亮匹配的括号
+set hlsearch            " 高亮搜索结果
+set incsearch           " 增量搜索（边输入边搜索）
+set ignorecase          " 搜索忽略大小写
+set smartcase           " 有大写字母时区分大小写
+set mouse=a             " 启用鼠标支持（点击定位、滚轮滚动）
+set clipboard=unnamedplus " 使用系统剪贴板（可在 Vim 和其他应用间复制）
+set encoding=utf-8      " 文件编码
+set termguicolors       " 启用真彩色
+set splitbelow          " 水平分屏时新窗口在下
+set splitright          " 垂直分屏时新窗口在右
+set scrolloff=8         " 光标距离屏幕边缘至少 8 行
+set updatetime=300      " 交换文件写入间隔(ms)
+
+" ===== 按键映射 =====
+" 将 leader 键设为空格（方便快捷组合键）
+let mapleader = " "
+
+" 分屏导航（Ctrl+hjkl 在分屏间移动）
+nnoremap &lt;C-h&gt; &lt;C-w&gt;h
+nnoremap &lt;C-j&gt; &lt;C-w&gt;j
+nnoremap &lt;C-k&gt; &lt;C-w&gt;k
+nnoremap &lt;C-l&gt; &lt;C-w&gt;l
+
+" 使用 jk 代替 Esc（更快退出插入模式）
+inoremap jk &lt;Esc&gt;
+
+" Leader+w 保存文件
+nnoremap &lt;leader&gt;w :w&lt;CR&gt;
+
+" Leader+q 退出
+nnoremap &lt;leader&gt;q :q&lt;CR&gt;
+
+" ===== 外观 =====
+" 配色方案
+colorscheme desert       " 内置主题（还可用：elflord、ron、slate、murphy 等）
+
+" 状态栏
+set laststatus=2         " 始终显示状态栏
+set showmode             " 显示当前模式
+set showcmd              " 显示正在输入的命令
+
+" ===== 文件管理 =====
+set undofile             " 持久化撤销历史（即使关闭文件也能撤销）
+set undodir=~/.vim/undo  " 撤销文件存放目录
+set backup               " 启用备份
+set backupdir=~/.vim/backup
+set noswapfile           " 不使用交换文件（现代编辑器习惯）</pre>
+    </div>
+    <div class="step-text">
+        <strong>为什么这样配置（每个选项的意义）：</strong>
+        <ul>
+            <li><strong>relativenumber</strong> — 显示相对行号，配合 <code>10j</code> 可直接跳过 10 行，无需心算目标行号</li>
+            <li><strong>expandtab + tabstop=4</strong> — 统一使用空格缩进，避免跨编辑器时 Tab/空格混用导致的对齐混乱</li>
+            <li><strong>mouse=a</strong> — 在 Vim 中启用鼠标，新手友好，可点击定位光标、拖拽选择、滚轮翻页</li>
+            <li><strong>clipboard=unnamedplus</strong> — Vim 的 yank/put 与系统剪贴板互通，可在 Vim 和浏览器间直接复制粘贴</li>
+            <li><strong>hlsearch + incsearch</strong> — 搜索时实时高亮所有匹配项，快速定位目标</li>
+            <li><strong>jk 映射 Esc</strong> — 退出插入模式无需将手移到 Esc 键，保持手指在键盘主区，效率翻倍</li>
+            <li><strong>leader 键设为空格</strong> — 空格是最易按的键，作为快捷键前缀后大量操作触手可及</li>
+            <li><strong>undofile</strong> — 关闭文件后仍可撤销之前的编辑（通过 <code>u</code>），防止意外保存错误内容</li>
+        </ul>
+    </div>
+    <div class="step-tip"><i class="fas fa-lightbulb"></i> 推荐使用 <strong>Neovim</strong> 替代传统 Vim：<code>sudo pacman -S neovim</code>。配置文件为 <code>~/.config/nvim/init.lua</code>（Lua 语法更现代易维护），而且大部分 Vimscript 语法仍兼容。若想快速上手，可参考社区配置如 <a href="https://github.com/NvChad/NvChad" target="_blank">NvChad</a> 或 <a href="https://github.com/LazyVim/LazyVim" target="_blank">LazyVim</a>。</div>
+</article>
+
+<!-- ==================== 七、网络配置 ==================== -->
+<article class="step-card" id="sys-net">
+    <span class="step-number"><span class="section-badge badge-system">系统</span> 网络配置</span>
+    <div class="step-text">
+        Arch Linux 使用 <strong>NetworkManager</strong> 或 <strong>systemd-networkd</strong> 管理网络。NetworkManager 是桌面用户的推荐选择。
+    </div>
+    <div class="step-text">
+        <strong>NetworkManager 常用命令：</strong>
+        <ul>
+            <li><code>nmtui</code> — 终端图形化网络管理界面</li>
+            <li><code>nmcli device status</code> — 查看所有网络设备状态</li>
+            <li><code>nmcli device wifi list</code> — 扫描可用 WiFi</li>
+            <li><code>nmcli device wifi connect "SSID" password "密码"</code> — 连接 WiFi</li>
+            <li><code>nmcli connection show</code> — 查看已保存的连接</li>
+            <li><code>nmcli connection up/down "连接名"</code> — 启用/禁用连接</li>
+            <li><code>ping archlinux.org</code> — 测试网络连通性</li>
+            <li><code>ip addr</code> / <code>ip link</code> — 查看 IP 地址和网络接口</li>
+        </ul>
+    </div>
+</article>
+
+<!-- ==================== 八、切换源 & 更新密钥 ==================== -->
+<article class="step-card" id="sys-mirror">
+    <span class="step-number"><span class="section-badge badge-system">系统</span> 切换软件源与更新密钥</span>
+    <div class="step-text">
+        <strong>切换镜像源（提速下载）：</strong><br>
+        编辑 <code>/etc/pacman.d/mirrorlist</code>，将速度最快的镜像放在文件顶部。<br>
+        推荐使用 <code>reflector</code> 自动选择最快镜像：
+    </div>
+<pre class="step-pre"># 安装 reflector
+sudo pacman -S reflector
+
+# 自动选择中国地区最快的 10 个镜像并更新配置
+sudo reflector --country China --age 12 --protocol https --sort rate --save /etc/pacman.d/mirrorlist --latest 10
+
+# 也可手动编辑 mirrorlist
+sudo nano /etc/pacman.d/mirrorlist</pre>
+    <div class="step-text">
+        <strong>更新密钥环（解决 GPG 签名错误）：</strong><br>
+        当出现 "signature is unknown trust" 或密钥过期错误时：
+    </div>
+<pre class="step-pre"># 更新 archlinux-keyring
+sudo pacman -S archlinux-keyring
+
+# 初始化 pacman 密钥
+sudo pacman-key --init
+sudo pacman-key --populate archlinux
+
+# 刷新所有密钥
+sudo pacman-key --refresh-keys</pre>
+</article>
+
+<!-- ==================== 九、系统更新 ==================== -->
+<article class="step-card" id="sys-update">
+    <span class="step-number"><span class="section-badge badge-system">系统</span> 系统更新策略</span>
+    <div class="step-text">
+        Arch Linux 采用滚动更新模型。推荐每周更新一次，同时做好快照备份。
+    </div>
+    <div class="step-text">
+        <strong>标准更新流程：</strong>
+<pre class="step-pre"># 全面更新（官方库 + AUR）
+sudo pacman -Syu            # 仅官方库
+yay -Syu                    # 含 AUR 的全面更新
+
+# 清理旧包缓存（保留最近 3 个版本）
+sudo paccache -r
+# 需先安装：sudo pacman -S pacman-contrib
+
+# 清理孤立依赖
+sudo pacman -Rns $(pacman -Qdtq)</pre>
+    </div>
+    <div class="step-tip"><i class="fas fa-exclamation-triangle"></i> 更新前务必查看 <a href="https://archlinux.org/news/" target="_blank" style="color:var(--arch-blue)">Arch Linux 官方新闻</a>，确认是否有需要手动干预的变更。内核或显卡驱动大版本更新后建议重启。</div>
+</article>
+
+<!-- ==================== 十、btrfs 快照回滚 ==================== -->
+<article class="step-card" id="sys-btrfs">
+    <span class="step-number"><span class="section-badge badge-system">系统</span> btrfs 快照与系统回滚</span>
+    <div class="step-text">
+        <strong>btrfs</strong> 是现代化的写时复制（CoW）文件系统，支持快照、子卷、压缩等高级特性。配合 <strong>snapper</strong> 或 <strong>timeshift</strong> 可实现系统快照和回滚。
+    </div>
+    <div class="step-text">
+        <strong>手动快照操作：</strong>
+<pre class="step-pre"># 创建只读快照
+sudo btrfs subvolume snapshot -r /mnt/@ /mnt/@snap-$(date +%Y%m%d)
+
+# 列出所有子卷
+sudo btrfs subvolume list /
+
+# 回滚：将快照设为默认子卷
+sudo btrfs subvolume set-default &lt;snapshot-id&gt; /
+# 然后重启即可进入快照状态</pre>
+    </div>
+    <div class="step-text">
+        <strong>自动快照 — 使用 snapper：</strong>
+<pre class="step-pre"># 安装
+sudo pacman -S snapper snap-pac
+
+# 为根子卷创建配置
+sudo snapper -c root create-config /
+
+# 设置自动快照策略（每小时 + 每天 + 每周）
+sudo snapper -c root set-config "TIMELINE_CREATE=yes"
+sudo snapper -c root set-config "TIMELINE_CLEANUP=yes"
+
+# 手动创建快照
+sudo snapper -c root create -d "更新前备份"
+
+# 列出快照
+sudo snapper -c root list
+
+# 回滚到指定快照
+sudo snapper -c root undochange 5..0</pre>
+    </div>
+    <div class="step-text">
+        <strong>使用 Timeshift（图形化快照工具）：</strong><br>
+        <code>yay -S timeshift</code> — 适合不熟悉命令行的用户，提供 GUI 界面管理 btrfs 快照。
+    </div>
+</article>
+
+<!-- ==================== 平铺区分割线 ==================== -->
+<article class="step-card nav-jump-card" id="tiling-top">
+    <div style="font-size:1.8rem;color:#2e7d32;margin-bottom:0.6rem;"><i class="fas fa-th-large"></i></div>
+    <div class="step-text" style="text-align:center;color:#2e7d32;">
+        <strong>=== 平铺窗口管理器区域 ===</strong><br>
+        以下内容涵盖 niri、Hyprland 平铺窗口管理器的配置与生态工具
+    </div>
+    <div style="display:flex;gap:0.6rem;justify-content:center;flex-wrap:wrap;margin-top:0.8rem">
+        <a href="#tiling-niri" style="color:#2e7d32;text-decoration:none;font-weight:600;border:1px solid #66bb6a;padding:4px 14px;border-radius:14px;font-size:0.85rem">niri 配置</a>
+        <a href="#tiling-hyprland" style="color:#2e7d32;text-decoration:none;font-weight:600;border:1px solid #66bb6a;padding:4px 14px;border-radius:14px;font-size:0.85rem">Hyprland 配置</a>
+        <a href="#tiling-kitty" style="color:#2e7d32;text-decoration:none;font-weight:600;border:1px solid #66bb6a;padding:4px 14px;border-radius:14px;font-size:0.85rem">Kitty 终端</a>
+        <a href="#tiling-waybar" style="color:#2e7d32;text-decoration:none;font-weight:600;border:1px solid #66bb6a;padding:4px 14px;border-radius:14px;font-size:0.85rem">waybar</a>
+        <a href="#tiling-fastfetch" style="color:#2e7d32;text-decoration:none;font-weight:600;border:1px solid #66bb6a;padding:4px 14px;border-radius:14px;font-size:0.85rem">fastfetch</a>
+        <a href="#tiling-quickshell" style="color:#2e7d32;text-decoration:none;font-weight:600;border:1px solid #66bb6a;padding:4px 14px;border-radius:14px;font-size:0.85rem">quickshell</a>
+        <a href="#tiling-dots" style="color:#2e7d32;text-decoration:none;font-weight:600;border:1px solid #66bb6a;padding:4px 14px;border-radius:14px;font-size:0.85rem">现有配置推荐</a>
+    </div>
+</article>
+
+<!-- ==================== niri 配置 ==================== -->
+<article class="step-card" id="tiling-niri">
+    <span class="step-number"><span class="section-badge badge-tiling">平铺</span> niri — 可滚动平铺窗口管理器</span>
+    <div class="step-text">
+        <strong>niri</strong> 是一款创新的 Wayland 平铺窗口管理器，采用"无限水平滚动"的工作区设计。所有窗口排列在一行，类似于横向滚动的页面。
+    </div>
+    <div class="step-text">
+        <strong>安装：</strong>
+<pre class="step-pre">sudo pacman -S niri
+# 或开发版本
+yay -S niri-git</pre>
+    </div>
+    <div class="step-text">
+        <strong>配置文件：</strong><br>
+        主配置位于 <code>~/.config/niri/config.kdl</code>（使用 KDL 格式）。<br>
+        默认配置生成：首次运行 niri 会自动生成默认配置。
+    </div>
+    <div class="step-text">
+        <strong>关键配置项：</strong>
+<pre class="step-pre">// 输出设置
+output "eDP-1" {
+    mode 1920x1080@60Hz
+    scale 1.0
+}
+
+// 快捷键绑定
+binds {
+    Mod+Q { close-window; }
+    Mod+Return { spawn "kitty"; }
+    Mod+D { spawn "fuzzel"; }          // 应用启动器
+    Mod+Shift+E { quit; }
+}
+
+// 自动启动
+spawn-at-startup "waybar"
+spawn-at-startup "swaybg -i ~/wallpaper.jpg"</pre>
+    </div>
+    <div class="step-note"><i class="fas fa-book"></i> niri 官方文档：<a href="https://github.com/YaLTeR/niri/wiki" target="_blank" style="color:var(--arch-blue-dark)">github.com/YaLTeR/niri/wiki</a></div>
+
+    <div class="step-text" style="margin-top:1.5rem;">
+        <strong>⌨ 在 niri 中安装和配置 fcitx5 输入法：</strong><br>
+        Wayland 环境下需要 fcitx5 作为输入法框架。安装后需配置环境变量和自启动。
+    </div>
+    <div class="step-text">
+        <strong>安装 fcitx5：</strong>
+<pre class="step-pre">sudo pacman -S fcitx5 fcitx5-chinese-addons fcitx5-qt fcitx5-gtk fcitx5-configtool</pre>
+    </div>
+    <div class="step-text">
+        <strong>在 niri 中配置输入法环境变量和自启动：</strong>
+<pre class="step-pre">// 在 config.kdl 中添加 fcitx5 环境变量
+environment {
+    GTK_IM_MODULE "fcitx"
+    QT_IM_MODULE "fcitx"
+    XMODIFIERS "@im=fcitx"
+    SDL_IM_MODULE "fcitx"
+    GLFW_IM_MODULE "ibus"
+}
+
+// 自启动 fcitx5
+spawn-at-startup "fcitx5 -d"
+
+// 输入法切换快捷键（在 fcitx5-configtool 中设置）
+// 默认切换键为 Ctrl+Space，可在 fcitx5 配置工具中修改</pre>
+    </div>
+    <div class="step-text">
+        <strong>配置输入法切换快捷键：</strong><br>
+        运行 <code>fcitx5-configtool</code> → 全局选项 →「切换激活/非激活输入法」设置你偏好的快捷键（如 Ctrl+Space 或 Shift+Space）。<br>
+        在 fcitx5 的「附加组件」→「XKB 选项」中可以在中英文之间快速切换。
+    </div>
+</article>
+
+<!-- ==================== Hyprland 配置 ==================== -->
+<article class="step-card" id="tiling-hyprland">
+    <span class="step-number"><span class="section-badge badge-tiling">平铺</span> Hyprland — 动态平铺窗口管理器</span>
+    <div class="step-text">
+        <strong>Hyprland</strong> 是目前最热门的 Wayland 动态平铺窗口管理器，以流畅动画和高度可定制著称。
+    </div>
+    <div class="step-text">
+        <strong>安装与启动：</strong>
+<pre class="step-pre">sudo pacman -S hyprland kitty waybar wofi
+# 在登录管理器中选择 Hyprland，或从 tty 启动：
+Hyprland</pre>
+    </div>
+    <div class="step-text">
+        <strong>配置文件：</strong><br>
+        主配置：<code>~/.config/hypr/hyprland.conf</code><br>
+        键盘快捷键、窗口规则、动画、显示器配置等都在此文件中定义。
+    </div>
+    <div class="step-text">
+        <strong>核心配置示例：</strong>
+<pre class="step-pre"># 显示器
+monitor=eDP-1,1920x1080@60,0x0,1
+
+# 快捷键
+bind = SUPER, Q, killactive
+bind = SUPER, RETURN, exec, kitty
+bind = SUPER, D, exec, wofi --show drun
+bind = SUPER, E, exec, thunar
+
+# 自动启动
+exec-once = waybar
+exec-once = swaybg -i ~/wallpaper.jpg
+exec-once = dunst
+
+# 窗口规则
+windowrulev2 = float, class:(pavucontrol)
+windowrulev2 = tile, class:(kitty)</pre>
+    </div>
+    <div class="step-text">
+        <strong>推荐配套应用启动器：</strong>
+        <ul>
+            <li><code>wofi</code> — 轻量 Wayland 应用启动器（<code>sudo pacman -S wofi</code>）</li>
+            <li><code>fuzzel</code> — 另一款流行的启动器（<code>sudo pacman -S fuzzel</code>）</li>
+            <li><code>rofi-lbonn-wayland-git</code> — rofi 的 Wayland 分支（AUR）</li>
+        </ul>
+    </div>
+    <div class="step-note"><i class="fas fa-book"></i> Hyprland Wiki：<a href="https://wiki.hyprland.org/" target="_blank" style="color:var(--arch-blue-dark)">wiki.hyprland.org</a></div>
+
+    <div class="step-text" style="margin-top:1.5rem;">
+        <strong>⌨ 在 Hyprland 中安装和配置 fcitx5 输入法：</strong><br>
+        Hyprland 是 Wayland 原生窗口管理器，需要通过环境变量启动 fcitx5。
+    </div>
+    <div class="step-text">
+        <strong>安装 fcitx5：</strong>
+<pre class="step-pre">sudo pacman -S fcitx5 fcitx5-chinese-addons fcitx5-qt fcitx5-gtk fcitx5-configtool
+# 推荐安装主题包改善外观
+sudo pacman -S fcitx5-material-color</pre>
+    </div>
+    <div class="step-text">
+        <strong>在 hyprland.conf 中添加输入法环境变量和自启动：</strong>
+<pre class="step-pre"># 在 hyprland.conf 中添加环境变量配置
+env = GTK_IM_MODULE,fcitx
+env = QT_IM_MODULE,fcitx
+env = XMODIFIERS,@im=fcitx
+env = SDL_IM_MODULE,fcitx
+env = GLFW_IM_MODULE,ibus
+
+# 自启动 fcitx5（以守护进程模式运行）
+exec-once = fcitx5 -d</pre>
+    </div>
+    <div class="step-text">
+        <strong>配置输入法切换快捷键：</strong><br>
+        终端运行 <code>fcitx5-configtool</code> → 全局选项 →「切换激活/非激活输入法」→ 点击右侧按钮 → 按下你偏好的快捷键组合（如 Ctrl+Space）。<br>
+        同时可在「附加组件」→「经典用户界面」中调整候选词数量、字体大小和主题外观。
+    </div>
+</article>
+
+<!-- ==================== Kitty 终端 ==================== -->
+<article class="step-card" id="tiling-kitty">
+    <span class="step-number"><span class="section-badge badge-tiling">平铺</span> Kitty 终端 — 推荐配置方法</span>
+    <div class="step-text">
+        <strong>Kitty</strong> 是一款 GPU 加速的现代终端模拟器，支持分屏、图片显示、连字等高级特性，是平铺窗口管理器下的最佳终端之一。
+    </div>
+    <div class="step-text">
+        <strong>安装：</strong><code>sudo pacman -S kitty</code>
+    </div>
+    <div class="step-text">
+        <strong>配置文件：</strong><code>~/.config/kitty/kitty.conf</code>
+    </div>
+    <div class="step-text">
+        <strong>推荐配置：</strong>
+<pre class="step-pre"># 字体
+font_family      JetBrains Mono
+font_size        13.0
+
+# 主题
+include          ~/.config/kitty/theme.conf  //可以通过aur下载现成的theme.conf进行导入
+
+# 窗口
+background_opacity 0.92  //背景透明
+window_padding_width 8   //宽度设置
+
+# 光标
+cursor_shape     beam    //光标形式
+cursor_blink_interval 0.5 //光标闪烁间隔
+cursor_trail 1   //光标拖影
+
+# 快捷键
+map ctrl+shift+c  copy_to_clipboard
+map ctrl+shift+v  paste_from_clipboard
+map ctrl+shift+n  new_window
+map ctrl+shift+t  new_tab</pre>
+    </div>
+    <div class="step-text">
+        <strong>Kitty 主题切换：</strong><br>
+        运行 <code>kitty +kitten themes</code> 可以交互式预览和选择主题。<br>
+        主题文件自动写入 <code>~/.config/kitty/theme.conf</code>，在主配置中 <code>include</code> 即可。
+    </div>
+</article>
+
+<!-- ==================== waybar 详细配置 ==================== -->
+<article class="step-card" id="tiling-waybar">
+    <span class="step-number"><span class="section-badge badge-tiling">平铺</span> waybar — 状态栏配置详解</span>
+    <div class="step-text">
+        <strong>waybar</strong> 是 Wayland 下最流行的状态栏，显示工作区、时钟、系统信息等。安装：<code>sudo pacman -S waybar otf-font-awesome</code>
+    </div>
+    <div class="step-text">
+        <strong>配置文件位置：</strong>
+        <ul>
+            <li><code>~/.config/waybar/config.jsonc</code> — 模块布局与行为配置（JSON with Comments）</li>
+            <li><code>~/.config/waybar/style.css</code> — 外观样式表</li>
+        </ul>
+    </div>
+    <div class="step-text">
+        <strong>config.jsonc 语法结构与模块定义：</strong>
+<pre class="step-pre">{
+    "layer": "top",                // 层级：top / bottom / overlay
+    "position": "top",             // 位置：top / bottom / left / right
+    "height": 30,                  // 状态栏高度(px)
+    "spacing": 4,                  // 模块间距
+
+    // 左侧模块
+    "modules-left": [
+        "sway/workspaces",         // 工作区切换器
+        "sway/mode"                // 当前绑定模式
+    ],
+    // 中间模块
+    "modules-center": [
+        "clock"                    // 时钟
+    ],
+    // 右侧模块
+    "modules-right": [
+        "tray",                    // 系统托盘
+        "pulseaudio",              // 音量控制
+        "network",                 // 网络状态
+        "cpu",                     // CPU 使用率
+        "memory",                  // 内存使用率
+        "battery",                 // 电池
+        "backlight",               // 屏幕亮度
+        "clock#2"                  // 第二个时钟实例
+    ],
+
+    // 各模块的详细配置
+    "clock": {
+        "format": "{:%Y-%m-%d %H:%M}",    // 时间格式(标准strftime)
+        "tooltip-format": "{:%A, %B %d}", // 悬停提示
+        "interval": 1                      // 刷新间隔(秒)
+    },
+    "cpu": {
+        "format": "CPU {usage}%",         // 显示格式
+        "interval": 2
+    },
+    "memory": {
+        "format": "MEM {}%",
+        "interval": 5
+    },
+    "pulseaudio": {
+        "format": "{icon} {volume}%",     // 音量显示
+        "format-muted": " MUTE ",         // 静音时显示
+        "on-click": "pavucontrol",        // 点击打开混音器
+        "scroll-step": 5                  // 滚轮调节步长(%)
+    },
+    "network": {
+        "format-wifi": "{essid} ({signalStrength}%)",
+        "format-ethernet": "Connected ",
+        "format-disconnected": "Disconnected",
+        "interval": 3
+    },
+    "battery": {
+        "format": "{capacity}% {icon}",
+        "format-icons": ["","","","",""]
+    },
+    "tray": {
+        "icon-size": 18,
+        "spacing": 10
+    }
+}</pre>
+    </div>
+    <div class="step-text">
+        <strong>style.css 外观定制（CSS 语法）：</strong>
+<pre class="step-pre">* {
+    border: none;
+    border-radius: 0;
+    font-family: "JetBrains Mono", "Font Awesome 6 Free";
+    font-size: 13px;
+    min-height: 0;
+}
+
+window#waybar {
+    background: rgba(30, 30, 46, 0.85);
+    color: #cdd6f4;
+    border-bottom: 2px solid rgba(137, 180, 250, 0.5);
+}
+
+#workspaces button {
+    padding: 0 5px;
+    background: transparent;
+    color: #a6adc8;
+    border-radius: 4px;
+}
+
+#workspaces button.active {
+    background: #89b4fa;
+    color: #1e1e2e;
+}
+
+#workspaces button:hover {
+    background: rgba(137, 180, 250, 0.3);
+}
+
+#clock, #cpu, #memory, #pulseaudio, #network, #battery {
+    padding: 0 8px;
+    color: #cdd6f4;
+}
+
+#pulseaudio { color: #a6e3a1; }
+#network   { color: #89b4fa; }
+#cpu       { color: #fab387; }
+#memory    { color: #cba6f7; }
+#battery   { color: #f9e2af; }
+
+/* 电池电量低时警告色 */
+#battery.warning { color: #f9e2af; }
+#battery.critical { color: #f38ba8; }</pre>
+    </div>
+    <div class="step-text">
+        <strong>为什么要这样配置：</strong>
+        <ul>
+            <li><code>layer: top</code> — 确保状态栏始终在最顶层可见</li>
+            <li><code>modules-left/center/right</code> 三元布局 — 清晰分离工作区、时钟、系统状态，符合视觉习惯</li>
+            <li>CSS 中 <code>#workspaces button.active</code> — 高亮当前工作区，多任务时快速定位</li>
+            <li><code>on-click</code> 事件绑定 — 点击音量模块直接打开混音器，减少操作步骤</li>
+            <li><code>interval</code> 设置 — CPU 高频刷新(2s)、内存低频(5s)，平衡实时性与性能</li>
+        </ul>
+    </div>
+</article>
+
+<!-- ==================== fastfetch 详细配置 ==================== -->
+<article class="step-card" id="tiling-fastfetch">
+    <span class="step-number"><span class="section-badge badge-tiling">平铺</span> fastfetch — 系统信息配置详解</span>
+    <div class="step-text">
+        <strong>fastfetch</strong> 是 neofetch 的现代替代品，用 C 语言编写，速度更快、功能更丰富。安装：<code>sudo pacman -S fastfetch</code>
+    </div>
+    <div class="step-text">
+        <strong>配置文件位置：</strong><code>~/.config/fastfetch/config.jsonc</code>（JSON with Comments 格式）<br>
+        首次运行会自动生成默认配置：<code>fastfetch --gen-config</code>
+    </div>
+    <div class="step-text">
+        <strong>config.jsonc 语法结构：</strong>
+<pre class="step-pre">{
+    // === 全局显示设置 ===
+    "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
+    "logo": {
+        "type": "auto",           // Logo类型：auto / small / builtin / none / 自定义文件路径
+        "padding": { "top": 2 }
+    },
+    "display": {
+        "separator": " → ",       // 键与值之间的分隔符
+        "color": { "keys": "38;5;110" },  // 键名颜色（ANSI 颜色码）
+        "keyWidth": 14,           // 键名对齐宽度
+        "size": { "binary": { "prefix": "IEC" } }  // 容量单位（IEC=KiB/MiB）
+    },
+
+    // === 要显示的模块及其顺序 ===
+    "modules": [
+        "title",                  // 标题行（用户名@主机名）
+        "separator",              // 分隔线
+        "os",                     // 操作系统
+        "host",                   // 主机型号
+        "kernel",                 // 内核版本
+        "uptime",                 // 运行时间
+        "packages",               // 已安装包数量
+        "shell",                  // Shell 版本
+        "display",                // 显示器信息
+        "de",                     // 桌面环境
+        "wm",                     // 窗口管理器
+        "wmtheme",                // WM 主题
+        "theme",                  // 系统主题
+        "icons",                  // 图标主题
+        "font",                   // 字体
+        "cursor",                 // 光标
+        "terminal",               // 终端
+        "terminalfont",           // 终端字体
+        "cpu",                    // CPU
+        "gpu",                    // GPU
+        "memory",                 // 内存
+        "swap",                   // 交换分区
+        "disk",                   // 磁盘
+        "battery",                // 电池
+        "locale",                 // 语言区域
+        "localip",                // 本地 IP
+        "media",                  // 正在播放的媒体
+        "break",                  // 空行
+        "colors"                  // 终端颜色块展示
+    ]
+}</pre>
+    </div>
+    <div class="step-text">
+        <strong>常用配置技巧与原因：</strong>
+        <ul>
+            <li><strong>选择 logo 类型</strong>：<code>"type": "small"</code> 用简版 logo 节省空间；<code>"type": "none"</code> 纯文本输出，适合截图分享</li>
+            <li><strong>modules 数组控制显示顺序</strong>：无关信息可移除（如不玩媒体则不显示 <code>media</code>），加快启动速度</li>
+            <li><strong>separator 分隔符</strong>：用 <code>→</code> 而非 <code>:</code> 增强视觉层次感</li>
+            <li><strong>keyWidth</strong>：统一键名对齐，让信息排列整齐易于扫描</li>
+            <li><strong>binary prefix</strong>：<code>IEC</code> (1024进制) 更精确；<code>SI</code> (1000进制) 更符合厂商标注习惯</li>
+            <li><strong>ANSI 颜色码</strong>：38;5;N 为 256 色调色板，可选任何颜色；如 <code>38;5;110</code> 是柔和的蓝色</li>
+        </ul>
+    </div>
+    <div class="step-tip"><i class="fas fa-lightbulb"></i> 使用 <code>fastfetch -c all</code> 可以临时查看所有可用模块的完整信息，方便决定哪些模块对你有用。</div>
+</article>
+
+<!-- ==================== quickshell 详细配置 ==================== -->
+<article class="step-card" id="tiling-quickshell">
+    <span class="step-number"><span class="section-badge badge-tiling">平铺</span> quickshell — Shell 配置框架详解</span>
+    <div class="step-text">
+        <strong>quickshell</strong> 是一个为 zsh 设计的现代配置框架，类似于 oh-my-zsh 但更轻量快速。它管理插件、主题、别名和环境变量。
+    </div>
+    <div class="step-text">
+        <strong>安装：</strong>
+<pre class="step-pre"># 确保已安装 zsh
+sudo pacman -S zsh
+
+# 安装 quickshell
+yay -S quickshell-git
+
+# 切换到 zsh（如果还没切换）
+chsh -s /bin/zsh</pre>
+    </div>
+    <div class="step-text">
+        <strong>配置文件：</strong><code>~/.config/quickshell/quickshell.toml</code>（TOML 格式）<br>
+        首次安装后运行 <code>quickshell init</code> 自动生成默认配置。
+    </div>
+    <div class="step-text">
+        <strong>quickshell.toml 语法结构：</strong>
+<pre class="step-pre"># ===== 通用设置 =====
+[general]
+theme = "catppuccin"              # 内置主题名
+prompt_style = "powerline"        # 提示符风格：powerline / plain / minimal
+enable_syntax_highlighting = true  # 命令语法高亮
+enable_autosuggestions = true     # 自动补全建议
+
+# ===== 环境变量 =====
+[env]
+EDITOR = "nvim"
+VISUAL = "nvim"
+BROWSER = "firefox"
+
+# ===== 别名 =====
+[aliases]
+ll = "ls -lah"
+la = "ls -A"
+update = "yay -Syu"
+clean = "sudo pacman -Rns $(pacman -Qdtq)"
+ip = "ip -color addr"
+
+# ===== 插件 =====
+[plugins]
+enabled = [
+    "git",           # Git 别名和分支显示
+    "docker",        # Docker 补全和别名
+    "sudo",          # 按两次 ESC 在命令前插入 sudo
+    "colored-man",   # man 手册页彩色输出
+    "extract",       # 万能解压命令（支持所有压缩格式）
+    "fzf",           # 模糊搜索集成
+    "z",             # 智能目录跳转
+    "ssh-agent"      # SSH 代理自动管理
+]
+
+# 插件特定配置
+[plugins.git]
+show_untracked = true
+show_stash = true
+
+# ===== 主题配置 =====
+[theme]
+# 自定义 Catppuccin 主题颜色（覆盖默认值）
+colors = {
+    primary = "#89b4fa",
+    secondary = "#a6e3a1",
+    error = "#f38ba8",
+    warning = "#fab387",
+    info = "#89dceb"
+}
+
+# ===== 自定义函数 =====
+[functions]
+# 项目快速跳转
+project = "cd ~/Projects/$(ls ~/Projects | fzf)"
+# Git 一键推送
+gp = "git add . && git commit -m \"$1\" && git push"</pre>
+    </div>
+    <div class="step-text">
+        <strong>为什么要这样配置：</strong>
+        <ul>
+            <li><strong>prompt_style = "powerline"</strong> — 提供当前目录、Git 分支、命令状态等信息，减少频繁使用 <code>pwd</code> 和 <code>git status</code></li>
+            <li><strong>syntax_highlighting</strong> — 输入命令时实时高亮有效命令（绿色）/ 无效命令（红色），减少拼写错误</li>
+            <li><strong>autosuggestions</strong> — 基于历史记录自动提示灰色建议文本，按 → 键补全，大幅提高输入速度</li>
+            <li><strong>fzf 插件</strong> — Ctrl+T 模糊搜索文件、Ctrl+R 搜索历史命令，无需记忆完整路径</li>
+            <li><strong>extract 插件</strong> — 一个 <code>extract 文件名</code> 命令自动识别格式并解压，无需记忆 tar 参数</li>
+            <li><strong>z 插件</strong> — 根据使用频率自动学习，<code>z project</code> 即可跳转到常去目录</li>
+            <li><strong>aliases</strong> — 高频长命令缩写成短别名，每天节省数百次按键</li>
+        </ul>
+    </div>
+
+    <div class="step-text" style="margin-top:1.5rem;">
+        <strong>🖥 dms（Desktop Management Scripts）仓库推荐：</strong><br>
+        <strong>dms</strong> 是一套社区维护的 Arch Linux 桌面管理脚本集合，提供自动化安装和配置桌面环境的便捷工具。
+    </div>
+    <div class="step-text">
+        <strong>推荐 dms 仓库及安装方法（AUR 优先）：</strong>
+        <ul>
+            <li><strong>archlinux-tweak-tool</strong>（AUR）：<code>yay -S archlinux-tweak-tool</code> — 图形化系统调整工具，含桌面环境配置向导</li>
+            <li><strong>archlinux-desktop-setup</strong>：<code>git clone https://github.com/user/arch-desktop-setup.git</code> — 一键部署完整桌面环境</li>
+            <li><strong>dotfiles-dms</strong>：<a href="https://github.com/archlinux-dms/dotfiles" target="_blank">github.com/archlinux-dms/dotfiles</a> — DMS 官方 dotfiles 模板仓库，可直接 stow 使用</li>
+            <li><strong>arch-post-install</strong>：<code>git clone https://github.com/archlinux-dms/post-install.git</code> — 安装后自动配置脚本</li>
+        </ul>
+    </div>
+    <div class="step-pre"># DMS 仓库的推荐使用方式（优先 AUR）：
+yay -S archlinux-tweak-tool        # AUR安装（首选方式）
+
+# 如果AUR不可用，通过git下载：
+git clone https://github.com/archlinux-dms/dotfiles.git ~/dms-dotfiles
+cd ~/dms-dotfiles
+stow -t ~/ .                       # 一键部署配置</div>
+</article>
+
+<!-- ==================== 现有配置推荐 ==================== -->
+<article class="step-card" id="tiling-dots">
+    <span class="step-number"><span class="section-badge badge-tiling">平铺</span> 现有配置推荐与下载</span>
+    <div class="step-text">
+        许多社区大神的配置文件（dotfiles）托管在 GitHub 上，可以直接参考或使用。以下推荐一些高质量的配置仓库。
+    </div>
+    <div class="step-text">
+        <strong>推荐 dotfiles 仓库：</strong>
+        <ul>
+            <li><strong>Hyprland 配置：</strong><br>
+                <a href="https://github.com/end-4/dots-hyprland" target="_blank">end-4/dots-hyprland</a> — 超华丽 Hyprland + AGS 配置（illogical-impulse）<br>
+                <a href="https://github.com/notusknot/dotfiles-nix" target="_blank">notusknot/dotfiles-nix</a> — 精致的 Hyprland 配置<br>
+                <a href="https://github.com/flick0/dotfiles" target="_blank">flick0/dotfiles</a> — 流行的 Hyprland dots</li>
+            <li><strong>niri 配置：</strong><br>
+                <a href="https://github.com/YaLTeR/niri/wiki/Configuration-guide" target="_blank">niri Wiki 配置指南</a> — 官方配置文档和社区示例</li>
+        </ul>
+    </div>
+    <div class="step-text">
+        <strong>如何下载和使用 dotfiles：</strong>
+<pre class="step-pre"># 克隆仓库到临时目录
+git clone https://github.com/xxx/dotfiles.git /tmp/dotfiles
+
+# 复制需要的配置文件
+cp -r /tmp/dotfiles/.config/hypr ~/.config/
+cp -r /tmp/dotfiles/.config/waybar ~/.config/
+cp -r /tmp/dotfiles/.config/kitty ~/.config/
+
+# 或使用 GNU stow 管理（推荐）
+sudo pacman -S stow
+cd /tmp/dotfiles
+stow -t ~/ .              # 自动创建符号链接</pre>
+    </div>
+    <div class="step-tip"><i class="fas fa-lightbulb"></i> 使用 <strong>GNU stow</strong> 或 <strong>chezmoi</strong> 管理 dotfiles 是最佳实践。它们通过符号链接来管理配置文件，方便版本控制和多设备同步。</div>
+</article>
+
+<!-- ==================== KDE 区分割线 ==================== -->
+<article class="step-card nav-jump-card" id="kde-top">
+    <div style="font-size:1.8rem;color:#1565c0;margin-bottom:0.6rem;"><i class="fas fa-desktop"></i></div>
+    <div class="step-text" style="text-align:center;color:#1565c0;">
+        <strong>=== KDE Plasma 图形化区域 ===</strong><br>
+        以下内容涵盖 KDE Plasma 桌面环境的深度定制与配置
+    </div>
+    <div style="display:flex;gap:0.6rem;justify-content:center;flex-wrap:wrap;margin-top:0.8rem">
+        <a href="#kde-store" style="color:#1565c0;text-decoration:none;font-weight:600;border:1px solid #42a5f5;padding:4px 14px;border-radius:14px;font-size:0.85rem">PlasmaStore</a>
+        <a href="#kde-fcitx" style="color:#1565c0;text-decoration:none;font-weight:600;border:1px solid #42a5f5;padding:4px 14px;border-radius:14px;font-size:0.85rem">中文输入法</a>
+        <a href="#kde-theme" style="color:#1565c0;text-decoration:none;font-weight:600;border:1px solid #42a5f5;padding:4px 14px;border-radius:14px;font-size:0.85rem">主题与动效</a>
+        <a href="#kde-konsole" style="color:#1565c0;text-decoration:none;font-weight:600;border:1px solid #42a5f5;padding:4px 14px;border-radius:14px;font-size:0.85rem">Konsole 配置</a>
+        <a href="#kde-screen" style="color:#1565c0;text-decoration:none;font-weight:600;border:1px solid #42a5f5;padding:4px 14px;border-radius:14px;font-size:0.85rem">屏幕模式</a>
+    </div>
+</article>
+
+<!-- ==================== KDE PlasmaStore ==================== -->
+<article class="step-card" id="kde-store">
+    <span class="step-number"><span class="section-badge badge-graphical">KDE</span> PlasmaStore — 下载社区配置</span>
+    <div class="step-text">
+        <strong>PlasmaStore</strong>（<a href="https://store.kde.org/" target="_blank">store.kde.org</a>）是 KDE 官方社区主题商店，提供全局主题、Plasma 样式、图标、光标、窗口装饰等各类资源。
+    </div>
+    <div class="step-text">
+        <strong>通过系统设置直接安装：</strong>
+        <ol>
+            <li>打开 <strong>系统设置 → 外观</strong></li>
+            <li>在<strong>全局主题</strong>（或 Plasma 样式/图标等）页面点击右下角「<strong>获取新…</strong>」按钮</li>
+            <li>在弹出的窗口中搜索、预览和安装主题</li>
+            <li>点击安装后，主题会自动下载并应用到系统中</li>
+        </ol>
+    </div>
+    <div class="step-text">
+        <strong>手动从网站下载并安装：</strong>
+        <ol>
+            <li>访问 <a href="https://store.kde.org/" target="_blank">store.kde.org</a></li>
+            <li>下载主题的 <code>.tar.gz</code> 或 <code>.tar.xz</code> 压缩包</li>
+            <li>打开系统设置 → 外观 → 全局主题 →「从文件安装…」</li>
+            <li>选择下载的压缩包即可自动解压并安装</li>
+        </ol>
+    </div>
+    <div class="step-text">
+        <strong>推荐主题：</strong>
+        <ul>
+            <li>全局主题：Sweet、Layan、Nordic、Fluent、Win11OS、ChromeOS</li>
+            <li>图标：Papirus、Tela、Fluent-icon-theme</li>
+            <li>光标：Bibata、Capitaine、Nordzy</li>
+        </ul>
+    </div>
+</article>
+
+<!-- ==================== KDE 中文输入法 ==================== -->
+<article class="step-card" id="kde-fcitx">
+    <span class="step-number"><span class="section-badge badge-graphical">KDE</span> 中文输入法 — fcitx5 虚拟键盘</span>
+    <div class="step-text">
+        KDE Plasma 下推荐使用 <strong>fcitx5</strong> 作为输入法框架，配合虚拟键盘可在 Wayland 和 X11 下正常工作。
+    </div>
+    <div class="step-text">
+        <strong>安装 fcitx5：</strong>
+<pre class="step-pre">sudo pacman -S fcitx5 fcitx5-chinese-addons fcitx5-qt fcitx5-gtk fcitx5-configtool
+sudo pacman -S fcitx5-material-color            # 推荐的主题</pre>
+    </div>
+    <div class="step-text">
+        <strong>在 KDE 中启用虚拟键盘：</strong>
+        <ol>
+            <li>打开 <strong>系统设置 → 键盘 → 虚拟键盘</strong></li>
+            <li>选择 <strong>Fcitx 5</strong> 作为虚拟键盘提供程序</li>
+            <li>点击「应用」保存设置</li>
+        </ol>
+    </div>
+    <div class="step-text">
+        <strong>环境变量配置</strong>（在 <code>~/.bashrc</code> 或 <code>~/.xprofile</code> 中添加）：
+<pre class="step-pre">export GTK_IM_MODULE=fcitx
+export QT_IM_MODULE=fcitx
+export XMODIFIERS=@im=fcitx
+export SDL_IM_MODULE=fcitx</pre>
+    </div>
+    <div class="step-text">
+        <strong>配置快捷键：</strong><br>
+        运行 <code>fcitx5-configtool</code> → 全局选项 → 切换输入法快捷键（默认 Ctrl+Space）。<br>
+        可在 KDE 系统设置的 fcitx5 配置中进一步调整候选词数量、皮肤主题等。
+    </div>
+</article>
+
+<!-- ==================== KDE 主题与动效 ==================== -->
+<article class="step-card" id="kde-theme">
+    <span class="step-number"><span class="section-badge badge-graphical">KDE</span> 主题配置与动效设置</span>
+    <div class="step-text">
+        <strong>配置主题</strong>（系统设置 → 外观）：
+        <ul>
+            <li><strong>全局主题</strong> — 一键切换整套主题（包含 Plasma 样式、配色、图标、光标等）</li>
+            <li><strong>Plasma 样式</strong> — 只更换面板、控件的视觉风格</li>
+            <li><strong>应用程序风格</strong> — 窗口装饰、控件样式（推荐 Breeze 或 lightly）</li>
+            <li><strong>颜色</strong> — 自定义配色方案（可调整强调色等细节）</li>
+            <li><strong>图标</strong> — 更换图标主题</li>
+            <li><strong>光标</strong> — 更换鼠标指针主题</li>
+            <li><strong>欢迎屏幕</strong> — 更换 SDDM 登录屏幕主题</li>
+        </ul>
+    </div>
+    <div class="step-text">
+        <strong>设置桌面动效</strong>（系统设置 → 工作区行为 → 桌面特效）：
+        <ul>
+            <li><strong>窗口管理</strong> — 窗口打开/关闭/最小化的动画效果（推荐「滑动」「缩放」「淡入淡出」）</li>
+            <li><strong>虚拟桌面切换</strong> — 「滑动」动画使桌面切换更流畅</li>
+            <li><strong>魔灯效果</strong> — 最小化时窗口"飞向"任务栏</li>
+            <li><strong>半透明效果</strong> — 启用毛玻璃（Blur）效果，调整透明度和模糊强度</li>
+            <li><strong>桌面立方体</strong> — 3D 桌面切换效果（需启用虚拟桌面）</li>
+            <li><strong>摇动窗口</strong> — 快速定位窗口</li>
+        </ul>
+    </div>
+    <div class="step-tip"><i class="fas fa-lightbulb"></i> 如果动效卡顿，可在合成器设置中将「渲染后端」改为 OpenGL 3.1，并调低「缩放方法」到「平滑」或「快速」。</div>
+</article>
+
+<!-- ==================== Konsole 配置 ==================== -->
+<article class="step-card" id="kde-konsole">
+    <span class="step-number"><span class="section-badge badge-graphical">KDE</span> Konsole 终端配置编辑</span>
+    <div class="step-text">
+        <strong>Konsole</strong> 是 KDE 自带的终端模拟器，功能强大且与 KDE 深度集成。
+    </div>
+    <div class="step-text">
+        <strong>配置方法：</strong>
+        <ol>
+            <li>打开 Konsole → <strong>设置 → 编辑当前配置方案</strong>（或创建新的配置方案）</li>
+        </ol>
+    </div>
+    <div class="step-text">
+        <strong>推荐配置项：</strong>
+        <ul>
+            <li><strong>外观 → 配色方案</strong>：推荐 Dracula、Breeze Dark、Solarized Dark</li>
+            <li><strong>外观 → 字体</strong>：推荐 JetBrains Mono、Fira Code（大小 11~13）</li>
+            <li><strong>外观 → 光标</strong>：块状/下划线/竖线 + 闪烁</li>
+            <li><strong>外观 → 背景透明度</strong>：设置适当的背景模糊（建议 85%~95% 不透明度）</li>
+            <li><strong>滚动 → 回滚行数</strong>：建议设为「无限制」或 10000 行以上</li>
+            <li><strong>常规 → 终端 bell 模式</strong>：关闭或设为「可视 Bell」</li>
+            <li><strong>快捷键</strong>：Ctrl+Shift+N 新建标签，Ctrl+Shift+W 关闭标签</li>
+        </ul>
+    </div>
+    <div class="step-text">
+        <strong>导入第三方配色方案：</strong><br>
+        从 <a href="https://store.kde.org/browse?cat=309" target="_blank">store.kde.org Konsole 配色</a> 下载 <code>.colorscheme</code> 文件，放入 <code>~/.local/share/konsole/</code> 目录，重启 Konsole 后即可在配色方案中选择。
+    </div>
+</article>
+
+<!-- ==================== 屏幕模式 ==================== -->
+<article class="step-card" id="kde-screen">
+    <span class="step-number"><span class="section-badge badge-graphical">KDE</span> 屏幕模式 — 扩展 / 复制 / 禁用</span>
+    <div class="step-text">
+        KDE Plasma 的多显示器管理非常便捷，支持扩展、复制、仅主屏、仅副屏等多种模式。
+    </div>
+    <div class="step-text">
+        <strong>配置方法：</strong>
+        <ol>
+            <li>打开 <strong>系统设置 → 显示和监视器 → 显示配置</strong></li>
+            <li>连接外接显示器后，会显示所有已识别的屏幕</li>
+            <li>拖拽屏幕位置以匹配物理摆放</li>
+        </ol>
+    </div>
+    <div class="step-text">
+        <strong>屏幕模式说明：</strong>
+        <ul>
+            <li><strong>扩展（Extend）</strong> — 画面延伸到第二屏幕，两个屏幕显示不同内容，鼠标可跨屏移动。这是最常用的多屏模式。</li>
+            <li><strong>复制（Clone/Mirror）</strong> — 两个屏幕显示完全相同的画面。适合投影/演示场景。</li>
+            <li><strong>仅主屏幕</strong> — 禁用外接显示器，只使用内置屏幕。</li>
+            <li><strong>仅外接屏幕</strong> — 关闭内置屏幕，只使用外接显示器。笔记本合盖外接显示器时常用。</li>
+        </ul>
+    </div>
+    <div class="step-text">
+        <strong>快捷切换：</strong><br>
+        快捷键 <code>Meta+P</code>（部分系统）或使用 KDE 面板中的显示切换小部件。<br>
+        也可在系统托盘的「显示」图标中快速切换模式。
+    </div>
+    <div class="step-tip"><i class="fas fa-lightbulb"></i> 调整显示器布局时，可以设置主显示器（勾选"主显示器"复选框），任务栏和通知将优先显示在主屏上。</div>
+</article>
+
+<!-- ==================== 结束 ==================== -->
+<article class="step-card nav-jump-card">
+    <div style="font-size:1.5rem;color:var(--arch-blue);margin-bottom:0.6rem;"><i class="fas fa-arrow-left"></i></div>
+    <div class="step-text" style="text-align:center;">
+        <strong>返回 Arch Linux 使用指南</strong><br>
+        回顾桌面环境安装、软件推荐、系统维护等基础内容。
+    </div>
+    <a href="archlinux_use.html" class="btn-jump">
+        <i class="fas fa-arrow-left"></i> 返回使用指南
+    </a>
+</article>
+
+        </section>
+
+        <footer class="arch-footer">
+            &copy; 2026 Misser-catos · Arch Linux 深入使用指南
+        </footer>
+    </main>
+
+    <audio id="archBgm" loop preload="auto">
+        <source src="assets/music/arch-song.mp3" type="audio/mpeg">
+    </audio>
+
+<script>
+(function(){
+var canvas=document.getElementById('bgCanvas');
+var ctx=canvas.getContext('2d');
+var W,H;
+var formulas=['E=mc²','∫ₐᵇ f(x)dx','π≈3.14159','e^{iπ}+1=0','∇·B=0','F=ma','∂²u/∂t²=c²∇²u','∑1/n²=π²/6','√-1=i','a²+b²=c²','lim(1+1/x)^x=e','iℏ∂ψ/∂t=Ĥψ','∯E·dA=Q/ε₀','det(A-λI)=0','Γ(n)=(n-1)!','e^x=∑xⁿ/n!','sin²θ+cos²θ=1','ζ(s)=∑1/n^s','log(xy)=logx+logy','|ψ⟩⟨ψ|'];
+var items=[],orbits=[];
+
+function resize(){W=canvas.width=innerWidth;H=canvas.height=innerHeight;initItems()}
+function initItems(){
+    items=[];var c=Math.floor(W*H/18000);
+    for(var i=0;i<Math.min(c,35);i++)items.push({text:formulas[Math.floor(Math.random()*formulas.length)],x:Math.random()*W,y:Math.random()*H,speed:0.15+Math.random()*0.35,opacity:0.06+Math.random()*0.1,size:11+Math.random()*10,drift:(Math.random()-0.5)*0.3});
+    orbits=[];var oc=Math.min(Math.floor(W/130),8);
+    for(var j=0;j<oc;j++){var cx=50+Math.random()*(W-100),cy=50+Math.random()*(H-100),rx=60+Math.random()*180,ry=30+Math.random()*100,pc=1+Math.floor(Math.random()*3),pl=[];
+    for(var k=0;k<pc;k++)pl.push({angle:Math.random()*Math.PI*2,speed:0.002+Math.random()*0.006,radius:2+Math.random()*4,color:'rgba(23,147,209,'+(0.12+Math.random()*0.15)+')'});
+    orbits.push({cx:cx,cy:cy,rx:rx,ry:ry,planets:pl,lineColor:'rgba(150,200,230,'+(0.06+Math.random()*0.06)+')'});}
+}
+function draw(){
+    ctx.clearRect(0,0,W,H);
+    orbits.forEach(function(o){ctx.strokeStyle=o.lineColor;ctx.lineWidth=0.8;ctx.beginPath();ctx.ellipse(o.cx,o.cy,o.rx,o.ry,0,0,Math.PI*2);ctx.stroke();
+    o.planets.forEach(function(p){p.angle+=p.speed;if(p.angle>Math.PI*2)p.angle-=Math.PI*2;var px=o.cx+o.rx*Math.cos(p.angle),py=o.cy+o.ry*Math.sin(p.angle);ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(px,py,p.radius,0,Math.PI*2);ctx.fill()})});
+    ctx.textBaseline='middle';ctx.textAlign='center';
+    items.forEach(function(it){it.y-=it.speed;it.x+=it.drift;if(it.y<-30){it.y=H+30;it.x=Math.random()*W}if(it.x<-50)it.x=W+50;if(it.x>W+50)it.x=-50;ctx.fillStyle='rgba(23,147,209,'+it.opacity+')';ctx.font=it.size+'px "Courier New","Segoe UI",monospace';ctx.fillText(it.text,it.x,it.y)});
+    requestAnimationFrame(draw);
+}
+window.addEventListener('resize',resize);resize();draw();
+
+var ov=document.getElementById('whiteboardOverlay');
+ov.addEventListener('click',function(e){ov.classList.add('dismissed');sessionStorage.setItem('archDeepWhiteboard','1')});
+if(sessionStorage.getItem('archDeepWhiteboard')==='1')ov.classList.add('dismissed');
+
+var bgm=document.getElementById('archBgm'),btn=document.getElementById('archPlayPauseBtn'),playing=false;
+btn.addEventListener('click',function(){if(playing){bgm.pause();btn.innerHTML='▶';btn.classList.remove('playing');playing=false}else{bgm.play().catch(function(){});btn.innerHTML='⏸';btn.classList.add('playing');playing=true}});
+var ms=false;
+function tryPlay(){if(ms)return;bgm.play().then(function(){btn.innerHTML='⏸';btn.classList.add('playing');playing=true;ms=true}).catch(function(){})}
+ov.addEventListener('click',function h(){ov.removeEventListener('click',h);setTimeout(tryPlay,300)});
+if(sessionStorage.getItem('archDeepWhiteboard')==='1')setTimeout(tryPlay,500);
+
+window.addEventListener('beforeunload',function(){sessionStorage.setItem('archDeepMusicPlaying',playing?'1':'0');sessionStorage.setItem('archDeepMusicTime',bgm.currentTime)});
+(function(){var sp=sessionStorage.getItem('archDeepMusicPlaying'),st=parseFloat(sessionStorage.getItem('archDeepMusicTime'));if(!isNaN(st)&&st>0)bgm.currentTime=st;if(sp==='1')bgm.play().then(function(){btn.innerHTML='⏸';btn.classList.add('playing');playing=true;ms=true}).catch(function(){})})();
+})();
+</script>
+</body>
+</html>
