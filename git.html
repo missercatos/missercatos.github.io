@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Git 使用教程 - Misser-catos</title>
+<link rel="icon" href="assets/img/avatar.png">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+:root {
+    --git: #f05133; --git-dark: #b83a26; --git-light: #ff7b5c;
+    --git-bg: #faf6f4; --git-white: #fff; --git-text: #2d1810;
+    --git-text-light: #6b5048; --git-border: #e8d5cc;
+    --git-code-bg: #fef9f7; --git-shadow: 0 4px 20px rgba(240,81,51,0.12);
+    --git-orange: #f48c06; --git-purple: #6d28d9; --git-green: #16a34a;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+    font-family:'Segoe UI','Microsoft YaHei','PingFang SC','Helvetica Neue',sans-serif;
+    background:var(--git-bg);color:var(--git-text);
+    min-height:100vh;overflow-x:hidden;position:relative;
+}
+#bgCanvas{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none}
+
+.git-main{position:relative;z-index:1;max-width:920px;margin:0 auto;padding:0 1.5rem 3rem}
+
+.git-header{text-align:center;padding:2.5rem 0 1rem}
+.git-logo{font-size:3rem;font-weight:900;color:var(--git);letter-spacing:2px;margin-bottom:0.5rem}
+.git-subtitle{font-size:1.05rem;color:var(--git-text-light);font-weight:500;margin-bottom:1rem}
+.git-header-links{display:flex;justify-content:center;gap:1.2rem;flex-wrap:wrap}
+.git-header-links a{
+    display:inline-flex;align-items:center;gap:0.4rem;text-decoration:none;
+    color:var(--git);font-size:0.92rem;font-weight:600;
+    padding:0.5rem 1.2rem;border:2px solid var(--git);
+    border-radius:25px;transition:all 0.3s ease;background:var(--git-white);
+}
+.git-header-links a:hover{background:var(--git);color:var(--git-white);box-shadow:var(--git-shadow)}
+
+.section-nav{
+    display:flex;flex-wrap:wrap;justify-content:center;gap:0.5rem;
+    padding:0.8rem 0;margin-bottom:1.5rem;
+    border-bottom:2px solid var(--git-border);
+}
+.section-nav a{
+    display:inline-block;padding:0.35rem 0.9rem;font-size:0.82rem;
+    color:var(--git-dark);text-decoration:none;
+    background:var(--git-white);border:1px solid var(--git-border);
+    border-radius:16px;transition:all 0.25s;white-space:nowrap;
+}
+.section-nav a:hover{background:var(--git);color:#fff;border-color:var(--git)}
+.section-nav .nav-divider{width:1px;background:var(--git-border);margin:0 2px}
+
+/* ===== 音乐控制栏 ===== */
+.music-control{
+    position:fixed;top:16px;right:16px;z-index:1000;
+    display:flex;align-items:center;gap:5px;
+    background:rgba(255,255,255,0.92);padding:7px 12px;
+    border-radius:26px;border:1px solid var(--git-border);
+    box-shadow:0 2px 16px rgba(0,0,0,0.08);
+}
+.music-control > button{
+    background:none;border:1.5px solid var(--git);
+    color:var(--git);border-radius:50%;
+    width:32px;height:32px;cursor:pointer;font-size:0.95rem;
+    display:flex;align-items:center;justify-content:center;
+    transition:all 0.2s;flex-shrink:0;padding:0;line-height:1;
+}
+.music-control > button:hover{background:var(--git);color:#fff}
+#nowPlaying{display:inline-block;width:140px;font-size:0.78rem;color:var(--git-text-light);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;margin-left:2px;vertical-align:middle}
+.playlist-dropdown{
+    position:absolute;top:44px;right:0;width:210px;max-height:300px;overflow-y:auto;
+    background:var(--git-white);border:1px solid var(--git-border);
+    border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,0.12);z-index:999;padding:4px 0;
+}
+.playlist-dropdown.hidden{display:none}
+.playlist-item{
+    display:block;width:100%;padding:9px 14px;background:none;border:none;
+    color:var(--git-text);font-size:0.82rem;text-align:left;cursor:pointer;transition:all 0.15s;
+}
+.playlist-item:hover{background:rgba(240,81,51,0.08);color:var(--git)}
+.playlist-item.active{color:var(--git);font-weight:bold;background:rgba(240,81,51,0.05)}
+.playlist-dropdown::-webkit-scrollbar{width:3px}
+.playlist-dropdown::-webkit-scrollbar-thumb{background:rgba(240,81,51,0.25);border-radius:2px}
+#playlistBtn.active{background:var(--git);color:#fff}
+@media(max-width:768px){
+    .music-control{top:8px;right:8px;padding:5px 8px;gap:3px}
+    .music-control > button{width:27px;height:27px;font-size:0.8rem}
+    #nowPlaying{width:80px;font-size:0.7rem}
+}
+
+.tutorial-steps{display:flex;flex-direction:column;gap:2.5rem;padding-top:1.5rem}
+
+.step-card{
+    background:var(--git-white);border:1px solid var(--git-border);
+    border-radius:14px;padding:2rem;box-shadow:var(--git-shadow);
+    transition:all 0.3s;position:relative;
+}
+.step-card:hover{border-color:var(--git);box-shadow:0 6px 28px rgba(240,81,51,0.18);transform:translateY(-2px)}
+.step-number{
+    position:absolute;top:-16px;left:24px;
+    background:linear-gradient(135deg,var(--git),var(--git-dark));
+    color:#fff;font-weight:900;font-size:1.1rem;
+    padding:4px 18px;border-radius:20px;letter-spacing:1px;
+}
+.step-number .badge{display:inline-block;padding:1px 8px;border-radius:8px;font-size:0.65rem;margin-right:4px;vertical-align:middle;letter-spacing:1px}
+.badge-setup{background:rgba(255,255,255,0.25)}
+.badge-basic{background:rgba(255,255,255,0.25)}
+.badge-personal{background:rgba(255,255,255,0.25)}
+.badge-team{background:rgba(255,255,255,0.25)}
+
+.step-text{margin-top:0.8rem;margin-bottom:1rem;color:var(--git-text);font-size:1.02rem;line-height:1.85}
+.step-text code{
+    background:rgba(240,81,51,0.07);padding:0.15rem 0.5rem;
+    border-radius:4px;font-family:'Cascadia Code','Fira Code','Consolas',monospace;
+    color:var(--git-dark);font-size:0.93em;
+}
+.step-text strong{color:var(--git-dark)}
+.step-text ul,.step-text ol{margin-top:0.3rem;padding-left:1.5rem;line-height:1.85}
+.step-text li{margin-bottom:0.3rem}
+
+.step-pre{
+    background:var(--git-code-bg);padding:0.9rem 1.1rem;
+    border-radius:8px;margin:0.5rem 0;font-family:'Cascadia Code','Fira Code','Consolas',monospace;
+    font-size:0.88rem;line-height:1.65;overflow-x:auto;
+    border-left:4px solid var(--git);white-space:pre-wrap;
+}
+.step-pre .cmd{color:var(--git)}
+.step-pre .out{color:var(--git-text-light)}
+.step-pre .sha{color:var(--git-orange)}
+
+.step-tip{
+    margin-top:0.8rem;padding:0.8rem 1rem;
+    background:rgba(240,156,6,0.07);border-left:3px solid var(--git-orange);
+    border-radius:0 6px 6px 0;font-size:0.9rem;color:#8a6d14;
+}
+.step-tip i{color:var(--git-orange);margin-right:0.4rem}
+.step-note{
+    margin-top:0.8rem;padding:0.8rem 1rem;
+    background:rgba(240,81,51,0.05);border-left:3px solid var(--git);
+    border-radius:0 6px 6px 0;font-size:0.9rem;color:var(--git-dark);
+}
+
+.git-footer{text-align:center;padding:3rem 0 1.5rem;color:var(--git-text-light);font-size:0.85rem;opacity:0.7}
+
+.btn-jump{
+    display:inline-block;margin-top:1rem;padding:0.7rem 2rem;
+    background:linear-gradient(135deg,var(--git),var(--git-dark));
+    color:#fff;border-radius:25px;text-decoration:none;
+    font-weight:700;font-size:1rem;transition:all 0.3s;
+    box-shadow:var(--git-shadow);
+}
+.btn-jump:hover{transform:translateY(-2px);box-shadow:0 6px 28px rgba(240,81,51,0.3)}
+
+.nav-jump-card{text-align:center;background:linear-gradient(135deg,rgba(240,81,51,0.04),rgba(255,123,92,0.08));border:2px dashed var(--git)!important}
+
+/* 模拟终端对话 */
+.terminal-chat{
+    background:var(--git-code-bg);border:1px solid var(--git-border);
+    border-radius:10px;padding:1rem 1.2rem;margin:0.8rem 0;
+    font-family:'Cascadia Code','Consolas',monospace;
+    font-size:0.85rem;line-height:1.7;
+}
+.terminal-chat .actor{display:flex;gap:8px;margin:4px 0;align-items:flex-start}
+.terminal-chat .actor-name{color:var(--git-dark);font-weight:bold;white-space:nowrap;min-width:70px}
+.terminal-chat .actor-msg{color:var(--git-text)}
+
+@media(max-width:768px){
+    .git-logo{font-size:2.2rem}
+    .step-card{padding:1.5rem 1.2rem}
+    .git-header-links{gap:0.8rem}
+    .git-header-links a{font-size:0.85rem;padding:0.4rem 1rem}
+    .section-nav a{font-size:0.73rem;padding:0.3rem 0.6rem}
+    .step-text{font-size:0.95rem}
+    .terminal-chat{font-size:0.78rem}
+}
+</style>
+</head>
+<body>
+
+<canvas id="bgCanvas"></canvas>
+
+<audio id="bgmPlayer" loop preload="auto"></audio>
+
+<div class="music-control">
+    <button id="playPauseBtn" title="播放/暂停">▶</button>
+    <button id="nextTrackBtn" title="下一首">▽</button>
+    <button id="volDownBtn" title="音量−">−</button>
+    <button id="volUpBtn" title="音量+">+</button>
+    <button id="downloadBtn" title="下载当前曲目">⬇</button>
+    <button id="playlistBtn" title="展开目录">☰</button>
+    <button id="muteBtn" title="静音">◆</button>
+    <span id="nowPlaying">未播放</span>
+    <div id="playlistDropdown" class="playlist-dropdown hidden"></div>
+</div>
+
+<main class="git-main">
+    <header class="git-header">
+        <h1 class="git-logo">Git 使用教程</h1>
+        <p class="git-subtitle">从零基础到多人协作 · 终端命令全程实战</p>
+        <div class="git-header-links">
+            <a href="index.html"><i class="fas fa-home"></i> 回到主页</a>
+            <a href="about.html"><i class="fas fa-share-alt"></i> 技术分享</a>
+        </div>
+    </header>
+
+    <nav class="section-nav">
+        <a href="#setup">下载与配置</a>
+        <span class="nav-divider"></span>
+        <a href="#module1">模块一 基础指令</a>
+        <span class="nav-divider"></span>
+        <a href="#module2">模块二 个人实战</a>
+        <span class="nav-divider"></span>
+        <a href="#module3">模块三 多人协作</a>
+    </nav>
+
+    <section class="tutorial-steps">
+
+<!-- ==================== 下载与配置 ==================== -->
+<article class="step-card" id="setup">
+    <span class="step-number"><span class="badge badge-setup">安装</span> Git 下载与配置</span>
+
+    <div class="step-text">
+        <strong>Windows 安装（重点：添加到环境变量 PATH）</strong>
+        <ol>
+            <li>访问 <a href="https://git-scm.com/download/win" target="_blank" style="color:var(--git)">git-scm.com/download/win</a> 下载安装包</li>
+            <li>运行安装程序，<strong>关键步骤</strong>——在选择安装组件时，勾选 <strong>"Git from the command line and also from 3rd-party software"</strong>（将 Git 添加到 PATH）</li>
+            <li>在"Choosing the default editor"步骤选择你喜欢的编辑器（推荐 nano 或 VS Code）</li>
+            <li>在"Adjusting your PATH environment"步骤选择 <strong>"Git from the command line and also from 3rd-party software"</strong>（第二个选项）——这是最关键的一步，确保 Git 可被任意终端调用</li>
+            <li>其余步骤保持默认，完成安装</li>
+            <li><strong>验证安装：</strong>打开 CMD 或 PowerShell，输入 <code>git --version</code>，应显示版本号</li>
+        </ol>
+    </div>
+    <div class="step-tip"><i class="fas fa-lightbulb"></i> 如果安装后终端提示"git 不是内部命令"，说明 PATH 未正确配置。手动添加：系统属性 → 高级 → 环境变量 → 系统变量 Path → 新建 → 添加 <code>C:\Program Files\Git\bin</code> 和 <code>C:\Program Files\Git\cmd</code></div>
+
+    <div class="step-text">
+        <strong>Linux 安装：</strong>
+<pre class="step-pre"><span class="cmd"># Arch Linux</span>
+sudo pacman -S git
+
+<span class="cmd"># Debian / Ubuntu</span>
+sudo apt install git
+
+<span class="cmd"># Fedora</span>
+sudo dnf install git
+
+<span class="cmd"># 验证</span>
+git --version</pre>
+    </div>
+    <div class="step-text">
+        <strong>macOS 安装：</strong>
+<pre class="step-pre"><span class="cmd"># 通过 Homebrew（推荐）</span>
+brew install git
+
+<span class="cmd"># 或安装 Xcode Command Line Tools（自带 git）</span>
+xcode-select --install
+
+<span class="cmd"># 验证</span>
+git --version</pre>
+    </div>
+    <div class="step-text">
+        <strong>全局初始配置（必须）：</strong>
+<pre class="step-pre"><span class="cmd">git config --global user.name</span> "你的名字"
+<span class="cmd">git config --global user.email</span> "你的邮箱@example.com"
+<span class="cmd">git config --global init.defaultBranch</span> main
+<span class="cmd">git config --global core.editor</span> "nano"       # 或 "vim" / "code --wait"
+<span class="cmd">git config --list</span>                              # 查看所有配置</pre>
+    </div>
+</article>
+
+<!-- ==================== 模块一：基础指令 ==================== -->
+<article class="step-card" id="module1">
+    <span class="step-number"><span class="badge badge-basic">模块一</span> 基础使用方法</span>
+
+    <div class="step-text">
+        <strong>Git 工作区域模型</strong>：工作区 → 暂存区(stage) → 本地仓库 → 远程仓库
+    </div>
+    <div class="step-text">
+        <strong>git clone — 克隆远程仓库</strong>
+<pre class="step-pre"><span class="cmd">git clone</span> https://github.com/user/repo.git          # 克隆到当前目录/repo
+<span class="cmd">git clone</span> https://github.com/user/repo.git <span class="out">my-folder</span>  # 克隆到指定目录
+<span class="cmd">git clone -b</span> dev https://github.com/user/repo.git    # 克隆特定分支
+<span class="cmd">git clone --depth 1</span> https://...                      # 浅克隆（只取最新版本，加速下载）</pre>
+        <strong>说明：</strong><code>clone</code> 将远程仓库完整复制到本地，自动建立 origin 远程关联。<code>--depth 1</code> 仅下载最新提交历史，适合大型仓库快速获取代码。
+    </div>
+
+    <div class="step-text">
+        <strong>git add — 暂存变更（stage 到暂存区）</strong>
+<pre class="step-pre"><span class="cmd">git add</span> file.txt                # 暂存单个文件
+<span class="cmd">git add</span> file1.txt file2.txt    # 暂存多个文件
+<span class="cmd">git add</span> .                       # 暂存当前目录所有变更
+<span class="cmd">git add -A</span>                      # 暂存所有变更（包括删除的文件）
+<span class="cmd">git add -p</span>                      # 交互式逐块暂存（可选择性暂存每段修改）</pre>
+        <strong>说明：</strong><code>.</code> 只暂存当前目录及其子目录。<code>-A</code> 暂存整个仓库的所有变更。<code>-p</code> 让你逐块审查代码，选择性地提交。
+    </div>
+
+    <div class="step-text">
+        <strong>git commit — 提交到本地仓库</strong>
+<pre class="step-pre"><span class="cmd">git commit -m</span> "提交信息"                                    # 带消息提交
+<span class="cmd">git commit -am</span> "提交信息"                                   # 暂存所有已跟踪文件并提交（跳过 git add）
+<span class="cmd">git commit --amend</span> -m "修正的提交信息"                     # 修改最后一次提交（不新增提交记录）
+<span class="cmd">git commit --amend --no-edit</span>                              # 追加暂存内容到上次提交，不改消息</pre>
+        <strong>说明：</strong><code>-a</code> 自动暂存已跟踪的修改和删除（不包括新文件）。<code>--amend</code> 重写最后一次提交，适合修正 typo 或补充遗漏文件（<strong>注意：已推送的提交不要 amend</strong>）。
+    </div>
+
+    <div class="step-text">
+        <strong>git push — 推送到远程仓库</strong>
+<pre class="step-pre"><span class="cmd">git push</span>                                # 推送当前分支到 origin
+<span class="cmd">git push origin</span> main                    # 推送 main 分支到 origin
+<span class="cmd">git push -u origin</span> feature-branch       # 首次推送新分支并建立追踪关系
+<span class="cmd">git push --force</span>                        # 强制推送（覆盖远程历史，危险！）
+<span class="cmd">git push --force-with-lease</span>            # 安全强制推送（远程有新提交时拒绝，推荐）</pre>
+        <strong>说明：</strong><code>-u</code>(set-upstream) 将本地分支与远程分支关联，之后只需 <code>git push</code>。<code>--force-with-lease</code> 比 <code>--force</code> 安全，它检查远程是否有你不知道的新提交。
+    </div>
+
+    <div class="step-text">
+        <strong>git pull — 拉取并合并远程更新</strong>
+<pre class="step-pre"><span class="cmd">git pull</span>                          # 拉取并合并当前分支
+<span class="cmd">git pull origin</span> main              # 拉取指定远程分支
+<span class="cmd">git pull --rebase</span>                 # 拉取后变基（避免多余合并提交，推荐）
+<span class="cmd">git fetch</span>                         # 仅拉取远程信息不合并
+<span class="cmd">git fetch origin</span>                  # 拉取所有远程分支的最新信息</pre>
+        <strong>说明：</strong><code>pull = fetch + merge</code>。<code>--rebase</code> 用变基代替合并，保持提交历史线性整洁。<code>fetch</code> 只下载远程更新不合并，适合先查看再决定。
+    </div>
+
+    <div class="step-text">
+        <strong>git status — 查看当前状态</strong>
+<pre class="step-pre"><span class="cmd">git status</span>                        # 查看工作区和暂存区状态
+<span class="cmd">git status -s</span>                     # 简略输出（M=已修改, ??=新文件, A=已暂存）
+<span class="cmd">git status -sb</span>                    # 简略输出 + 分支信息</pre>
+    </div>
+
+    <div class="step-text">
+        <strong>git config — 配置管理</strong>
+<pre class="step-pre"><span class="cmd">git config --global</span> user.name "Name"     # 全局级别（~/.gitconfig）
+<span class="cmd">git config --local</span> user.email "a@b.com"  # 仓库级别（.git/config）
+<span class="cmd">git config --system</span> core.editor vim      # 系统级别（/etc/gitconfig）需管理员
+<span class="cmd">git config --list</span>                         # 列出所有配置
+<span class="cmd">git config --global --unset</span> user.name     # 删除配置项</pre>
+        <strong>优先级：</strong>local > global > system。仓库级覆盖全局，全局覆盖系统。
+    </div>
+
+    <div class="step-text">
+        <strong>git log — 查看提交历史</strong>
+<pre class="step-pre"><span class="cmd">git log</span>                                  # 完整提交历史
+<span class="cmd">git log --oneline</span>                        # 每提交一行简略显示
+<span class="cmd">git log --oneline --graph --all</span>          # 彩色分支图（最常用）
+<span class="cmd">git log -p</span>                                # 显示每次提交的具体改动(diff)
+<span class="cmd">git log --author</span>="名字"                   # 按作者筛选
+<span class="cmd">git log --since</span>="2026-01-01"             # 按日期筛选</pre>
+    </div>
+
+    <div class="step-text">
+        <strong>git diff — 查看差异</strong>
+<pre class="step-pre"><span class="cmd">git diff</span>                        # 工作区 vs 暂存区（未暂存的修改）
+<span class="cmd">git diff --staged</span>               # 暂存区 vs 最新提交
+<span class="cmd">git diff HEAD</span>                   # 工作区 vs 最新提交（所有未提交的修改）
+<span class="cmd">git diff main..feature</span>          # 比较两个分支的差异</pre>
+    </div>
+
+    <div class="step-text">
+        <strong>git branch / checkout / switch — 分支管理</strong>
+<pre class="step-pre"><span class="cmd">git branch</span>                            # 列出本地分支（* 表示当前）
+<span class="cmd">git branch -a</span>                         # 列出所有分支（含远程）
+<span class="cmd">git branch</span> feature-login              # 创建新分支
+<span class="cmd">git branch -d</span> feature-login           # 删除已合并的分支
+<span class="cmd">git branch -D</span> feature-login           # 强制删除分支（不管是否合并）
+<span class="cmd">git switch</span> feature-login              # 切换到分支（Git 2.23+推荐）
+<span class="cmd">git switch -c</span> feature-login          # 创建并切换到新分支
+<span class="cmd">git checkout</span> feature-login            # 切换分支（传统方式）
+<span class="cmd">git checkout -b</span> feature-login         # 创建并切换（传统方式）</pre>
+        <strong>说明：</strong><code>switch</code> 是 Git 2.23 引入的更安全的分支切换命令，职责单一。<code>checkout</code> 功能更杂（也可恢复文件），建议用 <code>switch</code>。
+    </div>
+
+    <div class="step-text">
+        <strong>git merge / rebase — 合并分支</strong>
+<pre class="step-pre"><span class="cmd">git merge</span> feature-login              # 将 feature-login 合并到当前分支
+<span class="cmd">git merge --no-ff</span> feature-login      # 禁用快进，保留分支历史
+<span class="cmd">git rebase</span> main                       # 将当前分支变基到 main 之上
+<span class="cmd">git rebase -i HEAD~3</span>                 # 交互式变基最近 3 个提交（合并/编辑/重排/删除）</pre>
+        <strong>merge vs rebase：</strong>merge 保留完整分支历史，适合公共分支。rebase 将提交"搬家"到目标分支顶部，生成线性历史，适合个人分支整理。
+    </div>
+
+    <div class="step-text" style="margin-top:1.5rem;">
+        <strong>🔑 GitHub SSH 密钥配置（git push 免密推送）</strong><br>
+        配置 SSH 密钥后，每次 <code>git push</code> 无需输入密码，是 GitHub 推荐的认证方式。
+    </div>
+    <div class="step-text">
+        <strong>步骤 1：在本地生成 SSH 密钥对</strong>
+<pre class="step-pre"><span class="cmd"># 生成 ED25519 密钥（推荐，更安全更快）</span>
+ssh-keygen -t ed25519 -C "你的邮箱@example.com"
+<span class="out"># 一路回车：</span>
+<span class="out"># Enter file: 直接回车（使用默认路径 ~/.ssh/id_ed25519）</span>
+<span class="out"># Enter passphrase: 直接回车（不设密码）或输入密码</span>
+
+<span class="cmd"># 如果系统不支持 ED25519，用 RSA：</span>
+ssh-keygen -t rsa -b 4096 -C "你的邮箱@example.com"
+
+<span class="cmd"># 查看公钥内容（需要复制它）</span>
+cat ~/.ssh/id_ed25519.pub
+<span class="out"># 输出类似：ssh-ed25519 AAAAC3NzaC1l... 你的邮箱@example.com</span></pre>
+    </div>
+    <div class="step-text">
+        <strong>步骤 2：将公钥添加到 GitHub 账号</strong>
+        <ol>
+            <li>复制 <code>~/.ssh/id_ed25519.pub</code> 的<strong>全部内容</strong></li>
+            <li>打开 GitHub → 右上角头像 → <strong>Settings</strong></li>
+            <li>左侧菜单 → <strong>SSH and GPG keys</strong></li>
+            <li>点击 <strong>New SSH key</strong></li>
+            <li>Title 填一个辨识名称（如 "我的笔记本"），Key 粘贴公钥内容</li>
+            <li>点击 <strong>Add SSH key</strong></li>
+        </ol>
+    </div>
+    <div class="step-text">
+        <strong>步骤 3：验证连接</strong>
+<pre class="step-pre"><span class="cmd">ssh -T git@github.com</span>
+<span class="out"># 成功输出：Hi 你的用户名! You've successfully authenticated...</span></pre>
+    </div>
+    <div class="step-note"><i class="fas fa-key"></i> 之后使用 SSH 地址克隆和推送（<code>git@github.com:用户名/仓库.git</code>）即无需密码。不要在 HTTPS 地址中硬编码密码或 token。</div>
+
+    <div class="step-text" style="margin-top:1.5rem;">
+        <strong>📦 传输大型文件 — Git LFS（Large File Storage）</strong><br>
+        普通 Git 不适合管理大于 100MB 的文件（每次克隆都下载完整历史，仓库迅速膨胀）。<strong>Git LFS</strong> 将大文件替换为指针，实际文件存储在独立服务器上。
+    </div>
+    <div class="step-text">
+        <strong>场景：</strong>你的项目里有一个 1.5GB 的数据库备份文件 <code>data/dump.sql</code> 需要版本管理。
+    </div>
+    <div class="step-text">
+        <strong>安装 Git LFS：</strong>
+<pre class="step-pre"><span class="cmd"># Linux（Arch）</span>
+sudo pacman -S git-lfs
+
+<span class="cmd"># Linux（Debian/Ubuntu）</span>
+sudo apt install git-lfs
+
+<span class="cmd"># macOS</span>
+brew install git-lfs
+
+<span class="cmd"># 初始化（每个用户只需执行一次）</span>
+git lfs install</pre>
+    </div>
+    <div class="step-text">
+        <strong>跟踪大文件并上传：</strong>
+<pre class="step-pre"><span class="cmd"># 进入你的项目目录</span>
+cd my-project
+
+<span class="cmd"># 告诉 Git LFS 哪些文件类型用 LFS 管理</span>
+git lfs track "*.sql"           # 所有 SQL 文件
+git lfs track "*.zip"           # 所有 ZIP 文件
+git lfs track "*.psd"           # 所有 Photoshop 文件
+git lfs track "data/*.bin"      # data 目录下的二进制文件
+
+<span class="cmd"># 这会生成/更新 .gitattributes 文件，需要提交它</span>
+git add .gitattributes
+git commit -m "配置 Git LFS 跟踪规则"
+
+<span class="cmd"># 正常添加大文件（Git LFS 自动接管）</span>
+git add data/dump.sql
+git commit -m "添加数据库备份（1.5GB，使用 LFS）"
+git push origin main
+<span class="out"># 推送时大文件上传到 LFS 服务器，仓库本体只存指针</span></pre>
+    </div>
+    <div class="step-text">
+        <strong>其他人克隆时：</strong>
+<pre class="step-pre"><span class="cmd"># 普通 clone 即可，LFS 文件自动下载</span>
+git clone https://github.com/user/repo.git
+
+<span class="cmd"># 如果 LFS 文件没下载（离线或跳过），手动拉取：</span>
+git lfs pull
+
+<span class="cmd"># 查看 LFS 管理的文件列表</span>
+git lfs ls-files</pre>
+    </div>
+    <div class="step-text">
+        <strong>Git LFS vs 替代方案对比：</strong>
+<pre class="step-pre">
+┌────────────┬──────────────────┬─────────────────────────────┐
+│   方案     │     适用场景     │          优缺点             │
+├────────────┼──────────────────┼─────────────────────────────┤
+│ Git LFS    │二进制文件&lt;2GB │ GitHub 免费 1GB 存储/月     │
+│ git-annex  │ 海量大文件管理   │ 自托管、更灵活、学习曲线陡  │
+│ .gitignore │ 不需要版本管理   │ 最简单，但文件不同步到其他人│
+│ 外部存储   │ 巨型文件 &gt;5GB │ 用网盘/S3，README 里放链接  │
+└────────────┴──────────────────┴─────────────────────────────┘</pre>
+    </div>
+</article>
+
+<!-- ==================== 模块二：个人使用详解 ==================== -->
+<article class="step-card" id="module2">
+    <span class="step-number"><span class="badge badge-personal">模块二</span> 个人使用详解（完整实战）</span>
+
+    <div class="step-text">
+        <strong>本模块以完整示例演示：</strong>终端登录 GitHub → 创建仓库 → 上传项目 → 修改更新 → 提交推送的全流程。
+    </div>
+
+    <div class="step-text">
+        <strong>步骤 1：在终端通过 Git 登录 GitHub</strong><br>
+        可通过 SSH 密钥（推荐）或 Personal Access Token（PAT）两种方式。
+    </div>
+    <div class="step-text">
+        <strong>方法① — SSH 密钥登录（推荐，一次配置永久使用）：</strong>
+<pre class="step-pre"><span class="cmd"># 生成 SSH 密钥（一路回车即可）</span>
+ssh-keygen -t ed25519 -C "你的邮箱@example.com"
+
+<span class="cmd"># 查看公钥并复制</span>
+cat ~/.ssh/id_ed25519.pub</pre>
+        将公钥内容粘贴到 GitHub → Settings → SSH and GPG keys → New SSH key。
+    </div>
+    <div class="step-text">
+        <strong>方法② — Personal Access Token 登录（适合临时或不支持 SSH 的环境）：</strong><br>
+        GitHub → Settings → Developer settings → Personal access tokens → Tokens(classic) → Generate new token。<br>
+        勾选 <code>repo</code> 权限，生成 token。<br>
+        之后在终端操作时，用户名填你的 GitHub 用户名，密码填生成的 token 字符串。
+    </div>
+
+    <div class="step-text">
+        <strong>步骤 2：在 GitHub 创建远程仓库 + 本地关联</strong><br>
+        假设你要创建一个名为 "my-website" 的项目。
+<pre class="step-pre"><span class="cmd"># 在 GitHub 网页上点击 + → New repository → 仓库名: my-website → 不勾选 README</span>
+
+<span class="cmd"># 本地创建项目</span>
+mkdir my-website
+cd my-website
+echo "# My Website" > README.md
+echo "&lt;h1&gt;Hello World&lt;/h1&gt;" > index.html
+
+<span class="cmd"># 初始化 Git</span>
+git init
+git add .
+git commit -m "首次提交：创建网站骨架"
+
+<span class="cmd"># 关联远程仓库并推送</span>
+git remote add origin git@github.com:你的用户名/my-website.git
+git branch -M main
+git push -u origin main</pre>
+    </div>
+    <div class="step-text">
+        <strong>说明：</strong><code>git remote add origin</code> 将远程仓库命名为 origin（惯例名称）。<code>git branch -M main</code> 将默认分支重命名为 main。<code>-u</code> 建立追踪关系，后续只需 <code>git push</code>。
+    </div>
+
+    <div class="step-text" style="margin-top:1.5rem;">
+        <strong>🖥 纯终端创建仓库（无需打开网页）— 适用于无桌面 Linux 环境</strong><br>
+        如果你正在一台没有图形界面的服务器上工作，可以通过以下两种方法完全在终端中创建 GitHub 远程仓库。
+    </div>
+    <div class="step-text">
+        <strong>方法① — 使用 GitHub CLI（推荐，最简洁）：</strong>
+<pre class="step-pre"><span class="cmd"># 安装 gh（GitHub 官方命令行工具）</span>
+sudo pacman -S github-cli          # Arch Linux
+sudo apt install gh                # Debian/Ubuntu
+
+<span class="cmd"># 首次使用需登录（按提示选择 SSH 认证）</span>
+gh auth login
+
+<span class="cmd"># 在已有项目的文件夹中直接创建 GitHub 仓库并推送</span>
+cd ~/my-existing-project           # 进入已写好代码的文件夹
+git init
+git add .
+git commit -m "首次提交"
+
+<span class="cmd"># 一行命令：创建 GitHub 仓库 + 关联 + 推送</span>
+gh repo create my-project --private --source=. --remote=origin --push
+<span class="out"># --private  创建私有仓库（改 --public 为公开）</span>
+<span class="out"># --source=. 以当前目录为源</span>
+<span class="out"># --push    直接推送代码</span></pre>
+    </div>
+    <div class="step-text">
+        <strong>方法② — 使用 GitHub API + curl（无需安装额外工具）：</strong>
+<pre class="step-pre"><span class="cmd"># 创建 Personal Access Token（如果还没有）</span>
+<span class="out"># GitHub → Settings → Developer settings → Tokens → Generate</span>
+<span class="out"># 勾选 repo 权限 → 生成后复制 token 字符串</span>
+
+<span class="cmd"># 导出 token 为环境变量</span>
+export GITHUB_TOKEN="ghp_xxxxxxxxxxxxxxxxxxxx"
+
+<span class="cmd"># 通过 API 创建仓库</span>
+curl -H "Authorization: token $GITHUB_TOKEN" \
+     -H "Accept: application/vnd.github+json" \
+     https://api.github.com/user/repos \
+     -d '{"name":"my-project","private":true}'
+
+<span class="cmd"># 关联远程仓库并推送</span>
+git init && git add . && git commit -m "首次提交"
+git remote add origin git@github.com:你的用户名/my-project.git
+git branch -M main
+git push -u origin main</pre>
+    </div>
+    <div class="step-note"><i class="fas fa-terminal"></i> 推荐方法① <code>gh</code>，一条命令完成创建+关联+推送。方法②适合无法安装额外软件的极简环境。无论哪种方法，都无需打开浏览器。</div>
+
+    <div class="step-text">
+        <strong>步骤 3：修改项目并更新</strong><br>
+        假设你要修改网站内容并添加新页面。
+<pre class="step-pre"><span class="cmd"># 编辑文件</span>
+echo "&lt;h2&gt;Welcome to my site&lt;/h2&gt;" >> index.html
+
+<span class="cmd"># 添加新文件</span>
+echo "body { background: #f0f0f0; }" > style.css
+
+<span class="cmd"># 查看变更</span>
+git status
+<span class="out"># modified:   index.html</span>
+<span class="out"># Untracked:  style.css</span>
+
+<span class="cmd"># 暂存并提交</span>
+git add index.html style.css
+git commit -m "更新首页内容并添加样式文件"
+
+<span class="cmd"># 推送到 GitHub</span>
+git push</pre>
+    </div>
+
+    <div class="step-text">
+        <strong>步骤 4：版本回退和恢复</strong>
+<pre class="step-pre"><span class="cmd"># 查看提交历史</span>
+git log --oneline
+<span class="out"><span class="sha">a1b2c3d</span> 更新首页内容并添加样式文件</span>
+<span class="out"><span class="sha">e4f5g6h</span> 首次提交：创建网站骨架</span>
+
+<span class="cmd"># 回退到上一个版本（保留工作区修改）</span>
+git reset --soft HEAD~1                # 撤销提交，但保留暂存区和工作区
+
+<span class="cmd"># 回退并清空暂存区（修改留在工作区）</span>
+git reset HEAD~1                        # 撤销提交和暂存，修改留在工作区
+
+<span class="cmd"># 完全回退（丢弃所有修改，危险！）</span>
+git reset --hard HEAD~1
+
+<span class="cmd"># 撤销未暂存的修改</span>
+git checkout -- index.html              # 丢弃 index.html 的未暂存修改
+git restore index.html                  # 新版推荐写法（Git 2.23+）</pre>
+    </div>
+    <div class="step-tip"><i class="fas fa-lightbulb"></i> <code>git reflog</code> 记录了你所有的 HEAD 移动历史。即使执行了 <code>reset --hard</code>，也能通过 <code>git reflog</code> 找回"丢失"的提交。</div>
+</article>
+
+<!-- ==================== 模块三：多人协作 ==================== -->
+<article class="step-card" id="module3">
+    <span class="step-number"><span class="badge badge-team">模块三</span> 多人协作详解</span>
+
+    <div class="step-text">
+        <strong>Git 的核心价值在于多人协作。</strong>本模块分两个层次：参与他人项目（贡献者视角）和组织团队项目（管理者视角）。
+    </div>
+
+    <div class="step-text" style="margin-top:1.5rem;">
+        <strong>一、参与别人的项目（Fork + Pull Request 流程）</strong>
+        <ol>
+            <li>在 GitHub 上 Fork 目标仓库（点击仓库右上角 Fork 按钮）→ 你的账户下出现同名仓库</li>
+            <li><code>git clone git@github.com:你的用户名/项目名.git</code> — 克隆你 Fork 的仓库到本地</li>
+            <li><code>git switch -c fix-typo</code> — 创建新分支描述你的修改意图</li>
+            <li>修改代码 → <code>git add . && git commit -m "修正 README 中的拼写错误"</code></li>
+            <li><code>git push -u origin fix-typo</code> — 推送到你的 Fork 仓库</li>
+            <li>回到 GitHub → 你的 Fork 仓库页面 → 点击 <strong>"Contribute" → "Open Pull Request"</strong></li>
+            <li>撰写 PR 描述 → 提交 → 等待原仓库维护者审核合并</li>
+        </ol>
+    </div>
+    <div class="step-text">
+        <strong>PR 被合并后</strong>，你的 GitHub 用户名会出现在原仓库的 Contributors 列表中。<br>
+        <strong>查看别人的提交：</strong><code>git log --author="对方名字"</code> 或 <code>git show 提交SHA</code> 查看具体改动。
+    </div>
+
+    <div class="step-text" style="margin-top:1.5rem;">
+        <strong>二、团队协作——分支策略与工作流程</strong>
+    </div>
+    <div class="step-text">
+        <strong>主流分支模型（GitHub Flow）：</strong>
+        <ul>
+            <li><code>main</code> 分支 — 始终可部署的稳定代码，禁止直接推送</li>
+            <li><code>feature/*</code> 分支 — 每个新功能/修复从 main 分出独立开发</li>
+            <li>完成后发起 Pull Request → 团队 Code Review → 合并回 main</li>
+        </ul>
+    </div>
+    <div class="step-text">
+        <strong>多人协作常用命令：</strong>
+<pre class="step-pre"><span class="cmd"># 查看所有远程分支</span>
+git branch -a
+
+<span class="cmd"># 拉取别人的分支到本地</span>
+git fetch origin
+git switch -c review-branch origin/同事的分支名
+
+<span class="cmd"># 查看别人提交了什么</span>
+git log origin/同事的分支名 --oneline --graph
+git diff main..origin/同事的分支名        # 查看与 main 的差异
+
+<span class="cmd"># 解决冲突</span>
+git merge main                           # 将 main 合并到当前分支触发冲突
+<span class="out"># 手动编辑冲突文件 → 保留正确代码 → 删除冲突标记</span>
+git add .
+git commit -m "解决合并冲突"
+
+<span class="cmd"># 撤销错误合并</span>
+git merge --abort                        # 放弃当前合并
+git reset --hard HEAD~1                  # 回退到合并前（未推送时可用）</pre>
+    </div>
+
+    <div class="step-text" style="margin-top:1.5rem;">
+        <strong>三、多人合作实战模拟（五人团队开发"喵记笔记"应用）</strong><br>
+        以下模拟一个 5 人团队从零开始协作开发的全过程。团队角色：<br>
+        <strong>小明</strong>（项目 Leader，稳健派）、<strong>小红</strong>（前端，急性子）、<strong>小刚</strong>（后端，沉默实干）、<strong>小美</strong>（全栈，细节控）、<strong>小强</strong>（新人，爱提问）
+    </div>
+
+    <div class="step-text">
+        <strong>阶段一：项目初始化（小明创建仓库并邀请队友）</strong>
+<pre class="step-pre">小明在 GitHub 创建仓库 "meow-notes"，添加 README 和 .gitignore
+git clone 到本地，创建项目骨架（目录结构、package.json 等）
+git add . && git commit -m "初始化项目骨架"
+git push
+
+小明在 GitHub → Settings → Collaborators → 添加小红、小刚、小美、小强为协作者
+（或者：团队成员各自 Fork 仓库，通过 PR 协作）</pre>
+    </div>
+
+    <div class="step-text">
+        <strong>阶段二：并行开发（每人独立分支工作）</strong>
+<pre class="step-pre">小红（前端）→ git clone → git switch -c ui-login-page
+  → 开发登录页面 HTML/CSS → commit → push → 发起 PR
+
+小刚（后端）→ git switch -c api-auth
+  → 编写用户认证 API → commit → push → 发起 PR
+
+小美（全栈）→ git switch -c database-schema
+  → 设计数据库表结构 → commit → push → 发起 PR</pre>
+    </div>
+
+    <div class="step-text">
+        <strong>阶段三：Code Review 与合并（小明统筹审查）</strong>
+    </div>
+    <div class="terminal-chat">
+<div class="actor"><span class="actor-name">小明：</span><span class="actor-msg">小美的数据库 schema 写得很规范，我先合了。小红，你的 CSS 里用了绝对定位，在移动端会错位，改成 flexbox 吧。</span></div>
+<div class="actor"><span class="actor-name">小红：</span><span class="actor-msg">好，我改成 flex 布局，再推一版。</span></div>
+<div class="actor"><span class="actor-name">小刚：</span><span class="actor-msg">我的 API 分支和小美的 schema 有依赖，需要等她合并后我 rebase 一下。</span></div>
+<div class="actor"><span class="actor-name">小美：</span><span class="actor-msg">我的已合并，小刚你可以 rebase 了。</span></div>
+<div class="actor"><span class="actor-name">小刚：</span><span class="actor-msg"><code>git switch api-auth && git rebase main</code> → 解决一处冲突 → push。</span></div>
+</div>
+
+    <div class="step-text" style="margin-top:1rem;">
+        <strong>阶段四：新人加入（小强的学习路径）</strong>
+<pre class="step-pre">小强 git clone 项目 → 阅读 README 和已有代码
+小强 git switch -c fix-readme-typo → 发现 README 有错别字
+  → 修改 → git add && git commit -m "修正 README 拼写"
+  → git push -u origin fix-readme-typo → 发起 PR
+
+小明审查 → 评论 "Good catch!" → Merge
+小强的名字出现在 Contributors 中！</pre>
+    </div>
+
+    <div class="step-text" style="margin-top:1rem;">
+        <strong>阶段五：冲突解决（团队协作的日常）</strong>
+    </div>
+    <div class="terminal-chat">
+<div class="actor"><span class="actor-name">小红：</span><span class="actor-msg">我改了 App.css 第 42 行附近，推上去了。</span></div>
+<div class="actor"><span class="actor-name">小美：</span><span class="actor-msg">等等我也改了同一块区域！我刚 push 被拒绝了。</span></div>
+<div class="actor"><span class="actor-name">小明：</span><span class="actor-msg">@小美 先 <code>git pull --rebase</code>，然后解决冲突，再 <code>git push</code>。</span></div>
+<div class="actor"><span class="actor-name">小美：</span><span class="actor-msg"><code>git pull --rebase</code> → CONFLICT in App.css → 打开文件 → 看到 <<< === >>> 标记 → 保留我和小红各自正确的部分 → git add → git rebase --continue → git push。搞定了！</span></div>
+</div>
+
+    <div class="step-text" style="margin-top:1rem;">
+        <strong>团队协作最佳实践总结：</strong>
+<pre class="step-pre"><span class="cmd"># 1. 每天开始工作前：同步最新代码</span>
+git switch main && git pull
+git switch 你的分支 && git rebase main
+
+<span class="cmd"># 2. 提交信息格式规范（Conventional Commits）</span>
+feat: 添加用户登录功能
+fix: 修复移动端布局错位
+docs: 更新 API 文档
+refactor: 重构数据库查询逻辑
+
+<span class="cmd"># 3. 一个分支只做一件事</span>
+#  错误：ui-login 分支同时改了登录页面 + 数据库结构 + 文档
+#  正确：ui-login 只改登录页面，database 只改数据库
+
+<span class="cmd"># 4. 推送前先拉取（避免冲突累积）</span>
+git pull --rebase origin main && git push
+
+<span class="cmd"># 5. Code Review 礼仪</span>
+#  - 审查别人代码时关注逻辑而非风格（风格交给 linter）
+#  - 提出问题而非命令（"这里是否考虑边界情况？"而非"这里写错了"）
+#  - 及时 review（不超过 24 小时）</pre>
+    </div>
+
+    <div class="step-note"><i class="fas fa-check-circle"></i> <strong>管理者视角——如何统筹多人项目：</strong><br>
+    • 在 GitHub 仓库 Settings → Branches → 添加分支保护规则：<strong>要求 PR 审查、要求状态检查通过</strong>后才能合并到 main<br>
+    • 使用 <strong>GitHub Issues</strong> 分配任务，关联 commit（commit message 写 <code>fixes #12</code> 自动关闭 Issue）<br>
+    • 使用 <strong>GitHub Projects</strong> 看板管理任务状态（Todo → In Progress → Review → Done）<br>
+    • 定期 <code>git log --all --oneline --graph</code> 查看全貌，确保无人偏离方向<br>
+    • <strong>Squash Merge</strong>：将 PR 的多个小提交合并为一个整洁的提交再合入 main</div>
+</article>
+
+<!-- ==================== 结束 ==================== -->
+<article class="step-card nav-jump-card">
+    <div style="font-size:1.5rem;color:var(--git);margin-bottom:0.6rem;"><i class="fas fa-code-branch"></i></div>
+    <div class="step-text" style="text-align:center;">
+        <strong>掌握了这些 Git 技能，你就可以自信地参与任何开源项目了！</strong><br>
+        推荐进一步阅读：<a href="https://git-scm.com/book/zh/v2" target="_blank" style="color:var(--git)">Pro Git 中文版</a> — Git 官方权威教材
+    </div>
+    <a href="about.html" class="btn-jump">
+        <i class="fas fa-arrow-left"></i> 返回技术分享
+    </a>
+</article>
+
+        </section>
+
+        <footer class="git-footer">
+            &copy; 2026 Misser-catos · Git 使用教程
+        </footer>
+    </main>
+
+<script>
+(function(){
+var c=document.getElementById('bgCanvas');
+var x=c.getContext('2d');
+var W,H;
+var dots=[],lines=[];
+function rs(){W=c.width=innerWidth;H=c.height=innerHeight;initP()}
+function initP(){
+    dots=[];var n=Math.min(Math.floor(W*H/15000),60);
+    for(var i=0;i<n;i++)dots.push({x:Math.random()*W,y:Math.random()*H,vx:(Math.random()-0.5)*0.4,vy:(Math.random()-0.5)*0.4,r:1.5+Math.random()*2.5,o:0.08+Math.random()*0.12});
+    lines=[];
+}
+function dr(){
+    x.clearRect(0,0,W,H);
+    for(var i=0;i<dots.length;i++){
+        var d=dots[i];
+        d.x+=d.vx;d.y+=d.vy;
+        if(d.x<0)d.x=W;if(d.x>W)d.x=0;if(d.y<0)d.y=H;if(d.y>H)d.y=0;
+        x.fillStyle='rgba(240,81,51,'+d.o+')';x.beginPath();x.arc(d.x,d.y,d.r,0,Math.PI*2);x.fill();
+        for(var j=i+1;j<dots.length;j++){
+            var dx=d.x-dots[j].x,dy=d.y-dots[j].y,dist=Math.sqrt(dx*dx+dy*dy);
+            if(dist<150){
+                x.strokeStyle='rgba(240,81,51,'+(0.04*(1-dist/150))+')';
+                x.lineWidth=0.6;x.beginPath();x.moveTo(d.x,d.y);x.lineTo(dots[j].x,dots[j].y);x.stroke();
+            }
+        }
+    }
+    // 浮动分支图标
+    for(var k=0;k<3;k++){
+        var bx=80+Math.random()*(W-160),by=80+Math.random()*(H-160);
+        x.strokeStyle='rgba(240,81,51,0.06)';x.lineWidth=1;
+        var lx=bx-20,ly=by-20;
+        x.beginPath();x.moveTo(bx,by);x.lineTo(lx,ly);x.stroke();
+        x.fillStyle='rgba(240,81,51,0.08)';x.beginPath();x.arc(bx,by,4,0,Math.PI*2);x.fill();
+        x.beginPath();x.arc(lx,ly,4,0,Math.PI*2);x.fill();
+    }
+    requestAnimationFrame(dr);
+}
+window.addEventListener('resize',rs);rs();dr();
+
+})();
+</script>
+    <script src="assets/js/musicPlayer.js"></script>
+</body>
+</html>
