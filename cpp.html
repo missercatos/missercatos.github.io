@@ -316,11 +316,21 @@ var CH = [
     {f:'11_信号处理.txt',t:'第十一章  信号处理'},
     {f:'12_多线程.txt',t:'第十二章  多线程'},
     {f:'13_Web编程.txt',t:'第十三章  Web 编程'},
-    {f:'14_C++标准库.txt',t:'第十四章  C++ 标准库'}
+    {f:'14_C++标准库.txt',t:'第十四章  C++ 标准库'},
+    {f:'算法结构/A_容器_Container.txt',t:'第十五章  容器 (Container)'},
+    {f:'算法结构/B_栈_Stack.txt',t:'第十六章  栈 (Stack)'},
+    {f:'算法结构/C_堆_Heap.txt',t:'第十七章  堆 (Heap)'},
+    {f:'算法结构/D_链表_LinkedList.txt',t:'第十八章  链表 (LinkedList)'},
+    {f:'算法结构/E_红黑树_RedBlackTree.txt',t:'第十九章  红黑树 (Red-Black Tree)'},
+    {f:'算法结构/F_队列_Queue.txt',t:'第二十章  队列 (Queue)'},
+    {f:'算法结构/G_哈希表_HashTable.txt',t:'第二十一章  哈希表 (Hash Table)'},
+    {f:'算法结构/H_图_Graph.txt',t:'第二十二章  图 (Graph)'},
+    {f:'算法结构/I_树_Tree_BST_AVL.txt',t:'第二十三章  树与 BST/AVL'}
 ];
 var BP='learning/cpp/';
 var chIdx=0, pgIdx=0;
 var cache={}, pages=[];
+var chapterHeadings={}; // chIdx → [{text, level, pageIdx, id}, ...]
 
 // ==================== DOM ====================
 var $S=function(id){return document.getElementById(id)};
@@ -349,7 +359,7 @@ function highlightSideChapter(){
     }
 }
 
-// ==================== 侧栏节 ====================
+// ==================== 侧栏节（章节内全部小节，跨页跳转） ====================
 function buildSideSections(headings){
     sideSec.innerHTML='';
     if(!headings||headings.length===0){
@@ -361,11 +371,18 @@ function buildSideSections(headings){
         var a=document.createElement('a');
         a.className='section-link';
         a.textContent=h.text;
+        if(h.pageIdx===pgIdx) a.style.color='var(--accent-light)';
         a.href='javascript:void(0)';
-        a.addEventListener('click',(function(target){return function(){
-            var el=$S(target);
-            if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
-        }})(h.id));
+        a.addEventListener('click',(function(hdr){return function(){
+            if(hdr.pageIdx!==pgIdx){
+                pgIdx=hdr.pageIdx;
+                showPage();
+            }
+            setTimeout(function(){
+                var el=document.getElementById(hdr.id);
+                if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+            },150);
+        }})(h));
         sideSec.appendChild(a);
     }
 }
@@ -471,13 +488,14 @@ function splitPages(blocks){
 // ==================== 渲染 ====================
 var ALL_HEADINGS=[];
 
-function renderPage(blocks){
+function renderPage(blocks,pgI){
     ALL_HEADINGS=[];
     var html='';
+    var pi=pgI||0;
     for(var i=0;i<blocks.length;i++){
         var b=blocks[i];
         if(b.t==='text'){
-            html+=renderText(b.c);
+            html+=renderText(b.c,pi);
         }else if(b.t==='code'){
             html+=renderCode(b.c,b.lang);
         }
@@ -485,7 +503,8 @@ function renderPage(blocks){
     return html;
 }
 
-function renderText(text){
+function renderText(text,pgI){
+    var pi=pgI||0;
     var lines=text.split('\n');
     var out='', inUl=false, inOl=false, inAscii=false, asciiBuf=[];
     for(var i=0;i<lines.length;i++){
@@ -503,8 +522,8 @@ function renderText(text){
             if(inUl){out+='</ul>';inUl=false}
             if(inOl){out+='</ol>';inOl=false}
             var lvl=hm[1].length, txt=hm[2], tag='h'+(lvl+1>3?3:lvl+1);
-            var id='s'+chIdx+'-'+i;
-            ALL_HEADINGS.push({text:txt.replace(/[*_#]/g,'').trim(),level:lvl,id:id});
+            var id='s'+chIdx+'-'+pi+'-'+i;
+            ALL_HEADINGS.push({text:txt.replace(/[*_#]/g,'').trim(),level:lvl,id:id,pageIdx:pi});
             out+='<'+tag+' id="'+id+'">'+fmtInline(esc(txt))+'</'+tag+'>';
             continue;
         }
@@ -670,6 +689,26 @@ function loadAndShow(){
         var blocks=parse(raw);
         pages=splitPages(blocks);
         cache[ci]=pages;
+        // 提取整个章节所有页面的小节标题
+        var allH=[];
+        for(var p=0;p<pages.length;p++){
+            for(var b=0;b<pages[p].length;b++){
+                if(pages[p][b].t==='text'){
+                    var lines=pages[p][b].c.split('\n');
+                    for(var l=0;l<lines.length;l++){
+                        var t=lines[l].trim();
+                        var hm=t.match(/^(#{1,3})\s+(.+)/);
+                        if(hm){
+                            var txt=hm[2].replace(/[*_#]/g,'').trim();
+                            if(txt.length>0&&txt.length<80){
+                                allH.push({text:txt,level:hm[1].length,pageIdx:p,id:'s'+ci+'-'+p+'-'+l});
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        chapterHeadings[ci]=allH;
         if(ci===chIdx){
             if(pgIdx===99999||pgIdx>=pages.length) pgIdx=Math.max(0,pages.length-1);
             showPage();
@@ -682,8 +721,8 @@ function loadAndShow(){
 function showPage(){
     if(pgIdx>=pages.length)pgIdx=0;
     var pg=pages[pgIdx];
-    cont.innerHTML=renderPage(pg);
-    buildSideSections(ALL_HEADINGS);
+    cont.innerHTML=renderPage(pg,pgIdx);
+    buildSideSections(chapterHeadings[chIdx]||[]);
     updateNav();
     window.scrollTo({top:0,behavior:'smooth'});
 }

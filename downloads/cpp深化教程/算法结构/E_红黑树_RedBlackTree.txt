@@ -1,0 +1,864 @@
+================================================================================
+C++ 算法结构教程 — 红黑树 (Red-Black Tree)
+================================================================================
+
+## 章节概述
+
+红黑树（Red-Black Tree）是一种自平衡的二叉查找树，它在每个节点上增加一个存储位
+表示节点的颜色（红色或黑色），通过对任何一条从根到叶子的路径上各节点颜色的约束，
+确保没有一条路径会比其他路径长出2倍，因此红黑树是近似平衡的。
+
+红黑树是C++标准库中 std::map、std::set、std::multimap、std::multiset 的底层
+实现数据结构，也是Linux内核中CFS调度器、内存管理等模块的核心数据结构。
+
+================================================================================
+### 第一节: 基础语法 + 计算机底层原理
+================================================================================
+
+1.1 红黑树的基本概念
+-----------------------
+
+红黑树的五个性质：
+1. 每个节点要么是红色，要么是黑色
+2. 根节点是黑色
+3. 每个叶子节点（NIL空节点）是黑色
+4. 如果一个节点是红色，则它的两个子节点都是黑色
+   （即不能有两个连续的红色节点）
+5. 从任意节点到其每个叶子的所有路径都包含相同数目的黑色节点
+   （黑色高度相同）
+
+这些约束确保了红黑树的高度不超过 2*log2(n+1)，因此查找、插入、删除的
+最坏时间复杂度为 O(log n)。
+
+```
+红黑树示例：
+        黑(50)
+       /      \
+    红(30)    红(70)
+    /    \    /    \
+ 黑(20) 黑(40)黑(60)黑(80)
+        /
+    红(35)  ← 红色节点不能有红色子节点（这里35的父是黑40，允许）
+```
+
+1.2 标准库中红黑树的使用
+---------------------------
+
+红黑树在标准库中通过 map/set 等关联容器间接使用：
+
+```cpp
+#include <iostream>
+#include <map>
+#include <set>
+#include <string>
+
+int main() {
+    // map 底层是红黑树（key值有序）
+    std::map<std::string, int> scores;
+    scores["Alice"] = 95;
+    scores["Bob"] = 87;
+    scores["Charlie"] = 92;
+    scores["David"] = 78;
+
+    // 红黑树的性质保证了遍历是按key排序的
+    std::cout << "按名字排序的成绩表:" << std::endl;
+    for (const auto& [name, score] : scores) {
+        std::cout << "  " << name << ": " << score << std::endl;
+    }
+
+    // 查找（O(log n)）
+    auto it = scores.find("Bob");
+    if (it != scores.end()) {
+        std::cout << "Bob的成绩: " << it->second << std::endl;
+    }
+
+    // 范围查找（利用红黑树的有序性）
+    auto lower = scores.lower_bound("B");   // 第一个 >= "B" 的元素
+    auto upper = scores.upper_bound("D");   // 第一个 > "D" 的元素
+    std::cout << "名字在B到D之间的学生:" << std::endl;
+    for (auto it2 = lower; it2 != upper; ++it2) {
+        std::cout << "  " << it2->first << ": " << it2->second << std::endl;
+    }
+
+    // set 也是一样
+    std::set<int> numbers;
+    for (int n : {5, 3, 8, 1, 9, 2, 7}) {
+        numbers.insert(n);
+    }
+
+    std::cout << "有序集合: ";
+    for (int n : numbers) std::cout << n << " ";
+    std::cout << std::endl;
+
+    return 0;
+}
+```
+
+1.3 红黑树的底层实现原理
+----------------------------
+
+红黑树的核心操作是插入和删除后的"修正"过程。插入后通过变色和旋转保持性质，
+删除后通过"双黑"问题处理保持性质。
+
+旋转操作（与AVL树相同）：
+- 左旋：将节点x的右子节点提升到x的位置，x成为其左子节点
+- 右旋：将节点x的左子节点提升到x的位置，x成为其右子节点
+
+```cpp
+// 左旋示意
+//      x              y
+//     / \            / \
+//    a   y    ->    x   c
+//       / \        / \
+//      b   c      a   b
+
+// 右旋示意
+//      x              y
+//     / \            / \
+//    y   c    ->    a   x
+//   / \                / \
+//  a   b              b   c
+```
+
+1.4 红黑树的插入操作
+-----------------------
+
+插入过程：
+1. 按照BST规则插入新节点
+2. 将新节点涂成红色
+3. 检查并修复红黑性质（最多需要2次旋转）
+
+插入修复的三种情况：
+- 情况1：叔叔是红色 → 变色（父、叔变黑，祖父变红）
+- 情况2：叔叔是黑色，新节点与父节点同侧 → 单旋转 + 变色
+- 情况3：叔叔是黑色，新节点与父节点异侧 → 双旋转 + 变色
+
+```cpp
+#include <iostream>
+#include <stdexcept>
+
+enum class Color { RED, BLACK };
+
+template<typename T>
+class RBTree {
+private:
+    struct Node {
+        T data;
+        Color color;
+        Node* left;
+        Node* right;
+        Node* parent;
+
+        Node(const T& val)
+            : data(val), color(Color::RED),
+              left(nullptr), right(nullptr), parent(nullptr) {}
+    };
+
+    Node* root;
+    Node* NIL;  // 哨兵空节点（黑色）
+
+    // 左旋
+    void leftRotate(Node* x) {
+        Node* y = x->right;
+        x->right = y->left;
+        if (y->left != NIL) y->left->parent = x;
+        y->parent = x->parent;
+
+        if (x->parent == nullptr) {
+            root = y;
+        } else if (x == x->parent->left) {
+            x->parent->left = y;
+        } else {
+            x->parent->right = y;
+        }
+        y->left = x;
+        x->parent = y;
+    }
+
+    // 右旋
+    void rightRotate(Node* x) {
+        Node* y = x->left;
+        x->left = y->right;
+        if (y->right != NIL) y->right->parent = x;
+        y->parent = x->parent;
+
+        if (x->parent == nullptr) {
+            root = y;
+        } else if (x == x->parent->right) {
+            x->parent->right = y;
+        } else {
+            x->parent->left = y;
+        }
+        y->right = x;
+        x->parent = y;
+    }
+
+    // 插入修正
+    void insertFixup(Node* z) {
+        while (z->parent && z->parent->color == Color::RED) {
+            if (z->parent == z->parent->parent->left) {
+                Node* y = z->parent->parent->right;  // 叔叔
+                if (y && y->color == Color::RED) {
+                    // 情况1：叔叔是红色
+                    z->parent->color = Color::BLACK;
+                    y->color = Color::BLACK;
+                    z->parent->parent->color = Color::RED;
+                    z = z->parent->parent;
+                } else {
+                    if (z == z->parent->right) {
+                        // 情况2：z是右孩子 → 左旋
+                        z = z->parent;
+                        leftRotate(z);
+                    }
+                    // 情况3：z是左孩子 → 右旋+变色
+                    z->parent->color = Color::BLACK;
+                    z->parent->parent->color = Color::RED;
+                    rightRotate(z->parent->parent);
+                }
+            } else {
+                // 对称情况
+                Node* y = z->parent->parent->left;
+                if (y && y->color == Color::RED) {
+                    z->parent->color = Color::BLACK;
+                    y->color = Color::BLACK;
+                    z->parent->parent->color = Color::RED;
+                    z = z->parent->parent;
+                } else {
+                    if (z == z->parent->left) {
+                        z = z->parent;
+                        rightRotate(z);
+                    }
+                    z->parent->color = Color::BLACK;
+                    z->parent->parent->color = Color::RED;
+                    leftRotate(z->parent->parent);
+                }
+            }
+        }
+        root->color = Color::BLACK;
+    }
+
+    // 中序遍历
+    void inorder(Node* node) const {
+        if (node == NIL) return;
+        inorder(node->left);
+        std::cout << node->data
+                  << (node->color == Color::RED ? "(红) " : "(黑) ");
+        inorder(node->right);
+    }
+
+    // 计算黑色高度
+    int blackHeight(Node* node) const {
+        if (node == NIL) return 0;
+        int left = blackHeight(node->left);
+        int right = blackHeight(node->right);
+        int add = (node->color == Color::BLACK) ? 1 : 0;
+        return add + std::max(left, right);
+    }
+
+    // 释放内存
+    void destroy(Node* node) {
+        if (node == NIL) return;
+        destroy(node->left);
+        destroy(node->right);
+        delete node;
+    }
+
+public:
+    RBTree() {
+        NIL = new Node(T());
+        NIL->color = Color::BLACK;
+        NIL->left = NIL->right = NIL->parent = nullptr;
+        root = NIL;
+    }
+
+    ~RBTree() {
+        destroy(root);
+        delete NIL;
+    }
+
+    void insert(const T& value) {
+        Node* z = new Node(value);
+        z->left = NIL;
+        z->right = NIL;
+
+        Node* y = nullptr;
+        Node* x = root;
+
+        // 找到插入位置
+        while (x != NIL) {
+            y = x;
+            if (z->data < x->data) {
+                x = x->left;
+            } else if (z->data > x->data) {
+                x = x->right;
+            } else {
+                delete z;
+                return;  // 不允许重复
+            }
+        }
+
+        z->parent = y;
+        if (y == nullptr) {
+            root = z;
+        } else if (z->data < y->data) {
+            y->left = z;
+        } else {
+            y->right = z;
+        }
+
+        // 插入修正
+        insertFixup(z);
+    }
+
+    Node* search(const T& value) const {
+        Node* cur = root;
+        while (cur != NIL) {
+            if (value == cur->data) return cur;
+            cur = (value < cur->data) ? cur->left : cur->right;
+        }
+        return nullptr;
+    }
+
+    void print() const {
+        std::cout << "中序遍历: ";
+        inorder(root);
+        std::cout << std::endl;
+        std::cout << "根节点: " << root->data
+                  << (root->color == Color::RED ? "(红)" : "(黑)")
+                  << " | 黑色高度: " << blackHeight(root) << std::endl;
+    }
+};
+
+int main() {
+    RBTree<int> rbt;
+
+    // 插入一系列值
+    int values[] = {7, 3, 18, 10, 22, 8, 11, 26, 2, 6, 13};
+    for (int v : values) {
+        rbt.insert(v);
+        std::cout << "插入 " << v << " 后: ";
+        rbt.print();
+    }
+
+    // 查找测试
+    for (int v : {10, 99}) {
+        auto node = rbt.search(v);
+        std::cout << "查找 " << v << ": "
+                  << (node ? "找到" : "未找到") << std::endl;
+    }
+
+    return 0;
+}
+```
+
+1.5 红黑树 vs AVL树 的比较
+-------------------------------
+
+| 特性       | 红黑树           | AVL树             |
+|-----------|-----------------|-------------------|
+| 平衡标准   | 近似平衡（2倍）  | 严格平衡（差<=1）  |
+| 查找速度   | 稍慢（log n）    | 更快（log n）      |
+| 插入/删除  | 更快（1-2次旋转）| 更慢（可能多次旋转）|
+| 额外存储   | 1bit颜色        | 平衡因子（整数）   |
+| 适用场景   | 插入删除频繁     | 查找频繁           |
+
+
+================================================================================
+### 第二节: 所有用法大全
+================================================================================
+
+2.1 std::map 中的红黑树操作
+------------------------------
+
+```cpp
+#include <iostream>
+#include <map>
+#include <string>
+
+int main() {
+    std::map<int, std::string> rbt_map;
+
+    // 插入（每个插入都是O(log n)的红黑树操作）
+    rbt_map[5] = "five";
+    rbt_map[3] = "three";
+    rbt_map[8] = "eight";
+    rbt_map[1] = "one";
+    rbt_map[7] = "seven";
+
+    // 利用红黑树的有序性做范围查询
+    auto lb = rbt_map.lower_bound(3);   // >= 3
+    auto ub = rbt_map.upper_bound(7);   // > 7
+
+    std::cout << "范围 [3, 7] 内的元素:" << std::endl;
+    for (auto it = lb; it != ub; ++it) {
+        std::cout << "  " << it->first << " -> " << it->second << std::endl;
+    }
+
+    // 反向遍历（利用红黑树的双向迭代）
+    std::cout << "反向遍历:" << std::endl;
+    for (auto it = rbt_map.rbegin(); it != rbt_map.rend(); ++it) {
+        std::cout << "  " << it->first << " -> " << it->second << std::endl;
+    }
+
+    // equal_range
+    auto [low, high] = rbt_map.equal_range(5);
+    if (low != high) {
+        std::cout << "equal_range(5): " << low->first
+                  << " -> " << low->second << std::endl;
+    }
+
+    return 0;
+}
+```
+
+2.2 std::set 中的红黑树操作
+------------------------------
+
+```cpp
+#include <iostream>
+#include <set>
+#include <algorithm>
+
+int main() {
+    std::set<int> s;
+
+    // 插入
+    auto [it, inserted] = s.insert(5);
+    std::cout << "插入5: " << (inserted ? "成功" : "已存在") << std::endl;
+
+    std::tie(it, inserted) = s.insert(5);
+    std::cout << "再次插入5: " << (inserted ? "成功" : "已存在") << std::endl;
+
+    // 批量插入
+    s.insert({3, 8, 1, 7, 9, 2});
+
+    // 利用红黑树有序性做集合运算
+    std::set<int> set_a = {1, 2, 3, 4, 5};
+    std::set<int> set_b = {3, 4, 5, 6, 7};
+    std::set<int> result;
+
+    // 交集
+    std::set_intersection(set_a.begin(), set_a.end(),
+                          set_b.begin(), set_b.end(),
+                          std::inserter(result, result.begin()));
+    std::cout << "交集: ";
+    for (int x : result) std::cout << x << " ";
+    std::cout << std::endl;
+
+    // 并集
+    result.clear();
+    std::set_union(set_a.begin(), set_a.end(),
+                   set_b.begin(), set_b.end(),
+                   std::inserter(result, result.begin()));
+    std::cout << "并集: ";
+    for (int x : result) std::cout << x << " ";
+    std::cout << std::endl;
+
+    // 差集
+    result.clear();
+    std::set_difference(set_a.begin(), set_a.end(),
+                        set_b.begin(), set_b.end(),
+                        std::inserter(result, result.begin()));
+    std::cout << "差集 (A-B): ";
+    for (int x : result) std::cout << x << " ";
+    std::cout << std::endl;
+
+    return 0;
+}
+```
+
+2.3 红黑树的应用：区间调度
+-------------------------------
+
+```cpp
+#include <iostream>
+#include <map>
+#include <set>
+#include <vector>
+
+// 使用红黑树（map）管理会议室的预约时间
+class MeetingRoom {
+private:
+    std::map<int, int> bookings;  // start -> end (红黑树, key有序)
+
+public:
+    // 预约：返回是否成功
+    bool book(int start, int end) {
+        // 找到第一个 >= start 的预约
+        auto next = bookings.lower_bound(start);
+
+        // 检查与后一个预约是否冲突
+        if (next != bookings.end() && next->first < end) {
+            return false;
+        }
+
+        // 检查与前一个预约是否冲突
+        if (next != bookings.begin()) {
+            auto prev = std::prev(next);
+            if (prev->second > start) {
+                return false;
+            }
+        }
+
+        bookings[start] = end;
+        return true;
+    }
+
+    void printBookings() const {
+        std::cout << "当前预约: ";
+        for (const auto& [start, end] : bookings) {
+            std::cout << "[" << start << "-" << end << ") ";
+        }
+        std::cout << std::endl;
+    }
+};
+
+int main() {
+    MeetingRoom room;
+
+    room.book(9, 10);    // 9:00-10:00
+    room.book(10, 11);   // 10:00-11:00
+    room.book(11, 12);   // 11:00-12:00
+
+    room.printBookings();
+
+    std::cout << "预约 9:30-10:30: "
+              << (room.book(9, 10) ? "成功" : "失败") << std::endl;
+    std::cout << "预约 14:00-15:00: "
+              << (room.book(14, 15) ? "成功" : "失败") << std::endl;
+
+    room.printBookings();
+
+    return 0;
+}
+```
+
+
+================================================================================
+### 第三节: 实用案例
+================================================================================
+
+案例一：字典树形查询（中文拼音输入法）
+----------------------------------------------
+
+使用多重map（红黑树）实现拼音到汉字的映射查询：
+
+```cpp
+#include <iostream>
+#include <map>
+#include <set>
+#include <string>
+#include <vector>
+
+class PinyinDictionary {
+private:
+    // 拼音 -> 候选汉字集合
+    std::map<std::string, std::set<std::string>> dict;
+
+public:
+    void addWord(const std::string& pinyin, const std::string& hanzi) {
+        dict[pinyin].insert(hanzi);
+    }
+
+    // 精确查询
+    std::set<std::string> query(const std::string& pinyin) const {
+        auto it = dict.find(pinyin);
+        if (it != dict.end()) {
+            return it->second;
+        }
+        return {};
+    }
+
+    // 前缀查询（利用红黑树的lower_bound/upper_bound）
+    std::vector<std::pair<std::string, std::set<std::string>>>
+    prefixQuery(const std::string& prefix) const {
+        std::vector<std::pair<std::string, std::set<std::string>>> result;
+
+        auto start = dict.lower_bound(prefix);
+        // 构造上界: 将最后一个字符+1
+        std::string end_prefix = prefix;
+        end_prefix.back()++;
+
+        auto end = dict.lower_bound(end_prefix);
+
+        for (auto it = start; it != end; ++it) {
+            if (!it->second.empty()) {
+                result.push_back({it->first, it->second});
+            }
+        }
+
+        return result;
+    }
+
+    void printAll() const {
+        for (const auto& [pinyin, hanzi_set] : dict) {
+            std::cout << pinyin << ": ";
+            for (const auto& h : hanzi_set) {
+                std::cout << h << " ";
+            }
+            std::cout << std::endl;
+        }
+    }
+};
+
+int main() {
+    PinyinDictionary dict;
+
+    dict.addWord("zhong", "中");
+    dict.addWord("zhong", "钟");
+    dict.addWord("zhong", "衷");
+    dict.addWord("guo", "国");
+    dict.addWord("guo", "果");
+    dict.addWord("guo", "过");
+    dict.addWord("zhongguo", "中国");
+    dict.addWord("ren", "人");
+    dict.addWord("min", "民");
+    dict.addWord("renmin", "人民");
+
+    std::cout << "完整词库:" << std::endl;
+    dict.printAll();
+
+    std::string input = "zhong";
+    std::cout << "\n精确查询 \"" << input << "\": ";
+    for (const auto& h : dict.query(input)) {
+        std::cout << h << " ";
+    }
+    std::cout << std::endl;
+
+    input = "g";
+    std::cout << "\n前缀查询 \"" << input << "\": " << std::endl;
+    for (const auto& [p, hset] : dict.prefixQuery(input)) {
+        std::cout << "  " << p << ": ";
+        for (const auto& h : hset) std::cout << h << " ";
+        std::cout << std::endl;
+    }
+
+    return 0;
+}
+```
+
+
+案例二：股票交易系统订单簿
+-----------------------------------
+
+使用红黑树（map）管理股票买卖订单：
+
+```cpp
+#include <iostream>
+#include <map>
+#include <string>
+#include <vector>
+
+class OrderBook {
+private:
+    struct Order {
+        int id;
+        int quantity;
+        double price;
+        std::string trader;
+
+        Order(int i, int q, double p, const std::string& t)
+            : id(i), quantity(q), price(p), trader(t) {}
+    };
+
+    // 卖单：按价格升序（最低价先成交）
+    std::map<double, std::vector<Order>> sell_orders;
+
+    // 买单：按价格降序（最高价先成交）
+    // 使用负值实现降序效果，或使用greater
+    std::map<double, std::vector<Order>, std::greater<double>> buy_orders;
+
+    int next_order_id = 1;
+
+public:
+    void placeBuyOrder(int quantity, double price, const std::string& trader) {
+        buy_orders[price].emplace_back(next_order_id++, quantity, price, trader);
+        std::cout << "买单: " << trader << " 想以 " << price
+                  << " 买入 " << quantity << "股" << std::endl;
+        matchOrders();
+    }
+
+    void placeSellOrder(int quantity, double price, const std::string& trader) {
+        sell_orders[price].emplace_back(next_order_id++, quantity, price, trader);
+        std::cout << "卖单: " << trader << " 想以 " << price
+                  << " 卖出 " << quantity << "股" << std::endl;
+        matchOrders();
+    }
+
+private:
+    void matchOrders() {
+        while (!buy_orders.empty() && !sell_orders.empty()) {
+            auto highest_buy = buy_orders.begin();
+            auto lowest_sell = sell_orders.begin();
+
+            // 最高买价 >= 最低卖价 → 成交
+            if (highest_buy->first < lowest_sell->first) break;
+
+            auto& buy_orders_at_price = highest_buy->second;
+            auto& sell_orders_at_price = lowest_sell->second;
+
+            int trade_qty = std::min(buy_orders_at_price.front().quantity,
+                                     sell_orders_at_price.front().quantity);
+            double trade_price = lowest_sell->first;
+
+            std::cout << "  [成交] " << trade_qty << "股 @ "
+                      << trade_price << std::endl;
+
+            buy_orders_at_price.front().quantity -= trade_qty;
+            sell_orders_at_price.front().quantity -= trade_qty;
+
+            if (buy_orders_at_price.front().quantity == 0) {
+                buy_orders_at_price.erase(buy_orders_at_price.begin());
+            }
+            if (sell_orders_at_price.front().quantity == 0) {
+                sell_orders_at_price.erase(sell_orders_at_price.begin());
+            }
+
+            if (buy_orders_at_price.empty()) buy_orders.erase(highest_buy);
+            if (sell_orders_at_price.empty()) sell_orders.erase(lowest_sell);
+        }
+    }
+
+public:
+    void printBook() const {
+        std::cout << "\n========== 订单簿 ==========" << std::endl;
+        std::cout << "--- 卖单 (低价优先) ---" << std::endl;
+        for (auto it = sell_orders.begin(); it != sell_orders.end(); ++it) {
+            int total_qty = 0;
+            for (const auto& o : it->second) total_qty += o.quantity;
+            std::cout << "  $" << it->first << ": " << total_qty << "股" << std::endl;
+        }
+
+        std::cout << "--- 买单 (高价优先) ---" << std::endl;
+        for (auto it = buy_orders.begin(); it != buy_orders.end(); ++it) {
+            int total_qty = 0;
+            for (const auto& o : it->second) total_qty += o.quantity;
+            std::cout << "  $" << it->first << ": " << total_qty << "股" << std::endl;
+        }
+        std::cout << "==========================\n" << std::endl;
+    }
+};
+
+int main() {
+    OrderBook ob;
+
+    ob.placeBuyOrder(100, 50.0, "Alice");
+    ob.placeSellOrder(50, 49.5, "Bob");
+    ob.placeBuyOrder(200, 51.0, "Charlie");
+    ob.placeSellOrder(100, 50.5, "David");
+    ob.placeSellOrder(150, 49.0, "Eve");
+
+    ob.printBook();
+
+    return 0;
+}
+```
+
+
+案例三：内存分配器（伙伴系统简化版）
+-------------------------------------------
+
+使用红黑树管理空闲内存块：
+
+```cpp
+#include <iostream>
+#include <map>
+#include <set>
+
+class BuddyAllocator {
+private:
+    // size -> block addresses (红黑树保证按size排序)
+    std::map<size_t, std::set<void*>> free_blocks;
+
+public:
+    void* allocate(size_t size) {
+        // 找到第一个 >= size 的空闲块
+        auto it = free_blocks.lower_bound(size);
+        if (it == free_blocks.end()) {
+            std::cout << "分配 " << size << "字节: 失败，无足够内存"
+                      << std::endl;
+            return nullptr;
+        }
+
+        void* addr = *it->second.begin();
+        it->second.erase(it->second.begin());
+
+        if (it->second.empty()) {
+            free_blocks.erase(it);
+        }
+
+        std::cout << "分配 " << size << "字节 @ " << addr << std::endl;
+        return addr;
+    }
+
+    void deallocate(void* addr, size_t size) {
+        free_blocks[size].insert(addr);
+        std::cout << "释放 " << size << "字节 @ " << addr << std::endl;
+    }
+
+    void printStats() const {
+        std::cout << "\n空闲块统计:" << std::endl;
+        for (const auto& [size, addrs] : free_blocks) {
+            std::cout << "  " << size << "字节: " << addrs.size() << "个块"
+                      << std::endl;
+        }
+    }
+};
+
+int main() {
+    BuddyAllocator alloc;
+
+    // 模拟内存管理
+    void* p1 = alloc.allocate(64);
+    void* p2 = alloc.allocate(128);
+    void* p3 = alloc.allocate(32);
+
+    alloc.deallocate(p1, 64);
+    alloc.deallocate(p3, 32);
+
+    void* p4 = alloc.allocate(48);
+    void* p5 = alloc.allocate(256);
+
+    alloc.deallocate(p2, 128);
+    alloc.deallocate(p4, 48);
+    alloc.deallocate(p5, 256);
+
+    alloc.printStats();
+
+    return 0;
+}
+```
+
+
+================================================================================
+### 第四节: 课后习题
+================================================================================
+
+1. 基础题：手动实现红黑树的删除操作。
+   - 实现红黑树的删除逻辑（包括修复）
+   - 处理所有可能的删除情况（双黑问题）
+   - 验证删除后保持红黑树的五个性质
+
+2. 应用题：使用红黑树实现一个时间轮调度器。
+   - 将定时任务按执行时间存储在红黑树中
+   - 支持添加任务、取消任务、获取最近要执行的任务
+   - 模拟任务调度过程
+
+3. 进阶题：实现红黑树的区间查找（区间树）。
+   - 在红黑树节点中添加"区间最大值"字段
+   - 支持插入区间、删除区间、查找与给定区间重叠的所有区间
+   - 应用：网络路由表、防火墙规则匹配
+
+4. 综合题：实现一个支持范围统计的数据库索引。
+   - 使用红黑树存储（key, value）对
+   - 支持 count(low, high) 返回key在[low, high]范围内的元素个数
+   - 支持 sum(low, high) 返回key在范围内的value之和
+   - 时间复杂度 O(log n)
+
+5. 挑战题：实现一种红黑树的变体——左倾红黑树（Left-Leaning Red-Black Tree）。
+   - 由Robert Sedgewick提出，简化了插入和删除的实现
+   - 只有左子节点可以是红色的
+   - 实现 insert 和 delete 操作
+   - 与标准红黑树进行性能对比
+
+================================================================================

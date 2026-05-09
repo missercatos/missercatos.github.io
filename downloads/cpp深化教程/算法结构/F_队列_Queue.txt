@@ -1,0 +1,701 @@
+================================================================================
+C++ 算法结构教程 — 队列 (Queue)
+================================================================================
+
+## 章节概述
+
+队列（Queue）是一种受限的线性数据结构，它遵循"先进先出"（FIFO, First In First
+Out）的原则。元素只能从一端（队尾）插入，从另一端（队首）删除。
+
+队列在计算机科学中应用广泛：CPU任务调度、IO缓冲区、广度优先搜索（BFS）、
+消息队列、打印任务队列、生产者消费者模型等。
+
+================================================================================
+### 第一节: 基础语法 + 计算机底层原理
+================================================================================
+
+1.1 队列的基本概念
+--------------------
+
+核心操作：
+- enqueue (push): 在队尾插入元素
+- dequeue (pop): 删除队首元素
+- front: 获取队首元素
+- back: 获取队尾元素
+- empty: 判断队列是否为空
+- size: 返回队列中元素个数
+
+最基础的队列使用示例：
+
+```cpp
+#include <iostream>
+#include <queue>
+
+int main() {
+    std::queue<int> q;
+
+    // 入队
+    q.push(10);
+    q.push(20);
+    q.push(30);
+
+    // 访问队首和队尾
+    std::cout << "队首: " << q.front() << std::endl;  // 10
+    std::cout << "队尾: " << q.back() << std::endl;   // 30
+
+    // 出队
+    q.pop();
+    std::cout << "出队后队首: " << q.front() << std::endl;  // 20
+
+    // 大小
+    std::cout << "队列大小: " << q.size() << std::endl;
+
+    // 遍历并清空
+    while (!q.empty()) {
+        std::cout << q.front() << " ";
+        q.pop();
+    }
+    std::cout << std::endl;
+
+    return 0;
+}
+```
+
+1.2 队列的底层原理：数组实现 vs 链表实现
+-----------------------------------------------
+
+数组实现（循环队列）：
+- 避免假溢出（假溢出指数组前面有空位但tail到了末尾）
+- 通过取模运算实现循环
+
+```cpp
+// 假溢出示意
+// 队列 [_, _, _, _, _, _, _, _]
+//       ↑              ↑
+//      front          tail
+// 前面都出队了，但tail已到末尾，无法再入队
+// 循环队列解决此问题：tail重新回到前面
+
+#include <iostream>
+#include <stdexcept>
+
+template<typename T, size_t MAX_SIZE = 10>
+class CircularQueue {
+private:
+    T data[MAX_SIZE];
+    size_t head;  // 队首位置
+    size_t tail;  // 队尾位置（下一个插入的位置）
+    size_t count; // 当前元素个数
+
+public:
+    CircularQueue() : head(0), tail(0), count(0) {}
+
+    void push(const T& value) {
+        if (count >= MAX_SIZE) {
+            throw std::overflow_error("队列已满");
+        }
+        data[tail] = value;
+        tail = (tail + 1) % MAX_SIZE;
+        ++count;
+    }
+
+    void pop() {
+        if (count == 0) {
+            throw std::underflow_error("队列为空");
+        }
+        head = (head + 1) % MAX_SIZE;
+        --count;
+    }
+
+    T& front() {
+        if (count == 0) throw std::underflow_error("队列为空");
+        return data[head];
+    }
+
+    bool empty() const { return count == 0; }
+    size_t size() const { return count; }
+
+    void print() const {
+        size_t idx = head;
+        for (size_t i = 0; i < count; ++i) {
+            std::cout << data[idx] << " ";
+            idx = (idx + 1) % MAX_SIZE;
+        }
+        std::cout << "(size=" << count << ")" << std::endl;
+    }
+};
+
+int main() {
+    CircularQueue<int, 5> cq;
+
+    cq.push(10);
+    cq.push(20);
+    cq.push(30);
+    cq.print();
+
+    cq.pop();
+    cq.pop();
+    cq.push(40);
+    cq.push(50);
+    cq.push(60);
+    cq.print();
+
+    std::cout << "队首: " << cq.front() << std::endl;
+
+    return 0;
+}
+```
+
+链表实现队列：
+
+```cpp
+#include <iostream>
+#include <stdexcept>
+
+template<typename T>
+class LinkedQueue {
+private:
+    struct Node {
+        T data;
+        Node* next;
+        Node(const T& val) : data(val), next(nullptr) {}
+    };
+
+    Node* head;  // 队首（出队端）
+    Node* tail;  // 队尾（入队端）
+    size_t count;
+
+public:
+    LinkedQueue() : head(nullptr), tail(nullptr), count(0) {}
+
+    ~LinkedQueue() {
+        while (head) {
+            Node* temp = head;
+            head = head->next;
+            delete temp;
+        }
+    }
+
+    void push(const T& value) {
+        Node* new_node = new Node(value);
+        if (tail) {
+            tail->next = new_node;
+        } else {
+            head = new_node;
+        }
+        tail = new_node;
+        ++count;
+    }
+
+    void pop() {
+        if (!head) throw std::underflow_error("队列为空");
+        Node* temp = head;
+        head = head->next;
+        if (!head) tail = nullptr;
+        delete temp;
+        --count;
+    }
+
+    T& front() {
+        if (!head) throw std::underflow_error("队列为空");
+        return head->data;
+    }
+
+    T& back() {
+        if (!tail) throw std::underflow_error("队列为空");
+        return tail->data;
+    }
+
+    bool empty() const { return count == 0; }
+    size_t size() const { return count; }
+};
+
+int main() {
+    LinkedQueue<int> lq;
+
+    for (int i = 1; i <= 5; ++i) lq.push(i * 10);
+    std::cout << "队首: " << lq.front() << ", 队尾: " << lq.back() << std::endl;
+
+    while (!lq.empty()) {
+        std::cout << lq.front() << " ";
+        lq.pop();
+    }
+    std::cout << std::endl;
+
+    return 0;
+}
+```
+
+1.3 双端队列（Deque）的底层原理
+------------------------------------
+
+deque（double-ended queue）是两端都可以插入和删除的队列。标准库的std::deque
+采用"分段连续存储"结构：
+
+```
+中控器（map，是一个指针数组）:
++--------+--------+--------+--------+--------+
+| buf 0  | buf 1  | buf 2  | buf 3  | buf 4  | ...
++--------+--------+--------+--------+--------+
+    ↓        ↓        ↓        ↓        ↓
++--------+ +--------+ +--------+ +--------+ +--------+
+| 1  2  3| | 4  5  6| | 7  8  9| |10 11 12| |13 14 15|
++--------+ +--------+ +--------+ +--------+ +--------+
+  buf0       buf1       buf2       buf3       buf4
+```
+
+每个缓冲区（buffer）是固定大小的连续数组。中控器维护所有缓冲区的指针。
+当在一端插入时，如果当前缓冲区已满，就分配一个新的缓冲区。
+
+
+================================================================================
+### 第二节: 所有用法大全
+================================================================================
+
+2.1 std::queue —— 队列容器适配器
+-------------------------------------
+
+```cpp
+#include <iostream>
+#include <queue>
+#include <list>
+#include <deque>
+
+int main() {
+    // 默认底层容器 deque
+    std::queue<int> q1;
+
+    // 使用 list 作为底层容器
+    std::queue<int, std::list<int>> q2;
+
+    // 从已有容器构造
+    std::deque<int> deq = {1, 2, 3, 4, 5};
+    std::queue<int> q3(deq);  // 1在队首，5在队尾
+
+    // 核心操作
+    std::queue<int> q;
+    q.push(100);
+    q.push(200);
+    q.emplace(300);  // C++11就地构造
+
+    std::cout << "size: " << q.size() << std::endl;
+    std::cout << "front: " << q.front() << std::endl;  // 100
+    std::cout << "back: " << q.back() << std::endl;    // 300
+
+    q.pop();  // 弹出队首
+    std::cout << "after pop, front: " << q.front() << std::endl;  // 200
+
+    // 交换
+    std::queue<int> other;
+    other.push(999);
+    q.swap(other);
+
+    // 关系运算符（逐个比较元素）
+    std::queue<int> a, b;
+    a.push(1); a.push(2);
+    b.push(1); b.push(2);
+    std::cout << "a == b: " << (a == b) << std::endl;
+    a.push(3);
+    b.push(4);
+    std::cout << "a < b: " << (a < b) << std::endl;  // 1,2,3 < 1,2,4
+
+    return 0;
+}
+```
+
+2.2 std::deque —— 双端队列
+-------------------------------
+
+```cpp
+#include <iostream>
+#include <deque>
+#include <algorithm>
+
+int main() {
+    std::deque<int> dq = {10, 20, 30};
+
+    // 两端操作
+    dq.push_front(5);
+    dq.push_back(35);
+    dq.pop_front();
+    dq.pop_back();
+
+    // 插入（deque支持随机访问迭代器，但中间插入较慢）
+    dq.insert(dq.begin() + 1, 15);
+    dq.emplace(dq.end() - 1, 25);
+
+    // 随机访问
+    std::cout << "dq[0]: " << dq[0] << std::endl;
+    std::cout << "dq.at(2): " << dq.at(2) << std::endl;
+
+    // resize
+    dq.resize(10, -1);  // 扩展到10个，新元素填-1
+    dq.resize(5);       // 缩小到5个
+
+    // 遍历
+    for (int x : dq) std::cout << x << " ";
+    std::cout << std::endl;
+
+    // 算法支持
+    std::sort(dq.begin(), dq.end());
+    auto it = std::find(dq.begin(), dq.end(), 25);
+
+    return 0;
+}
+```
+
+2.3 优先队列（Priority Queue）的队列视角
+----------------------------------------------
+
+```cpp
+#include <iostream>
+#include <queue>
+#include <vector>
+#include <functional>
+
+struct Patient {
+    std::string name;
+    int severity;      // 病情严重程度（越大越优先）
+    int arrival_time;  // 到达时间
+
+    bool operator<(const Patient& other) const {
+        // 严重程度高者优先；相同则先到者优先
+        if (severity != other.severity)
+            return severity < other.severity;
+        return arrival_time > other.arrival_time;
+    }
+};
+
+int main() {
+    std::priority_queue<Patient> er_queue;
+
+    er_queue.push({"张三", 5, 1});
+    er_queue.push({"李四", 8, 2});    // 更严重
+    er_queue.push({"王五", 8, 3});    // 同样严重但到得晚
+    er_queue.push({"赵六", 3, 4});
+
+    std::cout << "急诊顺序:" << std::endl;
+    while (!er_queue.empty()) {
+        auto p = er_queue.top();
+        std::cout << "  " << p.name << " (严重程度:" << p.severity
+                  << ", 到达:" << p.arrival_time << ")" << std::endl;
+        er_queue.pop();
+    }
+
+    return 0;
+}
+```
+
+
+================================================================================
+### 第三节: 实用案例
+================================================================================
+
+案例一：广度优先搜索（BFS）—— 社交网络好友推荐
+-------------------------------------------------------
+
+```cpp
+#include <iostream>
+#include <queue>
+#include <vector>
+#include <unordered_set>
+#include <unordered_map>
+
+class SocialGraph {
+private:
+    std::unordered_map<std::string, std::vector<std::string>> friends;
+
+public:
+    void addFriendship(const std::string& a, const std::string& b) {
+        friends[a].push_back(b);
+        friends[b].push_back(a);
+    }
+
+    // 使用BFS找指定用户的好友推荐（好友的好友，且不是直接好友）
+    std::vector<std::string> recommendFriends(const std::string& user,
+                                               int max_depth = 2) {
+        std::queue<std::pair<std::string, int>> q;  // (人名, 距离)
+        std::unordered_set<std::string> visited;
+        std::unordered_map<std::string, int> recommendations;
+
+        // 标记自己为已访问
+        visited.insert(user);
+        // 标记所有直接好友为已访问
+        for (const auto& f : friends[user]) {
+            visited.insert(f);
+        }
+
+        // 将直接好友加入队列
+        for (const auto& f : friends[user]) {
+            q.push({f, 1});
+        }
+
+        while (!q.empty()) {
+            auto [person, depth] = q.front();
+            q.pop();
+
+            if (depth >= max_depth) continue;
+
+            for (const auto& fof : friends[person]) {
+                if (visited.find(fof) == visited.end()) {
+                    visited.insert(fof);
+                    recommendations[fof] = depth + 1;
+                    q.push({fof, depth + 1});
+                }
+            }
+        }
+
+        // 按推荐度排序
+        std::vector<std::pair<std::string, int>> sorted(
+            recommendations.begin(), recommendations.end());
+        std::sort(sorted.begin(), sorted.end(),
+                  [](const auto& a, const auto& b) {
+                      return a.second < b.second;
+                  });
+
+        std::vector<std::string> result;
+        for (const auto& [name, dist] : sorted) {
+            result.push_back(name);
+        }
+        return result;
+    }
+};
+
+int main() {
+    SocialGraph sg;
+
+    sg.addFriendship("Alice", "Bob");
+    sg.addFriendship("Alice", "Charlie");
+    sg.addFriendship("Bob", "David");
+    sg.addFriendship("Bob", "Eve");
+    sg.addFriendship("Charlie", "Frank");
+    sg.addFriendship("David", "Grace");
+    sg.addFriendship("Eve", "Grace");
+
+    std::cout << "Alice的好友推荐: ";
+    for (const auto& name : sg.recommendFriends("Alice")) {
+        std::cout << name << " ";
+    }
+    std::cout << std::endl;
+
+    return 0;
+}
+```
+
+
+案例二：消息队列（生产者-消费者模型）
+---------------------------------------------
+
+```cpp
+#include <iostream>
+#include <queue>
+#include <string>
+#include <mutex>
+#include <condition_variable>
+#include <thread>
+#include <chrono>
+
+template<typename T>
+class ThreadSafeQueue {
+private:
+    std::queue<T> q;
+    mutable std::mutex mtx;
+    std::condition_variable cv;
+    size_t max_size;
+
+public:
+    ThreadSafeQueue(size_t max = 100) : max_size(max) {}
+
+    void push(const T& item) {
+        std::unique_lock<std::mutex> lock(mtx);
+        cv.wait(lock, [this]() { return q.size() < max_size; });
+        q.push(item);
+        cv.notify_all();
+    }
+
+    T pop() {
+        std::unique_lock<std::mutex> lock(mtx);
+        cv.wait(lock, [this]() { return !q.empty(); });
+        T item = q.front();
+        q.pop();
+        cv.notify_all();
+        return item;
+    }
+
+    bool try_pop(T& item, int timeout_ms = 100) {
+        std::unique_lock<std::mutex> lock(mtx);
+        if (!cv.wait_for(lock, std::chrono::milliseconds(timeout_ms),
+                         [this]() { return !q.empty(); })) {
+            return false;
+        }
+        item = q.front();
+        q.pop();
+        cv.notify_all();
+        return true;
+    }
+
+    size_t size() const {
+        std::lock_guard<std::mutex> lock(mtx);
+        return q.size();
+    }
+};
+
+void producer(ThreadSafeQueue<std::string>& queue, int id) {
+    for (int i = 0; i < 5; ++i) {
+        std::string msg = "生产者" + std::to_string(id) +
+                          " 的消息 #" + std::to_string(i);
+        queue.push(msg);
+        std::cout << "[生产] " << msg << std::endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds(100 * id));
+    }
+}
+
+void consumer(ThreadSafeQueue<std::string>& queue, int id) {
+    for (int i = 0; i < 5; ++i) {
+        std::string msg = queue.pop();
+        std::cout << "[消费" << id << "] " << msg << std::endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    }
+}
+
+int main() {
+    ThreadSafeQueue<std::string> queue(5);
+
+    std::thread p1(producer, std::ref(queue), 1);
+    std::thread p2(producer, std::ref(queue), 2);
+    std::thread c1(consumer, std::ref(queue), 1);
+    std::thread c2(consumer, std::ref(queue), 2);
+
+    p1.join();
+    p2.join();
+    c1.join();
+    c2.join();
+
+    std::cout << "队列处理完毕" << std::endl;
+
+    return 0;
+}
+```
+
+
+案例三：银行叫号系统
+---------------------------
+
+```cpp
+#include <iostream>
+#include <queue>
+#include <string>
+#include <vector>
+#include <random>
+
+class BankQueue {
+private:
+    struct Customer {
+        int number;
+        std::string service_type;  // 存款、取款、理财等
+        int arrival_time;
+    };
+
+    std::queue<Customer> normal_queue;
+    std::queue<Customer> vip_queue;
+    int counter = 0;
+
+public:
+    int takeNumber(const std::string& service_type, bool is_vip = false) {
+        int num = ++counter;
+        Customer c{num, service_type, counter};
+
+        if (is_vip) {
+            vip_queue.push(c);
+            std::cout << "VIP客户 " << num << " 取号 (" << service_type << ")"
+                      << std::endl;
+        } else {
+            normal_queue.push(c);
+            std::cout << "普通客户 " << num << " 取号 (" << service_type << ")"
+                      << std::endl;
+        }
+        return num;
+    }
+
+    void callNext() {
+        Customer c;
+        if (!vip_queue.empty()) {
+            c = vip_queue.front();
+            vip_queue.pop();
+            std::cout << ">>> 请VIP " << c.number << " 号到VIP窗口办理 ("
+                      << c.service_type << ")" << std::endl;
+        } else if (!normal_queue.empty()) {
+            c = normal_queue.front();
+            normal_queue.pop();
+            std::cout << ">>> 请 " << c.number << " 号到普通窗口办理 ("
+                      << c.service_type << ")" << std::endl;
+        } else {
+            std::cout << "当前无等待客户" << std::endl;
+        }
+    }
+
+    void printStatus() const {
+        std::cout << "\n当前排队情况:" << std::endl;
+        std::cout << "  VIP队列: " << vip_queue.size() << "人" << std::endl;
+        std::cout << "  普通队列: " << normal_queue.size() << "人" << std::endl;
+        std::cout << "  总等待人数: " << (vip_queue.size() + normal_queue.size())
+                  << std::endl;
+    }
+};
+
+int main() {
+    BankQueue bq;
+
+    bq.takeNumber("存款");
+    bq.takeNumber("取款");
+    bq.takeNumber("理财", true);  // VIP
+    bq.takeNumber("转账");
+    bq.takeNumber("开户", true);  // VIP
+
+    bq.printStatus();
+
+    std::cout << "\n开始叫号:" << std::endl;
+    bq.callNext();  // VIP优先
+    bq.callNext();
+    bq.callNext();
+    bq.callNext();
+    bq.callNext();
+    bq.callNext();  // 空
+
+    return 0;
+}
+```
+
+
+================================================================================
+### 第四节: 课后习题
+================================================================================
+
+1. 基础题：手动实现一个循环队列。
+   - 使用定长数组实现
+   - 支持 push、pop、front、back、empty、size
+   - 正确处理队满和队空条件
+   - 支持动态扩容
+
+2. 应用题：使用两个栈实现一个队列。
+   - push: O(1)
+   - pop: 均摊O(1)
+   - 分析为什么使用两个栈可以实现FIFO
+
+3. 进阶题：实现一个滑动窗口最大值队列。
+   - 给定一个数组和一个窗口大小k
+   - 使用双端队列（deque）在O(n)时间内输出每个窗口的最大值
+   - 单调队列的应用
+
+4. 综合题：实现一个阻塞队列（Blocking Queue）。
+   - 支持固定容量
+   - push操作在队列满时阻塞
+   - pop操作在队列空时阻塞
+   - 支持超时机制
+
+5. 挑战题：实现一个无锁队列（Lock-Free Queue）。
+   - 使用CAS（Compare-And-Swap）原子操作
+   - 支持多生产者多消费者（MPMC）
+   - 验证无锁队列的正确性和性能优势
+
+================================================================================

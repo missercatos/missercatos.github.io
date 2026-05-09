@@ -1,0 +1,978 @@
+================================================================================
+C++ 算法结构教程 — 容器 (Container)
+================================================================================
+
+## 章节概述
+
+容器(Container)是C++标准模板库(STL)中最核心的组成部分之一。容器是用于存储和组织
+数据集合的对象，它封装了数据存储和访问的管理细节，让开发者可以专注于业务逻辑。
+
+C++标准库提供了多种容器，每种容器都基于特定的数据结构，适用于不同的使用场景。
+本章将从最基本的容器概念讲起，深入底层数据结构原理，全面覆盖所有标准容器用法，
+最后通过实例和习题巩固所学知识。
+
+================================================================================
+### 第一节: 基础语法 + 计算机底层原理
+================================================================================
+
+1.1 容器的基本概念
+-----------------------
+
+容器是"存放数据的对象"。在C++中，容器的核心特征包括：
+- 管理一组元素（Element）的生命周期
+- 提供插入、删除、访问元素的操作接口
+- 通过迭代器（Iterator）提供统一的元素遍历方式
+- 具有特定的时间复杂度保证
+
+最基础的容器使用示例——std::vector:
+
+```cpp
+#include <iostream>
+#include <vector>
+
+int main() {
+    // 创建vector容器
+    std::vector<int> numbers;
+
+    // 添加元素
+    numbers.push_back(10);
+    numbers.push_back(20);
+    numbers.push_back(30);
+
+    // 访问和遍历元素
+    std::cout << "第一个元素: " << numbers[0] << std::endl;
+    std::cout << "元素个数: " << numbers.size() << std::endl;
+
+    // 使用范围for循环遍历
+    for (int num : numbers) {
+        std::cout << num << " ";
+    }
+    std::cout << std::endl;
+
+    // 使用迭代器遍历
+    for (auto it = numbers.begin(); it != numbers.end(); ++it) {
+        std::cout << *it << " ";
+    }
+    std::cout << std::endl;
+
+    return 0;
+}
+```
+
+1.2 容器的底层原理：连续存储 vs 节点存储
+---------------------------------------------
+
+容器根据底层存储方式分为两大类：
+
+(1) 连续存储容器（Contiguous Containers）
+- vector, array, deque, string
+- 元素在内存中连续排列
+- 通过指针偏移直接访问（O(1)随机访问）
+- 中间插入/删除需要移动大量元素（O(n)）
+
+(2) 节点存储容器（Node-based Containers）
+- list, forward_list, map, set, unordered_map等
+- 每个元素独立分配在堆上，节点间通过指针连接
+- 不支持随机访问（或仅支持有限的随机访问）
+- 中间插入/删除仅需修改指针（O(1)或O(log n)）
+
+内存布局对比示意：
+
+```
+连续存储 (vector):
++------+------+------+------+------+------+
+| 0x00 | 0x04 | 0x08 | 0x0c | 0x10 | 0x14 |  ← 连续地址
+| elem0| elem1| elem2| elem3|      |      |
++------+------+------+------+------+------+
+         ↑ arr[1] = *(arr + 1)
+
+节点存储 (list):
++------+     +------+     +------+
+| prev | <--> | prev | <--> | prev |
+| elem0|     | elem1|     | elem2|
+| next | --> | next | --> | next |
++------+     +------+     +------+
+ 0x100        0x200        0x300     ← 不连续地址
+```
+
+1.3 迭代器原理
+------------------
+
+迭代器是容器与算法之间的桥梁。它抽象了"遍历元素"这一概念，使得算法可以不关心
+底层容器的具体类型。
+
+迭代器本质上是一个"智能指针"，支持类似指针的操作：
+- operator*  : 解引用，获取当前指向的元素
+- operator++ : 前移到下一个元素
+- operator-- : 回退到前一个元素（仅双向迭代器）
+- operator[] : 随机访问（仅随机访问迭代器）
+- operator==/!= : 比较两个迭代器是否相等
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <list>
+
+int main() {
+    // vector提供随机访问迭代器
+    std::vector<int> vec = {10, 20, 30, 40, 50};
+    auto vit = vec.begin();
+    std::cout << "vec[0] = " << *vit << std::endl;
+    std::cout << "vec[2] = " << *(vit + 2) << std::endl;  // 随机访问
+    std::cout << "vec[3] = " << vit[3] << std::endl;       // 下标访问
+
+    // list提供双向迭代器（不支持随机访问）
+    std::list<int> lst = {10, 20, 30, 40, 50};
+    auto lit = lst.begin();
+    std::cout << "list first = " << *lit << std::endl;
+    // std::cout << *(lit + 2);  // 错误！list不支持随机访问
+    std::advance(lit, 2);  // 通过advance函数移动
+    std::cout << "list third = " << *lit << std::endl;
+
+    return 0;
+}
+```
+
+1.4 容器的分类体系
+---------------------
+
+C++标准库容器按组织方式分为三大类：
+
+序列容器（Sequence Containers）：
+- array       : 固定大小数组，连续存储
+- vector      : 动态数组，自动扩容，连续存储
+- deque       : 双端队列，分段连续存储
+- forward_list: 单向链表，节点存储
+- list        : 双向链表，节点存储
+- basic_string: 字符序列容器
+
+关联容器（Associative Containers）（有序，基于红黑树）：
+- set         : 集合，元素唯一且有序
+- multiset    : 多重集合，元素可重复且有序
+- map         : 映射表，key唯一且有序
+- multimap    : 多重映射表，key可重复且有序
+
+无序关联容器（Unordered Associative Containers）（基于哈希表）：
+- unordered_set       : 无序集合，元素唯一
+- unordered_multiset  : 无序多重集合
+- unordered_map       : 无序映射表
+- unordered_multimap  : 无序多重映射表
+
+容器适配器（Container Adapters）：（基于底层容器封装）
+- stack       : 栈（LIFO），默认基于deque
+- queue       : 队列（FIFO），默认基于deque
+- priority_queue: 优先队列，默认基于vector
+
+1.5 计算机底层原理：内存分配与增长策略
+------------------------------------------
+
+以最常用的vector为例，底层原理揭示了"动态数组"的实现：
+
+```cpp
+#include <iostream>
+#include <vector>
+
+int main() {
+    std::vector<int> vec;
+
+    std::cout << "初始: size=" << vec.size()
+              << " capacity=" << vec.capacity() << std::endl;
+
+    // 观察vector的容量增长策略
+    for (int i = 0; i < 20; ++i) {
+        vec.push_back(i);
+        std::cout << "push_back(" << i << "): size=" << vec.size()
+                  << " capacity=" << vec.capacity() << std::endl;
+    }
+
+    return 0;
+}
+```
+
+vector内部维护三个指针：
+- _start : 指向分配内存的起始位置
+- _finish: 指向已使用元素的末尾（即size位置）
+- _end_of_storage: 指向分配内存的末尾（即capacity位置）
+
+扩容过程：
+1. push_back时检查_finish == _end_of_storage?
+2. 如果容量已满，分配新内存（通常是当前容量的1.5~2倍）
+3. 将旧元素移动/拷贝到新内存
+4. 释放旧内存
+5. 更新指针
+
+GCC的vector扩容倍数为2，而Visual Studio的vector扩容倍数为1.5。扩容是O(n)操作，
+但均摊后push_back的摊还时间复杂度为O(1)。
+
+```cpp
+// 手动实现简化版的vector扩容逻辑（概念演示）
+#include <iostream>
+#include <algorithm>  // std::copy
+
+template<typename T>
+class SimpleVector {
+private:
+    T* _start;
+    T* _finish;
+    T* _end_of_storage;
+
+    void reallocate() {
+        size_t old_size = size();
+        size_t new_capacity = old_size == 0 ? 1 : old_size * 2;
+
+        T* new_start = new T[new_capacity];
+
+        // 拷贝旧元素到新内存
+        for (size_t i = 0; i < old_size; ++i) {
+            new_start[i] = _start[i];
+        }
+
+        // 释放旧内存
+        delete[] _start;
+
+        // 更新指针
+        _start = new_start;
+        _finish = _start + old_size;
+        _end_of_storage = _start + new_capacity;
+
+        std::cout << "  扩容: " << old_size << " -> " << new_capacity << std::endl;
+    }
+
+public:
+    SimpleVector() : _start(nullptr), _finish(nullptr), _end_of_storage(nullptr) {}
+
+    ~SimpleVector() { delete[] _start; }
+
+    size_t size() const { return _finish - _start; }
+    size_t capacity() const { return _end_of_storage - _start; }
+
+    void push_back(const T& value) {
+        if (_finish == _end_of_storage) {
+            reallocate();
+        }
+        *_finish = value;
+        ++_finish;
+    }
+
+    T& operator[](size_t index) { return _start[index]; }
+};
+
+int main() {
+    SimpleVector<int> vec;
+
+    for (int i = 0; i < 8; ++i) {
+        vec.push_back(i);
+        std::cout << "添加 " << i << ": size=" << vec.size()
+                  << " capacity=" << vec.capacity() << std::endl;
+    }
+
+    std::cout << "\n所有元素: ";
+    for (size_t i = 0; i < vec.size(); ++i) {
+        std::cout << vec[i] << " ";
+    }
+    std::cout << std::endl;
+
+    return 0;
+}
+```
+
+
+================================================================================
+### 第二节: 所有用法大全
+================================================================================
+
+2.1 std::vector —— 动态数组
+-------------------------------
+
+最通用的序列容器。连续内存，随机访问O(1)，尾部插入/删除O(1)均摊。
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <algorithm>
+
+int main() {
+    // 多种构造方式
+    std::vector<int> v1;                       // 空vector
+    std::vector<int> v2(5);                    // 5个默认值（0）
+    std::vector<int> v3(5, 10);                // 5个10
+    std::vector<int> v4 = {1, 2, 3, 4, 5};     // 初始化列表
+    std::vector<int> v5(v4);                   // 拷贝构造
+    std::vector<int> v6(v4.begin(), v4.end()); // 迭代器范围构造
+
+    // 元素访问
+    std::cout << "front: " << v4.front() << std::endl;  // 第一个元素
+    std::cout << "back: " << v4.back() << std::endl;    // 最后一个元素
+    std::cout << "at(2): " << v4.at(2) << std::endl;    // 带边界检查
+    std::cout << "[2]: " << v4[2] << std::endl;         // 无边界检查
+    std::cout << "data: " << v4.data() << std::endl;    // 底层数组指针
+
+    // 添加和删除
+    v4.push_back(6);           // 尾部添加
+    v4.pop_back();             // 尾部删除
+    v4.insert(v4.begin() + 2, 99);  // 中间插入
+    v4.erase(v4.begin() + 1);       // 中间删除
+    v4.resize(10);             // 改变大小（多出的默认构造）
+    v4.reserve(100);           // 预留容量（不改变size）
+
+    // 容量相关
+    std::cout << "size: " << v4.size() << std::endl;
+    std::cout << "capacity: " << v4.capacity() << std::endl;
+    std::cout << "empty: " << v4.empty() << std::endl;
+
+    // 遍历
+    for (size_t i = 0; i < v4.size(); ++i)  // 下标遍历
+        std::cout << v4[i] << " ";
+
+    for (int x : v4)                         // 范围for
+        std::cout << x << " ";
+
+    for (auto it = v4.begin(); it != v4.end(); ++it)  // 迭代器
+        std::cout << *it << " ";
+
+    // 算法配合
+    std::sort(v4.begin(), v4.end());         // 排序
+    auto it = std::find(v4.begin(), v4.end(), 99);  // 查找
+    std::reverse(v4.begin(), v4.end());     // 反转
+
+    // C++11 新增: emplace_back（就地构造，避免拷贝）
+    struct Point { int x, y; Point(int a, int b) : x(a), y(b) {} };
+    std::vector<Point> points;
+    points.emplace_back(3, 4);  // 直接在容器内构造，无需临时对象
+    points.push_back(Point(1, 2));  // push_back需要先构造临时对象
+
+    // shrink_to_fit: 释放多余容量
+    v4.shrink_to_fit();
+
+    return 0;
+}
+```
+
+2.2 std::array —— 固定大小数组
+----------------------------------
+
+C++11引入，是内置数组的封装，提供STL容器接口但不支持动态增长。
+
+```cpp
+#include <iostream>
+#include <array>
+#include <algorithm>
+
+int main() {
+    // 构造
+    std::array<int, 5> arr1 = {1, 2, 3, 4, 5};
+    std::array<int, 5> arr2{};  // 全部初始化为0
+
+    // 访问
+    std::cout << "arr1[0]: " << arr1[0] << std::endl;
+    std::cout << "arr1.at(1): " << arr1.at(1) << std::endl;
+    std::cout << "front: " << arr1.front() << std::endl;
+    std::cout << "back: " << arr1.back() << std::endl;
+    std::cout << "data: " << arr1.data() << std::endl;  // 底层C数组指针
+
+    // 大小
+    std::cout << "size: " << arr1.size() << std::endl;      // 5
+    std::cout << "max_size: " << arr1.max_size() << std::endl;
+
+    // 排序
+    std::array<int, 5> arr3 = {5, 3, 1, 4, 2};
+    std::sort(arr3.begin(), arr3.end());
+
+    // 填充
+    arr2.fill(42);  // 所有元素设为42
+
+    // 获取底层C数组
+    int* raw_ptr = arr1.data();
+
+    // 编译期大小（模板参数）
+    std::cout << std::tuple_size<std::array<int, 5>>::value << std::endl;
+
+    return 0;
+}
+```
+
+2.3 std::deque —— 双端队列
+------------------------------
+
+分段连续存储，支持两端快速插入/删除O(1)，随机访问O(1)。
+
+内部由多个固定大小的缓冲区（block）组成，通过中控器（map）管理。
+
+```cpp
+#include <iostream>
+#include <deque>
+
+int main() {
+    std::deque<int> dq = {10, 20, 30};
+
+    // 两端操作
+    dq.push_front(5);    // 前端插入
+    dq.push_back(40);    // 后端插入
+    dq.pop_front();      // 前端删除
+    dq.pop_back();       // 后端删除
+
+    // 访问（支持随机访问，但比vector慢一层间接）
+    std::cout << "dq[0]: " << dq[0] << std::endl;
+    std::cout << "front: " << dq.front() << std::endl;
+    std::cout << "back: " << dq.back() << std::endl;
+
+    // 中间插入/删除（比vector稍好，但仍需移动部分元素）
+    dq.insert(dq.begin() + 1, 99);
+    dq.erase(dq.begin() + 2);
+
+    // 遍历
+    for (int x : dq) std::cout << x << " ";
+    std::cout << std::endl;
+
+    return 0;
+}
+```
+
+2.4 std::list —— 双向链表
+-------------------------------
+
+底层是双向链表，每个节点包含前驱指针、后继指针和数据。插入/删除O(1)，
+但不支持随机访问。
+
+```cpp
+#include <iostream>
+#include <list>
+#include <algorithm>
+
+int main() {
+    std::list<int> lst = {3, 1, 4, 1, 5, 9};
+
+    // 添加和删除
+    lst.push_front(0);
+    lst.push_back(10);
+    lst.pop_front();
+    lst.pop_back();
+
+    // 插入（在pos之前插入）
+    auto it = std::find(lst.begin(), lst.end(), 4);
+    if (it != lst.end()) {
+        lst.insert(it, 100);  // 在4之前插入100
+    }
+
+    // 删除
+    lst.remove(1);         // 删除所有值为1的元素
+    lst.remove_if([](int x) { return x > 5; });  // 删除所有>5的元素
+
+    // 链表特有操作
+    lst.sort();                            // 排序
+    lst.unique();                          // 去重（连续重复）
+    lst.reverse();                         // 反转
+
+    std::list<int> other = {100, 200};
+    lst.splice(lst.end(), other);          // 将other链表拼接到lst尾部
+    // 此时other变为空
+
+    // 合并（两个list必须已排序）
+    std::list<int> a = {1, 3, 5};
+    std::list<int> b = {2, 4, 6};
+    a.merge(b);                            // a变为{1,2,3,4,5,6}, b为空
+
+    // 遍历（只能顺序访问）
+    for (int x : lst) std::cout << x << " ";
+
+    return 0;
+}
+```
+
+2.5 std::forward_list —— 单向链表
+--------------------------------------
+
+C++11引入，比list更节省内存（只有一个后继指针，没有前驱指针）。
+仅支持单向遍历，只能在头部快速插入/删除。
+
+```cpp
+#include <iostream>
+#include <forward_list>
+
+int main() {
+    std::forward_list<int> flst = {1, 2, 3, 4, 5};
+
+    // 只能在头部操作
+    flst.push_front(0);
+    flst.pop_front();
+
+    // 在指定位置之后插入（需要先找到前驱）
+    auto it = flst.before_begin();  // 第一个元素之前的位置
+    flst.insert_after(it, 99);     // 在头部后插入（即成为第一个元素）
+
+    // 删除指定位置之后的元素
+    flst.erase_after(flst.before_begin());  // 删除第一个元素
+
+    // 特有操作
+    flst.sort();
+    flst.unique();
+    flst.reverse();
+    flst.merge(std::forward_list<int>{2, 4, 6});
+
+    // 遍历（只有前向迭代器）
+    for (int x : flst) std::cout << x << " ";
+
+    return 0;
+}
+```
+
+2.6 std::set 和 std::multiset —— 集合
+-------------------------------------------
+
+基于红黑树实现，元素自动排序，增删查均为O(log n)。
+
+```cpp
+#include <iostream>
+#include <set>
+
+int main() {
+    // set: 元素唯一
+    std::set<int> s = {3, 1, 4, 1, 5, 9};  // 实际存储: {1, 3, 4, 5, 9}
+
+    // 插入
+    s.insert(2);
+    s.insert(2);  // 失败，2已存在，返回pair{iterator, false}
+
+    // 查找
+    auto it = s.find(4);
+    if (it != s.end()) {
+        std::cout << "找到了: " << *it << std::endl;
+    }
+
+    // 计数
+    std::cout << "s中3的个数: " << s.count(3) << std::endl;  // 0或1
+
+    // 删除
+    s.erase(1);    // 删除指定值的元素
+    auto it2 = s.find(5);
+    if (it2 != s.end()) s.erase(it2);  // 通过迭代器删除
+
+    // 范围操作
+    auto lower = s.lower_bound(3);  // 第一个>=3的元素
+    auto upper = s.upper_bound(6);  // 第一个>6的元素
+    for (auto it3 = lower; it3 != upper; ++it3) {
+        std::cout << *it3 << " ";  // [3, 6)范围内的元素
+    }
+
+    // multiset: 允许重复
+    std::multiset<int> ms = {1, 2, 2, 3, 3, 3};
+    std::cout << "2出现了" << ms.count(2) << "次" << std::endl;
+    ms.erase(2);  // 删除所有值为2的元素
+
+    // equal_range: 获取重复元素的范围
+    auto [begin, end] = ms.equal_range(3);
+    for (auto it4 = begin; it4 != end; ++it4) {
+        std::cout << *it4 << " ";
+    }
+
+    // 自定义排序
+    std::set<int, std::greater<int>> desc_set = {3, 1, 4, 1, 5, 9};
+    // 降序集合: {9, 5, 4, 3, 1}
+
+    return 0;
+}
+```
+
+2.7 std::map 和 std::multimap —— 映射表
+---------------------------------------------
+
+基于红黑树实现，key-value键值对存储，按key排序，增删查均为O(log n)。
+
+```cpp
+#include <iostream>
+#include <map>
+#include <string>
+
+int main() {
+    // map: key唯一
+    std::map<std::string, int> ages;
+
+    // 插入方式
+    ages["Alice"] = 25;     // operator[]方式
+    ages["Bob"] = 30;
+    ages.insert({"Charlie", 35});     // 初始化列表方式
+    ages.insert(std::make_pair("David", 28));  // make_pair方式
+    ages.emplace("Eve", 22);          // 就地构造
+
+    // 访问
+    std::cout << "Alice的年龄: " << ages["Alice"] << std::endl;
+    std::cout << "Bob的年龄: " << ages.at("Bob") << std::endl;
+    // ages.at("Unknown");  // 抛出std::out_of_range异常
+
+    // 查找
+    auto it = ages.find("Charlie");
+    if (it != ages.end()) {
+        std::cout << "找到: " << it->first << " -> " << it->second << std::endl;
+    }
+
+    // 检查key是否存在
+    if (ages.count("David") > 0) {
+        std::cout << "David存在于map中" << std::endl;
+    }
+
+    // 删除
+    ages.erase("Eve");          // 按key删除
+    auto it2 = ages.find("David");
+    if (it2 != ages.end()) ages.erase(it2);  // 按迭代器删除
+
+    // 遍历
+    for (const auto& [key, value] : ages) {  // C++17结构化绑定
+        std::cout << key << " : " << value << std::endl;
+    }
+
+    // multimap: key可重复
+    std::multimap<std::string, std::string> phonebook;
+    phonebook.insert({"张三", "13800138000"});
+    phonebook.insert({"张三", "13900139000"});  // 同一个人多个号码
+    phonebook.insert({"李四", "13700137000"});
+
+    // 获取所有与key关联的值
+    auto range = phonebook.equal_range("张三");
+    for (auto it3 = range.first; it3 != range.second; ++it3) {
+        std::cout << it3->first << " : " << it3->second << std::endl;
+    }
+
+    return 0;
+}
+```
+
+2.8 std::unordered_set 和 std::unordered_map —— 无序容器
+--------------------------------------------------------------
+
+基于哈希表实现，平均O(1)的增删查，元素无序存储。
+
+```cpp
+#include <iostream>
+#include <unordered_set>
+#include <unordered_map>
+#include <string>
+
+int main() {
+    // unordered_set
+    std::unordered_set<int> us = {5, 3, 1, 3, 2, 5};
+    us.insert(10);
+    us.erase(3);
+
+    if (us.find(5) != us.end()) {
+        std::cout << "5存在于集合中" << std::endl;
+    }
+
+    // 桶接口
+    std::cout << "桶数量: " << us.bucket_count() << std::endl;
+    std::cout << "负载因子: " << us.load_factor() << std::endl;
+    us.rehash(50);  // 重新哈希，设置桶数量
+
+    // unordered_map
+    std::unordered_map<std::string, double> prices;
+    prices["苹果"] = 5.5;
+    prices["香蕉"] = 3.0;
+    prices["樱桃"] = 15.0;
+
+    // 自定义哈希函数（用于自定义类型）
+    struct Person {
+        std::string name;
+        int age;
+        bool operator==(const Person& other) const {
+            return name == other.name && age == other.age;
+        }
+    };
+
+    struct PersonHash {
+        size_t operator()(const Person& p) const {
+            return std::hash<std::string>()(p.name) ^
+                   (std::hash<int>()(p.age) << 1);
+        }
+    };
+
+    std::unordered_set<Person, PersonHash> people;
+    people.insert({"Alice", 25});
+    people.insert({"Bob", 30});
+
+    return 0;
+}
+```
+
+2.9 容器适配器：stack, queue, priority_queue
+------------------------------------------------
+
+容器适配器是对底层容器的接口封装，提供受限的特定数据访问模式。
+
+```cpp
+#include <iostream>
+#include <stack>
+#include <queue>
+#include <vector>
+
+int main() {
+    // ========== stack (栈, LIFO) ==========
+    std::stack<int> stk;
+
+    stk.push(10);
+    stk.push(20);
+    stk.push(30);
+
+    std::cout << "栈顶: " << stk.top() << std::endl;  // 30
+    stk.pop();  // 弹出栈顶
+
+    while (!stk.empty()) {
+        std::cout << stk.top() << " ";
+        stk.pop();
+    }
+    std::cout << std::endl;
+
+    // 指定底层容器为vector
+    std::stack<int, std::vector<int>> vec_stack;
+
+    // ========== queue (队列, FIFO) ==========
+    std::queue<int> que;
+
+    que.push(10);
+    que.push(20);
+    que.push(30);
+
+    std::cout << "队首: " << que.front() << std::endl;  // 10
+    std::cout << "队尾: " << que.back() << std::endl;   // 30
+    que.pop();  // 弹出队首
+
+    // ========== priority_queue (优先队列) ==========
+    // 默认是大顶堆（最大元素在顶部）
+    std::priority_queue<int> pq;
+
+    pq.push(30);
+    pq.push(10);
+    pq.push(50);
+    pq.push(20);
+
+    std::cout << "优先级最高: " << pq.top() << std::endl;  // 50
+
+    // 小顶堆: 使用greater
+    std::priority_queue<int, std::vector<int>, std::greater<int>> min_pq;
+    min_pq.push(30);
+    min_pq.push(10);
+    min_pq.push(50);
+    std::cout << "优先级最低: " << min_pq.top() << std::endl;  // 10
+
+    return 0;
+}
+```
+
+
+================================================================================
+### 第三节: 实用案例
+================================================================================
+
+案例一：学生成绩管理系统
+-----------------------------
+
+场景：使用map存储学生姓名和成绩，使用vector存储班级成绩列表，实现统计分析。
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <map>
+#include <string>
+#include <numeric>    // std::accumulate
+#include <algorithm>  // std::sort, std::max_element
+#include <iomanip>    // std::setprecision
+
+class GradeManager {
+private:
+    std::map<std::string, std::vector<double>> records;
+
+public:
+    void addScore(const std::string& name, double score) {
+        records[name].push_back(score);
+    }
+
+    double getAverage(const std::string& name) const {
+        auto it = records.find(name);
+        if (it == records.end() || it->second.empty()) return 0.0;
+
+        const auto& scores = it->second;
+        double sum = std::accumulate(scores.begin(), scores.end(), 0.0);
+        return sum / scores.size();
+    }
+
+    double getClassAverage() const {
+        double total = 0.0;
+        int count = 0;
+        for (const auto& [name, scores] : records) {
+            for (double s : scores) {
+                total += s;
+                ++count;
+            }
+        }
+        return count > 0 ? total / count : 0.0;
+    }
+
+    std::string getTopStudent() const {
+        if (records.empty()) return "";
+
+        std::string top_name;
+        double top_avg = 0.0;
+
+        for (const auto& [name, scores] : records) {
+            double avg = getAverage(name);
+            if (avg > top_avg) {
+                top_avg = avg;
+                top_name = name;
+            }
+        }
+        return top_name;
+    }
+
+    void printReport() const {
+        std::cout << "\n========== 成绩报告 ==========" << std::endl;
+
+        // 使用vector排序学生姓名
+        std::vector<std::string> names;
+        for (const auto& [name, _] : records) {
+            names.push_back(name);
+        }
+        std::sort(names.begin(), names.end());
+
+        for (const auto& name : names) {
+            const auto& scores = records.at(name);
+            double avg = getAverage(name);
+            double max_score = *std::max_element(scores.begin(), scores.end());
+
+            std::cout << name << ": ";
+            for (double s : scores) std::cout << s << " ";
+            std::cout << "| 平均: " << std::fixed << std::setprecision(1)
+                      << avg << " | 最高: " << max_score << std::endl;
+        }
+
+        std::cout << "班级平均分: " << std::fixed << std::setprecision(1)
+                  << getClassAverage() << std::endl;
+        std::cout << "最佳学生: " << getTopStudent() << std::endl;
+    }
+};
+
+int main() {
+    GradeManager gm;
+
+    gm.addScore("张三", 85.5);
+    gm.addScore("张三", 90.0);
+    gm.addScore("李四", 78.0);
+    gm.addScore("李四", 82.5);
+    gm.addScore("王五", 95.0);
+    gm.addScore("王五", 88.0);
+    gm.addScore("王五", 92.5);
+
+    gm.printReport();
+
+    return 0;
+}
+```
+
+
+案例二：LRU缓存（最近最少使用）
+--------------------------------------
+
+使用list + unordered_map实现O(1)的LRU缓存，展示容器组合使用。
+
+```cpp
+#include <iostream>
+#include <list>
+#include <unordered_map>
+
+class LRUCache {
+private:
+    int capacity;
+    std::list<std::pair<int, int>> items;
+    std::unordered_map<int, std::list<std::pair<int, int>>::iterator> cache;
+
+public:
+    LRUCache(int cap) : capacity(cap) {}
+
+    int get(int key) {
+        auto it = cache.find(key);
+        if (it == cache.end()) return -1;
+
+        // 移动到链表头部（最近使用）
+        items.splice(items.begin(), items, it->second);
+        return it->second->second;
+    }
+
+    void put(int key, int value) {
+        auto it = cache.find(key);
+        if (it != cache.end()) {
+            // key已存在，更新值并移动到头部
+            it->second->second = value;
+            items.splice(items.begin(), items, it->second);
+            return;
+        }
+
+        // 如果已满，删除最久未使用的（链表尾部）
+        if (items.size() >= capacity) {
+            int old_key = items.back().first;
+            cache.erase(old_key);
+            items.pop_back();
+        }
+
+        // 插入到头部
+        items.emplace_front(key, value);
+        cache[key] = items.begin();
+    }
+
+    void print() const {
+        std::cout << "缓存内容 (最近->最久): ";
+        for (const auto& [k, v] : items) {
+            std::cout << "[" << k << ":" << v << "] ";
+        }
+        std::cout << std::endl;
+    }
+};
+
+int main() {
+    LRUCache cache(3);
+
+    cache.put(1, 100);
+    cache.put(2, 200);
+    cache.put(3, 300);
+    cache.print();
+
+    std::cout << "get(2): " << cache.get(2) << std::endl;
+    cache.print();
+
+    cache.put(4, 400);  // 淘汰key=1
+    cache.print();
+
+    std::cout << "get(1): " << cache.get(1) << std::endl;  // -1 (已淘汰)
+
+    return 0;
+}
+```
+
+
+================================================================================
+### 第四节: 课后习题
+================================================================================
+
+1. 基础题：不使用标准库容器，手动实现一个动态数组。
+   - 实现 push_back、pop_back、operator[]、size、capacity 方法
+   - 实现扩容策略（2倍扩容）
+
+2. 应用题：使用 std::map 和 std::vector 实现一个简单的词频统计程序。
+   - 读入一段英文文本
+   - 统计每个单词出现的次数
+   - 按出现次数降序输出
+
+3. 进阶题：实现一个线程安全的阻塞队列。
+   - 使用 std::queue 作为底层容器
+   - 支持 push（尾插）和 pop（头取，队列空时阻塞等待）
+   - 支持超时机制
+
+4. 综合题：设计一个超市商品管理系统。
+   - 使用 unordered_map 存储商品信息（ID -> {名称, 价格, 库存}）
+   - 使用 set 维护所有在售商品ID
+   - 支持添加/删除/修改商品
+   - 支持按价格区间查询
+   - 支持库存告警（低于阈值）
+
+5. 挑战题：实现一个线程安全的无锁链表（lock-free linked list）。
+   - 使用原子操作和CAS指令
+   - 支持插入、删除、查找操作
+   - 分析其正确性和性能
+
+================================================================================

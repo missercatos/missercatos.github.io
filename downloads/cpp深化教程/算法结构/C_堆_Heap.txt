@@ -1,0 +1,739 @@
+================================================================================
+C++ 算法结构教程 — 堆 (Heap)
+================================================================================
+
+## 章节概述
+
+堆（Heap）是一种特殊的完全二叉树数据结构，它满足"堆性质"：对于最大堆，每个节点
+的值都大于或等于其子节点的值；对于最小堆，每个节点的值都小于或等于其子节点的值。
+
+堆是实现优先队列（Priority Queue）的理想选择，广泛应用于堆排序、图算法
+（Dijkstra最短路径）、任务调度、Top-K问题等场景。
+
+注意：这里的"堆"和操作系统中的"堆内存"是不同的概念，虽然名称相同，但本质不同。
+
+================================================================================
+### 第一节: 基础语法 + 计算机底层原理
+================================================================================
+
+1.1 堆的基本概念
+--------------------
+
+堆的两种类型：
+
+最大堆（Max Heap）：父节点的值 >= 子节点的值，根节点是最大值
+最小堆（Min Heap）：父节点的值 <= 子节点的值，根节点是最小值
+
+堆的物理存储方式：虽然堆逻辑上是完全二叉树，但实际上使用数组存储。
+- 根节点在位置0
+- 对于位置 i 的节点：
+  - 左子节点位置: 2*i + 1
+  - 右子节点位置: 2*i + 2
+  - 父节点位置: (i-1) / 2
+
+```cpp
+// 堆的数组表示示意
+// 最大堆:       100
+//             /    \
+//           80      60
+//          /  \    /  \
+//         40  30  50  20
+//        /
+//       10
+//
+// 数组存储: [100, 80, 60, 40, 30, 50, 20, 10]
+//            0    1   2   3   4   5   6   7
+```
+
+1.2 标准库中的堆操作
+------------------------
+
+C++标准库在 <algorithm> 中提供了堆相关的操作函数：
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <algorithm>
+
+int main() {
+    std::vector<int> v = {3, 1, 4, 1, 5, 9, 2, 6};
+
+    // 1. make_heap: 将范围转换为堆（默认最大堆）
+    std::make_heap(v.begin(), v.end());
+    std::cout << "堆化后: ";
+    for (int x : v) std::cout << x << " ";
+    std::cout << std::endl;
+    // 输出: 9 6 4 3 5 1 2 1  (堆顶为9)
+
+    // 2. push_heap: 将最后一个元素插入到堆中
+    v.push_back(10);
+    std::push_heap(v.begin(), v.end());
+    std::cout << "插入10后: ";
+    for (int x : v) std::cout << x << " ";
+    std::cout << std::endl;
+
+    // 3. pop_heap: 将堆顶移动到末尾
+    std::pop_heap(v.begin(), v.end());
+    std::cout << "堆顶被弹出后: ";
+    for (int x : v) std::cout << x << " ";
+    std::cout << std::endl;
+    std::cout << "弹出的最大元素: " << v.back() << std::endl;
+    v.pop_back();  // 真正移除
+
+    // 4. sort_heap: 堆排序
+    std::sort_heap(v.begin(), v.end());
+    std::cout << "堆排序后: ";
+    for (int x : v) std::cout << x << " ";
+    std::cout << std::endl;
+
+    // 5. is_heap: 检查是否满足堆性质
+    std::cout << "是堆吗? " << std::is_heap(v.begin(), v.end()) << std::endl;
+
+    return 0;
+}
+```
+
+1.3 堆的底层原理：上浮与下沉
+---------------------------------
+
+堆的核心操作是"上浮"（sift-up / swim）和"下沉"（sift-down / sink）。
+
+上浮（用于插入操作）：
+1. 将新元素放在数组末尾
+2. 与其父节点比较
+3. 如果违反堆性质，与父节点交换
+4. 重复直到满足堆性质或到达根节点
+
+下沉（用于删除操作）：
+1. 将根节点与最后一个元素交换，删除最后一个元素
+2. 新的根节点与较大的子节点比较
+3. 如果违反堆性质，与子节点交换
+4. 重复直到满足堆性质或到达叶子节点
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <stdexcept>
+
+template<typename T, bool IsMaxHeap = true>
+class Heap {
+private:
+    std::vector<T> data;
+
+    // 比较函数（根据堆类型）
+    bool compare(const T& a, const T& b) const {
+        if constexpr (IsMaxHeap) {
+            return a > b;  // 最大堆: 父 > 子
+        } else {
+            return a < b;  // 最小堆: 父 < 子
+        }
+    }
+
+    // 上浮
+    void sift_up(size_t index) {
+        while (index > 0) {
+            size_t parent = (index - 1) / 2;
+            if (compare(data[parent], data[index])) {
+                break;  // 满足堆性质
+            }
+            std::swap(data[index], data[parent]);
+            index = parent;
+        }
+    }
+
+    // 下沉
+    void sift_down(size_t index) {
+        size_t size = data.size();
+        while (true) {
+            size_t target = index;
+            size_t left = 2 * index + 1;
+            size_t right = 2 * index + 2;
+
+            if (left < size && !compare(data[target], data[left])) {
+                target = left;
+            }
+            if (right < size && !compare(data[target], data[right])) {
+                target = right;
+            }
+
+            if (target == index) break;  // 已满足堆性质
+
+            std::swap(data[index], data[target]);
+            index = target;
+        }
+    }
+
+public:
+    Heap() = default;
+
+    void push(const T& value) {
+        data.push_back(value);
+        sift_up(data.size() - 1);
+    }
+
+    void pop() {
+        if (empty()) throw std::underflow_error("堆为空");
+        std::swap(data.front(), data.back());
+        data.pop_back();
+        if (!empty()) sift_down(0);
+    }
+
+    const T& top() const {
+        if (empty()) throw std::underflow_error("堆为空");
+        return data.front();
+    }
+
+    bool empty() const { return data.empty(); }
+    size_t size() const { return data.size(); }
+
+    void print() const {
+        for (const auto& x : data) std::cout << x << " ";
+        std::cout << "(堆顶: " << (empty() ? -1 : top()) << ")" << std::endl;
+    }
+};
+
+int main() {
+    // 最大堆
+    Heap<int, true> max_heap;
+    max_heap.push(3);
+    max_heap.push(1);
+    max_heap.push(4);
+    max_heap.push(1);
+    max_heap.push(5);
+    max_heap.push(9);
+
+    std::cout << "最大堆: ";
+    max_heap.print();
+
+    std::cout << "依次取出: ";
+    while (!max_heap.empty()) {
+        std::cout << max_heap.top() << " ";
+        max_heap.pop();
+    }
+    std::cout << std::endl;
+
+    // 最小堆
+    Heap<int, false> min_heap;
+    min_heap.push(3);
+    min_heap.push(1);
+    min_heap.push(4);
+    min_heap.push(1);
+    min_heap.push(5);
+    min_heap.push(9);
+
+    std::cout << "最小堆: ";
+    min_heap.print();
+
+    std::cout << "依次取出: ";
+    while (!min_heap.empty()) {
+        std::cout << min_heap.top() << " ";
+        min_heap.pop();
+    }
+    std::cout << std::endl;
+
+    return 0;
+}
+```
+
+1.4 堆的构建时间复杂度
+---------------------------
+
+将一个无序数组构建成堆有两种方式：
+- 自上而下建堆：逐个插入，O(n log n)
+- 自下而上建堆（Floyd算法）：从最后一个非叶子节点开始逐个下沉，O(n)
+
+```cpp
+#include <iostream>
+#include <vector>
+
+// Floyd建堆算法（自下而上下沉）
+void floydBuildHeap(std::vector<int>& arr) {
+    int n = arr.size();
+    // 从最后一个非叶子节点开始
+    for (int i = n / 2 - 1; i >= 0; --i) {
+        // 下沉
+        int current = i;
+        while (true) {
+            int largest = current;
+            int left = 2 * current + 1;
+            int right = 2 * current + 2;
+
+            if (left < n && arr[left] > arr[largest]) largest = left;
+            if (right < n && arr[right] > arr[largest]) largest = right;
+
+            if (largest == current) break;
+            std::swap(arr[current], arr[largest]);
+            current = largest;
+        }
+    }
+}
+
+int main() {
+    std::vector<int> arr = {3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5};
+
+    std::cout << "原数组: ";
+    for (int x : arr) std::cout << x << " ";
+
+    floydBuildHeap(arr);
+
+    std::cout << "\n构建堆后: ";
+    for (int x : arr) std::cout << x << " ";
+    std::cout << std::endl;
+
+    return 0;
+}
+```
+
+复杂度分析：
+- make_heap: O(n) —— 使用Floyd算法
+- push_heap: O(log n)
+- pop_heap: O(log n)
+- sort_heap: O(n log n)
+
+1.5 堆排序
+--------------
+
+堆排序利用堆结构，每次取最大(小)元素放到数组末尾：
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <algorithm>
+
+void heapSort(std::vector<int>& arr) {
+    // 1. 建堆
+    std::make_heap(arr.begin(), arr.end());
+
+    // 2. 逐个弹出堆顶
+    for (int i = arr.size() - 1; i > 0; --i) {
+        std::pop_heap(arr.begin(), arr.begin() + i + 1);
+    }
+}
+
+int main() {
+    std::vector<int> arr = {38, 27, 43, 3, 9, 82, 10};
+
+    std::cout << "排序前: ";
+    for (int x : arr) std::cout << x << " ";
+
+    heapSort(arr);
+
+    std::cout << "\n排序后: ";
+    for (int x : arr) std::cout << x << " ";
+    std::cout << std::endl;
+
+    return 0;
+}
+```
+
+
+================================================================================
+### 第二节: 所有用法大全
+================================================================================
+
+2.1 std::priority_queue —— 优先队列
+-----------------------------------------
+
+priority_queue 是容器适配器，底层默认使用 vector，内部使用 make_heap /
+push_heap / pop_heap 维护堆结构。
+
+```cpp
+#include <iostream>
+#include <queue>
+#include <vector>
+#include <functional>
+
+int main() {
+    // ========== 1. 最大堆（默认） ==========
+    std::priority_queue<int> max_pq;
+
+    max_pq.push(30);
+    max_pq.push(10);
+    max_pq.push(50);
+    max_pq.push(20);
+    max_pq.push(40);
+
+    std::cout << "最大堆（默认）: ";
+    while (!max_pq.empty()) {
+        std::cout << max_pq.top() << " ";
+        max_pq.pop();
+    }
+    std::cout << std::endl;
+
+    // ========== 2. 最小堆 ==========
+    std::priority_queue<int, std::vector<int>, std::greater<int>> min_pq;
+
+    min_pq.push(30);
+    min_pq.push(10);
+    min_pq.push(50);
+    min_pq.push(20);
+    min_pq.push(40);
+
+    std::cout << "最小堆: ";
+    while (!min_pq.empty()) {
+        std::cout << min_pq.top() << " ";
+        min_pq.pop();
+    }
+    std::cout << std::endl;
+
+    // ========== 3. 自定义比较器 ==========
+    auto cmp = [](int a, int b) { return a % 10 > b % 10; };
+    std::priority_queue<int, std::vector<int>, decltype(cmp)> custom_pq(cmp);
+
+    custom_pq.push(33);
+    custom_pq.push(12);
+    custom_pq.push(45);
+    custom_pq.push(28);
+    custom_pq.push(51);
+
+    std::cout << "按个位数排序: ";
+    while (!custom_pq.empty()) {
+        std::cout << custom_pq.top() << " ";
+        custom_pq.pop();
+    }
+    std::cout << std::endl;
+
+    // ========== 4. 存储自定义类型 ==========
+    struct Task {
+        int priority;
+        std::string name;
+
+        // 最大堆：优先级高的先执行
+        bool operator<(const Task& other) const {
+            return priority < other.priority;
+        }
+    };
+
+    std::priority_queue<Task> task_queue;
+    task_queue.push({3, "低优先级任务"});
+    task_queue.push({5, "高优先级任务"});
+    task_queue.push({4, "中优先级任务"});
+
+    while (!task_queue.empty()) {
+        auto task = task_queue.top();
+        std::cout << task.name << " (优先级: " << task.priority << ")" << std::endl;
+        task_queue.pop();
+    }
+
+    // ========== 5. 从已有容器构造 ==========
+    std::vector<int> v = {3, 1, 4, 1, 5};
+    std::priority_queue<int> pq_from_vec(v.begin(), v.end());
+
+    return 0;
+}
+```
+
+2.2 堆的其他操作函数
+-----------------------
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <algorithm>
+
+int main() {
+    std::vector<int> v = {3, 1, 4, 1, 5, 9, 2, 6};
+
+    // push_heap 的完整用法
+    // 注意: push_heap前必须先确保[first, last-1)已经是堆
+    v.push_back(10);
+    std::push_heap(v.begin(), v.end());
+
+    // pop_heap: 将堆顶移到[last-1]，然后[first, last-1)仍然是堆
+    std::pop_heap(v.begin(), v.end());
+    int max_val = v.back();
+    v.pop_back();
+
+    // 使用自定义比较（最小堆）
+    std::make_heap(v.begin(), v.end(), std::greater<int>{});
+
+    // is_heap / is_heap_until
+    std::cout << "是否是堆: " << std::is_heap(v.begin(), v.end()) << std::endl;
+
+    // 返回第一个违反堆性质的位置
+    auto it = std::is_heap_until(v.begin(), v.end());
+
+    // partial_sort 内部使用堆
+    std::vector<int> unsorted = {9, 3, 7, 1, 8, 2, 6, 4, 5};
+    // 找出前3个最大的元素
+    std::partial_sort(unsorted.begin(), unsorted.begin() + 3, unsorted.end(),
+                      std::greater<int>{});
+    // unsorted的前3个元素是最大的3个（降序）
+
+    // nth_element 也使用堆选择算法
+    std::vector<int> data = {7, 3, 9, 1, 8, 2, 6, 4, 5};
+    std::nth_element(data.begin(), data.begin() + 4, data.end());
+    // data[4]是第5大的元素，左边都比它小，右边都比它大
+
+    return 0;
+}
+```
+
+
+================================================================================
+### 第三节: 实用案例
+================================================================================
+
+案例一：任务调度器
+--------------------------
+
+使用优先队列（最大堆）实现任务调度，优先级高的任务先执行：
+
+```cpp
+#include <iostream>
+#include <queue>
+#include <string>
+#include <vector>
+#include <random>
+#include <chrono>
+
+struct Task {
+    int id;
+    int priority;
+    std::string description;
+    int duration;  // 执行时间（秒）
+
+    // 最大堆：优先级高的优先
+    bool operator<(const Task& other) const {
+        return priority < other.priority;
+    }
+};
+
+class Scheduler {
+private:
+    std::priority_queue<Task> task_queue;
+    int next_id = 1;
+
+public:
+    void addTask(int priority, const std::string& desc, int duration = 1) {
+        task_queue.push({next_id++, priority, desc, duration});
+        std::cout << "添加任务: #" << (next_id - 1)
+                  << " [优先级=" << priority << "] " << desc << std::endl;
+    }
+
+    void runAll() {
+        std::cout << "\n========== 开始执行任务 ==========\n" << std::endl;
+
+        while (!task_queue.empty()) {
+            Task task = task_queue.top();
+            task_queue.pop();
+
+            std::cout << "执行任务 #" << task.id
+                      << " (优先级:" << task.priority << ")"
+                      << " - " << task.description << std::endl;
+            // 模拟执行
+            std::cout << "  耗时: " << task.duration << "秒" << std::endl;
+        }
+
+        std::cout << "\n所有任务执行完毕!" << std::endl;
+    }
+
+    bool isEmpty() const { return task_queue.empty(); }
+    int size() const { return task_queue.size(); }
+};
+
+int main() {
+    Scheduler scheduler;
+
+    scheduler.addTask(5, "系统安全检查", 3);
+    scheduler.addTask(10, "处理用户支付请求", 2);
+    scheduler.addTask(3, "日志清理", 1);
+    scheduler.addTask(8, "更新库存数据", 2);
+    scheduler.addTask(1, "发送营销邮件", 1);
+    scheduler.addTask(7, "生成日终报表", 4);
+
+    scheduler.runAll();
+
+    return 0;
+}
+```
+
+
+案例二：Top-K 问题（数据流中最大的K个元素）
+--------------------------------------------------
+
+使用最小堆维护Top-K：
+
+```cpp
+#include <iostream>
+#include <queue>
+#include <vector>
+
+class TopKTracker {
+private:
+    int k;
+    std::priority_queue<int, std::vector<int>, std::greater<int>> min_heap;
+
+public:
+    TopKTracker(int k_val) : k(k_val) {}
+
+    void add(int value) {
+        min_heap.push(value);
+        if (min_heap.size() > k) {
+            min_heap.pop();  // 移除最小的，保持堆中为最大的K个
+        }
+    }
+
+    std::vector<int> getTopK() const {
+        // 返回当前Top-K元素
+        auto temp = min_heap;
+        std::vector<int> result;
+        while (!temp.empty()) {
+            result.push_back(temp.top());
+            temp.pop();
+        }
+        // 从大到小排序输出
+        std::sort(result.begin(), result.end(), std::greater<int>{});
+        return result;
+    }
+
+    void print() const {
+        auto result = getTopK();
+        std::cout << "当前Top-" << k << ": ";
+        for (int x : result) std::cout << x << " ";
+        std::cout << std::endl;
+    }
+};
+
+int main() {
+    TopKTracker tracker(3);
+
+    std::vector<int> stream = {3, 1, 5, 9, 2, 8, 7, 4, 6};
+
+    for (int v : stream) {
+        tracker.add(v);
+        tracker.print();
+    }
+
+    return 0;
+}
+```
+
+
+案例三：合并K个有序链表
+------------------------------
+
+使用堆高效合并多个有序链表：
+
+```cpp
+#include <iostream>
+#include <queue>
+#include <vector>
+
+struct ListNode {
+    int val;
+    ListNode* next;
+    ListNode(int v) : val(v), next(nullptr) {}
+};
+
+// 比较器：用于最小堆
+struct Compare {
+    bool operator()(ListNode* a, ListNode* b) {
+        return a->val > b->val;  // 最小堆
+    }
+};
+
+ListNode* mergeKLists(std::vector<ListNode*>& lists) {
+    std::priority_queue<ListNode*, std::vector<ListNode*>, Compare> pq;
+
+    // 将所有链表的头节点入堆
+    for (auto& list : lists) {
+        if (list) pq.push(list);
+    }
+
+    ListNode dummy(0);
+    ListNode* tail = &dummy;
+
+    while (!pq.empty()) {
+        // 取出最小节点
+        ListNode* node = pq.top();
+        pq.pop();
+
+        // 将该节点的后继入堆
+        if (node->next) {
+            pq.push(node->next);
+        }
+
+        // 将节点接到结果链表
+        tail->next = node;
+        tail = tail->next;
+    }
+
+    return dummy.next;
+}
+
+// 辅助函数: 从vector创建链表
+ListNode* createList(const std::vector<int>& vals) {
+    ListNode dummy(0);
+    ListNode* tail = &dummy;
+    for (int v : vals) {
+        tail->next = new ListNode(v);
+        tail = tail->next;
+    }
+    return dummy.next;
+}
+
+// 辅助函数: 打印链表
+void printList(ListNode* head) {
+    while (head) {
+        std::cout << head->val;
+        if (head->next) std::cout << " -> ";
+        head = head->next;
+    }
+    std::cout << std::endl;
+}
+
+int main() {
+    std::vector<ListNode*> lists;
+
+    lists.push_back(createList({1, 4, 7}));
+    lists.push_back(createList({2, 5, 8}));
+    lists.push_back(createList({3, 6, 9}));
+
+    std::cout << "输入链表:" << std::endl;
+    for (auto& list : lists) {
+        printList(list);
+    }
+
+    ListNode* merged = mergeKLists(lists);
+
+    std::cout << "\n合并结果: ";
+    printList(merged);
+
+    return 0;
+}
+```
+
+
+================================================================================
+### 第四节: 课后习题
+================================================================================
+
+1. 基础题：手动实现一个最小堆。
+   - 支持 push、pop、top、size、empty
+   - 实现 sift_up 和 sift_down
+   - 支持从数组建堆（Floyd算法）
+
+2. 应用题：使用堆实现一个"数据流中位数查找器"。
+   - 使用两个堆（最大堆 + 最小堆）
+   - 支持 addNum(int num) 和 findMedian() 操作
+   - 保证 addNum O(log n)，findMedian O(1)
+
+3. 进阶题：实现"任务调度器"的进阶版。
+   - 任务有优先级、到达时间、执行时间
+   - CPU按优先级调度（抢占式）
+   - 如果是相同优先级，按到达时间先到先得
+   - 输出每个任务的完成时间
+
+4. 综合题：实现一个网络包优先级队列。
+   - 包类型：控制包（高优先级）、数据包（中优先级）、心跳包（低优先级）
+   - 每种类型内部按发送时间排序
+   - 支持带权重的优先级（控制包:数据包:心跳包 = 3:2:1 的出队比例）
+   - 防止低优先级包被饿死
+
+5. 挑战题：实现一个可持久化堆（Persistent Heap）。
+   - 支持对任意历史版本的访问
+   - 支持从历史版本派生出新版本
+   - 分析空间复杂度
+
+================================================================================
