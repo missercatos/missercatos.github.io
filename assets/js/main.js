@@ -20,6 +20,16 @@ const TECH_SHARES = [
         color: '#7b2fbe',
         textColor: '#1a1a1a',
         group: 'cpp'
+    },
+    {
+        id: 'git',
+        name: 'Git',
+        url: 'git.html',
+        logo: 'assets/ima/cions/git.png',
+        description: 'Git 使用教程 — 从基础到多人协作',
+        color: '#f05133',
+        textColor: '#1a1a1a',
+        group: 'tools'
     }
     // ★ 模板 - 复制以下内容并修改即可添加新技术分享入口：
     // {
@@ -202,6 +212,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // 初始状态：主内容隐藏
     mainContent.classList.add('hidden');
     
+    // 保存首页原始 HTML 内容（SPA 返回首页时恢复）
+    var homeHTML = mainContent.innerHTML;
+
     // 添加触发事件
     window.addEventListener('click', revealContent);
     window.addEventListener('keydown', revealContent);
@@ -217,7 +230,7 @@ document.addEventListener('DOMContentLoaded', function() {
             
             const href = link.getAttribute('href');
             // 只处理.html链接且不是外部链接，排除us.html（独立页面）
-            if (href && href.endsWith('.html') && !href.startsWith('http') && href !== 'us.html' && href !== 'archlinux.html' && href !== 'cpp.html') {
+            if (href && href.endsWith('.html') && !href.startsWith('http') && href !== 'us.html' && href !== 'archlinux.html' && href !== 'cpp.html' && href !== 'git.html') {
                 e.preventDefault();
                 navigateTo(href);
                 return false;
@@ -250,8 +263,14 @@ document.addEventListener('DOMContentLoaded', function() {
         // 停止音乐卡片浮动
         if (window.floatingMusic) window.floatingMusic.stop();
         
-        // 如果是首页，直接显示现有内容
+        // 如果是首页，恢复原始内容再显示
         if (url === 'index.html' || url === '/' || url === '') {
+            stopFloating();
+            if (window.floatingMusic) window.floatingMusic.stop();
+            // 只有当内容已被替换时才需要恢复
+            if (mainContent.innerHTML !== homeHTML) {
+                mainContent.innerHTML = homeHTML;
+            }
             setTimeout(() => {
                 mainContent.classList.remove('hidden');
                 if (updateTitle) document.title = 'Misser-catos';
